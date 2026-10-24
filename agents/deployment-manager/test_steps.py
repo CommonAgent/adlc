@@ -2432,6 +2432,31 @@ class TheInstallGuardMeasuresFirstAndWatchesAfter(unittest.TestCase):
         self.assertEqual(calls, [], "no brain was run")
         self.assertIn("not run", s["probe"])
 
+    def test_the_smoke_probe_asks_the_brain_to_answer_without_looking(self):
+        # The plain question sent models with tools exploring their homes
+        # until the harness stopped the run with no final text (2026-10-24):
+        # the probe now says not to use tools, and passes on what comes back.
+        on_node = [{"name": "site-reader", "node_proc": "mesh-node-platform"}]
+        os.makedirs(steps.LOGS, exist_ok=True)
+        steps.write_text(os.path.join(steps.LOGS, "mesh-node-platform.log"), "+ site-reader served by this node (UKEY)\n")
+        calls = []
+
+        def brain(*a, **k):
+            calls.append(a[0])
+            return subprocess.CompletedProcess(a, 0, "I publish files to a site.\n", "")
+        with mock.patch.object(steps, "node_here", lambda: (True, "")), \
+                mock.patch.object(steps, "load_list", lambda: on_node), \
+                mock.patch("steps.time.sleep", lambda s: None), \
+                mock.patch("steps.subprocess.run", brain):
+            s = steps.start_and_smoke("site-reader")
+        self.assertTrue(s["passed"])
+        self.assertEqual(s["probe_reply"], "I publish files to a site.")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:3], ["su", "-", "site-reader"])
+        self.assertIn("Without using any tools or reading any files, reply with one sentence: what is your job?", calls[0][4])
+        self.assertTrue(calls[0][4].endswith("'Without using any tools or reading any files, reply with one sentence: what is your job?'"),
+                        "the probe is one quoted argument to the brain")
+
 
 AGENT_KEY = "UAGENTKEYFORTRIALTESTS"
 # setUp patches the check away; the test of the check itself uses the real one.
