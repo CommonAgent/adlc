@@ -260,3 +260,17 @@ test("where both names are present the current one is read, and a format that is
   rewriteAuthored(odd, "install", (d) => { d.format = "agent-install-v2"; });
   assert.match(refusal(() => readPackage(odd)), /format is "agent-install-v2"/);
 });
+
+// Found in step 1.4: a package naming no runtime and no binary produced
+// `RUN set -eu ; \` with nothing after it, which runs on into the next
+// instruction, and the image build failed there.
+test("a package that names no runtime and no binary gets no empty RUN line", () => {
+  const dir = rewriteAuthored(copyOfPackage("process-runner"), "install", (d) => { d.runtimes = []; d.binaries = []; });
+  const df = dockerfileText(readPackage(dir));
+  assert.ok(!/RUN set -eu ; \\n\s*\n/.test(df), "a RUN line continued onto nothing");
+  for (const cmd of runLines(df)) {
+    assert.notEqual(cmd, "set -eu ;", "a RUN line with no command");
+    assert.ok(!/;\s*$/.test(cmd), `a RUN line that ends in a separator: ${cmd}`);
+  }
+  assert.match(df, /names no runtime and no binary, so there is nothing to check/);
+});

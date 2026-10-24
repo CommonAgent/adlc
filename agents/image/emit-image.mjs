@@ -802,11 +802,16 @@ export function dockerfileText(pkg, opts = {}) {
       `# runs it and does not wake a model to decide whether to.`,
       `ENV AGENT_RUN_SPEC=${AGENT_DIR}/run.json`);
   }
+  // A package that names no runtime and no binary has nothing to check, and
+  // an empty check is not a RUN line: `RUN set -eu ; \` with nothing after it
+  // runs on into the next instruction and the image build fails there.
+  const checks = [...runtimeLines(install), ...(install.binaries ?? []).flatMap((b) => presenceLines(b.name, b.purpose))];
   say(``,
     `# 12.4 rule 1: check every runtime and binary the install file names, stop`,
     `# when one is missing, and never substitute.`,
-    `RUN set -eu ; \\`,
-    block([...runtimeLines(install), ...(install.binaries ?? []).flatMap((b) => presenceLines(b.name, b.purpose))]),
+    ...(checks.length
+      ? [`RUN set -eu ; \\`, block(checks)]
+      : [`# This package names no runtime and no binary, so there is nothing to check.`]),
     ``);
   if (wakesAModel) {
     say(`# And the harness, checked the same way and for the same reason, even`,
