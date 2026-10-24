@@ -43,6 +43,7 @@ const ABOUT = {
   "agent-runtime-requirements.json": "The draft runtime requirements: what a host must have and do to run the agent, each system's binding, its directories and how each job runs. One of the agent's own files.",
   "plugin.json": "The agent's manifest, with the builder's own entry naming the files each skill carries. One of the agent's own files.",
   skill: "A skill's SKILL.md: when the job is the right one, what a good result looks like, what it does when there is nothing to give, and how it is done. One of the agent's own files.",
+  container: "A container agent's checked spec: its code is a program in its own repository, so it makes no package and has none of the files a package is built from, and a container deploy is filed with this.",
   "what is still open": "The questions nobody else could answer, each one a thing that was deliberately not invented. Until these are settled the draft is not finished.",
 };
 
@@ -58,9 +59,20 @@ export const pieceNameOf = (rel) => {
 /** What to list and what to copy. Pure, so it can be checked without a folder;
  *  the caller does the copying. `files` is builds.json's list ({path,
  *  sha256}) and `filesDir` the folder it was written under. */
-export function plan({ files = [], filesDir = "", blanks = [] } = {}) {
+export function plan({ files = [], filesDir = "", blanks = [], container = null } = {}) {
   const entries = [];
   const copies = [];
+  // A container agent's draft makes no package and has no files: what a
+  // container deploy is filed with is the checked spec, until container
+  // agents carry the two files (the plan's milestone 2). It is the one
+  // spec.json this agent still delivers.
+  if (container) {
+    entries.push({
+      name: "spec.json", step: STEP_OF.files, path: "out/spec.json", media_type: "application/json",
+      about: ABOUT.container, produced_from: ["what it should do"],
+    });
+    copies.push({ from: container, to: "out/spec.json", what: "the container agent's checked spec" });
+  }
   for (const f of files) {
     const name = pieceNameOf(f.path);
     entries.push({
@@ -142,7 +154,8 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     }
     const buildsPath = join(RECORDS, "builds.json");
     const builds = existsSync(buildsPath) ? JSON.parse(readFileSync(buildsPath, "utf8")) : null;
-    const listed = fill(JOB_DIR, plan({ files: builds?.files?.list ?? [], filesDir: join(RECORDS, "agent"), blanks }));
+    const listed = fill(JOB_DIR, plan({ files: builds?.files?.list ?? [], filesDir: join(RECORDS, "agent"), blanks,
+      container: builds?.container ? draftPath : null }));
     console.log(`${listed.length} piece${listed.length === 1 ? "" : "s"} listed at ${join(JOB_DIR, "pieces.json")}`);
   } catch (e) {
     // One JSON object whose reply says why, like the refusal above, so the

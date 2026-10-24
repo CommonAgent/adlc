@@ -128,3 +128,27 @@ test("the drafting instruction says what a kind is, where an address goes, what 
   assert.match(INSTRUCTION, /third-party-framework or mesh-coded/);
   assert.match(INSTRUCTION, /put "container" in "blanks"/);
 });
+
+test("a container agent's draft makes no files, and its checked spec goes as spec.json, the one this agent still delivers", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spec-writer-pieces-container-"));
+  try {
+    const spec = { name: "box-agent", version: "0.1.0", description: "Answers in a box.", kind: "mesh-coded",
+      container: { repository: "https://github.com/example/box-agent", commit: "0123456789abcdef0123456789abcdef01234567", dockerfile: "Dockerfile", placement: "service", holds_own_key: true },
+      jobs: [{ slug: "answer", title: "Answer", offered: true, when: "when asked", good: "an answer", empty: "say so", how: { control: "script", intelligence: "none", cost: "none", contract: "full" } }],
+      refuses: ["guessing"], records: ["the answer"] };
+    const records = join(dir, "records"); const job = join(dir, "job");
+    mkdirSync(records, { recursive: true }); mkdirSync(job, { recursive: true });
+    const text = JSON.stringify(spec, null, 2) + "\n";
+    writeFileSync(join(records, "draft.json"), text);
+    const r = checkBuilds({ spec, env: { BUILD_PY }, keep: join(records, "agent") });
+    assert.equal(r.ok, true, JSON.stringify(r.problems));
+    assert.equal(r.container, true);
+    assert.equal(r.files, undefined);
+    writeFileSync(join(records, "builds.json"), JSON.stringify({ builds: "v1", ...r }));
+    const ok = runPieces(job, records);
+    assert.equal(ok.status, 0, ok.stderr);
+    const listed = JSON.parse(readFileSync(join(job, "pieces.json"), "utf8"));
+    assert.deepEqual(listed.map((e) => e.name), ["spec.json"]);
+    assert.equal(readFileSync(join(job, "out", "spec.json"), "utf8"), text);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

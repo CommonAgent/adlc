@@ -35,7 +35,7 @@ instructions are in `skills/<slug>/SKILL.md`, the scripts are in `scripts/`, and
 works under are in `rules.md` and `references/`.
 
 ```sh
-node --test test/*.test.mjs                                   # 103 tests
+node --test test/*.test.mjs                                   # 105 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

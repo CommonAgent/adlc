@@ -214,7 +214,10 @@ export function checkBuilds({ spec, env = {}, io = {}, keep = null } = {}) {
     const result = { checked: true, ...said, stood_in_for: placed, ...(named ? {} : { name_stood_in: true }) };
     // The files are taken only from a package the builder made. A container
     // agent's draft is checked and makes none (its code is in its own
-    // repository), so there is nothing to take, and the reply says so.
+    // repository): until container agents carry the two files (the plan's
+    // milestone 2), what a container deploy is filed with is the checked
+    // spec itself, so that is what goes, and it is marked here.
+    if (said.ok && said.said?.act === "checked" && said.said?.kind) result.container = true;
     if (said.ok && keep && said.said?.path) {
       result.files = { list: keepFiles(keep, agentFiles(built, said.said.path, { named, ...(io.read ? { read: io.read } : {}) }), io) };
     }

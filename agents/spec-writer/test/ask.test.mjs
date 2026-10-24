@@ -165,3 +165,9 @@ test("the reply says which of the agent's own files went, or that none did and w
   assert.doesNotMatch(replyText({ spec: SPEC }), /files are delivered/);
   assert.doesNotMatch(went, /spec\.json/);
 });
+
+test("a container agent's reply says why its spec goes as spec.json", () => {
+  const said = replyText({ spec: SPEC, files: [], container: true });
+  assert.match(said, /This is a container agent: its code is in its own repository and it makes no package, so the checked spec goes as spec.json/);
+  assert.doesNotMatch(said, /No files are delivered/);
+});
