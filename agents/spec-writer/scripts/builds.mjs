@@ -1,21 +1,24 @@
-// Does the draft build? The builder answers, and its refusal is the check.
-// And when it does, the builder's own output is what this agent hands on: the
-// agent's own files, the layout Common Agent 13.2 says a package is authored
-// in (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and
-// skills/<slug>/SKILL.md), taken from what it built, so the files say exactly
-// what the builder would have written and building them makes the same
-// package. Nothing here writes a spec.json: the draft is this agent's own
-// working record, and the files are what anybody downstream reads.
+// The agent's own files, and whether they build. files.mjs writes them from
+// the draft (agent-descriptor.json, agent-runtime-requirements.json,
+// plugin.json and skills/<slug>/SKILL.md, the layout Common Agent 13.2 says a
+// package is authored in), the same bytes the builder writes for the same
+// draft, and they are what this agent hands on. Where the builder is on the
+// host, it builds the folder they make, and its refusal is the check. Nothing
+// here writes a spec.json: the draft is this agent's own working record, and
+// the files are what anybody downstream reads.
 //
 // This is the only check here this agent does not control. check-spec.mjs is
 // this agent's own opinion about its own draft, which is worth something and
 // is not evidence. The builder is a program written by somebody else that
 // refuses a spec for reasons of its own, and a draft it will not take is not
-// a spec whatever anybody thinks of the prose.
+// a spec whatever anybody thinks of the prose. Where it is not on the host
+// (this agent's own container carries node and nothing else), the files go
+// unchecked and the reply says so, and the package maker builds them later
+// and refuses what does not build.
 //
 // One honesty problem shapes the whole file. A drafted spec names scripts that
 // nobody has written yet, and the builder copies every named member into the
-// package before it validates a single declaration, so a spec with no files
+// package before it validates a single declaration, so a folder with no files
 // beside it fails at the copy and never reaches the checks that matter. So
 // this stands in an empty file for each named member and says, every time,
 // exactly which ones it stood in for. What comes back then proves the
@@ -24,14 +27,15 @@
 // claiming something nobody checked. The stand-ins are never handed on: the
 // files list the scripts by path, and whoever writes them delivers them.
 //
-// The name is the one other thing stood in. A draft whose name is still open
-// is the usual first round, and the builder will not build an agent with no
-// name, so it is built under a name that says what it is, and the files that
-// come back carry no name at all: plugin.json has none, and each SKILL.md
-// says it is part of an agent not named yet. The builder then refuses those
-// files until the name is settled, which is the truth about them.
+// The name is the one other thing stood in, for the check alone. A draft
+// whose name is still open is the usual first round, and the builder will
+// not build an agent with no name, so it is checked under a name that says
+// what it is, and the files kept carry no name at all: plugin.json has none,
+// and each SKILL.md says it is part of an agent not named yet. The builder
+// then refuses those files until the name is settled, which is the truth
+// about them.
 //
-//   needs: node >= 22; python3 and the builder, or it says it could not check
+//   needs: node >= 22; python3 and the builder to check, or it says it could not
 //   DRAFT=<draft.json> RECORDS=<records folder> [BUILD_PY=<path>] node builds.mjs
 //   (the files go under <records folder>/agent/, and builds.json lists them
 //   with their digests)
@@ -40,6 +44,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, normalize } from "node:path";
+import { NOT_NAMED, agentFilesOf } from "./files.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -85,50 +90,23 @@ export function climbsOut(rel) {
 }
 
 
-/** What the draft is called in the builder's folder. The builder reads any
- *  file it is handed as a spec; this one is the draft, and nothing here
- *  writes a file called spec.json. */
+/** What the draft is called in the builder's folder when it is built as a
+ *  draft (a container agent's, which makes no folder). The builder reads any
+ *  file it is handed as a spec; nothing here writes a file called spec.json. */
 export const DRAFT_FILE = "draft.json";
 
-/** The name a draft whose name is still open is built under. It is never
- *  handed on: the files come back with no name in them. */
+/** The name a draft whose name is still open is checked under. It is never
+ *  handed on: the files carry no name, and each SKILL.md says it is part of
+ *  an agent not named yet. */
 export const STAND_IN_NAME = "agent-not-named-yet";
 export const NAME_RE = /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/;
-export const NOT_NAMED = "an agent not named yet";
+export { NOT_NAMED };
+
+/** The two kinds whose code is in its own repository: the builder checks
+ *  their draft and makes no package of them. */
+export const CONTAINER_KINDS = ["mesh-coded", "third-party-framework"];
 
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
-const EXT = "net.agentdoc.package";
-/** The files an agent is authored in, as the builder names them. */
-export const AUTHORED = ["agent-descriptor.json", "agent-runtime-requirements.json", "plugin.json"];
-
-/** The agent's own files, from a package the builder made of the draft: the
- *  two authored files as built, plugin.json less what the build writes into
- *  it and with the builder's own entry (the files each skill carries, by the
- *  path the draft names them), and each skill's SKILL.md. The same files
- *  adlc's convert.py writes from a spec. `named` is false when the draft was
- *  built under STAND_IN_NAME, and then no name is carried. Returns
- *  {rel: text}, in the order they are listed. */
-export function agentFiles(spec, pkg, { named = true, read = (p) => readFileSync(p, "utf8") } = {}) {
-  const files = {};
-  for (const n of AUTHORED.slice(0, 2)) files[n] = read(join(pkg, n));
-  const manifest = JSON.parse(read(join(pkg, "plugin.json")));
-  const own = { ...(manifest.extensions?.[EXT] ?? {}) };
-  for (const k of ["descriptor", "runtime_requirements", "install", "built", "draft"]) delete own[k];
-  const jobs = (spec?.jobs ?? []).filter((j) => j && typeof j === "object");
-  const build = {};
-  for (const k of ["kind", "container", "claims"]) if (k in (spec ?? {})) build[k] = spec[k];
-  build.skills = Object.fromEntries(jobs.map((j) => [j.slug, Object.fromEntries(
-    ["scripts", "references", "assets"].filter((k) => Array.isArray(j[k]) && j[k].length).map((k) => [k, [...j[k]]]))]));
-  manifest.extensions = { ...(manifest.extensions ?? {}), [EXT]: { ...own, build } };
-  if (!named) delete manifest.name;
-  files["plugin.json"] = JSON.stringify(manifest, null, 2) + "\n";
-  for (const j of jobs) {
-    let md = read(join(pkg, "skills", j.slug, "SKILL.md"));
-    if (!named) md = md.replace(`Part of ${STAND_IN_NAME}.`, `Part of ${NOT_NAMED}.`);
-    files[`skills/${j.slug}/SKILL.md`] = md;
-  }
-  return files;
-}
 
 /** Write the files under a folder, emptied first so a file from an earlier
  *  draft cannot ride along, and say what was written with each digest. */
@@ -144,14 +122,17 @@ export function keepFiles(dir, files, io = {}) {
   return list;
 }
 
-/** Write the draft and an empty stand-in for every member it names. Returns
- *  what was stood in for, which is the caveat on everything that follows. */
-export function standIn(dir, spec, io = {}) {
+/** Write an empty stand-in for every member the draft names, and what the
+ *  builder reads beside them: the agent's own files, or (for a container
+ *  agent's draft, which has none) the draft. Returns what was stood in for,
+ *  which is the caveat on everything that follows. */
+export function standIn(dir, spec, io = {}, files = null) {
   const write = io.write ?? ((p, body) => { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, body); });
   const named = namedFiles(spec);
   const climbing = named.filter(climbsOut);
   const placed = [];
-  write(join(dir, DRAFT_FILE), JSON.stringify(spec, null, 2) + "\n");
+  if (files) for (const [rel, text] of Object.entries(files)) write(join(dir, rel), text);
+  else write(join(dir, DRAFT_FILE), JSON.stringify(spec, null, 2) + "\n");
   for (const rel of named) {
     if (climbsOut(rel)) continue;
     // Empty, and empty on purpose. A stand-in with plausible content in it
@@ -177,51 +158,62 @@ export function builderSaid(stdout, stderr, status) {
   return { ok: false, said: null, problems: [`the builder did not answer with a result: ${why.slice(0, 400)}`] };
 }
 
-/** Run the builder over the draft in a folder of its own, and keep the
- *  agent's files from what it built under `keep` when it builds.
+/** Write the agent's own files for the draft (files.mjs), keep them under
+ *  `keep`, and run the builder over them in a folder of its own.
  *
- *  Returns `checked: false` when there is nothing to run it with, rather than
- *  a pass or a fail. A missing builder is not a spec that builds and it is not
- *  a spec that does not; it is a check that did not happen, and the reply says
- *  so in those words. */
+ *  The files are what is delivered. Where the builder is on the host it is
+ *  the check: it builds the folder those files make, with empty stand-ins for
+ *  every script the draft names, and a draft it refuses keeps no files,
+ *  because a declaration nothing can build is not handed on as though it
+ *  were one. Where it is not, the files are kept unchecked, and the reply
+ *  says nothing checked them rather than that they passed: the package maker
+ *  builds them and refuses what does not build.
+ *
+ *  A container agent's draft has no files (its code is in its own
+ *  repository, and the builder makes no package of it): it is checked as a
+ *  draft, and marked `container`. */
 export function checkBuilds({ spec, env = {}, io = {}, keep = null } = {}) {
   const buildPy = buildPyAt(env);
   const exists = io.exists ?? existsSync;
   const run = io.run ?? ((args, opts) => spawnSync("python3", args, { encoding: "utf8", ...opts }));
   const mk = io.mkdtemp ?? (() => mkdtempSync(join(tmpdir(), "spec-writer-build-")));
   const drop = io.rm ?? ((d) => rmSync(d, { recursive: true, force: true }));
+  const container = CONTAINER_KINDS.includes(spec?.kind);
+  const named = NAME_RE.test(trim(spec?.name));
+  const files = container ? null : agentFilesOf(spec ?? {});
+  const kept = () => (keep && files ? { files: { list: keepFiles(keep, files, io) } } : {});
 
   if (!exists(buildPy)) {
     return {
       checked: false, ok: null, problems: [],
-      why: `the builder is not at ${buildPy}, so nothing checked whether this draft builds, and no files were made from it. Everything else about the draft still stands, and this one thing is unknown rather than passed.`,
+      why: `the builder is not at ${buildPy}, so nothing checked whether this draft builds. Everything else about the draft still stands, and this one thing is unknown rather than passed.`,
       stood_in_for: [],
+      ...(container ? { container: true } : {}),
+      ...(named || container ? {} : { name_open: true }),
+      ...kept(),
     };
   }
-  const named = NAME_RE.test(trim(spec?.name));
-  const built = named ? spec : { ...spec, name: STAND_IN_NAME };
+  // The check builds under a stand-in name when the name is open; the files
+  // kept carry none.
+  const checked = named || container ? spec : { ...spec, name: STAND_IN_NAME };
+  const checkFiles = container ? null : (named ? files : agentFilesOf(checked));
   const dir = mk();
   try {
-    const { placed, climbing } = standIn(dir, built, io);
+    const { placed, climbing } = standIn(dir, checked, io, checkFiles);
     if (climbing.length) {
       return {
         checked: true, ok: false, stood_in_for: [],
         problems: climbing.map((rel) => `the spec names ${rel}, which climbs out of the package folder; a member is a path inside the spec's own folder`),
       };
     }
-    const r = run([buildPy, join(dir, DRAFT_FILE), join(dir, "out")], {});
+    const r = run([buildPy, container ? join(dir, DRAFT_FILE) : dir, join(dir, "out")], {});
     const said = builderSaid(r.stdout, r.stderr, r.status);
-    const result = { checked: true, ...said, stood_in_for: placed, ...(named ? {} : { name_stood_in: true }) };
-    // The files are taken only from a package the builder made. A container
-    // agent's draft is checked and makes none (its code is in its own
-    // repository): until container agents carry the two files (the plan's
-    // milestone 2), what a container deploy is filed with is the checked
-    // spec itself, so that is what goes, and it is marked here.
-    if (said.ok && said.said?.act === "checked" && said.said?.kind) result.container = true;
-    if (said.ok && keep && said.said?.path) {
-      result.files = { list: keepFiles(keep, agentFiles(built, said.said.path, { named, ...(io.read ? { read: io.read } : {}) }), io) };
-    }
-    return result;
+    return {
+      checked: true, ...said, stood_in_for: placed,
+      ...(container ? { container: true } : {}),
+      ...(named || container ? {} : { name_stood_in: true }),
+      ...(said.ok ? kept() : {}),
+    };
   } finally {
     try { drop(dir); } catch { /* a temp folder that will not go is not the caller's problem */ }
   }
@@ -236,7 +228,7 @@ export function verdict(result) {
     ? ` This checked the declaration and not the package: ${n} file${n === 1 ? " it names does" : "s it names do"} not exist yet, and ${n === 1 ? "an empty one was" : "empty ones were"} stood in so the builder could read the rest.`
     : "";
   const name = result.name_stood_in
-    ? " The name is still open, so it was built under a stand-in name, and the files carry no name until it is settled."
+    ? " The name is still open, so it was checked under a stand-in name, and the files carry no name until it is settled."
     : "";
   if (result.ok) return `The builder takes this draft.${caveat}${name}`;
   // The builder writes whole sentences and most of them end in a full stop.
@@ -253,9 +245,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   try {
     const spec = JSON.parse(readFileSync(DRAFT, "utf8"));
     mkdirSync(RECORDS, { recursive: true });
-    const result = checkBuilds({ spec, env: process.env, keep: join(RECORDS, "agent") });
     // Files from an earlier round of this job never stand for this draft.
-    if (!result.files) rmSync(join(RECORDS, "agent"), { recursive: true, force: true });
+    rmSync(join(RECORDS, "agent"), { recursive: true, force: true });
+    const result = checkBuilds({ spec, env: process.env, keep: join(RECORDS, "agent") });
     writeFileSync(join(RECORDS, "builds.json"), JSON.stringify({ builds: "v1", ...result }, null, 2) + "\n");
     console.log(JSON.stringify({ ok: result.ok !== false, code: result.ok === false ? 1 : 0, verdict: verdict(result), problems: result.problems,
       files: (result.files?.list ?? []).map((f) => f.path) }));

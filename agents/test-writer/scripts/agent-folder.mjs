@@ -35,7 +35,7 @@
 // This file is kept once, here, and copied into each agent that reads an
 // agent's files (test-writer/scripts, code-writer/scripts), because a package
 // carries its own scripts. test_folder.py holds every copy to this one.
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const EXT = "net.agentdoc.package";
@@ -45,6 +45,7 @@ export const MANIFEST_FILE = "plugin.json";
 const DESCRIPTOR_FORMAT = "agent-descriptor-v1";
 const RUNTIME_FORMATS = ["agent-runtime-requirements-v1", "agent-install-v1"];
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const first = (dir, names) => names.map((n) => join(dir, n)).find((p) => existsSync(p)) ?? null;
 const systemName = (s) => s?.name ?? s?.role;
 
@@ -94,33 +95,42 @@ export function readAgentFolder(dir) {
   };
 }
 
-/** The sections of a SKILL.md the builder writes from a job, by heading. Each
- *  is the text under its "## " heading up to the next one, trimmed. */
+/** The sections of a SKILL.md the builder writes from a job, by heading.
+ *
+ *  Read in the builder's order and nowhere else: "When to use this", then
+ *  "What a good result looks like", then "When it comes back empty", each
+ *  the first after the one before; "What this needs" and "What it produces"
+ *  only between those; "How to do it" the first after the empty case. So a
+ *  heading inside a job's own words is never taken for one of the builder's.
+ *  A job's instructions may carry "## " headings of their own, so "How to do
+ *  it" runs to the lists of files the builder writes after it (Scripts,
+ *  References, Assets), found from the end, and not to the next heading. */
 export function skillSections(text) {
-  const out = {};
-  let at = null;
-  let body = [];
-  const close = () => { if (at !== null) out[at] = body.join("\n").trim(); };
-  for (const line of String(text ?? "").replace(/\r/g, "").split("\n")) {
-    const m = /^## (.+?)\s*$/.exec(line);
-    if (m) { close(); at = m[1]; body = []; } else if (at !== null) body.push(line);
-  }
-  close();
-  // A job's instructions are its own markdown and may carry "## " headings
-  // of their own, so "How to do it" runs to the lists of files the builder
-  // writes after it (Scripts, References, Assets), and not to the next
-  // heading.
   const lines = String(text ?? "").replace(/\r/g, "").split("\n");
-  const start = lines.indexOf("## How to do it");
-  if (start >= 0) {
-    const TRAILER = /^(## (Scripts|References|Assets)|- (scripts|references|assets)\/.*|Run these from this skill's folder; each one says what it needs at the top\.|Templates and resources the scripts fill in; never edited by hand\.|)$/;
-    let end = lines.length;
-    for (let i = lines.length - 1; i > start; i--) {
-      if (!TRAILER.test(lines[i])) break;
-      if (/^## (Scripts|References|Assets)$/.test(lines[i])) end = i;
-    }
-    out["How to do it"] = lines.slice(start + 1, end).join("\n").trim();
+  const at = (h, from, before = lines.length) => {
+    const i = lines.indexOf(`## ${h}`, from);
+    return i >= 0 && i < before ? i : -1;
+  };
+  const when = at("When to use this", 0);
+  const good = at("What a good result looks like", when + 1);
+  const empty = good >= 0 ? at("When it comes back empty", good + 1) : -1;
+  const needs = when >= 0 && good >= 0 ? at("What this needs", when + 1, good) : -1;
+  const produces = good >= 0 && empty >= 0 ? at("What it produces", good + 1, empty) : -1;
+  const how = empty >= 0 ? at("How to do it", empty + 1) : -1;
+  const TRAILER = /^(## (Scripts|References|Assets)|- (scripts|references|assets)\/.*|Run these from this skill's folder; each one says what it needs at the top\.|Templates and resources the scripts fill in; never edited by hand\.|)$/;
+  const last = Math.max(when, good, empty, how);
+  let end = lines.length;
+  for (let i = lines.length - 1; i > last; i--) {
+    if (!TRAILER.test(lines[i])) break;
+    if (/^## (Scripts|References|Assets)$/.test(lines[i])) end = i;
   }
+  const starts = [["When to use this", when], ["What this needs", needs], ["What a good result looks like", good],
+    ["What it produces", produces], ["When it comes back empty", empty], ["How to do it", how]].filter(([, i]) => i >= 0);
+  const out = {};
+  starts.forEach(([h, i], n) => {
+    const stop = n + 1 < starts.length ? starts[n + 1][1] : end;
+    out[h] = lines.slice(i + 1, stop).join("\n").trim();
+  });
   return out;
 }
 
@@ -189,52 +199,95 @@ export function loadSpec(path) {
   return readJson(path);
 }
 
+/** The frontmatter of a SKILL.md, between its opening `---` and the next,
+ *  and the skill it names: exactly one unindented `name:` line. One rule,
+ *  kept the same in pack.py, so a file is a skill to every reader or to none. */
+export function skillSlugOf(text) {
+  const t = String(text ?? "").replace(/\r/g, "");
+  if (!t.startsWith("---\n")) return null;
+  const end = t.indexOf("\n---", 3);
+  if (end < 0) return null;
+  const names = t.slice(4, end).split("\n").filter((l) => l.startsWith("name:")).map((l) => l.slice(5).trim());
+  return names.length === 1 && /^[a-z][a-z0-9-]{1,62}$/.test(names[0]) ? names[0] : null;
+}
+
 /** What one file is, by its content: "descriptor", "runtime", "manifest",
  *  "skill" (with its slug), or null. */
 export function agentFileKind(text) {
   const t = String(text ?? "");
-  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(t);
-  if (fm) {
-    const names = fm[1].split(/\r?\n/).filter((l) => l.startsWith("name:")).map((l) => l.slice(5).trim());
-    if (names.length === 1 && /^[a-z][a-z0-9-]{1,62}$/.test(names[0])) return { kind: "skill", slug: names[0] };
-    return null;
+  if (/^---\r?\n/.test(t)) {
+    const slug = skillSlugOf(t);
+    return slug ? { kind: "skill", slug } : null;
   }
   let doc;
   try { doc = JSON.parse(t); } catch { return null; }
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
-  if (doc.format === DESCRIPTOR_FORMAT) return { kind: "descriptor" };
-  if (RUNTIME_FORMATS.includes(doc.format)) return { kind: "runtime" };
+  if (doc.format === DESCRIPTOR_FORMAT) return { kind: "descriptor", doc };
+  if (RUNTIME_FORMATS.includes(doc.format)) return { kind: "runtime", doc };
   const ext = doc.extensions;
-  if (ext && typeof ext === "object" && (EXT in ext || /agent-plugins\.org/.test(String(doc.$schema ?? "")))) return { kind: "manifest" };
+  if (ext && typeof ext === "object" && (EXT in ext || /agent-plugins\.org/.test(String(doc.$schema ?? "")))) return { kind: "manifest", doc };
   return null;
 }
 
-/** An agent's own files among the ones a message carried, found by content:
- *  {descriptor, runtime, manifest, skills: {slug: path}, used: [paths]}, or
- *  null unless the descriptor, the runtime requirements and the manifest are
- *  all there. A job manifest is JSON too and is skipped by name. When two
- *  files claim the same place, the later one wins, the way a later piece of
- *  the same name replaces an earlier one. */
+/** One agent's own files among entries ({key, text}, in the order they
+ *  came), or null unless a manifest, a descriptor and runtime requirements
+ *  are all there. Returns {manifest, descriptor, runtime, skills: {slug:
+ *  key}, used: [keys]}.
+ *
+ *  Several files can look like an agent's: two rounds of the spec writer's
+ *  pieces in one message, or a prototype that is itself a package. So the
+ *  manifest is chosen first (the last one carrying the builder's entry, else
+ *  the last), then the descriptor whose agent_version is the manifest's
+ *  version (else the last), then the last runtime requirements, and only the
+ *  skills the chosen manifest's build entry names (or, with no build entry,
+ *  the descriptor's offerings and steps), the later of two for one skill.
+ *  Everything else is left where it was, an ordinary attachment. */
+export function agentFilesAmongTexts(entries) {
+  const of = { manifest: [], descriptor: [], runtime: [] };
+  const skills = [];
+  for (const { key, text } of entries ?? []) {
+    const k = agentFileKind(text);
+    if (!k) continue;
+    if (k.kind === "skill") skills.push({ key, slug: k.slug });
+    else of[k.kind].push({ key, doc: k.doc });
+  }
+  const lastOf = (xs, ok = () => true) => [...xs].reverse().find(ok) ?? null;
+  const manifest = lastOf(of.manifest, (m) => isObj(m.doc.extensions?.[EXT]?.build)) ?? lastOf(of.manifest);
+  if (!manifest) return null;
+  const version = manifest.doc.version;
+  const descriptor = (version !== undefined && lastOf(of.descriptor, (d) => String(d.doc.agent_version) === String(version)))
+    || lastOf(of.descriptor);
+  const runtime = lastOf(of.runtime);
+  if (!descriptor || !runtime) return null;
+  const build = manifest.doc.extensions?.[EXT]?.build;
+  const wanted = new Set(isObj(build?.skills)
+    ? Object.keys(build.skills)
+    : (descriptor.doc.offerings ?? []).flatMap((o) => [o?.id, ...(o?.steps ?? []).map((s) => s?.id)]).filter(Boolean));
+  const chosen = {};
+  for (const s of skills) if (wanted.has(s.slug)) chosen[s.slug] = s.key;
+  return {
+    manifest: manifest.key, descriptor: descriptor.key, runtime: runtime.key, skills: chosen,
+    used: [descriptor.key, runtime.key, manifest.key, ...Object.values(chosen)],
+  };
+}
+
+/** The same, among files by path: a job manifest is JSON too and is skipped
+ *  by name. */
 export function agentFilesAmong(files, read = (p) => readFileSync(p, "utf8")) {
-  const found = { skills: {} };
+  const entries = [];
   for (const f of files ?? []) {
     const path = typeof f === "string" ? f : f?.path;
     if (!path || /job-manifest\.json$/.test(path)) continue;
-    let text;
-    try { text = read(path); } catch { continue; }
-    const k = agentFileKind(text);
-    if (!k) continue;
-    if (k.kind === "skill") found.skills[k.slug] = path;
-    else found[k.kind] = path;
+    try { entries.push({ key: path, text: read(path) }); } catch { /* unreadable is not one of them */ }
   }
-  if (!found.descriptor || !found.runtime || !found.manifest) return null;
-  found.used = [found.descriptor, found.runtime, found.manifest, ...Object.values(found.skills)];
-  return found;
+  return agentFilesAmongTexts(entries);
 }
 
 /** Put the files agentFilesAmong found back into the layout under dir, by
- *  their bytes. Returns dir. */
+ *  their bytes, into a folder emptied first so a skill from an earlier job
+ *  cannot ride along. Returns dir. */
 export function layOutAgentFiles(found, dir, readBytes = (p) => readFileSync(p)) {
+  rmSync(dir, { recursive: true, force: true });
   const put = (rel, from) => {
     const at = join(dir, rel);
     mkdirSync(dirname(at), { recursive: true });

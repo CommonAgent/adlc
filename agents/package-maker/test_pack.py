@@ -509,6 +509,44 @@ class TheAgentsOwnFilesARunHandedOver(APackageBuiltFromWhatARunHandedOver):
         self.assertIn("scripts/pieces.mjs", res["refused"])
         self.assertEqual(self.dist(), [])
 
+
+class TheAgentsFilesThatGoTogether(unittest.TestCase):
+    """Of two rounds of the spec writer's pieces in one message, or with a
+    prototype that is itself a package, the files that go together are taken
+    and the rest stay ordinary attachments: the same choice as
+    agent-folder.mjs's agentFilesAmongTexts."""
+
+    def test_the_manifest_is_chosen_first_and_only_the_skills_it_names(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("pack_under_test", PACK)
+        pack = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pack)
+        d = tempfile.mkdtemp(prefix="pack-among-")
+        try:
+            def put(name, obj):
+                path = os.path.join(d, name)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(obj if isinstance(obj, str) else json.dumps(obj))
+                return path
+            man = lambda v, skills: {"version": v, "extensions": {"net.agentdoc.package": {"build": {"skills": skills}}}}  # noqa: E731
+            desc = lambda v: {"format": "agent-descriptor-v1", "agent_version": v, "offerings": [{"id": "ab"}]}  # noqa: E731
+            files = [put("0-r1-desc.json", desc("0.1.0")), put("1-r1-man.json", man("0.1.0", {"ab": {}, "old": {}})),
+                     put("2-r1-old.md", "---\nname: old\ndescription: x\n---\n"),
+                     put("3-r2-desc.json", desc("0.2.0")), put("4-r2-rt.json", {"format": "agent-runtime-requirements-v1"}),
+                     put("5-r2-man.json", man("0.2.0", {"ab": {}})), put("6-r2-ab.md", "---\nname: ab\ndescription: x\n---\n"),
+                     put("7-proto-plugin.json", {"name": "theirs", "extensions": {"net.agentdoc.package": {"descriptor": {}}}}),
+                     put("8-two-names.md", "---\nname: ab\nname: cd\ndescription: x\n---\n")]
+            got = pack.agent_files_among(files)
+            self.assertTrue(got["manifest"].endswith("5-r2-man.json"))
+            self.assertTrue(got["descriptor"].endswith("3-r2-desc.json"))
+            self.assertEqual({k: os.path.basename(v) for k, v in got["skills"].items()}, {"ab": "6-r2-ab.md"})
+            self.assertNotIn(files[7], got["used"])
+            self.assertIsNone(pack.skill_slug_of("---\nname: ab\nname: cd\n---\n"), "two names is no skill, as in agent-folder.mjs")
+            self.assertIsNone(pack.skill_slug_of("---\n  name: ab\n---\n"), "an indented name is not the skill's")
+            self.assertEqual(pack.skill_slug_of("---\ndescription: x\nname: ab\n---\n"), "ab")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
 class WhereTheSourceWasRead(Harness):
     """The build record's `source` (Common Agent 8.2, 0.17.0-draft): the
     repository and commit the builder read, when it read a clean checkout.

@@ -30,3 +30,4 @@ asked.mjs writes records/<job>/asked.json: the request as it arrived and never t
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/asked.mjs
+- scripts/agent-folder.mjs

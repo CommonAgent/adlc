@@ -225,17 +225,31 @@ def lay_out(spec_path, files):
 
 AGENT_DESCRIPTOR_FORMAT = "agent-descriptor-v1"
 AGENT_RUNTIME_FORMATS = ("agent-runtime-requirements-v1", "agent-install-v1")
-SKILL_NAME_RE = re.compile(r"^---\r?\n(?:[^\n]*\n)*?name:\s*([a-z][a-z0-9-]{1,62})\s*\r?\n")
+SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
+
+
+def skill_slug_of(text):
+    """The skill a SKILL.md names: exactly one unindented `name:` line inside
+    the frontmatter, between the opening `---` and the next. The same rule as
+    agent-folder.mjs's skillSlugOf, so a file is a skill to every reader or
+    to none."""
+    t = text.replace("\r", "")
+    if not t.startswith("---\n"):
+        return None
+    end = t.find("\n---", 3)
+    if end < 0:
+        return None
+    names = [ln[5:].strip() for ln in t[4:end].split("\n") if ln.startswith("name:")]
+    return names[0] if len(names) == 1 and SLUG_RE.match(names[0]) else None
 
 
 def agent_file_kind(text):
-    """What one attached file is, by its content: ("descriptor",),
-    ("runtime",), ("manifest",), ("skill", slug), or None. Told apart by
-    content, never by name, for the reason spec_among gives."""
+    """What one attached file is, by its content: ("descriptor", doc),
+    ("runtime", doc), ("manifest", doc), ("skill", slug), or None. Told apart
+    by content, never by name, for the reason spec_among gives."""
     if text.startswith("---"):
-        end = text.find("\n---", 3)
-        m = SKILL_NAME_RE.match(text[:end + 1] if end > 0 else "")
-        return ("skill", m.group(1)) if m else None
+        slug = skill_slug_of(text)
+        return ("skill", slug) if slug else None
     try:
         doc = json.loads(text)
     except Exception:  # noqa: BLE001
@@ -243,22 +257,27 @@ def agent_file_kind(text):
     if not isinstance(doc, dict):
         return None
     if doc.get("format") == AGENT_DESCRIPTOR_FORMAT:
-        return ("descriptor",)
+        return ("descriptor", doc)
     if doc.get("format") in AGENT_RUNTIME_FORMATS:
-        return ("runtime",)
+        return ("runtime", doc)
     ext = doc.get("extensions")
     if isinstance(ext, dict) and ("net.agentdoc.package" in ext or "agent-plugins.org" in str(doc.get("$schema", ""))):
-        return ("manifest",)
+        return ("manifest", doc)
     return None
 
 
 def agent_files_among(files):
-    """The agent's own files among the attachments: the descriptor, the
-    runtime requirements, the manifest and each skill's SKILL.md, or None
-    unless the first three are all there. A job manifest is skipped by name,
-    as in spec_among. Where two files claim one place the later wins, the way
-    a later piece of the same name replaces an earlier one."""
-    found = {"skills": {}}
+    """One agent's own files among the attachments, or None unless a
+    manifest, a descriptor and runtime requirements are all there. The same
+    choice as agent-folder.mjs's agentFilesAmongTexts: the manifest first
+    (the last carrying the builder's entry, else the last), then the
+    descriptor whose agent_version is its version (else the last), the last
+    runtime requirements, and only the skills the manifest's build entry
+    names (or the descriptor's offerings and steps), the later of two for one
+    skill. Everything else is an ordinary attachment, laid out where the
+    agent's files name it. A job manifest is skipped by name."""
+    of = {"manifest": [], "descriptor": [], "runtime": []}
+    skills = []
     for path in files:
         if sent_name(path) == MANIFEST_NAME:
             continue
@@ -271,12 +290,41 @@ def agent_files_among(files):
         if not k:
             continue
         if k[0] == "skill":
-            found["skills"][k[1]] = path
+            skills.append((path, k[1]))
         else:
-            found[k[0]] = path
-    if not all(found.get(k) for k in ("descriptor", "runtime", "manifest")):
+            of[k[0]].append((path, k[1]))
+
+    def last(xs, ok=lambda x: True):
+        return next((x for x in reversed(xs) if ok(x)), None)
+
+    def build_of(doc):
+        b = ((doc.get("extensions") or {}).get("net.agentdoc.package") or {}).get("build")
+        return b if isinstance(b, dict) else None
+
+    manifest = last(of["manifest"], lambda m: build_of(m[1]) is not None) or last(of["manifest"])
+    if not manifest:
         return None
-    found["used"] = [found["descriptor"], found["runtime"], found["manifest"], *found["skills"].values()]
+    version = manifest[1].get("version")
+    descriptor = (last(of["descriptor"], lambda d: version is not None and str(d[1].get("agent_version")) == str(version))
+                  or last(of["descriptor"]))
+    runtime = last(of["runtime"])
+    if not (descriptor and runtime):
+        return None
+    build = build_of(manifest[1]) or {}
+    if isinstance(build.get("skills"), dict):
+        wanted = set(build["skills"])
+    else:
+        wanted = set()
+        for o in descriptor[1].get("offerings") or []:
+            if isinstance(o, dict):
+                wanted.add(o.get("id"))
+                wanted.update(s.get("id") for s in o.get("steps") or [] if isinstance(s, dict))
+    chosen = {}
+    for path, slug in skills:
+        if slug in wanted:
+            chosen[slug] = path
+    found = {"manifest": manifest[0], "descriptor": descriptor[0], "runtime": runtime[0], "skills": chosen}
+    found["used"] = [found["descriptor"], found["runtime"], found["manifest"], *chosen.values()]
     return found
 
 

@@ -14,6 +14,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { agentFilesAmong, layOutAgentFiles, skillSlugOf, specOfFolder } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -66,7 +67,7 @@ export function looksLikeAgentFile(doc) {
   const ext = doc.extensions;
   return Boolean(ext && typeof ext === "object" && "net.agentdoc.package" in ext);
 }
-export const looksLikeSkill = (text) => /^---\r?\nname:\s*[a-z][a-z0-9-]+\s*\r?\n/.test(String(text ?? ""));
+export const looksLikeSkill = (text) => skillSlugOf(text) !== null;
 
 const SCRIPT_EXT = new Set([".mjs", ".js", ".cjs", ".ts", ".py", ".sh", ".bash"]);
 const DOC_EXT = new Set([".md", ".markdown", ".txt", ".rst", ".pdf"]);
@@ -290,6 +291,20 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const files = parseFiles(FILES);
     let reading = readingOf({ text, files });
     mkdirSync(RECORDS, { recursive: true });
+    // The agent's own files sent back are read as the spec they state, the
+    // way the builder reads a folder, so a revision starts from exactly what
+    // was delivered (and any change made to it) and not from a model's
+    // reading of the files.
+    if (reading.revision && !reading.spec_attached.length && reading.files_attached.length) {
+      const found = agentFilesAmong(files.map((f) => f.path));
+      if (found) {
+        const back = layOutAgentFiles(found, join(RECORDS, "sent-back"));
+        const at = join(RECORDS, "sent-back.json");
+        writeFileSync(at, JSON.stringify(specOfFolder(back), null, 2) + "\n");
+        reading = readingOf({ text, files: [...files, { path: at, media_type: "application/json" }] });
+        reading.revision.draft_from = "the attached files";
+      }
+    }
     // A revision with no draft attached takes the newest draft an earlier
     // job of this agent wrote; the harness used to be asked to find it and
     // did not. Still none, and this step stops before any model is woken.

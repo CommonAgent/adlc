@@ -106,3 +106,29 @@ test("as a process, declared.mjs reads the agent's folder", () => {
     assert.equal(d.name, "publisher");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("of two rounds, or a package that came as a prototype, the files that go together are chosen, and the rest stay attachments", async () => {
+  const { agentFilesAmongTexts, skillSections } = await import("../scripts/agent-folder.mjs");
+  const manifest = (version, skills) => JSON.stringify({ version, extensions: { "net.agentdoc.package": { build: { skills } } } });
+  const desc = (v) => JSON.stringify({ format: "agent-descriptor-v1", agent_version: v, offerings: [{ id: "ab" }] });
+  const rt = JSON.stringify({ format: "agent-runtime-requirements-v1" });
+  const skill = (slug) => `---\nname: ${slug}\ndescription: x\n---\n`;
+  const proto = JSON.stringify({ name: "theirs", version: "9.0.0", extensions: { "net.agentdoc.package": { descriptor: {} } } });
+  const entries = [
+    { key: "r1-desc", text: desc("0.1.0") }, { key: "r1-man", text: manifest("0.1.0", { ab: {}, old: {} }) }, { key: "r1-old", text: skill("old") },
+    { key: "r2-desc", text: desc("0.2.0") }, { key: "r2-rt", text: rt }, { key: "r2-man", text: manifest("0.2.0", { ab: {} }) }, { key: "r2-ab", text: skill("ab") },
+    { key: "proto-plugin", text: proto }, { key: "proto-skill", text: skill("theirs-skill") },
+  ];
+  const got = agentFilesAmongTexts(entries);
+  assert.equal(got.manifest, "r2-man", "the prototype's plugin.json, with no build entry, was taken for the agent's");
+  assert.equal(got.descriptor, "r2-desc");
+  assert.deepEqual(got.skills, { ab: "r2-ab" }, "a skill the chosen manifest does not name rode along");
+  assert.ok(!got.used.includes("proto-plugin") && !got.used.includes("proto-skill") && !got.used.includes("r1-old"));
+  // A heading inside a job's own instructions is not taken for one of the builder's.
+  const md = ["---", "name: ab", "description: w", "---", "", "# Ab", "", "Part of x. w", "", "## When to use this", "", "w", "",
+    "## What a good result looks like", "", "g", "", "## When it comes back empty", "", "e", "", "## How to do it", "",
+    "Step one.", "", "## When to use this", "", "not the when", "", "## Scripts", "", "Run these from this skill's folder; each one says what it needs at the top.", "", "- scripts/a.mjs", ""].join("\n");
+  const s = skillSections(md);
+  assert.equal(s["When to use this"], "w");
+  assert.equal(s["How to do it"], "Step one.\n\n## When to use this\n\nnot the when");
+});

@@ -290,3 +290,29 @@ test("the agent's own files, sent back with answers, are a revision of the draft
   assert.match(NO_DRAFT_TO_REVISE, /Attach the draft's files/);
   assert.doesNotMatch(NO_DRAFT_TO_REVISE, /spec\.json/);
 });
+
+test("run as the harness runs it, the agent's files sent back are read as the spec they state, and that is the draft revised", async () => {
+  const { mkdtempSync, mkdirSync, copyFileSync, readFileSync: read, readdirSync, rmSync: rm, writeFileSync: write } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { specOfFolder } = await import("../../package-maker/agent-folder.mjs");
+  const pub = pjoin(dirname(fileURLToPath(import.meta.url)), "..", "..", "publisher");
+  const dir = mkdtempSync(pjoin(tmpdir(), "spec-writer-sent-back-"));
+  try {
+    const att = pjoin(dir, "att"); mkdirSync(att);
+    const files = [];
+    const put = (rel, sent) => { const p = pjoin(att, `${files.length}-Ab12cdEF-${sent}`); copyFileSync(pjoin(pub, rel), p); files.push(p); };
+    put("agent-descriptor.json", "agent-descriptor.json");
+    put("agent-runtime-requirements.json", "agent-runtime-requirements.json");
+    put("plugin.json", "plugin.json");
+    for (const slug of readdirSync(pjoin(pub, "skills"))) put(pjoin("skills", slug, "SKILL.md"), `${slug}.SKILL.md`);
+    const records = pjoin(dir, "records", "job-2"); const job = pjoin(dir, "job"); mkdirSync(job, { recursive: true });
+    const textFile = pjoin(dir, "message.txt"); write(textFile, "answer: price: free\n");
+    const r = spawnSync(process.execPath, [ASKED_SCRIPT], { encoding: "utf8",
+      env: { ...process.env, JOB_DIR: job, RECORDS: records, TEXT_FILE: textFile, FILES: files.join(",") } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const asked = JSON.parse(read(pjoin(records, "asked.json"), "utf8"));
+    assert.deepEqual(asked.spec_attached, ["sent-back.json"]);
+    assert.equal(asked.revision.draft_from, "the attached files");
+    assert.deepEqual(JSON.parse(read(pjoin(records, "sent-back.json"), "utf8")), specOfFolder(pub));
+  } finally { rm(dir, { recursive: true, force: true }); }
+});

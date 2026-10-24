@@ -31,7 +31,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative } from "node:path";
-import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, agentFileKind, specOfFolder } from "./agent-folder.mjs";
+import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, agentFilesAmongTexts, specOfFolder } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 export const digestOf = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -303,17 +303,19 @@ export function specOfAgent(agent, scratch) {
 
 /** The agent's own files among texts, by content: {descriptor, runtime,
  *  manifest, skills, used} with each a text, or null unless the three
- *  authored files are all there. */
+ *  authored files are all there. Chosen the way agent-folder.mjs chooses
+ *  them (the manifest first, then the descriptor and runtime requirements
+ *  that go with it, and only the skills it names), so a prototype that is
+ *  itself a package stays the prototype. */
 export function agentAmong(got) {
-  const found = { skills: {}, used: [] };
-  for (const f of got) {
-    const k = agentFileKind(f.text);
-    if (!k) continue;
-    if (k.kind === "skill") found.skills[k.slug] = f.text;
-    else found[k.kind] = f.text;
-    found.used.push(f);
-  }
-  return found.descriptor && found.runtime && found.manifest ? found : null;
+  const found = agentFilesAmongTexts(got.map((f, i) => ({ key: i, text: f.text })));
+  if (!found) return null;
+  const t = (i) => got[i].text;
+  return {
+    descriptor: t(found.descriptor), runtime: t(found.runtime), manifest: t(found.manifest),
+    skills: Object.fromEntries(Object.entries(found.skills).map(([slug, i]) => [slug, t(i)])),
+    used: found.used.map((i) => got[i]),
+  };
 }
 
 /** Sort the attached files by what is in them, never by their names: the
@@ -382,7 +384,10 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
         if (existsSync(join(SPEC, "skills"))) for (const slug of readdirSync(join(SPEC, "skills")).sort()) {
           if (existsSync(join(SPEC, "skills", slug, "SKILL.md"))) skills[slug] = read(join("skills", slug, "SKILL.md"));
         }
-        agent = { descriptor: read(DESCRIPTOR_FILE), runtime: read(RUNTIME_FILE), manifest: read(MANIFEST_FILE), skills };
+        // The names before Common Agent 0.30.0-draft are read where the
+        // current ones are absent.
+        const either = (now, old) => (existsSync(join(SPEC, now)) ? now : old);
+        agent = { descriptor: read(either(DESCRIPTOR_FILE, "descriptor.json")), runtime: read(either(RUNTIME_FILE, "install.json")), manifest: read(MANIFEST_FILE), skills };
       } else specText = readFileSync(SPEC, "utf8");
       testDir = join(SUITE, "test");
       // Everything under test/, helpers and fixtures included; the runner's

@@ -162,7 +162,7 @@ test("the temp folder goes, even when the builder throws", () => {
 import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { NOT_NAMED, STAND_IN_NAME, agentFiles } from "../scripts/builds.mjs";
+import { NOT_NAMED, STAND_IN_NAME } from "../scripts/builds.mjs";
 
 const walk = (dir, at = "") => readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) =>
   e.isDirectory() ? walk(dir, join(at, e.name)) : [join(at, e.name).replace(/\\/g, "/")]).sort();
@@ -208,7 +208,7 @@ test("the files the builder takes come back as the agent's own files, and they b
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("a draft whose name is open is built under a stand-in name, and its files carry no name", () => {
+test("a draft whose name is open is checked under a stand-in name, and its files carry no name", () => {
   const dir = mkdtempSync(join(tmpdir(), "spec-writer-unnamed-"));
   try {
     const unnamed = clone(PUBLISHER);
@@ -217,7 +217,7 @@ test("a draft whose name is open is built under a stand-in name, and its files c
     const r = checkBuilds({ spec: unnamed, env, keep });
     assert.equal(r.ok, true, JSON.stringify(r.problems));
     assert.equal(r.name_stood_in, true);
-    assert.match(verdict(r), /name is still open, so it was built under a stand-in name/);
+    assert.match(verdict(r), /name is still open, so it was checked under a stand-in name/);
     const manifest = JSON.parse(readFileSync(join(keep, "plugin.json"), "utf8"));
     assert.equal("name" in manifest, false, "the stand-in name was handed on");
     for (const j of unnamed.jobs) {
@@ -242,17 +242,4 @@ test("a draft the builder refuses keeps no files", () => {
     assert.equal(r.files, undefined);
     assert.equal(existsSync(join(dir, "agent")), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("agentFiles takes the build entry from the draft's jobs, and kind, container and claims when said", () => {
-  const read = (p) => {
-    const n = p.replace(/\\/g, "/").split("/").slice(-1)[0];
-    if (n === "plugin.json") return JSON.stringify({ name: "x", extensions: { "net.agentdoc.package": { descriptor: {}, runtime_requirements: {}, built: true, draft: true, from: [{ name: "y" }] } } });
-    return n === "SKILL.md" ? `---\nname: a\n---\nPart of ${STAND_IN_NAME}. when` : "{}";
-  };
-  const files = agentFiles({ kind: "plugin-on-harness", jobs: [{ slug: "a", scripts: ["s/a.mjs"], references: [] }] }, "/pkg", { named: false, read });
-  const m = JSON.parse(files["plugin.json"]);
-  assert.equal("name" in m, false);
-  assert.deepEqual(m.extensions["net.agentdoc.package"], { from: [{ name: "y" }], build: { kind: "plugin-on-harness", skills: { a: { scripts: ["s/a.mjs"] } } } });
-  assert.match(files["skills/a/SKILL.md"], /Part of an agent not named yet\. when/);
 });

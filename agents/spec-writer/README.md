@@ -24,8 +24,10 @@ will not build is caught here, and no files are delivered for it.
   Claude on Google Vertex AI. A bare model name is a Gemini model.
 - Python 3 and the package maker's `build.py` on the host to check each draft.
   It looks for `/opt/fleet/agentbuilder-build.py`; set `BUILD_PY` to point it
-  at `../package-maker/build.py` or your own builder. Without one no files
-  are made, and the reply says the build check did not run.
+  at `../package-maker/build.py` or your own builder. Without one the files
+  still go out, written by `scripts/files.mjs` (the builder's own projection,
+  held to it byte for byte by `test/files.test.mjs`), and the reply says the
+  build check did not run.
 
 ## Running it
 
@@ -35,7 +37,7 @@ instructions are in `skills/<slug>/SKILL.md`, the scripts are in `scripts/`, and
 works under are in `rules.md` and `references/`.
 
 ```sh
-node --test test/*.test.mjs                                   # 105 tests
+node --test test/*.test.mjs                                   # 115 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
