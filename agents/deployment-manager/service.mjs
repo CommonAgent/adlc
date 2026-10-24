@@ -206,10 +206,12 @@ export const TENANT_AGENT_TAG = "tenant-agent";
  *  record, which says this producer did not observe the egress, rather than
  *  guessing at it either way. */
 export const EGRESS_OPEN = Object.freeze({ policy: "open", enforced_by: "none" });
-const EGRESS_FROM = new Set(["system", "network", "registrar", "model", "workspace", "instruction", "host"]);
 
 export function tenantEgress(text) {
   if (!text) return null;
+  // Built here and not at module level: SETTINGS calls this while the module
+  // is still loading, before a later const would exist.
+  const from = new Set(["system", "network", "registrar", "model", "workspace", "instruction", "host"]);
   let d;
   try { d = JSON.parse(text); } catch { return null; }
   if (!d || typeof d !== "object" || Array.isArray(d)) return null;
@@ -221,7 +223,7 @@ export function tenantEgress(text) {
   if (d.policy !== "allowlist" || d.enforced_by === "none" || !Array.isArray(d.allowed) || !d.allowed.length) return null;
   const allowed = [];
   for (const a of d.allowed) {
-    if (!a || !str(a.name) || !EGRESS_FROM.has(a.from) || (a.address !== undefined && !str(a.address))) return null;
+    if (!a || !str(a.name) || !from.has(a.from) || (a.address !== undefined && !str(a.address))) return null;
     allowed.push({ name: a.name, from: a.from, ...(a.address ? { address: a.address } : {}) });
   }
   return { policy: "allowlist", allowed, ...(denied?.length ? { denied: [...denied] } : {}), enforced_by: d.enforced_by };

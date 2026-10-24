@@ -207,3 +207,28 @@ test("the tenant network's egress is recorded as the host describes it, and neve
   assert.deepEqual(egressOf({ tenant: null, egress: TENANT.egress }), { policy: "open", enforced_by: "none" });
   assert.equal(TENANT.egress.policy, "allowlist");
 });
+
+test("a host whose tenant file carries the egress description loads it when the module loads", async () => {
+  // SETTINGS reads the tenant file while service.mjs is still loading, so the
+  // parser must not lean on anything declared later in the module.
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { execFileSync } = await import("node:child_process");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const root = join(here, "..", "..", "..");
+  const rendered = execFileSync(process.execPath, [join(root, "env", "render.mjs"), join(here, "..", "host", "deploymgr-tenant.json.tmpl")],
+    { env: { ...process.env, AGENTMESH_ENV: "example" }, encoding: "utf8" });
+  const dir = mkdtempSync(join(tmpdir(), "dm-tenant-"));
+  try {
+    writeFileSync(join(dir, "deploymgr-tenant.json"), rendered);
+    const service = join(here, "..", "service.mjs").replace(/\\/g, "/");
+    const out = execFileSync(process.execPath, ["--input-type=module", "-e",
+      `const m = await import("file:///${service.replace(/^\//, "")}"); console.log(JSON.stringify(m.SETTINGS.tenant.egress));`],
+      { env: { ...process.env, AGENTMESH_ENV: "example", DM_FLEET: dir }, encoding: "utf8" });
+    const egress = JSON.parse(out.trim().split("\n").pop());
+    assert.equal(egress.policy, "allowlist");
+    assert.ok(egress.allowed.some((a) => a.from === "host" && a.address === "169.254.169.254"), "the metadata server is listed");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -1318,11 +1318,6 @@ class TheCustomerIsOwedTheList(unittest.TestCase):
                             "egress": dict(steps.EGRESS_OPEN)}, None, "UDM")
         self.assertEqual(upd["egress"]["policy"], "open")
 
-    def test_nothing_this_file_makes_limits_egress_so_it_says_open(self):
-        # A host user under the supervisor and a Cloud Run job with no VPC
-        # setting both reach whatever the host or Google's path reaches.
-        self.assertEqual(steps.EGRESS_OPEN, {"policy": "open", "enforced_by": "none"})
-
     def test_a_refusal_in_their_project_is_recorded_with_the_list_too(self):
         res = {"ok": False, "step": "job", "error": "impersonation refused",
                "cloud": {"provider": "gcp", "project": THEIRS, "service_account": THEIR_ACCOUNT,
@@ -1973,6 +1968,8 @@ class TheUpdateItselfCarriesThemToTheJob(unittest.TestCase):
                 mock.patch.object(steps, "write_text", write_text), \
                 mock.patch.object(steps, "record_runtime", return_value={"recorded": False}):
             r = steps.container_step(args, count_against_ceiling=False)
+        # A Cloud Run job with no VPC setting: nothing limits what it reaches.
+        self.assertEqual(r["egress"], {"policy": "open", "enforced_by": "none"})
         upd = next(c for c in gcloud_calls(seen) if c[1:4] == ["run", "jobs", "update"])
         self.assertIn("MESH_API_TOKEN=process-runner-publish-token:latest",
                       next(a for a in upd if a.startswith("--set-secrets=")))
@@ -2711,6 +2708,7 @@ class APlacedVersionJoinsTheRowAndTheAdaptersRecord(unittest.TestCase):
             doc = steps.alongside_placed("reader", "0.3.2", ALONG_ROW, self.spec, "example-agent-state",
                                          "reader--v0-3-2", {"passed": True}, self.f)
         self.assertEqual(doc["act"], "alongside")
+        self.assertEqual(doc["egress"], {"policy": "open", "enforced_by": "none"})
         self.assertEqual(doc["current_version"], "0.4.0")
         self.assertEqual(doc["job"], "reader-v0-3-2-worker")
         self.assertEqual(doc["agent_key"], "U" + "B" * 55, "the same subject; nothing was minted")
