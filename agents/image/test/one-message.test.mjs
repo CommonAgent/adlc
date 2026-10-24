@@ -30,7 +30,7 @@ import {
   STORAGE_TRANSIENT,
 } from "../one-message.mjs";
 import { pathToFileURL } from "node:url";
-import { builtPackage, here, installedHome, messageAndJob, readJson, runEntrypoint, tmp, writeJson } from "./helpers.mjs";
+import { authoredName, builtPackage, here, installOf, installedHome, messageAndJob, readJson, runEntrypoint, tmp, writeJson } from "./helpers.mjs";
 
 const fakeCommand = join(here, "fake-command.mjs");
 const fakeHarness = join(here, "fake-harness.mjs");
@@ -444,7 +444,7 @@ const FILLED = {
 const CEILINGS = { "text-reasoning": { limit: 40 }, "text-to-speech": { limit: 20000 } };
 
 test("a container missing what the binding fills refuses before any work runs, and names no value", () => {
-  const install = readJson(join(builtPackage("explainer-maker"), "install.json"));
+  const install = installOf(builtPackage("explainer-maker"));
   const missing = missingBindings(install, {}, {});
   assert.ok(missing.some((m) => m.includes("TTS_API_KEY") && m.includes("fleet-gemini-api-key")));
   assert.ok(missing.some((m) => m.includes("TEXT_API_KEY") && m.includes("text-reasoning-key")));
@@ -463,7 +463,7 @@ test("a container missing what the binding fills refuses before any work runs, a
 test("an mcp role is bound by what the platform mounts, and an unbound one stops the message", () => {
   // The one binding that can be neither a variable in a layer nor a line in a
   // package: an address. It arrives mounted, per container, like the ceilings.
-  const install = readJson(join(builtPackage("explainer-maker"), "install.json"));
+  const install = installOf(builtPackage("explainer-maker"));
   // `name`, with `role` read as the alias it is for one revision: the member
   // that says which system an entry is bound to was renamed in Common Agent
   // 0.16.0-draft, and matching on `role` alone matched nothing, so this test
@@ -518,7 +518,7 @@ test("the prompt and the instructions name the job folder the environment gave, 
   const prompt = promptFor({ id: "m-29", handle: "someone", text: "make one" }, where);
   assert.ok(prompt.includes("job folder: /mnt/jobs/whatever-the-platform-chose"));
   assert.ok(prompt.includes("MESH_JOB_DIR"), "the variable is named as the one to prefer");
-  const descriptor = readJson(join(home, packageName, "descriptor.json"));
+  const descriptor = readJson(join(home, packageName, authoredName(join(home, packageName), "descriptor")));
   const text = instructionsText({ descriptor, install }, where, { CEILING_TEXT_TO_SPEECH: "20000" });
   assert.match(text, /Every delivered piece goes under the job folder in MESH_JOB_DIR/);
   assert.match(text, /text-to-speech: 20000 characters per task\. This is binding\./);
@@ -636,4 +636,17 @@ test("a failure line reaches the container's log at ERROR severity, as one JSON 
   assert.equal(line.severity, "ERROR");
   assert.equal(line.message, "[one-message] the job's usage could not be written: disk full");
   assert.equal(line.component, "one-message");
+});
+
+// Common Agent 0.30.0-draft renamed the two authored files; a container reads
+// a package under either set of names, the current one first.
+test("the package in the image is read under its current names or its former ones", async () => {
+  const { readInstalled } = await import("../one-message.mjs");
+  const { renamedPackage } = await import("./helpers.mjs");
+  const current = readInstalled({ packageHome: renamedPackage("process-runner", true) });
+  const former = readInstalled({ packageHome: renamedPackage("process-runner", false) });
+  assert.equal(current.install.format, "agent-runtime-requirements-v1");
+  assert.equal(former.install.format, "agent-install-v1");
+  assert.deepEqual(current.descriptor, former.descriptor);
+  assert.deepEqual({ ...current.install, format: null }, { ...former.install, format: null });
 });

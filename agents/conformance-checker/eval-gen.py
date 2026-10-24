@@ -10,7 +10,8 @@ matching the family rule that form is enforced and quality is not.
 The eval derives from the package's own declarations, so it cannot drift out
 of sync with the agent it tests. Every case names the declaration it came from.
 
-The declarations are read from descriptor.json, the one authored spelling of
+The declarations are read from agent-descriptor.json (descriptor.json in a
+package from before Common Agent 0.30.0-draft), the one authored spelling of
 the caller-facing facts (docs/agent-package-draft.md), where refusals are
 prose with one sentence per line, `escalates` lists what goes to a person,
 and `records` names each record with an optional file pattern the audit can
@@ -27,6 +28,8 @@ import sys
 
 EXT = "net.agentdoc.package"
 OLD_EXT = "com.agentcatalog.agent"
+# The draft Descriptor under its name, then its name before 0.30.0-draft.
+DESCRIPTOR_FILES = ("agent-descriptor.json", "descriptor.json")
 
 
 def probe_for_refusal(text):
@@ -70,7 +73,7 @@ def declarations(pkg, manifest):
     ext = exts.get(EXT) or exts.get(OLD_EXT) or {}
     desc = None
     path = (ext.get("descriptor") or {}).get("path") if isinstance(ext.get("descriptor"), dict) else None
-    for candidate in ([path] if path else []) + ["descriptor.json"]:
+    for candidate in ([path] if path else []) + list(DESCRIPTOR_FILES):
         p = os.path.join(pkg, candidate)
         if os.path.exists(p):
             try:
@@ -101,7 +104,8 @@ def trial_offerings(pkg):
     Their cases are made and judged at run time by trial-check.mjs, from the
     published descriptor; the spec only says that there are some to run."""
     try:
-        with open(os.path.join(pkg, "descriptor.json"), encoding="utf-8") as f:
+        name = next((n for n in DESCRIPTOR_FILES if os.path.exists(os.path.join(pkg, n))), DESCRIPTOR_FILES[0])
+        with open(os.path.join(pkg, name), encoding="utf-8") as f:
             desc = json.load(f)
     except Exception:  # noqa: BLE001
         return []

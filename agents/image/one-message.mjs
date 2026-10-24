@@ -205,8 +205,13 @@ export function readEnvironment(env) {
 /** The two authored files, read from the package in the image. They are the
  *  only place any of this is spelled: one authored spelling (12.6 rule 1). */
 export function readInstalled(where) {
-  const read = (name) => JSON.parse(readFileSync(join(where.packageHome, name), "utf8"));
-  return { install: read("install.json"), descriptor: read("descriptor.json") };
+  // Each under its name, or its name before Common Agent 0.30.0-draft where
+  // the current one is absent, so a package built either way runs.
+  const read = (...names) => {
+    const name = names.find((n) => existsSync(join(where.packageHome, n))) ?? names[0];
+    return JSON.parse(readFileSync(join(where.packageHome, name), "utf8"));
+  };
+  return { install: read("agent-runtime-requirements.json", "install.json"), descriptor: read("agent-descriptor.json", "descriptor.json") };
 }
 
 export const ceilingVar = (role) => "CEILING_" + role.toUpperCase().replace(/[^A-Z0-9]/g, "_");

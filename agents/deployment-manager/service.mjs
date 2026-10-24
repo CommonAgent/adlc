@@ -1505,7 +1505,9 @@ export function tenantFacts(pkg, record) {
   const ext = pkg.manifest?.extensions?.["net.agentdoc.package"] ?? {};
   const rel = (p) => (typeof p === "string" && !p.startsWith("/") && !p.split(/[\\/]/).includes("..") ? p : null);
   return {
-    descriptor: rel(ext.descriptor?.path) ?? "descriptor.json",
+    // The file the emitter read the draft from: agent-descriptor.json, or
+    // descriptor.json in a package from before Common Agent 0.30.0-draft.
+    descriptor: rel(ext.descriptor?.path) ?? rel(pkg.paths?.descriptor) ?? "descriptor.json",
     answer_piece: typeof pkg.install?.answer?.piece === "string" ? pkg.install.answer.piece : null,
     verify: null,
     wants_replies: pkg.install?.wants_replies === true,
