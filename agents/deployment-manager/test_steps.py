@@ -1698,10 +1698,10 @@ class AModelChangeReachesTheJob(unittest.TestCase):
     def test_the_stand_in_reaches_the_host_brain_only_never_a_job(self):
         self.assertNotIn("GCE_METADATA_HOST", steps.keyless_vars("google-vertex-anthropic"))
         self.assertNotIn("GCE_METADATA_HOST", steps.brain_text("opencode", "google/gemini-3.8-flash"))
-        self.assertEqual(steps.host_model_metadata("127.0.0.1:8789"), "127.0.0.1:8789")
+        self.assertEqual(steps.host_model_metadata("127.0.0.1:89"), "127.0.0.1:89")
         self.assertEqual(steps.host_model_metadata(""), "")
-        for bad in ("127.0.0.1:8789; rm -rf /", "$(id):1", "host", "a b:1"):
-            self.assertEqual(steps.host_model_metadata(bad), "127.0.0.1:8789", bad)
+        for bad in ("127.0.0.1:89; rm -rf /", "$(id):1", "host", "a b:1"):
+            self.assertEqual(steps.host_model_metadata(bad), "127.0.0.1:89", bad)
         with mock.patch.object(steps, "HOST_MODEL_METADATA", ""):
             self.assertNotIn("GCE_METADATA_HOST", steps.brain_text("opencode", "google-vertex-anthropic/claude-sonnet-5-5@default"))
 

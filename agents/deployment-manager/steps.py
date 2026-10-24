@@ -423,7 +423,7 @@ KEYLESS_VARS = {"google-vertex-anthropic": {"GOOGLE_CLOUD_PROJECT": VERTEX_PROJE
 # Empty turns it off, for a host without the stand-in. The value is written
 # into a shell script, so anything but host:port is ignored for the default.
 # (sudo strips the environment, so the root procedures always see the default.)
-HOST_MODEL_METADATA_DEFAULT = "127.0.0.1:8789"
+HOST_MODEL_METADATA_DEFAULT = "127.0.0.1:89"
 
 
 def host_model_metadata(value):
