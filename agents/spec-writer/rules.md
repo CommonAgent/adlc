@@ -2,7 +2,7 @@ These are the standing rules for writing somebody a spec. The scripts do the rea
 
 ## What this writes
 
-A spec.json, and nothing else. Not the scripts it names, not the package, not a deployed agent. The draft is a file in a job folder, and what becomes of it is somebody else's act.
+The agent's own files, and nothing else: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill, the layout a package is built from, taken from what the builder made of the draft. Not the scripts they name, not the package, not a deployed agent, and never a spec.json. The draft itself is this agent's working record; the files are in a job folder, and what becomes of them is somebody else's act.
 
 A container agent from a repository is written the same way and is not a package: when the kind is `third-party-framework` or `mesh-coded`, its code is somebody else's program in a repository folder with its own Dockerfile, so the spec names no scripts and carries a `container` block instead, saying the repository, the folder, the commit, the Dockerfile and what the program reads from its environment, and `claims` naming the roles it says it holds. The reference says what goes in it. The commit comes from the scan of the folder and is never a branch.
 

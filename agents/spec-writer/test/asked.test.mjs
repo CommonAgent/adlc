@@ -266,3 +266,27 @@ test("run as the harness runs it, a revision writes the answers, takes the earli
     assert.equal(JSON.parse(r2.stdout.trim().split(/\r?\n/).pop()).reply, NO_DRAFT_TO_REVISE);
   } finally { w.drop(); }
 });
+
+test("the agent's own files, sent back with answers, are a revision of the draft they describe", async () => {
+  const { requestParts } = await import("../scripts/draft.mjs");
+  const desc = JSON.stringify({ format: "agent-descriptor-v1", agent_version: "0.1.0", offerings: [{ id: "a" }] });
+  const runtime = JSON.stringify({ format: "agent-runtime-requirements-v1", systems: [] });
+  const manifest = JSON.stringify({ version: "0.1.0", extensions: { "net.agentdoc.package": { build: { skills: { a: {} } } } } });
+  const skill = "---\nname: ab\ndescription: when\n---\n\n# A\n";
+  const bodies = { "/f/0-abcdefgh-agent-descriptor.json": desc, "/f/rr.json": runtime, "/f/plugin.json": manifest, "/f/a.SKILL.md": skill };
+  const io = { exists: (p) => p in bodies, read: (p) => bodies[p], size: (p) => bodies[p].length };
+  assert.equal(kindOf("/f/x.json", "application/json", desc), "an agent's own file");
+  assert.equal(kindOf("/f/x.json", "application/json", runtime), "an agent's own file");
+  assert.equal(kindOf("/f/plugin.json", "application/json", manifest), "an agent's own file");
+  assert.equal(kindOf("/f/a.SKILL.md", "text/markdown", skill), "an agent's own file");
+  assert.ok(KINDS.includes("an agent's own file"));
+  const reading = readingOf({ text: "answer: name: tone-teller", files: Object.keys(bodies).map((path) => ({ path })), io });
+  assert.ok(reading.revision);
+  assert.deepEqual(reading.spec_attached, []);
+  assert.equal(reading.files_attached.length, 4);
+  assert.match(summary(reading), /the agent's own files came with it/);
+  const parts = requestParts({ asked: reading });
+  assert.ok(parts.some((p) => p.includes("The agent's own files above, the ones this agent delivered, are the draft.")));
+  assert.match(NO_DRAFT_TO_REVISE, /Attach the draft's files/);
+  assert.doesNotMatch(NO_DRAFT_TO_REVISE, /spec\.json/);
+});

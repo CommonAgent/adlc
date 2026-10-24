@@ -38,13 +38,13 @@ When the message also carries test files (any attached file that imports node:te
 
 Nothing in this package runs on its own, and nothing here is done by opening files and working out what to do next. Every message that reaches this agent is one job, and one command does the whole of it. The package is installed at ~/test-writer, so the scripts are always under ~/test-writer/skills/write-a-suite/scripts/.
 
-Run these four commands in order, with these exact paths. JOB_DIR is the path on the message's `job folder: <absolute path>` line; SPEC is the attached spec.json's local path from the attachments block; WORK and RECORDS are the work and records directories this agent was installed with, each with this job's own folder under it.
+Run these four commands in order, with these exact paths. JOB_DIR is the path on the message's `job folder: <absolute path>` line; SPEC is the folder job.mjs lays the attached agent's files out in (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files, found by content), or, where a spec.json came instead, its local path from the attachments block; WORK and RECORDS are the work and records directories this agent was installed with, each with this job's own folder under it.
 
-1. SPEC=<the attached spec.json> RECORDS=<records folder> node ~/test-writer/skills/write-a-suite/scripts/declared.mjs
+1. SPEC=<the agent's folder, or the attached spec.json> RECORDS=<records folder> node ~/test-writer/skills/write-a-suite/scripts/declared.mjs
 
-2. DECLARED=<records folder>/declared.json SPEC=<the attached spec.json> RECORDS=<records folder> WORK=<work folder> node ~/test-writer/skills/write-a-suite/scripts/write-suite.mjs
+2. DECLARED=<records folder>/declared.json SPEC=<the agent's folder, or the attached spec.json> RECORDS=<records folder> WORK=<work folder> node ~/test-writer/skills/write-a-suite/scripts/write-suite.mjs
 
-3. SUITE=<work folder> SPEC=<the attached spec.json> RECORDS=<records folder> node ~/test-writer/skills/write-a-suite/scripts/check-suite.mjs
+3. SUITE=<work folder> SPEC=<the agent's folder, or the attached spec.json> RECORDS=<records folder> node ~/test-writer/skills/write-a-suite/scripts/check-suite.mjs
 
 4. RECORDS=<records folder> node ~/test-writer/skills/write-a-suite/scripts/reply.mjs
 
@@ -67,6 +67,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/reply.mjs
 - scripts/went-without.mjs
 - scripts/pieces.mjs
+- scripts/agent-folder.mjs
 
 ## References
 

@@ -21,13 +21,20 @@ Usage: pack.py <spec.json | agent folder> <identity.json> [--from <file>...] [--
   still reads, with a warning, for one transition. A run's work arrives as a
   spec and the files it names, so --from goes with a spec.
 
-  --from   the files a run handed over with the spec: the scripts, references
-           and assets the spec names, each matched by its name after the
-           inbound prefix the adapter puts on an attachment, plus the
-           job-manifest.json the code-writer's delivery travels with. They are
-           laid out under the builder's own tmp as the package source and the
-           spec is copied beside them, so a package is built from what a run
-           delivered and never from a copy that happened to be lying around.
+  --from   the files a run handed over with the spec or the agent's files:
+           the scripts, references and assets they name, each matched by its
+           name after the inbound prefix the adapter puts on an attachment,
+           plus the job-manifest.json the code-writer's delivery travels with.
+           They are laid out under the builder's own tmp as the package source
+           with the spec or the agent's files beside them, so a package is
+           built from what a run delivered and never from a copy that happened
+           to be lying around.
+
+  A run's work arrives as the agent's own files (what the spec writer
+  delivers since 0.3.0) or, for one transition, as a spec. The agent's files
+  are found among the attachments by content and laid out as a folder under
+  the builder's tmp, and that folder is what is built; they are preferred
+  where both came.
   --job    the job folder of the message this pack answers. The tarball and
            the signed build record are placed under its out/ and listed in
            pieces.json, so the reply carries the package as a piece the next
@@ -216,6 +223,120 @@ def lay_out(spec_path, files):
                       "manifest": manifest}
 
 
+AGENT_DESCRIPTOR_FORMAT = "agent-descriptor-v1"
+AGENT_RUNTIME_FORMATS = ("agent-runtime-requirements-v1", "agent-install-v1")
+SKILL_NAME_RE = re.compile(r"^---\r?\n(?:[^\n]*\n)*?name:\s*([a-z][a-z0-9-]{1,62})\s*\r?\n")
+
+
+def agent_file_kind(text):
+    """What one attached file is, by its content: ("descriptor",),
+    ("runtime",), ("manifest",), ("skill", slug), or None. Told apart by
+    content, never by name, for the reason spec_among gives."""
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        m = SKILL_NAME_RE.match(text[:end + 1] if end > 0 else "")
+        return ("skill", m.group(1)) if m else None
+    try:
+        doc = json.loads(text)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(doc, dict):
+        return None
+    if doc.get("format") == AGENT_DESCRIPTOR_FORMAT:
+        return ("descriptor",)
+    if doc.get("format") in AGENT_RUNTIME_FORMATS:
+        return ("runtime",)
+    ext = doc.get("extensions")
+    if isinstance(ext, dict) and ("net.agentdoc.package" in ext or "agent-plugins.org" in str(doc.get("$schema", ""))):
+        return ("manifest",)
+    return None
+
+
+def agent_files_among(files):
+    """The agent's own files among the attachments: the descriptor, the
+    runtime requirements, the manifest and each skill's SKILL.md, or None
+    unless the first three are all there. A job manifest is skipped by name,
+    as in spec_among. Where two files claim one place the later wins, the way
+    a later piece of the same name replaces an earlier one."""
+    found = {"skills": {}}
+    for path in files:
+        if sent_name(path) == MANIFEST_NAME:
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        except Exception:  # noqa: BLE001
+            continue
+        k = agent_file_kind(text)
+        if not k:
+            continue
+        if k[0] == "skill":
+            found["skills"][k[1]] = path
+        else:
+            found[k[0]] = path
+    if not all(found.get(k) for k in ("descriptor", "runtime", "manifest")):
+        return None
+    found["used"] = [found["descriptor"], found["runtime"], found["manifest"], *found["skills"].values()]
+    return found
+
+
+def lay_out_folder(found, files):
+    """The agent's files a run handed over, laid out as the agent's folder
+    under the builder's tmp, with every file its build entry names placed at
+    the path it names (matched by the file's sent name against the entry's
+    basename) and the delivery manifest beside them, as lay_out does for a
+    spec. Returns the folder and what was placed, missing or left over."""
+    with open(found["manifest"], encoding="utf-8") as f:
+        manifest = json.load(f)
+    name = manifest.get("name") or "agent"
+    version = manifest.get("version") or "0.0.0"
+    if not re.match(r"^[a-z0-9][a-z0-9.-]{0,80}$", f"{name}-{version}"):
+        name, version = "agent", "0.0.0"
+    root = os.path.join(HOME, "tmp", f"{name}-{version}-run")
+    shutil.rmtree(root, ignore_errors=True)
+    os.makedirs(os.path.join(root, "skills"))
+    own = (manifest.get("extensions") or {}).get("net.agentdoc.package") or {}
+    build = own.get("build") if isinstance(own.get("build"), dict) else {}
+    # The files are laid out here, so the build reads them here.
+    build.pop("source", None)
+    with open(os.path.join(root, "plugin.json"), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    for src, rel in ((found["descriptor"], "agent-descriptor.json"), (found["runtime"], "agent-runtime-requirements.json")):
+        shutil.copy(src, os.path.join(root, rel))
+    for slug, src in found["skills"].items():
+        os.makedirs(os.path.join(root, "skills", slug), exist_ok=True)
+        shutil.copy(src, os.path.join(root, "skills", slug, "SKILL.md"))
+    wanted = {}
+    for entry in (build.get("skills") or {}).values():
+        for kind in ("scripts", "references", "assets"):
+            for rel in (entry or {}).get(kind) or []:
+                if isinstance(rel, str) and rel and ".." not in rel.split("/") and not rel.startswith("/"):
+                    wanted.setdefault(os.path.basename(rel), rel)
+    placed, left = [], []
+    manifest_path = None
+    used = {os.path.abspath(u) for u in found["used"]}
+    for path in files:
+        if os.path.abspath(path) in used:
+            continue
+        sent = sent_name(path)
+        if sent == MANIFEST_NAME:
+            manifest_path = os.path.join(root, MANIFEST_NAME)
+            shutil.copy(path, manifest_path)
+            continue
+        rel = wanted.get(sent)
+        if not rel:
+            left.append(sent)
+            continue
+        dest = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copy(path, dest)
+        placed.append(rel)
+    missing = sorted(set(wanted.values()) - set(placed))
+    return root, {"placed": sorted(placed), "missing": missing, "left_over": sorted(left),
+                  "manifest": manifest_path, "skills": sorted(found["skills"])}
+
+
 def file_pieces(job_dir, name, version, tgz, rec_path, sha256):
     """The package and its build record, under the job folder's out/ and
     listed in pieces.json, the way every packaged agent hands its result on.
@@ -369,7 +490,10 @@ def run_from_prompt(prompt_path, identity_path):
     with open(prompt_path, encoding="utf-8") as f:
         text = f.read()
     job_dir, files = files_in_prompt(text)
-    spec = spec_among(files)
+    # The agent's own files are preferred: they are what the spec writer
+    # delivers, and a spec is read only where they did not come.
+    agent = agent_files_among(files)
+    spec = agent["descriptor"] if agent else spec_among(files)
     if not spec:
         sys.exit(3)
     others = [f for f in files if f != spec]
@@ -480,11 +604,26 @@ def main():
     # is laid out for it, and this procedure does not yet commit one to the
     # agent's repository: a run's work arrives as a spec.
     is_folder = os.path.isdir(spec_path)
+    agent_files = None if is_folder else agent_files_among([spec_path, *files])
     if is_folder and files:
-        fail("validate", "files are handed over with a spec; an agent's folder already holds the files it is built from")
-    if is_folder and repo_remote:
+        fail("validate", "files are handed over with a spec or with the agent's files; an agent's folder already holds the files it is built from")
+    if (is_folder or agent_files) and repo_remote:
         fail("validate", "an agent's folder is not committed to the agent's repository by this procedure; hand over a spec for a run that makes one")
-    if files:
+    if agent_files:
+        # The agent's own files, handed over by a run: laid out as its folder,
+        # with the scripts they name beside them, and the folder is built.
+        try:
+            spec_path, laid = lay_out_folder(agent_files, files)
+        except Exception as e:  # noqa: BLE001
+            fail("validate", f"the agent's files could not be read to lay them out: {e}")
+        is_folder = True
+        if laid["missing"]:
+            out({"ok": True, "act": "refuse", "record": None, "laid_out": laid,
+                 "refused": "the run handed over no file for " + ", ".join(laid["missing"])
+                            + "; the agent's files name them and the package cannot be built without them"})
+        if laid["manifest"]:
+            os.environ.setdefault("PROVENANCE", laid["manifest"])
+    elif files:
         try:
             spec_path, laid = lay_out(spec_path, files)
         except Exception as e:  # noqa: BLE001

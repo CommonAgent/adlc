@@ -436,10 +436,10 @@ test("the pieces refuse to be filed when nothing is at an address", () => {
 });
 
 test("every step of this job is one of the three the offering names", () => {
-  const spec = JSON.parse(readFileSync(join(here, "..", "spec.json"), "utf8"));
-  const offered = spec.jobs.find((j) => j.offered);
-  assert.deepEqual(offered.steps, ["read-what-was-given", "place-the-files", "check-what-is-served"]);
-  for (const s of offered.steps) assert.ok(spec.jobs.some((j) => j.slug === s), `${s} is not a job in this spec`);
+  // The package's own declaration, beside test/ in the package root.
+  const desc = JSON.parse(readFileSync(join(here, "..", "agent-descriptor.json"), "utf8"));
+  const offered = desc.offerings.find((o) => o.id === "publish");
+  assert.deepEqual(offered.steps.map((s) => s.id), ["read-what-was-given", "place-the-files", "check-what-is-served"]);
   // No model is woken anywhere in this offering, which is why it costs nothing.
-  for (const j of spec.jobs) assert.equal(j.how.intelligence, "none", j.slug);
+  for (const j of [offered, ...offered.steps]) assert.equal(j.how.intelligence, "none", j.id);
 });

@@ -61,13 +61,23 @@ export function draftLine(spec) {
     : `The draft offers ${what}${inSteps}, and has no name yet.`;
 }
 
+/** One sentence on the files delivered, from builds.json's list. */
+export function filesLine(files = []) {
+  if (!files.length) {
+    return "No files are delivered with this draft, because the builder did not make a package of it; the draft is kept, and the next round starts from it.";
+  }
+  const skills = files.filter((f) => /^skills\/[^/]+\/SKILL\.md$/.test(f)).length;
+  return `The agent's own files are delivered, the layout a package is built from: ${files.filter((f) => !f.startsWith("skills/")).join(", ")}`
+    + ` and ${many(skills, "SKILL.md", "SKILL.md files")}.`;
+}
+
 /** The whole reply.
  *
  *  Order is deliberate: what it is, then what somebody has to do about it,
  *  then what was checked, then the caveats. A reader who stops after two
  *  sentences has still read the part that needs them. */
 export function replyText({
-  spec = null, blanks = [], notes = "", verdict = "", findings = [], wentWithout = "", answered = [],
+  spec = null, blanks = [], notes = "", verdict = "", findings = [], wentWithout = "", answered = [], files = null,
 } = {}) {
   const lines = [draftLine(spec)];
   const questions = questionsFor(blanks);
@@ -95,6 +105,11 @@ export function replyText({
     lines.push(`${cap(many(answered.length, "answer"))} from your last message went in: ${answered.join(", ")}.`);
   }
   if (trim(verdict)) lines.push(trim(verdict));
+  // What is handed on. The agent's own files when the builder took the
+  // draft, and none when it did not: a declaration nothing can build is not
+  // delivered as though it were one. Null when this round never got as far
+  // as the builder, which says nothing either way.
+  if (Array.isArray(files)) lines.push(filesLine(files));
   if (findings.length) {
     lines.push(`The draft was written twice and ${findings.length === 1 ? "this still stands" : "these still stand"}: ${findings.join("; ")}. `
       + "It is delivered as it is, so you can see it and say what to fix.");
@@ -130,6 +145,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       verdict: buildsDoc ? buildsDoc.verdict ?? "" : "",
       findings: buildsDoc?.problems ?? [],
       answered: Object.keys(answers),
+      files: buildsDoc ? (buildsDoc.files?.list ?? []).map((f) => f.path) : null,
       wentWithout: RECORDS ? paragraph(RECORDS) : "",
     });
     console.log(JSON.stringify({ ok: true, code: 0, reply, still_open: stillOpen(blanksDoc.blanks ?? []) }));

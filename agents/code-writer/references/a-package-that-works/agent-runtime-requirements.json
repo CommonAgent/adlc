@@ -1,0 +1,64 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "draft-host",
+      "kind": "service"
+    },
+    {
+      "name": "published-address",
+      "kind": "service"
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding what was handed over, what was placed, and what came back when each address was read"
+    }
+  ],
+  "job_seconds": 300,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "publish"
+      ]
+    },
+    "price": {
+      "model": "flat",
+      "amount_micro": 100000,
+      "currency": "USD"
+    }
+  },
+  "run": {
+    "publish": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/publish/scripts/publish.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}

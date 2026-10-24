@@ -59,7 +59,12 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   try {
     const workspace = readJson("workspace.json");
     let name = null;
-    try { if (workspace?.folder) name = JSON.parse(readFileSync(join(workspace.folder, "spec.json"), "utf8")).name; } catch { name = null; }
+    try {
+      if (workspace?.folder) {
+        const manifest = join(workspace.folder, "plugin.json");
+        name = JSON.parse(readFileSync(existsSync(manifest) ? manifest : join(workspace.folder, "spec.json"), "utf8")).name ?? null;
+      }
+    } catch { name = null; }
     const reply = replyText({
       workspace: workspace ? { ...workspace, name } : null,
       runs: readJson("runs.json")?.runs ?? [],

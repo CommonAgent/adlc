@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { blankRuns, runSuite, suitePaths } from "./check.mjs";
-import { scriptsOf, staysInside } from "./workspace.mjs";
+import { agentAmong, agentFilesByPath, scriptsOf, specOfAgent, staysInside } from "./workspace.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -64,7 +64,23 @@ export function whatCameIn(jobDir) {
   let spec = null; let specPath = null;
   const suite = [];
   const others = [];
+  // The agent's own files, found by content and preferred; the spec they
+  // state is read from a scratch copy laid out as the folder.
+  const texts = [];
   for (const rel of filesUnder(inDir)) {
+    try { texts.push({ rel, text: readFileSync(join(inDir, rel), "utf8") }); } catch { /* unreadable is not the spec */ }
+  }
+  const agentFound = agentAmong(texts);
+  let agent = null;
+  if (agentFound) {
+    const { used, ...files } = agentFound;
+    agent = files;
+    const scratch = mkdtempSync(join(tmpdir(), "code-writer-agent-"));
+    try { spec = specOfAgent(agent, scratch); } finally { rmSync(scratch, { recursive: true, force: true }); }
+  }
+  const taken = new Set((agentFound?.used ?? []).map((f) => f.rel));
+  for (const rel of filesUnder(inDir)) {
+    if (taken.has(rel)) continue;
     const at = join(inDir, rel);
     let text;
     try { text = readFileSync(at, "utf8"); } catch { continue; }
@@ -76,7 +92,7 @@ export function whatCameIn(jobDir) {
       continue;
     }
     if (/^job-manifest\.json$/.test(bare)) continue;
-    if (!spec) {
+    if (!spec && !agent) {
       try {
         const doc = JSON.parse(text);
         if (doc && typeof doc.name === "string" && Array.isArray(doc.jobs)) { spec = doc; specPath = at; continue; }
@@ -87,7 +103,7 @@ export function whatCameIn(jobDir) {
     // find it.
     others.push({ path: `test/${bare}`, text });
   }
-  return { spec, specPath, suite: [...suite, ...others] };
+  return { spec, specPath, agent, suite: [...suite, ...others] };
 }
 
 /** What went out: every file under out/scripts, as scripts/<path>. */
@@ -98,7 +114,7 @@ export function whatWentOut(jobDir) {
 
 /** The verdict. Pure apart from the scratch folder it lays the package out in. */
 export function verify(jobDir, { spawn } = {}) {
-  const { spec, suite } = whatCameIn(jobDir);
+  const { spec, suite, agent } = whatCameIn(jobDir);
   if (!spec) return { ok: false, said: "nothing under in/ is a spec, so there is nothing the delivery could be checked against" };
   if (!suite.length) return { ok: false, said: "no test file came in with the spec, so there is no suite to hold the delivery to" };
   const named = scriptsOf(spec);
@@ -111,8 +127,12 @@ export function verify(jobDir, { spawn } = {}) {
 
   const scratch = mkdtempSync(join(tmpdir(), "code-writer-verify-"));
   try {
-    writeFileSync(join(scratch, "spec.json"), JSON.stringify(spec, null, 2) + "\n");
-    for (const f of [...suite, ...out]) {
+    // The declaration beside the scripts, where a suite reads it: the
+    // agent's own files when they came, a spec.json otherwise.
+    const declaration = agent
+      ? Object.entries(agentFilesByPath(agent)).map(([path, text]) => ({ path, text }))
+      : [{ path: "spec.json", text: JSON.stringify(spec, null, 2) + "\n" }];
+    for (const f of [...declaration, ...suite, ...out]) {
       const at = join(scratch, f.path);
       mkdirSync(dirname(at), { recursive: true });
       writeFileSync(at, f.text);

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "code-writer",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "description": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. The only code the package-maker packs is what this delivers.",
   "license": "Apache-2.0",
   "author": {
@@ -26,7 +26,8 @@
               "scripts/report.mjs",
               "scripts/pieces.mjs",
               "scripts/verify.mjs",
-              "scripts/went-without.mjs"
+              "scripts/went-without.mjs",
+              "scripts/agent-folder.mjs"
             ],
             "references": [
               "references/what-the-house-stack-is.md",
@@ -36,13 +37,15 @@
           },
           "lay-out-the-workspace": {
             "scripts": [
-              "scripts/workspace.mjs"
+              "scripts/workspace.mjs",
+              "scripts/agent-folder.mjs"
             ]
           },
           "check-the-work": {
             "scripts": [
               "scripts/check.mjs",
-              "scripts/workspace.mjs"
+              "scripts/workspace.mjs",
+              "scripts/agent-folder.mjs"
             ]
           },
           "report-the-work": {

@@ -29,11 +29,11 @@ If the folder named has no test files or no scripts, nothing is run and the repl
 
 ## How to do it
 
-Nothing in this package runs on its own. The message names a folder on this host on a `package folder: <absolute path>` line; it holds spec.json, scripts/ and test/. RECORDS is the records directory this agent was installed with, with this job's own folder under it.
+Nothing in this package runs on its own. The message names a folder on this host on a `package folder: <absolute path>` line; it holds the agent's own files (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and skills/), or a spec.json, with scripts/ and test/. RECORDS is the records directory this agent was installed with, with this job's own folder under it.
 
-1. SPEC=<folder>/spec.json RECORDS=<records folder> node ~/test-writer/skills/prove-a-suite/scripts/declared.mjs
+1. SPEC=<folder> RECORDS=<records folder> node ~/test-writer/skills/prove-a-suite/scripts/declared.mjs (SPEC=<folder>/spec.json where the folder holds a spec.json and no agent-descriptor.json)
 
-2. SUITE=<folder> SPEC=<folder>/spec.json AGAINST=<folder> RECORDS=<records folder> node ~/test-writer/skills/prove-a-suite/scripts/check-suite.mjs
+2. SUITE=<folder> SPEC=<the same SPEC> AGAINST=<folder> RECORDS=<records folder> node ~/test-writer/skills/prove-a-suite/scripts/check-suite.mjs
 
 3. RECORDS=<records folder> node ~/test-writer/skills/prove-a-suite/scripts/reply.mjs
 
@@ -49,6 +49,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/check-suite.mjs
 - scripts/reply.mjs
 - scripts/went-without.mjs
+- scripts/agent-folder.mjs
 
 ## References
 

@@ -30,3 +30,4 @@ check-suite.mjs stands in an empty file for every script the spec names, places 
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/check-suite.mjs
+- scripts/agent-folder.mjs

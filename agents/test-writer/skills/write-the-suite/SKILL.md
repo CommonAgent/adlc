@@ -35,6 +35,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/check-suite.mjs
 - scripts/declared.mjs
 - scripts/went-without.mjs
+- scripts/agent-folder.mjs
 
 ## References
 

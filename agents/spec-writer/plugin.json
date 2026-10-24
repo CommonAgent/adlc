@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "spec-writer",
-  "version": "0.2.11",
-  "description": "Turns what somebody wants an agent to do into a spec.json the builder will take, and says plainly what it could not settle without them.",
+  "version": "0.3.0",
+  "description": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"

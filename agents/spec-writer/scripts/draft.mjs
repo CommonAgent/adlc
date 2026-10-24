@@ -53,7 +53,7 @@ export const modelOf = (env = {}) => trim(env.TEXT_MODEL) || MODEL;
 /** Two goes and no more. The second carries the findings from the first. */
 export const TRIES = 2;
 
-export const INSTRUCTION = `You are writing one spec.json for an agent package.
+export const INSTRUCTION = `You are writing one spec, as JSON, for an agent package.
 
 You are given, in order: what somebody asked for, what they attached with it,
 any answers they have given to earlier questions, a spec they attached if they
@@ -113,7 +113,7 @@ with the question, rather than giving up. Never write a handle as a value.
 
 Answer with one JSON object and nothing else:
 
-{"spec": { ...the spec.json... },
+{"spec": { ...the spec... },
  "blanks": [{"key": "name", "question": "..."}],
  "notes": "what you drafted that the request did not settle"}`;
 
@@ -122,7 +122,8 @@ Answer with one JSON object and nothing else:
 export function requestParts({ asked = null, reference = "", worked = "", answers = null, findings = [] } = {}) {
   // A revision with no draft in hand is not drafted: a spec written from an
   // answer's own words is a spec for the wrong agent (2026-09-15).
-  if (asked?.revision && !(asked?.attached ?? []).some((a) => a.kind === "a spec" && typeof a.text === "string")) {
+  const hasFiles = (asked?.attached ?? []).some((a) => a.kind === "an agent's own file" && typeof a.text === "string");
+  if (asked?.revision && !hasFiles && !(asked?.attached ?? []).some((a) => a.kind === "a spec" && typeof a.text === "string")) {
     throw new Error("this is a revision and no draft came with it; nothing is drafted from an answer alone");
   }
   const parts = [INSTRUCTION];
@@ -153,7 +154,11 @@ export function requestParts({ asked = null, reference = "", worked = "", answer
   // The spec they attached comes after their answers and before the reference:
   // it is the thing their answers change, and a second round that redrafts
   // from nothing throws away what they have already read and accepted.
-  if (sentBack && asked?.revision) {
+  if (!sentBack && hasFiles && asked?.revision) {
+    parts.push("--- THE DRAFT THEY ARE ANSWERING ABOUT ---\nThe agent's own files above, the ones this agent delivered, are the draft. "
+      + "This is a revision, not a new request. Write the spec those files state, for the agent they describe and only it. "
+      + "Keep every line they did not ask to change; change only what their answers touch; report as a blank only what their answers still leave open.");
+  } else if (sentBack && asked?.revision) {
     parts.push(`--- THE DRAFT THEY ARE ANSWERING ABOUT: ${sentBack.name} ---\n${trim(sentBack.text)}${sentBack.cut ? `\n(cut here; the whole file is ${sentBack.text_chars} characters)` : ""}\n`
       + "This is a revision, not a new request. The agent to write is the one this spec names, and only it. "
       + "Keep every line they did not ask to change; change only what their answers touch; report as a blank only what their answers still leave open.");

@@ -10,9 +10,10 @@
 // works from the declaration and the checker knows which scripts to stand in.
 //
 //   needs: node >= 22
-//   SPEC=<spec.json> RECORDS=<records folder> node declared.mjs
+//   SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder> node declared.mjs
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { loadSpec } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -92,8 +93,9 @@ export function summary(d) {
 }
 
 export const NOT_A_SPEC =
-  "There is no spec here to write tests from. Attach the spec.json the package is built from: "
-  + "it carries a name, a version, and jobs with slugs, and it is what the tests hold the scripts to.";
+  "There is no spec here to write tests from. Attach the agent's own files the package is built from "
+  + "(agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files): "
+  + "they carry a name, a version, and the jobs, and they are what the tests hold the scripts to.";
 
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
 if (thisFile && import.meta.url.endsWith(thisFile)) {
@@ -101,7 +103,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   if (!SPEC || !RECORDS) { console.error("SPEC and RECORDS are required"); process.exit(2); }
   try {
     let doc = null;
-    try { doc = existsSync(SPEC) ? JSON.parse(readFileSync(SPEC, "utf8")) : null; } catch { doc = null; }
+    // The agent's own folder, or a spec.json, which is still read for one
+    // transition; the folder is the spec it states.
+    try { doc = existsSync(SPEC) ? loadSpec(SPEC) : null; } catch { doc = null; }
     if (!looksLikeSpec(doc)) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: NOT_A_SPEC }));
       process.exitCode = 3;

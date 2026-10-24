@@ -53,7 +53,20 @@ export const ASKED_OF_PERSON = NEEDS.filter((n) => n.settled_by === "the person"
  *  drafting step. The one kind worth telling apart with real care is a spec:
  *  somebody who attaches one is revising or copying it, and that changes what
  *  the draft should be far more than any other attachment. */
-export const KINDS = ["a spec", "a descriptor", "a script", "a document", "data", "an image", "something else"];
+export const KINDS = ["a spec", "an agent's own file", "a descriptor", "a script", "a document", "data", "an image", "something else"];
+
+/** One of the files this agent delivers, the layout a package is authored in:
+ *  a draft descriptor or runtime requirements (told by their format), a
+ *  manifest (an Agent Plugins manifest with this platform's extension), or a
+ *  SKILL.md (frontmatter naming the skill). Somebody who sends these back is
+ *  revising the draft they describe. */
+export function looksLikeAgentFile(doc) {
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return false;
+  if (doc.format === "agent-descriptor-v1" || doc.format === "agent-runtime-requirements-v1" || doc.format === "agent-install-v1") return true;
+  const ext = doc.extensions;
+  return Boolean(ext && typeof ext === "object" && "net.agentdoc.package" in ext);
+}
+export const looksLikeSkill = (text) => /^---\r?\nname:\s*[a-z][a-z0-9-]+\s*\r?\n/.test(String(text ?? ""));
 
 const SCRIPT_EXT = new Set([".mjs", ".js", ".cjs", ".ts", ".py", ".sh", ".bash"]);
 const DOC_EXT = new Set([".md", ".markdown", ".txt", ".rst", ".pdf"]);
@@ -104,10 +117,12 @@ export function kindOf(path, mediaType = "", body = null) {
       let doc = null;
       try { doc = JSON.parse(body); } catch { return "data"; }
       if (looksLikeSpec(doc)) return "a spec";
+      if (looksLikeAgentFile(doc)) return "an agent's own file";
       if (looksLikeDescriptor(doc)) return "a descriptor";
     }
     return "data";
   }
+  if (body != null && looksLikeSkill(body)) return "an agent's own file";
   if (DOC_EXT.has(ext) || String(mediaType).startsWith("text/")) return "a document";
   return "something else";
 }
@@ -234,6 +249,9 @@ export function readingOf({ text = "", files = [], io = {} } = {}) {
     // request, so it is named at the top level rather than left for a reader
     // to find by scanning kinds.
     spec_attached: attached.filter((a) => a.kind === "a spec").map((a) => a.name),
+    // The files this agent delivers, sent back: a revision of the draft they
+    // describe, read whole by the drafting step like any other attachment.
+    files_attached: attached.filter((a) => a.kind === "an agent's own file").map((a) => a.name),
     needs: NEEDS.map((n) => ({ key: n.key, what: n.what, settled_by: n.settled_by })),
     to_ask: ASKED_OF_PERSON,
   };
@@ -249,12 +267,14 @@ export function summary(reading) {
   else bits.push("nothing attached");
   if (reading.missing_files.length) bits.push(`${reading.missing_files.length} named and not there: ${reading.missing_files.join(", ")}`);
   if (reading.spec_attached.length) bits.push(`a spec came with it: ${reading.spec_attached.join(", ")}`);
+  if (reading.files_attached?.length) bits.push(`the agent's own files came with it: ${reading.files_attached.join(", ")}`);
   return bits.join("; ");
 }
 
 export const NO_DRAFT_TO_REVISE =
-  "This answers questions about a draft I do not have. Attach the draft (spec.json) with the answers and I will "
-  + "revise it; I do not write a new spec from an answer.";
+  "This answers questions about a draft I do not have. Attach the draft's files (agent-descriptor.json, "
+  + "agent-runtime-requirements.json, plugin.json and the SKILL.md files) with the answers and I will "
+  + "revise it; I do not write a new draft from an answer.";
 
 export const NOTHING_ASKED =
   "There is nothing here to write a spec from. Say what you want the agent to do, in your own words, "
@@ -273,7 +293,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // A revision with no draft attached takes the newest draft an earlier
     // job of this agent wrote; the harness used to be asked to find it and
     // did not. Still none, and this step stops before any model is woken.
-    if (reading.revision && !reading.spec_attached.length) {
+    if (reading.revision && !reading.spec_attached.length && !reading.files_attached.length) {
       const earlier = earlierDraft(dirname(resolve(RECORDS)));
       if (earlier) {
         reading = readingOf({ text, files: [...files, { path: earlier, media_type: "application/json" }] });
@@ -288,7 +308,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       // used to write this file itself and wrote it wrong or not at all.
       writeFileSync(join(RECORDS, "answers.json"), JSON.stringify(reading.revision.answers, null, 2) + "\n");
     }
-    if (reading.revision && !reading.spec_attached.length) {
+    if (reading.revision && !reading.spec_attached.length && !reading.files_attached.length) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: NO_DRAFT_TO_REVISE, asked: out }));
       process.exitCode = 3;
     } else if (!reading.words && !reading.attached.some((a) => !a.missing)) {

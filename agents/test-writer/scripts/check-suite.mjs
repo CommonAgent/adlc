@@ -15,12 +15,13 @@
 // whoever owns the scripts, and the verdict says so.
 //
 //   needs: node >= 22
-//   SUITE=<folder holding test/*.test.mjs> SPEC=<spec.json> RECORDS=<records folder>
+//   SUITE=<folder holding test/*.test.mjs> SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder>
 //   [AGAINST=<package folder with scripts/>] node check-suite.mjs
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, loadSpec } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -43,9 +44,26 @@ export function staysInside(rel) {
   return !(n === ".." || n.startsWith("../"));
 }
 
+/** The agent's own files a suite may read, copied from its folder beside
+ *  the stand-ins: the two authored files, the manifest and each SKILL.md,
+ *  where a built package has them. */
+export function agentFilesInto(folder, dir) {
+  for (const rel of [DESCRIPTOR_FILE, RUNTIME_FILE, MANIFEST_FILE]) {
+    if (existsSync(join(folder, rel))) cpSync(join(folder, rel), join(dir, rel));
+  }
+  if (existsSync(join(folder, "skills"))) {
+    for (const slug of readdirSync(join(folder, "skills"))) {
+      const md = join(folder, "skills", slug, "SKILL.md");
+      if (existsSync(md)) { mkdirSync(join(dir, "skills", slug), { recursive: true }); cpSync(md, join(dir, "skills", slug, "SKILL.md")); }
+    }
+  }
+}
+
 /** Put an empty file where every script the spec names would be, and the
- *  spec beside them. Returns what was stood in. */
-export function standInPackage(spec, dir) {
+ *  agent's own files beside them when it came as a folder (a spec.json,
+ *  still read for one transition, goes beside them as it came). Returns
+ *  what was stood in. */
+export function standInPackage(spec, dir, folder = null) {
   const scripts = scriptsOf(spec);
   for (const s of scripts) {
     if (!staysInside(s)) throw new Error(`the spec names a script outside the package: ${s}`);
@@ -56,7 +74,8 @@ export function standInPackage(spec, dir) {
     mkdirSync(dirname(at), { recursive: true });
     writeFileSync(at, "");
   }
-  writeFileSync(join(dir, "spec.json"), JSON.stringify(spec, null, 2) + "\n");
+  if (folder) agentFilesInto(folder, dir);
+  else writeFileSync(join(dir, "spec.json"), JSON.stringify(spec, null, 2) + "\n");
   return scripts;
 }
 
@@ -116,10 +135,10 @@ export function runSuite(dir, paths, { spawn = spawnSync } = {}) {
 
 /** The suite against empty stand-ins. Pure apart from the scratch folder,
  *  which is made and removed here. */
-export function standInRun({ spec, files, spawn } = {}) {
+export function standInRun({ spec, files, spawn, folder = null } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), "test-writer-standins-"));
   try {
-    const scripts = standInPackage(spec, scratch);
+    const scripts = standInPackage(spec, scratch, folder);
     const paths = placeSuite(files, scratch);
     const run = runSuite(scratch, paths, { spawn });
     return { against: "stand-ins", scripts: scripts.length, files: paths.length, ...run };
@@ -199,13 +218,14 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const { SUITE, SPEC, RECORDS, AGAINST } = process.env;
   if (!SUITE || !SPEC || !RECORDS) { console.error("SUITE, SPEC and RECORDS are required"); process.exit(2); }
   try {
-    const spec = JSON.parse(readFileSync(SPEC, "utf8"));
+    const spec = loadSpec(SPEC);
+    const folder = statSync(SPEC).isDirectory() ? SPEC : null;
     const files = suiteFiles(SUITE);
     if (!files.length) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: `There is no suite under ${join(SUITE, "test")} to check: nothing named test/<name>.test.mjs.` }));
       process.exitCode = 3;
     } else {
-      const standIns = standInRun({ spec, files });
+      const standIns = standInRun({ spec, files, folder });
       let real = null; let mutations = [];
       if (AGAINST) {
         if (!existsSync(join(AGAINST, "scripts"))) throw new Error(`${AGAINST} has no scripts folder to prove the suite against`);

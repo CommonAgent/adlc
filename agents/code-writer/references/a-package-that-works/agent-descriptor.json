@@ -1,0 +1,172 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.2.2",
+  "does": "Puts finished files where a person can open them. It writes under the one folder it was bound to and nowhere else, reads every byte before it goes, and reads back what is served to check it matches what it was handed. It answers with the address and the digest of what is there.",
+  "offerings": [
+    {
+      "id": "publish",
+      "name": "Publish",
+      "does": "Publishes files to an address a person can open, under the one folder this agent is bound to.",
+      "inputs": [
+        {
+          "name": "the files",
+          "kind": "document",
+          "required": true
+        },
+        {
+          "name": "name",
+          "kind": "identifier",
+          "required": false
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "address",
+          "kind": "url",
+          "when": "per_task"
+        },
+        {
+          "name": "publication record",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-what-was-given",
+          "name": "Read what was given",
+          "does": "Reads and hashes every file handed over, and works out what each one actually is.",
+          "inputs": [
+            {
+              "name": "the files",
+              "kind": "document",
+              "required": true
+            }
+          ],
+          "outputs": [
+            {
+              "name": "the reading",
+              "kind": "application/json",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "place-the-files",
+          "name": "Place the files",
+          "does": "Writes each file to the folder this agent is bound to.",
+          "inputs": [
+            {
+              "name": "the reading",
+              "kind": "application/json",
+              "required": true
+            }
+          ],
+          "outputs": [
+            {
+              "name": "what was placed",
+              "kind": "application/json",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-what-is-served",
+          "name": "Check what is served",
+          "does": "Reads back every address and checks it serves what was published.",
+          "inputs": [
+            {
+              "name": "what was placed",
+              "kind": "application/json",
+              "required": true
+            }
+          ],
+          "outputs": [
+            {
+              "name": "address",
+              "kind": "url",
+              "when": "per_task"
+            },
+            {
+              "name": "publication record",
+              "kind": "application/json",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Writing anywhere but the one folder it was bound to. The bucket and the folder are placed by the host at install. A message naming a destination is refused rather than obeyed, and a name that would climb out of the folder is refused too.\nPublishing anything it was not handed. It does not fetch a file from an address in order to publish it, so nothing can be put in front of the public by naming it.\nPublishing bytes it has not read. Every file is read and hashed before it is placed, and the digest is in the record, because publishing is the act that puts something in front of people and a thing nobody looked at is a thing nobody can answer for.\nPublishing a file whose bytes are not what its name says. A page that is not text, or an image that is not an image, is refused with both what it claims and what it is.\nPublishing a private key, a service-account key, or a file that carries one. This is refused on the bytes and not on the name, and it is refused even where the person asked for it.\nHanding over an address it has not read back. Every address is fetched and the digest compared with what was placed, and a mismatch is reported rather than rounded off.\nReplacing something it did not publish. A name already in use by a file this agent has no record of placing is refused, and the reply says the name is taken.",
+  "escalates": [
+    "A file that is refused for what it carries. The reply names the file and the reason, and the person decides what to do; this agent does not strip, redact or rewrite anything to make it publishable."
+  ],
+  "records": [
+    {
+      "name": "what was handed over per job: each file, its name, its size and its digest",
+      "when": "per_task",
+      "file": "*/reading.json"
+    },
+    {
+      "name": "what was placed per job: each object, its address, its digest and when it went",
+      "when": "per_task",
+      "file": "*/placed.json"
+    },
+    {
+      "name": "the read-back per job: each address, the digest served, and whether it matched",
+      "when": "per_task",
+      "file": "*/served.json"
+    },
+    {
+      "name": "every name this agent has published under, so a name it did not place is not quietly replaced",
+      "when": "standing",
+      "file": "names.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "draft-host",
+      "access": "write",
+      "needs": "to place the files where a person can open them, under one folder and nowhere else"
+    },
+    {
+      "name": "published-address",
+      "access": "read",
+      "needs": "to fetch back every address it just published and check that what is served is what was handed over",
+      "leaves": true
+    }
+  ]
+}

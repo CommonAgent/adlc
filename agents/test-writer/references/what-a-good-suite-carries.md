@@ -102,13 +102,15 @@ async call.
    artifact, clause by clause.
 5. The process contract, once per script: the exit-2 line, and the exit-3
    line where the script has one.
-6. The spec itself: publisher's last test reads spec.json and checks the
-   offering's steps are jobs and each job's `how` is what it claims.
+6. The declaration itself: publisher's last test reads agent-descriptor.json
+   and checks the offering's steps and that each one's `how` is what it
+   claims. A package's root holds its agent-descriptor.json, so a suite reads
+   it at `../agent-descriptor.json` from test/, and never a spec.json.
 
 ## Where the nine are thin
 
 Two files import nothing from the scripts and pin by process alone. Four
-packages have no test that reads their own spec.json. Nine packages declare
+packages have no test that reads their own declaration. Nine packages declare
 went-without.json and only spec-writer's suite tests that anything writes it.
 Do better than that wherever the spec gives the material.
 

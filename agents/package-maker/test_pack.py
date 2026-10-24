@@ -411,6 +411,104 @@ class APackageBuiltFromWhatARunHandedOver(Harness):
         self.assertIn(res["sha256"], listed[0]["about"])
 
 
+
+class TheAgentsOwnFilesARunHandedOver(APackageBuiltFromWhatARunHandedOver):
+    """Since spec writer 0.3.0 a run's work arrives as the agent's own files
+    (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a
+    SKILL.md per skill) rather than a spec. They are found among the
+    attachments by content, under whatever names the hops gave them, laid out
+    as the agent's folder with the scripts beside them, and the folder is
+    built, with no word about a spec."""
+
+    def agent_files(self, doc):
+        """The files convert.py writes from a spec, as attachments named the
+        way the spec writer's pieces arrive: a prefix per hop, and each
+        SKILL.md under its skill's name."""
+        src = os.path.join(self.home, "conv", "spec.json")
+        os.makedirs(os.path.dirname(src))
+        with open(src, "w", encoding="utf-8") as f:
+            json.dump(doc, f)
+        for j in doc["jobs"]:
+            for kind in ("scripts", "references"):
+                for rel in j.get(kind) or []:
+                    os.makedirs(os.path.dirname(os.path.join(self.home, "conv", rel)), exist_ok=True)
+                    open(os.path.join(self.home, "conv", rel), "w").close()
+        folder = os.path.join(self.home, "conv", "agent")
+        p = subprocess.run([sys.executable, os.path.join(HERE, "convert.py"), src, folder], capture_output=True, text=True)
+        self.assertTrue(json.loads(p.stdout.strip().splitlines()[-1])["ok"], p.stdout)
+        d = os.path.join(self.home, "in")
+        os.makedirs(d, exist_ok=True)
+        out = []
+        names = [("agent-descriptor.json", "agent-descriptor.json"), ("agent-runtime-requirements.json", "agent-runtime-requirements.json"),
+                 ("plugin.json", "plugin.json")] + [(f"skills/{j['slug']}/SKILL.md", f"{j['slug']}.SKILL.md") for j in doc["jobs"]]
+        for n, (rel, sent) in enumerate(names):
+            at = os.path.join(d, f"{n + 10}-Qq77wwEE-{n}-Ab12cdEF-{sent}")
+            shutil.copy(os.path.join(folder, rel), at)
+            out.append(at)
+        return out
+
+    def run_prompt(self, files, job):
+        listed = "\n".join(f"           {p}  (application/octet-stream)" for p in files)
+        prompt = (f"run r-1 phase make-the-package: here is work\njob folder: {job}  (put every delivered piece under {job}/out/)\n"
+                  f"attached:  {len(files)} files, already downloaded to this machine:\n{listed}\n\nwanted: the package\n")
+        prompt_path = os.path.join(self.home, "prompt.txt")
+        with open(prompt_path, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        env = dict(os.environ, HOME=self.home, USERPROFILE=self.home)
+        return subprocess.run([sys.executable, PACK, "--run", prompt_path, os.path.join(self.home, "identity.json")],
+                              capture_output=True, text=True, env=env)
+
+    def test_the_agents_files_and_scripts_are_laid_out_as_its_folder_and_built(self):
+        files = self.agent_files(self.with_scripts()) + self.attached(["do.mjs", "pieces.mjs", "how.md", "job-manifest.json", "stray.txt"])
+        env = dict(os.environ, HOME=self.home, USERPROFILE=self.home)
+        p = subprocess.run([sys.executable, PACK, files[0], os.path.join(self.home, "identity.json"), "--from", *files[1:]],
+                           capture_output=True, text=True, env=env)
+        res = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["act"], "build")
+        self.assertEqual(res["laid_out"]["placed"], ["references/how.md", "scripts/do.mjs", "scripts/pieces.mjs"])
+        self.assertEqual(res["laid_out"]["left_over"], ["stray.txt"])
+        self.assertEqual(res["laid_out"]["skills"], ["do-it"])
+        self.assertTrue(res["laid_out"]["manifest"].endswith("job-manifest.json"))
+        self.assertFalse(any("spec" in w for w in res.get("warnings") or []), res.get("warnings"))
+        self.assertTrue(os.path.exists(os.path.join(res["package_dir"], "skills", "do-it", "scripts", "do.mjs")))
+        self.assertTrue(os.path.exists(os.path.join(res["package_dir"], "agent-runtime-requirements.json")))
+        for root, _, names in os.walk(self.home):
+            self.assertNotIn("spec.json", [n for n in names if root != os.path.join(self.home, "conv")], root)
+
+    def test_the_framed_prompt_carrying_the_agents_files_is_built_without_a_model(self):
+        job = os.path.join(self.home, "job")
+        os.makedirs(job)
+        files = self.agent_files(self.with_scripts()) + self.attached(["do.mjs", "pieces.mjs", "how.md"])
+        p = self.run_prompt(files, job)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("Built packable 1.0.0: sha256 ", p.stdout)
+        self.assertTrue(os.path.exists(os.path.join(job, "pieces.json")))
+
+    def test_the_agents_files_win_over_a_spec_that_came_with_them(self):
+        job = os.path.join(self.home, "job")
+        os.makedirs(job)
+        old = spec(version="0.9.0")
+        old["jobs"][0]["scripts"] = ["scripts/do.mjs", "scripts/pieces.mjs"]
+        old["jobs"][0]["references"] = ["references/how.md"]
+        spec_path = os.path.join(self.home, "in", "0-Zz98yxWV-spec.json")
+        files = self.agent_files(self.with_scripts()) + self.attached(["do.mjs", "pieces.mjs", "how.md"])
+        with open(spec_path, "w", encoding="utf-8") as f:
+            json.dump(old, f)
+        p = self.run_prompt([spec_path, *files], job)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("Built packable 1.0.0", p.stdout, "the spec was built instead of the agent's files")
+
+    def test_a_script_the_agents_files_name_and_the_run_did_not_hand_over_is_refused_by_name(self):
+        files = self.agent_files(self.with_scripts()) + self.attached(["do.mjs", "how.md"])
+        env = dict(os.environ, HOME=self.home, USERPROFILE=self.home)
+        p = subprocess.run([sys.executable, PACK, files[0], os.path.join(self.home, "identity.json"), "--from", *files[1:]],
+                           capture_output=True, text=True, env=env)
+        res = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(res["act"], "refuse")
+        self.assertIn("scripts/pieces.mjs", res["refused"])
+        self.assertEqual(self.dist(), [])
+
 class WhereTheSourceWasRead(Harness):
     """The build record's `source` (Common Agent 8.2, 0.17.0-draft): the
     repository and commit the builder read, when it read a clean checkout.

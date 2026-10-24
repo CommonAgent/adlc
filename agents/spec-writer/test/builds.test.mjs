@@ -42,7 +42,7 @@ test("the verdict never says it builds without saying what was stood in for", ()
   const r = checkBuilds({ spec: PUBLISHER, env });
   assert.ok(r.stood_in_for.length > 0, "the publisher names files, so some were stood in for");
   const said = verdict(r);
-  assert.match(said, /^The builder takes this spec\./);
+  assert.match(said, /^The builder takes this draft\./);
   // A step that quietly created placeholders and reported "it builds" would
   // be claiming something nobody checked.
   assert.match(said, /checked the declaration and not the package/);
@@ -92,7 +92,7 @@ test("no builder is a check that did not happen, not a pass and not a fail", () 
   const r = checkBuilds({ spec: PUBLISHER, env: { BUILD_PY: "/nowhere/build.py" } });
   assert.equal(r.checked, false);
   assert.equal(r.ok, null, "a missing builder was reported as a verdict");
-  assert.match(verdict(r), /nothing checked whether this spec builds/);
+  assert.match(verdict(r), /nothing checked whether this draft builds/);
   assert.match(verdict(r), /unknown rather than passed/);
 });
 
@@ -134,7 +134,8 @@ test("stand-ins are empty on purpose", () => {
   // A stand-in with plausible content in it would make a package that looks
   // built and runs nothing.
   assert.equal(wrote.get(script), "");
-  assert.match(wrote.get([...wrote.keys()].find((p) => p.endsWith("spec.json"))), /"jobs"/);
+  assert.match(wrote.get([...wrote.keys()].find((p) => p.endsWith("draft.json"))), /"jobs"/);
+  assert.ok(![...wrote.keys()].some((p) => p.endsWith("spec.json")), "a spec.json was written");
 });
 
 test("a builder that answers with something other than a result is itself the finding", () => {
@@ -153,4 +154,105 @@ test("the temp folder goes, even when the builder throws", () => {
           run: () => { throw new Error("boom"); } },
   }), /boom/);
   assert.deepEqual(dropped, ["/tmp/made"]);
+});
+
+// The files this agent hands on. They are taken from what the builder made of
+// the draft, and the proof that they are the same agent is that the builder
+// makes the same package of them, byte for byte.
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { NOT_NAMED, STAND_IN_NAME, agentFiles } from "../scripts/builds.mjs";
+
+const walk = (dir, at = "") => readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? walk(dir, join(at, e.name)) : [join(at, e.name).replace(/\\/g, "/")]).sort();
+const buildInto = (src, out) => {
+  const r = spawnSync("python3", [BUILD_PY, src, out], { encoding: "utf8" });
+  return JSON.parse(r.stdout.trim());
+};
+const standInsUnder = (dir, spec) => {
+  for (const rel of namedFiles(spec)) { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), ""); }
+};
+
+test("the files the builder takes come back as the agent's own files, and they build the same package as the draft", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spec-writer-files-"));
+  try {
+    const keep = join(dir, "agent");
+    const r = checkBuilds({ spec: PUBLISHER, env, keep });
+    assert.equal(r.ok, true, JSON.stringify(r.problems));
+    const listed = r.files.list.map((f) => f.path);
+    assert.deepEqual(listed.slice(0, 3), ["agent-descriptor.json", "agent-runtime-requirements.json", "plugin.json"]);
+    assert.deepEqual(listed.slice(3), PUBLISHER.jobs.map((j) => `skills/${j.slug}/SKILL.md`));
+    assert.deepEqual(walk(keep), [...listed].sort(), "something was kept that is not listed, or listed and not kept");
+    assert.ok(!walk(dir).some((p) => p.endsWith("spec.json")), "a spec.json was written");
+    const manifest = JSON.parse(readFileSync(join(keep, "plugin.json"), "utf8"));
+    const own = manifest.extensions["net.agentdoc.package"];
+    for (const k of ["descriptor", "runtime_requirements", "install", "built", "draft"]) assert.equal(k in own, false, k);
+    assert.deepEqual(own.build.skills[PUBLISHER.jobs[0].slug].scripts ?? [], PUBLISHER.jobs[0].scripts ?? []);
+
+    // The same package, from the folder and from the draft, stand-ins for both.
+    standInsUnder(keep, PUBLISHER);
+    const fromFolder = buildInto(keep, join(dir, "a"));
+    const draftDir = join(dir, "draft");
+    mkdirSync(draftDir);
+    writeFileSync(join(draftDir, "draft.json"), JSON.stringify(PUBLISHER, null, 2));
+    standInsUnder(draftDir, PUBLISHER);
+    const fromDraft = buildInto(join(draftDir, "draft.json"), join(dir, "b"));
+    assert.equal(fromFolder.ok, true, fromFolder.error);
+    assert.equal(fromDraft.ok, true, fromDraft.error);
+    const a = join(dir, "a", "publisher"); const b = join(dir, "b", "publisher");
+    assert.deepEqual(walk(a), walk(b));
+    for (const f of walk(a)) assert.equal(readFileSync(join(a, f), "utf8"), readFileSync(join(b, f), "utf8"), f);
+    // Read from the folder, with no warning about a spec.
+    assert.equal((fromFolder.warnings ?? []).some((w) => /spec\.json/.test(w)), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a draft whose name is open is built under a stand-in name, and its files carry no name", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spec-writer-unnamed-"));
+  try {
+    const unnamed = clone(PUBLISHER);
+    delete unnamed.name;
+    const keep = join(dir, "agent");
+    const r = checkBuilds({ spec: unnamed, env, keep });
+    assert.equal(r.ok, true, JSON.stringify(r.problems));
+    assert.equal(r.name_stood_in, true);
+    assert.match(verdict(r), /name is still open, so it was built under a stand-in name/);
+    const manifest = JSON.parse(readFileSync(join(keep, "plugin.json"), "utf8"));
+    assert.equal("name" in manifest, false, "the stand-in name was handed on");
+    for (const j of unnamed.jobs) {
+      const md = readFileSync(join(keep, "skills", j.slug, "SKILL.md"), "utf8");
+      assert.ok(!md.includes(STAND_IN_NAME), `${j.slug} carries the stand-in name`);
+      assert.match(md, new RegExp(`Part of ${NOT_NAMED}\\.`));
+    }
+    // Until it is named the builder refuses the files, which is the truth.
+    standInsUnder(keep, unnamed);
+    const built = buildInto(keep, join(dir, "out"));
+    assert.equal(built.ok, false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a draft the builder refuses keeps no files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "spec-writer-refused-"));
+  try {
+    const bad = clone(PUBLISHER);
+    bad.jobs[0].how = { control: "model", intelligence: "open", cost: "metered", contract: "full" };
+    const r = checkBuilds({ spec: bad, env, keep: join(dir, "agent") });
+    assert.equal(r.ok, false);
+    assert.equal(r.files, undefined);
+    assert.equal(existsSync(join(dir, "agent")), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("agentFiles takes the build entry from the draft's jobs, and kind, container and claims when said", () => {
+  const read = (p) => {
+    const n = p.replace(/\\/g, "/").split("/").slice(-1)[0];
+    if (n === "plugin.json") return JSON.stringify({ name: "x", extensions: { "net.agentdoc.package": { descriptor: {}, runtime_requirements: {}, built: true, draft: true, from: [{ name: "y" }] } } });
+    return n === "SKILL.md" ? `---\nname: a\n---\nPart of ${STAND_IN_NAME}. when` : "{}";
+  };
+  const files = agentFiles({ kind: "plugin-on-harness", jobs: [{ slug: "a", scripts: ["s/a.mjs"], references: [] }] }, "/pkg", { named: false, read });
+  const m = JSON.parse(files["plugin.json"]);
+  assert.equal("name" in m, false);
+  assert.deepEqual(m.extensions["net.agentdoc.package"], { from: [{ name: "y" }], build: { kind: "plugin-on-harness", skills: { a: { scripts: ["s/a.mjs"] } } } });
+  assert.match(files["skills/a/SKILL.md"], /Part of an agent not named yet\. when/);
 });
