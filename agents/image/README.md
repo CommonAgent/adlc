@@ -185,7 +185,14 @@ If one of those is missing, the container refuses the message, names what was
 missing, and runs nothing. It prints no values, so a refusal in a log never
 carries the credential it was complaining about.
 
-## What each declaration in install.json does to the build
+## What each declaration in the runtime requirements does to the build
+
+The runtime requirements are `agent-runtime-requirements.json`, and the draft
+Descriptor is `agent-descriptor.json` (Common Agent 0.30.0-draft). A package
+built before then calls them `install.json` and `descriptor.json`, points at
+the first under `install`, and gives its format as `agent-install-v1`; those
+names are still read, so a package already in a depot still builds. Where a
+package carries both names, the current one is read.
 
 `runtimes[]` and `binaries[]` become a check in the image and a constraint on
 which base can answer. Every one is checked at build time and the build stops
@@ -272,7 +279,7 @@ is the one that holds this whole path together for somebody who is not us.
     node --test "test/*.test.mjs"
 
 The fixtures are real packages, built by the package maker beside this folder
-from a folder of package sources laid out as `<family>/<name>/spec.json`, such
+from a folder of package sources laid out as `<family>/<name>/` (each an agent's own files), such
 as the AgentMesh repository's `packages/`. Name it with `ADLC_PACKAGES`; the
 suites that build no package (`job-usage`, `tenant-host` and `wake-host`) run
 without it. One `tenant-host` test drives a message through the AgentMesh

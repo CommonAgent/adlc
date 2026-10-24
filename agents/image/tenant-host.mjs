@@ -557,7 +557,8 @@ async function main() {
   writeFileSync(join(STATE_DIR, "identity.json"), JSON.stringify({ public_key: key, seed: bundle.seed, created_at: new Date().toISOString() }), { mode: 0o600 });
   writeFileSync(join(STATE_DIR, "mesh.creds"), bundle.creds, { mode: 0o600 });
   const pkgDir = join(process.env.AGENT_HOME ?? "/home/agent", process.env.AGENT_PACKAGE ?? "");
-  const draftPath = tenant.descriptor ? join(pkgDir, tenant.descriptor) : join(pkgDir, "descriptor.json");
+  const draftPath = tenant.descriptor ? join(pkgDir, tenant.descriptor)
+    : (["agent-descriptor.json", "descriptor.json"].map((n) => join(pkgDir, n)).find((p) => existsSync(p)) ?? join(pkgDir, "descriptor.json"));
   if (existsSync(draftPath)) {
     const bound = bindDescriptor(JSON.parse(readFileSync(draftPath, "utf8")),
       { key, handle, version: process.env.AGENT_PACKAGE_VERSION },

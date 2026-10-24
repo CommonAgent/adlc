@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import {
-  TENANT_IMAGE_FILES, TENANT_READY_LINE, installPackage, packageServiceDeployArgv, readPackageInstruction, readTarball, tenantLayer, tenantSettings,
+  TENANT_IMAGE_FILES, TENANT_READY_LINE, installPackage, packageServiceDeployArgv, readPackageInstruction, readTarball, tenantLayer, tenantSettings, tenantFacts,
 } from "../service.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -293,4 +293,15 @@ test("the service shape carries the key as one variable and nothing mounted", ()
   assert.ok(!argv.join(" ").includes("/secrets/agentmesh"));
   assert.ok(argv.includes("--cpu-throttling"));
   assert.equal(argv[argv.indexOf("--min-instances") + 1], "0");
+});
+
+// Common Agent 0.30.0-draft: the draft is agent-descriptor.json, and a
+// package from before it keeps descriptor.json. The tenant host opens the one
+// the emitter read.
+test("the tenant host is told which descriptor file the package carries", () => {
+  const ext = (p) => ({ manifest: { extensions: { "net.agentdoc.package": p } } });
+  assert.equal(tenantFacts({ ...ext({ descriptor: { path: "agent-descriptor.json" } }) }).descriptor, "agent-descriptor.json");
+  assert.equal(tenantFacts({ ...ext({}), paths: { descriptor: "agent-descriptor.json" } }).descriptor, "agent-descriptor.json");
+  assert.equal(tenantFacts({ ...ext({}), paths: { descriptor: "descriptor.json" } }).descriptor, "descriptor.json");
+  assert.equal(tenantFacts({ ...ext({}) }).descriptor, "descriptor.json");
 });

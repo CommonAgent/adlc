@@ -1898,15 +1898,28 @@ class TheUpdateItselfCarriesThemToTheJob(unittest.TestCase):
         # variable the update places. From 0.10.7 the live package never wakes
         # one, gets no AGENT_MODEL, and a fixture that followed it would test
         # nothing about the variables this side places (2026-09-29).
-        with open(os.path.join(example, "spec.json"), encoding="utf-8") as f:
-            doc = json.load(f)
-        doc["source"] = os.path.abspath(example)
-        for job in doc["jobs"]:
-            if job.get("run"):
-                job["run"]["escalate_when"] = "json:block"
-        spec = os.path.join(cls.tmp, "process-runner-escalating.spec.json")
-        with open(spec, "w", encoding="utf-8") as f:
-            json.dump(doc, f)
+        if os.path.isfile(os.path.join(example, "spec.json")):
+            with open(os.path.join(example, "spec.json"), encoding="utf-8") as f:
+                doc = json.load(f)
+            doc["source"] = os.path.abspath(example)
+            for job in doc["jobs"]:
+                if job.get("run"):
+                    job["run"]["escalate_when"] = "json:block"
+            spec = os.path.join(cls.tmp, "process-runner-escalating.spec.json")
+            with open(spec, "w", encoding="utf-8") as f:
+                json.dump(doc, f)
+        else:
+            # The agent's folder (Common Agent 13.2): the same change, made in
+            # the runtime requirements the folder is authored as.
+            spec = os.path.join(cls.tmp, "src", "process-runner")
+            shutil.copytree(example, spec, ignore=shutil.ignore_patterns("node_modules"))
+            rr = os.path.join(spec, "agent-runtime-requirements.json")
+            with open(rr, encoding="utf-8") as f:
+                doc = json.load(f)
+            for run in (doc.get("run") or {}).values():
+                run["escalate_when"] = "json:block"
+            with open(rr, "w", encoding="utf-8", newline="\n") as f:
+                f.write(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
         p = subprocess.run([sys.executable, build, spec, os.path.join(cls.tmp, "process-runner")],
                            capture_output=True, text=True)
         res = json.loads(p.stdout.strip().splitlines()[-1])
@@ -2436,6 +2449,20 @@ class TrialsAtInstall(unittest.TestCase):
         self.assertIn("samples_ref", report["added"])
         self.assertIn('"samples_ref":"https://api.dev.agentmesh.ai/v1/agents/maker.platform@agentmesh.ai/samples"', self.signed[-1])
         self.assertTrue(self.signed[-1].startswith(steps.DESCRIPTOR_TAG + "\n"))
+
+    def test_a_package_under_the_current_names_binds_the_same(self):
+        # Common Agent 0.30.0-draft: agent-descriptor.json and
+        # agent-runtime-requirements.json, with the former names still read.
+        with open(f"{self.home}/pkg/agent-runtime-requirements.json", "w") as f:
+            json.dump({"format": "agent-runtime-requirements-v1", "samples_ref": True}, f)
+        with open(f"{self.home}/pkg/agent-descriptor.json", "w") as f:
+            json.dump({"format": "agent-descriptor-v1", "agent_version": "1.0.0", "does": "the current one", "offerings": []}, f)
+        # A stale copy under the former names is not what is read.
+        with open(f"{self.home}/pkg/descriptor.json", "w") as f:
+            json.dump({"format": "agent-descriptor-v1", "agent_version": "1.0.0", "does": "the former one", "offerings": []}, f)
+        report, desc = self.bind()
+        self.assertEqual(desc["does"], "the current one")
+        self.assertEqual(desc["samples_ref"], "https://api.dev.agentmesh.ai/v1/agents/maker.platform@agentmesh.ai/samples")
 
     def test_no_flag_no_address_and_no_handle_no_address(self):
         self.write_package({"format": "agent-install-v1"})

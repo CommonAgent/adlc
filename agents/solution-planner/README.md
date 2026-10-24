@@ -10,7 +10,7 @@ kind of work it is, what it takes and what it hands back. It names no agent for
 any step; the catalog answers each step at the next stage, Source. The plan is
 checked in code before it is written, as a `build-plan-v1` document.
 
-The package is still named `planner` inside `spec.json`, its name before the
+The package is still named `planner` in its `plugin.json`, its name before the
 role was renamed. The folder carries the role's name.
 
 ## What it needs
@@ -23,7 +23,7 @@ role was renamed. The folder carries the role's name.
 
 ```sh
 node --test test/*.test.mjs                                   # 81 tests
-python3 ../package-maker/build.py spec.json ./out             # an Agent Package
+python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
 `records/` holds the build notes of earlier versions.

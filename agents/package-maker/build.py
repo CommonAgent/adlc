@@ -27,7 +27,12 @@ package built on Windows hashes the same as one built on Linux.
 The result is a DRAFT to review, never something vouched for: nobody has run
 the agent this describes. The build record says so.
 
-Usage: build.py <spec.json> <out_dir>   (prints a JSON result)
+Usage: build.py <agent folder | spec.json> <out_dir>   (prints a JSON result)
+
+The agent folder is the layout of Common Agent 13.2: agent-descriptor.json,
+agent-runtime-requirements.json and plugin.json, with skills/<slug>/SKILL.md
+(see read_folder). A spec.json, below, is still read, with a warning, for one
+transition; convert.py turns one into the folder.
 
 Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
 {
@@ -131,6 +136,38 @@ import subprocess
 import sys
 
 EXT = "net.agentdoc.package"
+# The names of the two authored files, the manifest pointer at the second and
+# its format (Common Agent 0.30.0-draft, 12.2). A writer emits only these. The
+# names before 0.30.0-draft are read where the current ones are absent, and
+# the current ones win where both are present, with a warning either way.
+DESCRIPTOR_FILE = "agent-descriptor.json"
+RUNTIME_FILE = "agent-runtime-requirements.json"
+RUNTIME_FORMAT = "agent-runtime-requirements-v1"
+RUNTIME_POINTER = "runtime_requirements"
+LEGACY_DESCRIPTOR_FILE = "descriptor.json"
+LEGACY_RUNTIME_FILE = "install.json"
+LEGACY_RUNTIME_FORMAT = "agent-install-v1"
+LEGACY_RUNTIME_POINTER = "install"
+MANIFEST_FILE = "plugin.json"
+# The one member of the package's own entry in an agent folder's plugin.json
+# that is the builder's and never the package's: what it reads to assemble the
+# skills and nothing a host or a caller reads. It is left out of every package.
+BUILD_MEMBER = "build"
+BUILD_MEMBERS = ("source", "kind", "container", "claims", "skills")
+SKILL_FILE_KINDS = ("scripts", "references", "assets")
+SPEC_DEPRECATED = ("building from a spec.json is deprecated: keep agent-descriptor.json, "
+                   "agent-runtime-requirements.json and plugin.json in the agent's folder (convert.py writes "
+                   "them from a spec) and build the folder")
+# What this build read that it would rather not have: an old file name, the
+# deprecated spec input. Printed to stderr as it is found and carried in the
+# result, so a caller that reads only the JSON line still sees it.
+WARNINGS = []
+
+
+def warn(text):
+    WARNINGS.append(text)
+    print(f"build.py: warning: {text}", file=sys.stderr)
+
 SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 HERE = os.path.dirname(os.path.abspath(__file__))
 # The pinned copy of the Agent Plugins schema the manifest declares, so a
@@ -230,7 +267,15 @@ def system_name(entry):
     return None
 
 
+# The package folder a build has started writing, so a refusal after that
+# point leaves no half-built package behind.
+PARTIAL = []
+
+
 def out(obj):
+    if not obj.get("ok"):
+        for d in PARTIAL:
+            shutil.rmtree(d, ignore_errors=True)
     print(json.dumps(obj))
     sys.exit(0 if obj.get("ok") else 1)
 
@@ -1446,7 +1491,7 @@ def install_file(spec, jobs, systems, lockfiles):
     verify_path = verify_script(spec, jobs)
     trial_ceiling = trial_declarations(spec, jobs)
     doc = {
-        "format": "agent-install-v1",
+        "format": RUNTIME_FORMAT,
         "runtimes": [{"name": r["name"], **({"version": r["version"]} if r.get("version") else {})} for r in runtimes],
         "binaries": [{"name": b["name"], **({"purpose": b["purpose"]} if b.get("purpose") else {})} for b in binaries],
         "dependencies": lockfiles,
@@ -1485,7 +1530,7 @@ def install_file(spec, jobs, systems, lockfiles):
     }
     text = dumps(doc)
     if "://" in text:
-        fail("install.json must not carry an address; name the system and the credential, and bind at install")
+        fail(f"{RUNTIME_FILE} must not carry an address; name the system and the credential, and bind at install")
     return doc
 
 
@@ -1680,24 +1725,348 @@ def copy_into(src_base, rel, dest_dir):
     return name
 
 
+# ── the agent's folder ────────────────────────────────────────────────────
+
+def read_json_file(path, what):
+    try:
+        with open(path, encoding="utf-8") as f:
+            v = json.load(f)
+    except Exception as e:  # noqa: BLE001
+        fail(f"{what} is not readable JSON: {e}")
+    if not isinstance(v, dict):
+        fail(f"{what} is a JSON object")
+    return v
+
+
+def pick_name(folder, name, legacy):
+    """The file an authored fact is read from: its current name, or its name
+    before 0.30.0-draft where the current one is absent. Returns the name it
+    was found under, or None."""
+    now = os.path.isfile(os.path.join(folder, name))
+    old = os.path.isfile(os.path.join(folder, legacy))
+    if now and old:
+        warn(f"both {name} and {legacy} are in the agent's folder; {name} is read and {legacy} is ignored")
+        return name
+    if now:
+        return name
+    if old:
+        warn(f"{legacy} is read as {name}, its name since Common Agent 0.30.0-draft; rename it")
+        return legacy
+    return None
+
+
+def has_skill_frontmatter(text, slug):
+    """An Agent Skill's SKILL.md opens with frontmatter naming the skill and
+    saying when to use it, and the name is the folder's."""
+    if not text.startswith("---\n"):
+        return False
+    end = text.find("\n---", 4)
+    if end < 0:
+        return False
+    fm = text[4:end].split("\n")
+    names = [ln.split(":", 1)[1].strip() for ln in fm if ln.startswith("name:")]
+    return names == [slug] and any(ln.startswith("description:") and ln.split(":", 1)[1].strip() for ln in fm)
+
+
+def read_folder(folder):
+    """An agent kept the way Common Agent 13.2 says a package is authored:
+    agent-descriptor.json, agent-runtime-requirements.json and plugin.json,
+    with the skills under skills/<slug>/. Returns the spec those files state,
+    the folder the skills' files are copied from, and what was authored, so
+    the build can say exactly where the folder says something it would not
+    have written.
+
+    The spec is an inside detail: everything downstream of it is the same
+    build a spec.json gets, every check included, and the two authored files
+    it writes are then held to what the folder says. Building adds no fact
+    the source did not state, and the source states none the builder would
+    not have written."""
+    if not os.path.isfile(os.path.join(folder, MANIFEST_FILE)):
+        fail(f"the agent's folder has no {MANIFEST_FILE}")
+    dname = pick_name(folder, DESCRIPTOR_FILE, LEGACY_DESCRIPTOR_FILE)
+    rname = pick_name(folder, RUNTIME_FILE, LEGACY_RUNTIME_FILE)
+    if not dname:
+        fail(f"the agent's folder has no {DESCRIPTOR_FILE}")
+    if not rname:
+        fail(f"the agent's folder has no {RUNTIME_FILE}")
+    if os.path.isfile(os.path.join(folder, "spec.json")):
+        warn(f"spec.json beside {DESCRIPTOR_FILE} is ignored; the folder's authored files are what is built")
+    manifest = read_json_file(os.path.join(folder, MANIFEST_FILE), MANIFEST_FILE)
+    desc = read_json_file(os.path.join(folder, dname), dname)
+    inst = read_json_file(os.path.join(folder, rname), rname)
+    if inst.get("format") == LEGACY_RUNTIME_FORMAT:
+        warn(f'{rname} says format "{LEGACY_RUNTIME_FORMAT}", read as "{RUNTIME_FORMAT}", its format since Common Agent 0.30.0-draft')
+        inst["format"] = RUNTIME_FORMAT
+    elif inst.get("format") != RUNTIME_FORMAT:
+        fail(f'{rname} says format {inst.get("format")!r}; the runtime requirements say "{RUNTIME_FORMAT}"')
+    if desc.get("format") != "agent-descriptor-v1":
+        fail(f'{dname} says format {desc.get("format")!r}; a draft Descriptor says "agent-descriptor-v1"')
+
+    exts = manifest.get("extensions")
+    if exts is not None and not (isinstance(exts, dict) and all(isinstance(v, dict) for v in exts.values())):
+        fail(f"{MANIFEST_FILE} extensions maps a namespace to an object")
+    own = dict((exts or {}).get(EXT) or {})
+    generated = [k for k in own if k in ("descriptor", RUNTIME_POINTER, LEGACY_RUNTIME_POINTER, "built", "draft")]
+    if generated:
+        warn(f"{MANIFEST_FILE} extensions.{EXT} carries {', '.join(generated)}, which the build writes; what the folder says there is ignored")
+    for k in own:
+        if k not in ("from", BUILD_MEMBER, "descriptor", RUNTIME_POINTER, LEGACY_RUNTIME_POINTER, "built", "draft"):
+            fail(f"{MANIFEST_FILE} extensions.{EXT}.{k} is not something the package's own entry carries")
+    b = own.get(BUILD_MEMBER) or {}
+    if not isinstance(b, dict):
+        fail(f"{MANIFEST_FILE} extensions.{EXT}.{BUILD_MEMBER} is an object")
+    for k in b:
+        if k not in BUILD_MEMBERS:
+            fail(f"{MANIFEST_FILE} extensions.{EXT}.{BUILD_MEMBER}.{k} is not something the builder reads; it reads {', '.join(BUILD_MEMBERS)}")
+    src = b.get("source")
+    if src is not None and not (isinstance(src, str) and src.strip()):
+        fail(f"{BUILD_MEMBER}.source is the folder, relative to this one, that the skills' files are copied from")
+    src_base = os.path.normpath(os.path.join(folder, src)) if src else folder
+
+    # The jobs, in the order the skills are listed, each projected back from
+    # the offering or step that carries it.
+    offerings = desc.get("offerings")
+    if not (isinstance(offerings, list) and offerings and all(isinstance(o, dict) for o in offerings)):
+        fail(f"{dname} has no offering; at least one is what a caller orders")
+    projected, seen_order = {}, []
+    for o in offerings:
+        for p in [o] + [s for s in (o.get("steps") or []) if isinstance(s, dict)]:
+            pid = p.get("id")
+            if not (isinstance(pid, str) and SLUG_RE.match(pid)):
+                fail(f"each offering and step in {dname} has an id (lowercase-hyphen); bad: {pid!r}")
+            if pid not in projected:
+                projected[pid] = p
+                seen_order.append(pid)
+    skills_map = b.get("skills")
+    if skills_map is None:
+        order = seen_order
+        skills_map = {}
+    else:
+        if not isinstance(skills_map, dict):
+            fail(f"{BUILD_MEMBER}.skills maps each skill to the files copied into it")
+        order = list(skills_map)
+        for slug in order:
+            if slug not in projected:
+                # A skill no offering or step stands for. Common Agent 12.5
+                # says there is none, and one package (a scorer its own
+                # offering runs as a tool) has one; it is carried as it always
+                # was, and said out loud.
+                warn(f"skills/{slug} stands for no offering or step in {dname}; Common Agent 12.5 says every skill stands for one")
+        for slug in seen_order:
+            if slug not in skills_map:
+                fail(f"{dname} names {slug} and {BUILD_MEMBER}.skills does not list it")
+        for slug, files in skills_map.items():
+            if not isinstance(files, dict) or any(k not in SKILL_FILE_KINDS for k in files):
+                fail(f"{BUILD_MEMBER}.skills.{slug} names files by kind: {', '.join(SKILL_FILE_KINDS)}")
+            for k, v in files.items():
+                if not (isinstance(v, list) and all(isinstance(x, str) and x for x in v)):
+                    fail(f"{BUILD_MEMBER}.skills.{slug}.{k} is a list of paths relative to the agent's folder")
+    sdir = os.path.join(folder, "skills")
+    on_disk = sorted(n for n in os.listdir(sdir) if os.path.isdir(os.path.join(sdir, n))) if os.path.isdir(sdir) else []
+    for n in on_disk:
+        if n not in projected and n not in skills_map:
+            fail(f"skills/{n} stands for no offering or step in {dname}; every skill stands for one")
+    authored_skills = {}
+    for slug in order:
+        md = os.path.join(sdir, slug, "SKILL.md")
+        if not os.path.isfile(md):
+            fail(f"offering or step {slug} has no skills/{slug}/SKILL.md in the agent's folder; a package is authored with the skills it names")
+        with open(md, encoding="utf-8") as f:
+            text = f.read()
+        if not has_skill_frontmatter(text, slug):
+            fail(f"skills/{slug}/SKILL.md needs frontmatter with name {slug} and a description (the Agent Skills format)")
+        authored_skills[slug] = os.path.join(sdir, slug)
+
+    offered_ids = [o["id"] for o in offerings]
+    by_offering = {o["id"]: o for o in offerings}
+    runs = inst.get("run") or {}
+    deps = {}
+    for d in inst.get("dependencies") or []:
+        if isinstance(d, dict) and isinstance(d.get("skill"), str):
+            deps.setdefault(d["skill"], d)
+    jobs = []
+    for slug in order:
+        p = by_offering.get(slug) or projected.get(slug) or {"name": slug}
+        j = {"slug": slug, "title": p.get("name")}
+        for k in ("does", "inputs", "outputs", "how", "examples"):
+            if k in p:
+                j[k] = p[k]
+        j["offered"] = slug in offered_ids
+        if slug in by_offering:
+            o = by_offering[slug]
+            if o.get("steps"):
+                j["steps"] = [s.get("id") for s in o["steps"] if isinstance(s, dict)]
+            for k in ("revisions", "trial", "scopes"):
+                if k in o:
+                    j[k] = o[k]
+        if isinstance(runs, dict) and slug in runs:
+            j["run"] = runs[slug]
+        if slug in deps:
+            lp = str(deps[slug].get("lockfile", ""))
+            prefix = f"skills/{slug}/"
+            if not lp.startswith(prefix):
+                fail(f"{rname} names the lockfile {lp} for {slug}, which is not under skills/{slug}/")
+            j["lockfile"] = lp[len(prefix):]
+        for k in SKILL_FILE_KINDS:
+            if skills_map.get(slug, {}).get(k):
+                j[k] = list(skills_map[slug][k])
+        jobs.append(j)
+
+    refusals = desc.get("refusals")
+    if not (isinstance(refusals, str) and refusals.strip()):
+        fail(f"{dname} does not say what the agent refuses; a package must carry it and it is not something to invent")
+    if not (isinstance(desc.get("records"), list) and desc["records"]):
+        fail(f"{dname} does not say what records the agent must leave; a package must carry it and it is not something to invent")
+
+    version = manifest.get("version")
+    if version is None:
+        version = desc.get("agent_version", "1.0.0")
+    if not isinstance(version, str):
+        fail(f"{MANIFEST_FILE} version must be a string")
+    if desc.get("agent_version") is not None and str(desc["agent_version"]) != version:
+        fail(f"{MANIFEST_FILE} says version {version} and {dname} says agent_version {desc['agent_version']}; they are one version")
+    spec = {"name": manifest.get("name", ""), "version": version, "description": manifest.get("description")}
+    for k in ("license", "homepage", "repository", "author"):
+        if k in manifest:
+            spec[k] = manifest[k]
+    if "from" in own:
+        spec["from"] = own["from"]
+    for k in ("kind", "container", "claims"):
+        if k in b:
+            spec[k] = b[k]
+    spec["jobs"] = jobs
+    spec["refuses"] = [ln for ln in refusals.split("\n") if ln.strip()]
+    if desc.get("escalates"):
+        spec["escalates"] = desc["escalates"]
+    spec["records"] = desc["records"]
+
+    # A system is one name in both files: what the access is for in the
+    # descriptor, how it is bound in the runtime requirements.
+    dsys = desc.get("systems") or []
+    isys = inst.get("systems") or []
+    if not (isinstance(dsys, list) and isinstance(isys, list)):
+        fail(f"systems is a list in {dname} and in {rname}")
+    inst_by = {system_name(e): e for e in isys if isinstance(e, dict)}
+    if {system_name(d) for d in dsys if isinstance(d, dict)} != set(inst_by) or len(dsys) != len(isys):
+        fail(f"{dname} and {rname} name different systems")
+    systems = []
+    for d in dsys:
+        e = inst_by[system_name(d)]
+        s = {"name": system_name(d), "access": d.get("access")}
+        for k in ("needs", "leaves"):
+            if k in d:
+                s[k] = d[k]
+        for k in ("kind", "credential", "env", "spends", "settings"):
+            if k in e:
+                s[k] = e[k]
+        systems.append(s)
+    spec["systems"] = systems
+    for k in ("can_use", "run_config"):
+        if k in desc:
+            spec[k] = desc[k]
+
+    for k in ("runtimes", "binaries", "directories"):
+        if k in inst:
+            spec[k] = inst[k]
+    if "ceilings" in inst:
+        if not isinstance(inst["ceilings"], list):
+            fail(f"{rname} ceilings is a list")
+        # The enforcing side is derived; the build writes it again and the
+        # comparison below holds the folder's word to the derivation.
+        spec["ceilings"] = [{k: v for k, v in c.items() if k != "enforced_by"} if isinstance(c, dict) else c
+                            for c in inst["ceilings"]]
+    for k in ("job_seconds", "wants_replies", "one_at_a_time", "samples_ref", "trial_ceiling"):
+        if k in inst:
+            spec[k] = inst[k]
+    if "answer" in inst:
+        a = inst["answer"]
+        if not (isinstance(a, dict) and set(a) == {"piece"}):
+            fail(f'{rname} answer is {{"piece": "<name>"}}')
+        spec["answer"] = a["piece"]
+    if "price" in inst:
+        pr = inst["price"]
+        if not (isinstance(pr, dict) and isinstance(pr.get("price"), dict) and isinstance(pr.get("covers"), dict)):
+            fail(f"{rname} price is the SKU as it will be placed: sku, covers and price")
+        price = dict(pr["price"])
+        if "sku" in pr:
+            price["sku"] = pr["sku"]
+        if "offerings" in pr["covers"]:
+            price["covers"] = pr["covers"]["offerings"]
+        spec["price"] = price
+    if "verify" in inst:
+        m = re.match(r"^skills/([^/]+)/(.+)$", str(inst["verify"]))
+        if not m:
+            fail(f"{rname} verify is the path of one skill's script inside the package, skills/<slug>/scripts/<file>")
+        spec["verify"] = {"job": m.group(1), "script": m.group(2)}
+
+    authored = {"folder": folder, "descriptor_name": dname, "runtime_name": rname,
+                "descriptor": desc, "runtime": inst, "manifest": manifest, "skills": authored_skills}
+    return spec, src_base, authored
+
+
+def first_difference(a, b, path=""):
+    """Where two JSON values first differ, as a path, or None when they are
+    the same. Object member order does not count; list order does."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        for k in list(a) + [k for k in b if k not in a]:
+            if k not in a:
+                return f"{path}.{k} (the folder does not say it, and the build would)"
+            if k not in b:
+                return f"{path}.{k} (the folder says it, and the build would not)"
+            d = first_difference(a[k], b[k], f"{path}.{k}")
+            if d:
+                return d
+        return None
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            return f"{path} (the folder lists {len(a)}, the build would list {len(b)})"
+        for i, (x, y) in enumerate(zip(a, b)):
+            d = first_difference(x, y, f"{path}[{i}]")
+            if d:
+                return d
+        return None
+    if a == b and type(a) is type(b):
+        return None
+    return f"{path} (the folder says {json.dumps(a)[:80]}, the build would say {json.dumps(b)[:80]})"
+
+
 # ── main ──────────────────────────────────────────────────────────────────
 
 def main():
     if len(sys.argv) != 3:
-        fail("usage: build.py <spec.json> <out_dir>")
-    spec_path = sys.argv[1]
-    try:
-        spec = json.load(open(spec_path))
-    except Exception as e:  # noqa: BLE001
-        fail(f"cannot read spec: {e}")
-    out_dir = sys.argv[2]
-    src_base = spec.get("source") or os.path.dirname(os.path.abspath(spec_path))
+        fail("usage: build.py <agent folder | spec.json> <out_dir>")
+    src, out_dir = sys.argv[1], sys.argv[2]
+    if os.path.basename(os.path.normpath(src)) == MANIFEST_FILE and os.path.isfile(src):
+        src = os.path.dirname(os.path.abspath(src))
+    if os.path.isdir(src):
+        spec, src_base, authored = read_folder(os.path.abspath(src))
+    else:
+        try:
+            spec = json.load(open(src, encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            fail(f"cannot read spec: {e}")
+        if not isinstance(spec, dict):
+            fail("cannot read spec: it is not a JSON object")
+        warn(SPEC_DEPRECATED)
+        src_base = spec.get("source") or os.path.dirname(os.path.abspath(src))
+        authored = None
+    build(spec, src_base, out_dir, authored)
 
+
+def build(spec, src_base, out_dir, authored):
+    """One build, whichever input it came from. `authored` is None for a
+    spec.json; for an agent's folder it holds the files the folder authored,
+    and the build holds them to what it writes."""
     name = spec.get("name", "")
-    if not NAME_RE.match(name):
-        fail(f"spec.name {name!r} must be lowercase letters, digits and hyphens")
+    if not (isinstance(name, str) and NAME_RE.match(name)):
+        fail(f"{'plugin.json name' if authored else 'spec.name'} {name!r} must be lowercase letters, digits and hyphens")
     version = str(spec.get("version", "1.0.0"))
-    description = need(spec, "description", str)
+    if authored:
+        if not (isinstance(spec.get("description"), str) and spec["description"].strip()):
+            fail(f"{MANIFEST_FILE} needs a description, one sentence on what the agent does")
+        description = spec["description"]
+    else:
+        description = need(spec, "description", str)
     jobs = need(spec, "jobs")
     systems = spec.get("systems", [])
     refuses = need(spec, "refuses")       # the judgment parts: required, never invented
@@ -1852,15 +2221,27 @@ def main():
     lin = lineage(spec)        # what this package was copied from, if anything
     verify_script(spec, jobs)  # refuse a bad verify before anything is written
     pkg = os.path.join(out_dir, name)
+    # The package folder is emptied before it is written, so it must not be
+    # the source or hold it: `build.py agents/x agents` names agents/x as both.
+    real_pkg = os.path.realpath(pkg)
+    for src in {os.path.realpath(src_base), *([os.path.realpath(authored["folder"])] if authored else [])}:
+        if src == real_pkg or src.startswith(real_pkg + os.sep):
+            fail(f"the package would be written to {pkg}, which is the folder it is built from or holds it; name another out folder")
     if os.path.isdir(pkg):
         shutil.rmtree(pkg)
+    PARTIAL.append(pkg)
     os.makedirs(os.path.join(pkg, "skills"), exist_ok=True)
     os.makedirs(os.path.join(pkg, EXT), exist_ok=True)
 
-    # Skills: one per job, with whatever the job brings along.
+    # Skills: one per job, with whatever the job brings along. From a folder,
+    # the skill is the folder's own, SKILL.md as written, and the files its
+    # build entry names are copied into it; from a spec, SKILL.md is written
+    # from the job.
     lockfiles = []
     for j in jobs:
         d = os.path.join(pkg, "skills", j["slug"])
+        if authored:
+            shutil.copytree(authored["skills"][j["slug"]], d)
         os.makedirs(d, exist_ok=True)
         copied = {"scripts": [], "references": [], "assets": []}
         for kind in ("scripts", "references", "assets"):
@@ -1880,44 +2261,79 @@ def main():
                 fail(f"job {j['slug']}: lockfile {j['lockfile']} was not copied into the skill; name it under scripts or references")
             lockfiles.append({"skill": j["slug"], "lockfile": f"skills/{j['slug']}/{j['lockfile']}",
                               "sha256": sha256_of(open(lp, "rb").read())})
-        open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8", newline="\n").write(skill_md(j, name, copied))
+        if not authored:
+            open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8", newline="\n").write(skill_md(j, name, copied))
 
     # The two authored files, then the manifest that points at them.
     desc = draft_descriptor(spec, jobs, systems, refuses, escalates, records)
     inst = install_file(spec, jobs, systems, lockfiles)
     if {s["name"] for s in desc.get("systems", [])} != {s["name"] for s in inst["systems"]}:
-        fail("the descriptor and the install file name different systems")
+        fail("the descriptor and the runtime requirements name different systems")
+    if authored:
+        # The folder's two files are the package's, and what the build makes
+        # of them must be what they say: a member the builder does not write,
+        # a ceiling's enforcing side the system does not imply, a lockfile
+        # whose digest is not the file's, are each refused here by name.
+        for label, made, said in ((authored["descriptor_name"], desc, authored["descriptor"]),
+                                  (authored["runtime_name"], inst, authored["runtime"])):
+            diff = first_difference(said, made)
+            if diff:
+                fail(f"{label} {diff.lstrip('.')}. A package is built from what its authored files say, and the "
+                     f"build would not write this; correct the file")
     desc_text, inst_text = dumps(desc), dumps(inst)
-    open(os.path.join(pkg, "descriptor.json"), "w", encoding="utf-8", newline="\n").write(desc_text)
-    open(os.path.join(pkg, "install.json"), "w", encoding="utf-8", newline="\n").write(inst_text)
+    open(os.path.join(pkg, DESCRIPTOR_FILE), "w", encoding="utf-8", newline="\n").write(desc_text)
+    open(os.path.join(pkg, RUNTIME_FILE), "w", encoding="utf-8", newline="\n").write(inst_text)
 
-    manifest = {
-        "$schema": SCHEMA_URL,
-        "name": name,
-        "version": version,
-        "description": description.strip(),
-        **({"license": spec["license"].strip()} if spec.get("license") else {}),
-        **({"homepage": spec["homepage"]} if spec.get("homepage") else {}),
-        **({"repository": spec["repository"]} if spec.get("repository") else {}),
-        # An author is a name and never a page: the three addresses a manifest
-        # may carry are its own $schema, the homepage and the repository (12.6
-        # rule 3), and an author page is not one of them. Who built this is in
-        # the build record, by key.
-        "author": spec.get("author") or {"name": "Agent Builder"},
-        "keywords": ["built-agent", "draft"] + [j["slug"] for j in jobs],
-        "extensions": {
-            EXT: {
-                "descriptor": {"path": "descriptor.json", "sha256": sha256_of(desc_text)},
-                "install": {"path": "install.json", "sha256": sha256_of(inst_text)},
-                "built": True,
-                "draft": True,
-                # Where this package was copied from, when it was copied at all.
-                **({"from": lin} if lin else {}),
-            }
-        },
+    pointers = {
+        "descriptor": {"path": DESCRIPTOR_FILE, "sha256": sha256_of(desc_text)},
+        RUNTIME_POINTER: {"path": RUNTIME_FILE, "sha256": sha256_of(inst_text)},
+        "built": True,
+        "draft": True,
+        # Where this package was copied from, when it was copied at all.
+        **({"from": lin} if lin else {}),
     }
+    if authored:
+        # The manifest is the folder's, less what is the builder's alone,
+        # with the pointers and digests written in.
+        m = authored["manifest"]
+        if "$schema" in m and m["$schema"] != SCHEMA_URL:
+            fail(f"plugin.json must declare {SCHEMA_URL}")
+        others = {k: v for k, v in (m.get("extensions") or {}).items() if k != EXT}
+        manifest = {
+            "$schema": SCHEMA_URL,
+            "name": name,
+            "version": version,
+            "description": description.strip(),
+            **({"license": spec["license"].strip()} if spec.get("license") else {}),
+            **({"homepage": spec["homepage"]} if spec.get("homepage") else {}),
+            **({"repository": spec["repository"]} if spec.get("repository") else {}),
+            **({"author": m["author"]} if "author" in m else {}),
+            **({"keywords": m["keywords"]} if "keywords" in m else {}),
+            "extensions": {EXT: pointers, **others},
+        }
+        known = {"$schema", "name", "version", "description", "license", "homepage", "repository", "author", "keywords", "extensions"}
+        for k in m:
+            if k not in known:
+                fail(f"plugin.json carries {k!r}, which this builder does not carry into a package")
+    else:
+        manifest = {
+            "$schema": SCHEMA_URL,
+            "name": name,
+            "version": version,
+            "description": description.strip(),
+            **({"license": spec["license"].strip()} if spec.get("license") else {}),
+            **({"homepage": spec["homepage"]} if spec.get("homepage") else {}),
+            **({"repository": spec["repository"]} if spec.get("repository") else {}),
+            # An author is a name and never a page: the three addresses a manifest
+            # may carry are its own $schema, the homepage and the repository (12.6
+            # rule 3), and an author page is not one of them. Who built this is in
+            # the build record, by key.
+            "author": spec.get("author") or {"name": "Agent Builder"},
+            "keywords": ["built-agent", "draft"] + [j["slug"] for j in jobs],
+            "extensions": {EXT: pointers},
+        }
     check_manifest(manifest)
-    open(os.path.join(pkg, "plugin.json"), "w", encoding="utf-8", newline="\n").write(dumps(manifest))
+    open(os.path.join(pkg, MANIFEST_FILE), "w", encoding="utf-8", newline="\n").write(dumps(manifest))
 
     for fn, text in generated_views(desc, inst).items():
         open(os.path.join(pkg, EXT, fn), "w", encoding="utf-8", newline="\n").write(text)
@@ -1929,11 +2345,15 @@ def main():
         f"it: this is a draft to review, not a vouched-for agent.\n")
     check_hidden(pkg)
 
+    rr_sha = manifest["extensions"][EXT][RUNTIME_POINTER]["sha256"]
     out({"ok": True, "name": name, "version": version, "path": pkg,
          "schema": SCHEMA_URL,
-         "descriptor": "descriptor.json (draft, no subject; the deployer binds it)",
+         "input": "folder" if authored else "spec",
+         "descriptor": f"{DESCRIPTOR_FILE} (draft, no subject; the deployer binds it)",
          "descriptor_sha256": manifest["extensions"][EXT]["descriptor"]["sha256"],
-         "install_sha256": manifest["extensions"][EXT]["install"]["sha256"],
+         "runtime_requirements_sha256": rr_sha,
+         # The same digest under the name callers read before 0.30.0-draft.
+         "install_sha256": rr_sha,
          "skills": [j["slug"] for j in jobs],
          "systems": [s["name"] for s in systems],
          # Whether those names are ones an account can bind on its stack. The
@@ -1942,6 +2362,7 @@ def main():
          "lockfiles": lockfiles,
          "refuses_count": len(refuses), "records_count": len(records),
          "draft": True,
+         **({"warnings": list(WARNINGS)} if WARNINGS else {}),
          "note": "Draft package. Nobody has run this agent; review before deploying."})
 
 

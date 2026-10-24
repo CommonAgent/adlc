@@ -67,8 +67,11 @@ only runs inside AgentMesh today.
 
 - `agents/<role>/` holds one agent. The five packages written for the lifecycle
   (spec writer, solution planner, test writer, code writer, publisher) are
-  package sources: a `spec.json`, the scripts, their tests and their reference
-  files. The package maker turns a source like this into an Agent Package.
+  package sources: the agent's own files (`agent-descriptor.json`,
+  `agent-runtime-requirements.json`, `plugin.json` and `skills/<slug>/SKILL.md`,
+  the layout Common Agent 13.2 says a package is authored in), the scripts,
+  their tests and their reference files. The package maker turns a source like
+  this into an Agent Package.
 - `agents/<role>/host/` holds what a fleet host needs to run that agent: its
   descriptor, its listing and the brain the fleet supervisor wakes per message.
 - `agents/image/` holds the image tools: the emitter that turns a package into

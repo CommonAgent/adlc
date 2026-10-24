@@ -493,9 +493,9 @@ for (const a of agents) {
     script: "/opt/fleet/attendant-fast.sh",
     interpreter: "bash",
     uid: a.name, gid: a.name,
-    // The package's own word on how long one job may take (install.json
-    // job_seconds) becomes the attendant's cap; the hard kill trails it.
-    // Its word on reading replies (install.json wants_replies, a runner)
+    // The package's own word on how long one job may take (the runtime
+    // requirements' job_seconds) becomes the attendant's cap; the hard kill trails it.
+    // Its word on reading replies (the runtime requirements' wants_replies, a runner)
     // lifts the attendant's loop guard for this one agent.
     env: { HOME: `/home/${a.name}`, AGENT_NAME: a.name, BRAIN: `/opt/fleet/brains/${a.name}.sh`, POLL_SECS: "0.25",
            // The node that holds this agent, for runtime/fleet/roster.mjs:
@@ -1151,8 +1151,10 @@ def bind_descriptor(home, pkg_name, name, agent_key, handle, pkg_version,
     to the adapter in descriptor-binding.json, which the adapter carries onto
     the registration's data use while the descriptor it serves is the one whose
     digest is recorded there. The harness belongs to the deployment record."""
-    draft_path = f"{home}/{pkg_name}/descriptor.json"
-    if not os.path.exists(draft_path):
+    # agent-descriptor.json, or descriptor.json in a package written before
+    # Common Agent 0.30.0-draft renamed it.
+    draft_path = INSTALL.package_file(f"{home}/{pkg_name}", INSTALL.DESCRIPTOR_FILES)
+    if not draft_path:
         return {"absent": "the package carries no descriptor draft"}
     try:
         draft = json.load(open(draft_path))
@@ -1265,7 +1267,7 @@ def samples_ref_for(home, pkg_name, handle):
     this deploy's environment (env/<AGENTMESH_ENV>.json urls.api), so a dev
     fleet names the dev API and prod names prod."""
     try:
-        inst = read_json(f"{home}/{pkg_name}/install.json")
+        inst = read_json(INSTALL.package_file(f"{home}/{pkg_name}", INSTALL.INSTALL_FILES))
     except Exception:  # noqa: BLE001
         return {}
     if not (isinstance(inst, dict) and inst.get("samples_ref") is True):

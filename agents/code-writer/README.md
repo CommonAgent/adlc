@@ -31,7 +31,7 @@ out, never a verdict the harness wrote.
 
 ```sh
 node --test test/*.test.mjs                                   # 36 tests
-python3 ../package-maker/build.py spec.json ./out             # an Agent Package
+python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
 `rules.md` is what the harness works under. `references/` holds the house

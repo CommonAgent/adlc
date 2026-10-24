@@ -13,7 +13,13 @@ Given a spec file (written by the brain under its own tmp) it:
   4. builds and signs an agent-build-record-v1 with the builder's identity,
 and prints one JSON object naming the package, the tarball, and the record.
 
-Usage: pack.py <spec.json> <identity.json> [--from <file>...] [--job <job folder>]
+Usage: pack.py <spec.json | agent folder> <identity.json> [--from <file>...] [--job <job folder>]
+
+  The input is an agent's folder (agent-descriptor.json,
+  agent-runtime-requirements.json, plugin.json and skills/, the layout Common
+  Agent 13.2 says a package is authored in) or a spec.json, which the builder
+  still reads, with a warning, for one transition. A run's work arrives as a
+  spec and the files it names, so --from goes with a spec.
 
   --from   the files a run handed over with the spec: the scripts, references
            and assets the spec names, each matched by its name after the
@@ -270,16 +276,19 @@ def resolve_base(pkg_dir, name):
     and site-auditor were packed, signed and handed on with no install file at
     all, and nobody found out for a week.
     """
-    install_path = os.path.join(pkg_dir, "install.json")
+    # The runtime requirements under their name, or under the name they had
+    # before Common Agent 0.30.0-draft, for a builder that still writes it.
+    install_path = next((os.path.join(pkg_dir, n) for n in ("agent-runtime-requirements.json", "install.json")
+                         if os.path.exists(os.path.join(pkg_dir, n))), os.path.join(pkg_dir, "agent-runtime-requirements.json"))
     if not os.path.exists(install_path):
         return {"state": "refused", "refused":
-                "the package carries no install file, so nothing says what a host must have before this agent can "
+                "the package carries no runtime requirements, so nothing says what a host must have before this agent can "
                 "run and no base image can be chosen for it. Build it again with a builder that writes one."}
     try:
         json.load(open(install_path, encoding="utf-8"))
     except Exception as e:  # noqa: BLE001
         return {"state": "refused", "refused":
-                f"the package's install file is not readable JSON ({e}), so nothing can say which base image it "
+                f"the package's runtime requirements are not readable JSON ({e}), so nothing can say which base image it "
                 "could be built on."}
     if not (IMAGE and os.path.exists(BASES)):
         return {"state": "unchecked",
@@ -415,7 +424,7 @@ def main():
         run_from_prompt(argv[1], argv[2])
         return
     if len(argv) < 2:
-        fail("usage", "pack.py <spec.json> <identity.json> [--from <file>...] [--from-dir <folder>] [--job <job folder>]")
+        fail("usage", "pack.py <spec.json | agent folder> <identity.json> [--from <file>...] [--from-dir <folder>] [--job <job folder>]")
     spec_path, identity_path = argv[0], argv[1]
     files, job_dir = [], None
     repo_remote, repo_branch, license_file = None, "main", None
@@ -467,6 +476,14 @@ def main():
             fail("validate", f"a file the run handed over is not here: {f}")
     files = [f for f in files if os.path.abspath(f) != os.path.abspath(spec_path)]
     laid = None
+    # An agent's folder holds every file it is built from already, so nothing
+    # is laid out for it, and this procedure does not yet commit one to the
+    # agent's repository: a run's work arrives as a spec.
+    is_folder = os.path.isdir(spec_path)
+    if is_folder and files:
+        fail("validate", "files are handed over with a spec; an agent's folder already holds the files it is built from")
+    if is_folder and repo_remote:
+        fail("validate", "an agent's folder is not committed to the agent's repository by this procedure; hand over a spec for a run that makes one")
     if files:
         try:
             spec_path, laid = lay_out(spec_path, files)
@@ -478,8 +495,8 @@ def main():
                             + "; the spec names them and the package cannot be built without them"})
         if laid["manifest"]:
             os.environ.setdefault("PROVENANCE", laid["manifest"])
-    if not spec_path.startswith(os.path.join(HOME, "tmp") + os.sep):
-        fail("validate", "spec must be under the builder's own tmp dir")
+    if not os.path.abspath(spec_path).startswith(os.path.join(HOME, "tmp") + os.sep):
+        fail("validate", "the spec or agent folder must be under the builder's own tmp dir")
 
     # 0. The agent's repository, before anything is built.
     #
@@ -563,7 +580,11 @@ def main():
     #    a run handed the files over, there is nothing to name and the member
     #    is absent (git_source above).
     try:
-        source = git_source(json.load(open(spec_path)).get("source") or os.path.dirname(os.path.abspath(spec_path)))
+        if is_folder:
+            b = (json.load(open(os.path.join(spec_path, "plugin.json"), encoding="utf-8")).get("extensions") or {})                 .get("net.agentdoc.package", {}).get("build") or {}
+            source = git_source(os.path.normpath(os.path.join(spec_path, b["source"])) if b.get("source") else spec_path)
+        else:
+            source = git_source(json.load(open(spec_path)).get("source") or os.path.dirname(os.path.abspath(spec_path)))
     except Exception:  # noqa: BLE001
         source = None
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -582,7 +603,12 @@ def main():
                     # verifier can tie the bound descriptor an agent serves back
                     # to the draft that was built (agent-package-draft.md §6).
                     **({"descriptor_sha256": built["descriptor_sha256"]} if built.get("descriptor_sha256") else {}),
-                    **({"install_sha256": built["install_sha256"]} if built.get("install_sha256") else {})},
+                    # Under its name since Common Agent 0.30.0-draft, and under
+                    # install_sha256 too, the name a verifier of a record from
+                    # before then reads, until no reader needs it.
+                    **({"runtime_requirements_sha256": built.get("runtime_requirements_sha256") or built["install_sha256"],
+                        "install_sha256": built.get("runtime_requirements_sha256") or built["install_sha256"]}
+                       if built.get("runtime_requirements_sha256") or built.get("install_sha256") else {})},
         # Where the source was read, when it was read from a clean checkout.
         # It is what joins a published package to the repository it came from
         # (Common Agent 13.7), and it is this builder's word, not a promise
@@ -657,6 +683,7 @@ def main():
          "shape": doc["shape"], "draft": True, "record": rec_path,
          "signed": bool(sig), "image": printed, "note": note,
          **({"laid_out": laid} if laid else {}),
+         **({"warnings": built["warnings"]} if built.get("warnings") else {}),
          **({"repository": repository} if repository else {}),
          **({"pieces": pieces} if pieces else {})})
 

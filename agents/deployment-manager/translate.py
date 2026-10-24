@@ -11,8 +11,10 @@ hand-walks recorded in docs/deploy-walk-redline.md.
 
 The package's facts are read from where the format keeps them
 (Common Agent Specification, chapter 12): the caller-facing ones from
-descriptor.json, the host-facing ones from install.json, both named by the
-manifest's extension entry. A package from before that format, whose
+agent-descriptor.json, the host-facing ones from
+agent-runtime-requirements.json, both named by the manifest's extension
+entry. The names before Common Agent 0.30.0-draft (descriptor.json,
+install.json and the pointer install) are still read. A package from before that format, whose
 manifest carries the systems inline, is still read, so the abstract agents
 already in the catalog keep deploying.
 
@@ -60,15 +62,20 @@ def package_facts(pkg_dir):
     plugin = json.load(open(os.path.join(pkg_dir, "plugin.json"), encoding="utf-8"))
     exts = plugin.get("extensions") or {}
     ext = exts.get(EXT) or exts.get(OLD_EXT) or {}
-    desc = inst = None
-    if isinstance(ext.get("descriptor"), dict) and ext["descriptor"].get("path"):
-        desc = read_json(os.path.join(pkg_dir, ext["descriptor"]["path"]))
-    elif os.path.exists(os.path.join(pkg_dir, "descriptor.json")):
-        desc = read_json(os.path.join(pkg_dir, "descriptor.json"))
-    if isinstance(ext.get("install"), dict) and ext["install"].get("path"):
-        inst = read_json(os.path.join(pkg_dir, ext["install"]["path"]))
-    elif os.path.exists(os.path.join(pkg_dir, "install.json")):
-        inst = read_json(os.path.join(pkg_dir, "install.json"))
+    def authored(pointers, names):
+        """One authored file: by the first pointer present (current name,
+        then the name before Common Agent 0.30.0-draft), else by the first
+        file name present."""
+        for k in pointers:
+            if isinstance(ext.get(k), dict) and ext[k].get("path"):
+                return read_json(os.path.join(pkg_dir, ext[k]["path"]))
+        for n in names:
+            if os.path.exists(os.path.join(pkg_dir, n)):
+                return read_json(os.path.join(pkg_dir, n))
+        return None
+
+    desc = authored(("descriptor",), ("agent-descriptor.json", "descriptor.json"))
+    inst = authored(("runtime_requirements", "install"), ("agent-runtime-requirements.json", "install.json"))
 
     systems = []
     if desc and isinstance(desc.get("systems"), list):

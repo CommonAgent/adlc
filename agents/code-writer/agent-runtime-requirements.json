@@ -1,0 +1,39 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "the workspace record, every round, the verdict, the account and the conflict for each job"
+    },
+    {
+      "name": "work",
+      "purpose": "the workspace the scripts are written in, one per job"
+    }
+  ],
+  "job_seconds": 2400,
+  "wants_replies": true,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "write-the-scripts"
+      ]
+    },
+    "price": {
+      "model": "flat",
+      "amount_micro": 2000000,
+      "currency": "USD"
+    }
+  },
+  "verify": "skills/write-the-scripts/scripts/verify.mjs"
+}

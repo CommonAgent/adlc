@@ -34,7 +34,19 @@ EXT = "net.agentdoc.package"
 # The namespace packages carried before the package format was published.
 OLD_EXT = "com.agentcatalog.agent"
 SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-INSTALL_FORMAT = "agent-install-v1"
+# The runtime requirements' format (Common Agent 0.30.0-draft, 12.2), and the
+# one it had before, which a reader still accepts: a package published under
+# the former names stays installable.
+INSTALL_FORMAT = "agent-runtime-requirements-v1"
+LEGACY_INSTALL_FORMAT = "agent-install-v1"
+INSTALL_FORMATS = (INSTALL_FORMAT, LEGACY_INSTALL_FORMAT)
+# The two authored files under their names, then their names before
+# 0.30.0-draft. A reader takes the current name where it is present and the
+# former one where it is not.
+DESCRIPTOR_FILES = ("agent-descriptor.json", "descriptor.json")
+INSTALL_FILES = ("agent-runtime-requirements.json", "install.json")
+# The manifest pointers at the runtime requirements: current, then former.
+INSTALL_POINTERS = ("runtime_requirements", "install")
 DESCRIPTOR_FORMAT = "agent-descriptor-v1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 # The pinned copy of the Agent Plugins schema: beside this file on a host,
@@ -244,6 +256,17 @@ def hidden_characters(pkg_dir):
     return found
 
 
+def package_file(pkg_dir, names):
+    """The path of the first of `names` present in `pkg_dir`, or None. Used
+    with DESCRIPTOR_FILES and INSTALL_FILES, so a package written under the
+    current names and one written under the former names both read."""
+    for n in names:
+        p = os.path.join(pkg_dir, n)
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def read_package(pkg_dir):
     """Read a package and check it holds together. Returns a dict:
     manifest, descriptor (or None), install (or None), systems (the merged
@@ -263,9 +286,16 @@ def read_package(pkg_dir):
         ext = exts.get(OLD_EXT) if isinstance(exts.get(OLD_EXT), dict) else {}
         legacy = True
 
-    def pointed(key, default_name):
+    def pointed(keys, default_names):
         """A file the manifest points at by path and digest; the pointer's
-        digest must match the bytes, or the package is not what was built."""
+        digest must match the bytes, or the package is not what was built.
+        The first pointer present is read (the current name before the
+        former one), and with no pointer the first file present."""
+        if isinstance(keys, str):
+            keys = (keys,)
+        if isinstance(default_names, str):
+            default_names = (default_names,)
+        key = next((k for k in keys if isinstance(ext.get(k), dict) and isinstance(ext[k].get("path"), str)), keys[0])
         ptr = ext.get(key)
         if isinstance(ptr, dict) and isinstance(ptr.get("path"), str):
             rel = ptr["path"]
@@ -283,11 +313,11 @@ def read_package(pkg_dir):
             if doc is None:
                 problems.append(f"{rel} is not readable JSON")
             return doc
-        path = os.path.join(pkg_dir, default_name)
-        return read_json(path) if os.path.exists(path) else None
+        path = package_file(pkg_dir, default_names)
+        return read_json(path) if path else None
 
-    descriptor = pointed("descriptor", "descriptor.json")
-    install = pointed("install", "install.json")
+    descriptor = pointed("descriptor", DESCRIPTOR_FILES)
+    install = pointed(INSTALL_POINTERS, INSTALL_FILES)
 
     if descriptor is not None:
         if descriptor.get("format") != DESCRIPTOR_FORMAT:
@@ -299,8 +329,8 @@ def read_package(pkg_dir):
             problems.append("the package has no descriptor draft")
         if install is None:
             problems.append("the package has no install file")
-    if install is not None and install.get("format") != INSTALL_FORMAT:
-        problems.append(f"the install file's format is {install.get('format')!r}, not {INSTALL_FORMAT}")
+    if install is not None and install.get("format") not in INSTALL_FORMATS:
+        problems.append(f"the install file's format is {install.get('format')!r}, not {INSTALL_FORMAT} (or {LEGACY_INSTALL_FORMAT}, its name before 0.30.0-draft)")
 
     # The systems, merged: the caller-facing half from the descriptor, the
     # host-facing half from the install file, and the two sets of names equal.

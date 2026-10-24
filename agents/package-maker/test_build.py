@@ -41,7 +41,8 @@ _spec = _ilu.spec_from_file_location("agentbuilder_build", BUILD)
 build = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(build)
 # The tests that build real packages read them from a folder laid out as
-# <family>/<name>/spec.json, such as the AgentMesh repository's packages/.
+# <family>/<name>/ (each an agent's own files, or a spec.json), such as the
+# AgentMesh repository's packages/.
 # Set ADLC_PACKAGES to that folder; without it those tests are skipped.
 PACKAGES = os.environ.get("ADLC_PACKAGES") or os.path.join(HERE, "..", "..", "packages")
 
@@ -51,12 +52,13 @@ def package_dir(name):
     if not os.path.isdir(PACKAGES):
         raise unittest.SkipTest("set ADLC_PACKAGES to a folder of packages to run this test")
     for family in sorted(os.listdir(PACKAGES)):
-        if os.path.isfile(os.path.join(PACKAGES, family, name, "spec.json")):
-            return os.path.join(PACKAGES, family, name)
+        d = os.path.join(PACKAGES, family, name)
+        if os.path.isfile(os.path.join(d, "plugin.json")) or os.path.isfile(os.path.join(d, "spec.json")):
+            return d
     raise FileNotFoundError(f"no package named {name} under packages/<family>/")
 
 
-EXAMPLE = os.path.join(package_dir("explainer-maker"), "spec.json")
+EXAMPLE = package_dir("explainer-maker")
 
 PRICE = {"model": "flat", "amount_micro": 500000, "currency": "USD"}
 POLICY = {
@@ -101,7 +103,7 @@ class Harness(unittest.TestCase):
         return res, out
 
     def descriptor(self, res):
-        with open(os.path.join(res["path"], "descriptor.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-descriptor.json"), encoding="utf-8") as f:
             return json.load(f)
 
     def refused(self, doc, phrase):
@@ -129,10 +131,10 @@ class Built(Harness):
         doc["job_seconds"] = 1500
         res, _ = self.build(doc)
         self.assertTrue(res["ok"], res)
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f)["job_seconds"], 1500)
         plain, _ = self.build(spec())
-        with open(os.path.join(plain["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(plain["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             self.assertNotIn("job_seconds", json.load(f))
 
     def test_wants_replies_reaches_the_install_file_only_when_true(self):
@@ -143,11 +145,11 @@ class Built(Harness):
         doc["wants_replies"] = True
         res, _ = self.build(doc)
         self.assertTrue(res["ok"], res)
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             self.assertIs(json.load(f)["wants_replies"], True)
         for quiet in (spec(), {**spec(), "wants_replies": False}):
             res, _ = self.build(quiet)
-            with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+            with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
                 self.assertNotIn("wants_replies", json.load(f))
 
     def test_one_at_a_time_reaches_the_install_file_as_written_and_a_bad_one_is_refused(self):
@@ -156,10 +158,10 @@ class Built(Harness):
         doc = {**spec(), "one_at_a_time": {"named_in_text": r"\brun (r-\d{8}-[a-z0-9]{4,12})\b"}}
         res, _ = self.build(doc)
         self.assertTrue(res["ok"], res)
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f)["one_at_a_time"], {"named_in_text": r"\brun (r-\d{8}-[a-z0-9]{4,12})\b"})
         res, _ = self.build(spec())
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             self.assertNotIn("one_at_a_time", json.load(f))
 
     def test_a_flat_price_passes_through_too(self):
@@ -176,8 +178,8 @@ class Built(Harness):
     def test_the_example_package_prices_each_step_of_the_explainer(self):
         res, _ = self.build(None, EXAMPLE)
         self.assertTrue(res["ok"], res)
-        with open(EXAMPLE, encoding="utf-8") as f:
-            declared = next(j for j in json.load(f)["jobs"] if j["slug"] == "make-an-explainer")["revisions"]
+        with open(os.path.join(EXAMPLE, "agent-descriptor.json"), encoding="utf-8") as f:
+            declared = next(o for o in json.load(f)["offerings"] if o["id"] == "make-an-explainer")["revisions"]
         by_id = {o["id"]: o for o in self.descriptor(res)["offerings"]}
         self.assertEqual(by_id["make-an-explainer"]["revisions"], declared)
         self.assertEqual([s["id"] for s in declared["steps"]],
@@ -325,7 +327,7 @@ class TheCommandAJobRuns(Harness):
         return doc
 
     def install(self, res):
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             return json.load(f)
 
     def test_the_command_reaches_the_install_file_under_its_job(self):
@@ -517,7 +519,7 @@ class Ceilings(Harness):
         return doc
 
     def ceilings_of(self, res):
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             return json.load(f)["ceilings"]
 
     def test_a_system_the_scripts_call_themselves_is_enforced_by_the_runtime(self):
@@ -547,7 +549,7 @@ class WhatTheAgentCharges(Harness):
     """
 
     def install(self, res):
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             return json.load(f)
 
     def priced(self, price):
@@ -660,7 +662,7 @@ class WhatTheAgentCharges(Harness):
             "explainer-critic": ({"model": "flat", "amount_micro": 1000000, "currency": "USD"}, {"agent": True}),
         }
         for name, (price, covers) in want.items():
-            res, _ = self.build(None, os.path.join(package_dir(name), "spec.json"))
+            res, _ = self.build(None, package_dir(name))
             self.assertTrue(res["ok"], f"{name}: {res}")
             declared = self.install(res)["price"]
             self.assertEqual(declared["price"], price, name)
@@ -674,11 +676,13 @@ class WhatTheAgentCharges(Harness):
         specification: a package is free to price a revision above a first run
         and say why."""
         for name in ("video-watcher", "brief-writer", "explainer-maker"):
-            with open(os.path.join(package_dir(name), "spec.json"), encoding="utf-8") as f:
-                doc = json.load(f)
+            with open(os.path.join(package_dir(name), "agent-descriptor.json"), encoding="utf-8") as f:
+                desc = json.load(f)
+            with open(os.path.join(package_dir(name), "agent-runtime-requirements.json"), encoding="utf-8") as f:
+                runtime = json.load(f)
             redo = sum(s["price"]["amount_micro"]
-                       for j in doc["jobs"] for s in (j.get("revisions") or {}).get("steps", []))
-            self.assertGreaterEqual(doc["price"]["amount_micro"], redo, name)
+                       for o in desc["offerings"] for s in (o.get("revisions") or {}).get("steps", []))
+            self.assertGreaterEqual(runtime["price"]["price"]["amount_micro"], redo, name)
 
 
 class ADeliveryCheckShipsWithThePackage(Harness):
@@ -700,11 +704,11 @@ class ADeliveryCheckShipsWithThePackage(Harness):
     def test_it_reaches_the_install_file_as_a_path_inside_the_package(self):
         res, _ = self.build(self.with_script({"job": "do-it", "script": "scripts/verify.mjs"}))
         self.assertTrue(res["ok"], res)
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f)["verify"], "skills/do-it/scripts/verify.mjs")
         self.assertTrue(os.path.exists(os.path.join(res["path"], "skills", "do-it", "scripts", "verify.mjs")))
         plain, _ = self.build(self.with_script(None))
-        with open(os.path.join(plain["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(plain["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             self.assertNotIn("verify", json.load(f))
 
     def test_it_must_name_a_job_of_this_spec_and_a_script_that_job_ships(self):
@@ -732,14 +736,14 @@ class ASystemIsNamedAndRoleIsItsAlias(Harness):
         res, _ = self.build(self.with_system({"name": "the-ledger"}))
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["systems"], ["the-ledger"])
-        self.assertEqual(self.systems_of(res, "descriptor.json")[0]["name"], "the-ledger")
-        self.assertEqual(self.systems_of(res, "install.json")[0]["name"], "the-ledger")
+        self.assertEqual(self.systems_of(res, "agent-descriptor.json")[0]["name"], "the-ledger")
+        self.assertEqual(self.systems_of(res, "agent-runtime-requirements.json")[0]["name"], "the-ledger")
 
     def test_a_spec_that_still_says_role_builds_the_same(self):
         res, _ = self.build(self.with_system({"role": "the-ledger"}))
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["systems"], ["the-ledger"])
-        for file in ("descriptor.json", "install.json"):
+        for file in ("agent-descriptor.json", "agent-runtime-requirements.json"):
             entry = self.systems_of(res, file)[0]
             self.assertEqual(entry["name"], "the-ledger")
             self.assertNotIn("role", entry, f"{file} carried the alias through")
@@ -748,7 +752,7 @@ class ASystemIsNamedAndRoleIsItsAlias(Harness):
         res, _ = self.build(self.with_system({"name": "the-ledger", "role": "the-alias"}))
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["systems"], ["the-ledger"])
-        self.assertEqual(self.systems_of(res, "descriptor.json")[0]["name"], "the-ledger")
+        self.assertEqual(self.systems_of(res, "agent-descriptor.json")[0]["name"], "the-ledger")
 
     def test_a_system_that_names_itself_neither_way_is_refused(self):
         self.refused(self.with_system({}), "each system needs a name")
@@ -954,7 +958,7 @@ class Trials(Harness):
     words."""
 
     def install(self, res):
-        with open(os.path.join(res["path"], "install.json"), encoding="utf-8") as f:
+        with open(os.path.join(res["path"], "agent-runtime-requirements.json"), encoding="utf-8") as f:
             return json.load(f)
 
     def test_the_fixture_declarations_are_judged_as_the_sdk_judges_them(self):

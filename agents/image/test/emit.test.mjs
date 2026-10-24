@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dependencies, dockerfileText, emit, readPackage, Refusal, requiredVariables, resolveBase, runSpecOf } from "../emit-image.mjs";
-import { ESCALATING_RUNNER, builtPackage, copyOfPackage, copyLines, readJson, rewriteAuthored, runLines, tmp, writeJson } from "./helpers.mjs";
+import { ESCALATING_RUNNER, authoredName, builtPackage, copyOfPackage, copyLines, installOf, readJson, renamedPackage, rewriteAuthored, runLines, tmp, writeJson } from "./helpers.mjs";
 
 const emitTo = (name, opts = {}) => emit(builtPackage(name), join(tmp("agentmesh-ctx-"), "ctx"), opts);
 const dockerfileOf = (name, opts = {}) => dockerfileText(readPackage(builtPackage(name)), opts);
@@ -54,7 +54,7 @@ test("the package goes in verbatim under the agent's own home, and the emitted c
   // over these bytes; a context that rewrote one would be a build nobody
   // could tie back to what was built.
   const source = builtPackage("process-runner");
-  for (const rel of ["plugin.json", "install.json", "descriptor.json", "skills/run-a-process/scripts/turn.mjs"]) {
+  for (const rel of ["plugin.json", authoredName(source, "install"), authoredName(source, "descriptor"), "skills/run-a-process/scripts/turn.mjs"]) {
     assert.equal(readFileSync(join(out, "package", rel), "utf8"), readFileSync(join(source, rel), "utf8"), rel);
   }
 });
@@ -138,7 +138,7 @@ test("the job's command is emitted with the image's own paths filled and every o
 });
 
 test("a package naming a command on two jobs is refused rather than guessed at", () => {
-  const install = readJson(join(builtPackage("process-runner"), "install.json"));
+  const install = installOf(builtPackage("process-runner"));
   install.run["write-the-account"] = { command: ["node", "x.mjs"], reply: "stdout" };
   const message = refusal(() => runSpecOf(install, { home: "/home/agent", packageName: "process-runner" }));
   assert.match(message, /run-a-process, write-the-account/);
@@ -146,7 +146,7 @@ test("a package naming a command on two jobs is refused rather than guessed at",
 });
 
 test("a placeholder the host does not substitute is an error at emit, not text in a command at run", () => {
-  const install = readJson(join(builtPackage("process-runner"), "install.json"));
+  const install = installOf(builtPackage("process-runner"));
   install.run["run-a-process"].command = ["node", "turn.mjs", "--who", "{operator}"];
   const message = refusal(() => runSpecOf(install, { home: "/home/agent", packageName: "process-runner" }));
   assert.match(message, /\{operator\}/);
@@ -191,7 +191,9 @@ test("the emitted record names the package, its digests, and every variable the 
   const { record } = emitTo("explainer-maker", { now: "2026-09-10T00:00:00Z" });
   const manifest = readJson(join(builtPackage("explainer-maker"), "plugin.json"));
   assert.equal(record.package.name, "explainer-maker");
-  assert.equal(record.package.install_sha256, manifest.extensions["net.agentdoc.package"].install.sha256);
+  const own = manifest.extensions["net.agentdoc.package"];
+  assert.equal(record.package.runtime_requirements_sha256, (own.runtime_requirements ?? own.install).sha256);
+  assert.equal(record.package.install_sha256, record.package.runtime_requirements_sha256);
   assert.equal(record.harness.baked, false);
   assert.equal(record.job_seconds, 1500);
   assert.deepEqual(record.binaries, ["chromium", "ffmpeg", "ffprobe"].map((name) => ({ name, checked_at_build: true, installed_here: false })));
@@ -209,7 +211,7 @@ test("the emitted record names the package, its digests, and every variable the 
 
 test("a package that is not what was built, or is not a draft, is refused before anything is written", () => {
   const edited = copyOfPackage("process-runner");
-  const path = join(edited, "install.json");
+  const path = join(edited, authoredName(edited, "install"));
   writeJson(path, { ...readJson(path), job_seconds: 60 });
   assert.match(refusal(() => readPackage(edited)), /does not hash to the digest the manifest names/);
 
@@ -230,4 +232,47 @@ test("emitting over a directory that already holds something is refused unless i
   assert.match(refusal(() => emit(builtPackage("explainer-critic"), dir)), /is not empty/);
   const again = emit(builtPackage("explainer-critic"), dir, { force: true });
   assert.ok(again.files.includes("Dockerfile"));
+});
+
+// Common Agent 0.30.0-draft renamed descriptor.json, install.json, the pointer
+// install and the format agent-install-v1. A reader takes the current names
+// and still takes the former ones, so a package already in a depot builds.
+test("a package under the current names and one under the former names read the same", () => {
+  const current = readPackage(renamedPackage("process-runner", true));
+  const former = readPackage(renamedPackage("process-runner", false));
+  assert.equal(current.install.format, "agent-runtime-requirements-v1");
+  assert.equal(former.install.format, "agent-install-v1");
+  assert.equal(current.paths.install, "agent-runtime-requirements.json");
+  assert.equal(former.paths.install, "install.json");
+  assert.equal(current.paths.descriptor, "agent-descriptor.json");
+  assert.equal(former.paths.descriptor, "descriptor.json");
+  assert.deepEqual(current.descriptor, former.descriptor);
+  const { format: _a, ...a } = current.install;
+  const { format: _b, ...b } = former.install;
+  assert.deepEqual(a, b);
+  const opts = {};
+  assert.equal(dockerfileText(current, opts), dockerfileText(former, opts));
+});
+
+test("where both names are present the current one is read, and a format that is neither is refused", () => {
+  const dir = renamedPackage("process-runner", true);
+  writeJson(join(dir, "install.json"), { format: "agent-install-v1", job_seconds: 61 });
+  assert.notEqual(readPackage(dir).install.job_seconds, 61);
+  const odd = renamedPackage("process-runner", true);
+  rewriteAuthored(odd, "install", (d) => { d.format = "agent-install-v2"; });
+  assert.match(refusal(() => readPackage(odd)), /format is "agent-install-v2"/);
+});
+
+// Found in step 1.4: a package naming no runtime and no binary produced
+// `RUN set -eu ; \` with nothing after it, which runs on into the next
+// instruction, and the image build failed there.
+test("a package that names no runtime and no binary gets no empty RUN line", () => {
+  const dir = rewriteAuthored(copyOfPackage("process-runner"), "install", (d) => { d.runtimes = []; d.binaries = []; });
+  const df = dockerfileText(readPackage(dir));
+  assert.ok(!/RUN set -eu ; \\n\s*\n/.test(df), "a RUN line continued onto nothing");
+  for (const cmd of runLines(df)) {
+    assert.notEqual(cmd, "set -eu ;", "a RUN line with no command");
+    assert.ok(!/;\s*$/.test(cmd), `a RUN line that ends in a separator: ${cmd}`);
+  }
+  assert.match(df, /names no runtime and no binary, so there is nothing to check/);
 });

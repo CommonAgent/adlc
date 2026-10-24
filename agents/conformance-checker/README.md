@@ -17,7 +17,9 @@ runs the conformance check published with the role the agent claims.
 ## The parts
 
 - `eval-gen.py` derives the cases from a package:
-  `python3 eval-gen.py <package folder>`. It runs anywhere with Python 3.
+  `python3 eval-gen.py <package folder>`. It runs anywhere with Python 3. It
+  reads the draft Descriptor from `agent-descriptor.json`, or from
+  `descriptor.json` in a package built before Common Agent 0.30.0-draft.
 - `eval-run.py` sends the cases to the agent over the mesh, audits its records
   and signs the verdict.
 - `role-check.mjs` runs a role's own conformance check against a container
@@ -39,7 +41,7 @@ runs the conformance check published with the role the agent claims.
 ## Running it
 
 ```sh
-python3 ../package-maker/build.py ../publisher/spec.json /tmp/pkg
+python3 ../package-maker/build.py ../publisher /tmp/pkg
 python3 eval-gen.py /tmp/pkg/publisher          # the cases it would run
 node --test test/*.test.mjs                     # 29 tests
 ```

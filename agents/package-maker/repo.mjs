@@ -154,7 +154,7 @@ function commitAll(work, message, opts) {
 /**
  * Pin the bytes.
  *
- * A package points at `descriptor.json` and `install.json` by sha256, and the
+ * A package points at `agent-descriptor.json` and `agent-runtime-requirements.json` by sha256, and the
  * builder writes every file with LF endings so that a package built on Windows
  * hashes the same as one built on Linux. Git undoes that: a clone on a machine
  * with `core.autocrlf` on rewrites the endings, the digests stop matching, and

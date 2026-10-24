@@ -24,7 +24,7 @@ writer does not control.
 
 ```sh
 node --test test/*.test.mjs                                   # 55 tests
-python3 ../package-maker/build.py spec.json ./out             # an Agent Package
+python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
 `references/` holds an example suite and the spec it tests, which the model
