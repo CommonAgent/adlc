@@ -160,7 +160,7 @@ def target_part(res):
     a container running the command the package declared wakes no model, and
     naming a harness it never started would be a claim about a program that
     was not in the path."""
-    return {"host": res.get("host", "fleet-host"),
+    return {"host": res.get("host", "agent-fleet"),
             **({"harness": res["harness"]} if res.get("harness") else {})}
 
 
@@ -365,7 +365,7 @@ def build(res, identity_path, dm_key):
             "record": "v1", "role": "deployment-manager", "act": "remove",
             "instructed_by": res.get("instructed_by", "the owner"),
             "agent": {"key": was.get("agent_key"), "handle": was.get("handle")},
-            "target": {"host": res.get("host", "fleet-host"), "harness": was.get("harness") or was.get("framework")},
+            "target": {"host": res.get("host", "agent-fleet"), "harness": was.get("harness") or was.get("framework")},
             **cloud_part(res),
             "removed": ["pm2 processes", "brain script", "ledger", "unix user and home", "work directories",
                         "the placed environment file"],

@@ -1,4 +1,4 @@
-// The pieces: what the adapter signs, which is the provenance a package maker may require.
+// The pieces: what the adapter signs, which is the provenance the door checks.
 //   node --test test/pieces.test.mjs
 //
 // Worth pinning: nothing is filed unless the verdict says done, so a stopped
