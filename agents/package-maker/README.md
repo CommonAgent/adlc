@@ -27,7 +27,9 @@ the agent.
 - `provenance.mjs` is the optional required coder check. Set `REQUIRED_CODER` to
   a code writer's public key (one or several, comma separated) and the builder
   packs only scripts that writer delivered, traced through the signed delivery
-  manifest. Leave it unset and scripts from any code writer are packed.
+  manifest. `OFFICIAL_CODER` is read too, as the older name, and it is the one
+  the host templates in `host/` export from `pinned_keys.official_coder`. Leave
+  both unset and scripts from any code writer are packed.
 - `repo.mjs` lays a built agent out as its own git repository.
 - `shared/` holds rules shared with the AgentMesh services: connections,
   credit and trial declarations.
@@ -57,9 +59,10 @@ AGENTMESH_ENV=example python3 -m unittest test_build test_pack
   others) as its fixtures. Set `ADLC_PACKAGES` to a folder of packages laid out
   as `<family>/<name>/spec.json`, such as the AgentMesh repository's
   `packages/`, and all 97 tests run; without it the module is skipped.
-- 13 of the 32 tests in `test_pack.py` need AgentMesh's fleet image tools
-  (`image/emit-image.mjs` and the base image catalogue) and its
-  `tools/agent-repo.mjs`. The other 19 run here.
+- The tests in `test_pack.py` that lay a run's work out as the agent's own
+  repository need AgentMesh's `tools/agent-repo.mjs`; name it with
+  `AGENT_REPO_TOOL`. The image tools they also read are in
+  [`../image`](../image).
 - `provenance.test.mjs`, `sign.mjs` and `pack.py`'s signing read the
   mesh-adapter's libraries from `/usr/lib/node_modules/mesh-adapter`.
 - The pack procedure, the brain and the install paths assume the fleet layout

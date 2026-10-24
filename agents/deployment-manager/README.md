@@ -49,21 +49,22 @@ of the role's clauses to the code that enforces it.
 
 This agent cannot run outside an AgentMesh fleet host as it stands.
 
-- It installs onto the fleet layout under `/opt/fleet`, wakes agents through the
-  AgentMesh fleet supervisor, and turns packages into images with the fleet's
-  image tools (`image/emit-image.mjs`, `image/emit-composite.mjs` and
-  `image/wake-host.mjs`). Those stay in the AgentMesh repository.
+- It installs onto the fleet layout under `/opt/fleet` and wakes agents through
+  the AgentMesh fleet supervisor. It turns packages into images with the image
+  tools in [`../image`](../image) (`emit-image.mjs`, `emit-composite.mjs` and
+  `wake-host.mjs`), which need nothing from AgentMesh.
 - It reports to the AgentMesh control plane (`urls.app`) with the deploy
   executor's token.
-- `test_steps.py` and three of the node suites (`service`, `tenant` and
-  `tenant-package`) need the image tools and fail here. The other Python suites
-  (`test_cloud`, `test_executor`, `test_image`, `test_install` and
-  `test_runtime`, 158 tests with `ADLC_PACKAGES` set) and `test/guard.test.mjs`
-  run here.
+- The tests that build real packages read them from `ADLC_PACKAGES`, a folder
+  laid out as `<family>/<name>/spec.json` such as the AgentMesh repository's
+  `packages/`, and are skipped without it.
+- The tenant image carries the AgentMesh fleet supervisor, so the four
+  `tenant-package` tests that build it need `ADLC_FLEET_SUPERVISOR`, the path
+  to that supervisor, and are skipped without it.
 
 ```sh
-AGENTMESH_ENV=example python3 -m unittest test_cloud test_executor test_image test_install test_runtime
-node --test test/guard.test.mjs
+AGENTMESH_ENV=example python3 -m unittest discover -p "test_*.py"
+AGENTMESH_ENV=example node --test "test/*.test.mjs"
 ```
 
 ## Replacing it

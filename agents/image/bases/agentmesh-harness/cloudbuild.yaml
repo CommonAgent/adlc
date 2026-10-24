@@ -1,0 +1,43 @@
+# The three tags this base publishes, out of the one Dockerfile beside this file.
+#
+# WHY THIS FILE. One context makes three images: the plain harness base, the
+# one with the browser under it, and the one with the video tools under it, so
+# that a package that wakes a model and needs no browser is not handed one, and
+# a package that reads a video is not handed a browser either. Which base is
+# underneath is a build argument, and `gcloud builds submit --tag` has nowhere
+# to put a build argument. It is one config and not three commands so that
+# WHICH IMAGE EACH TAG WAS BUILT FROM is written down: the catalogue says
+# built_from for each, and this is the file that makes those three lines true.
+# A tag built from a --build-arg typed at a prompt is a tag nothing in the
+# repository records.
+#
+# The second argument each step passes is what that tag's FROM image must
+# already carry. The Dockerfile checks the list rather than a fixed name,
+# because the three images underneath have only the adapter in common, and a
+# step pointed at the wrong one would otherwise publish a tag the catalogue
+# says carries ffmpeg with nothing in the build having looked. The lists here
+# and the binaries in the catalogue are the same lists, and a test reads both.
+#
+#   cd fleet-manager/image/bases/agentmesh-harness
+#   gcloud builds submit --config cloudbuild.yaml --project <project> .
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "--build-arg", "FROM_IMAGE=${_AGENTMESH_BASE}", "--build-arg", "REQUIRE_BINARIES=${_AGENTMESH_REQUIRES}", "-t", "${_HARNESS_IMAGE}", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "--build-arg", "FROM_IMAGE=${_CHROMIUM_BASE}", "--build-arg", "REQUIRE_BINARIES=${_CHROMIUM_REQUIRES}", "-t", "${_CHROMIUM_HARNESS_IMAGE}", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "--build-arg", "FROM_IMAGE=${_VIDEO_BASE}", "--build-arg", "REQUIRE_BINARIES=${_VIDEO_REQUIRES}", "-t", "${_VIDEO_HARNESS_IMAGE}", "."]
+images:
+  - ${_HARNESS_IMAGE}
+  - ${_CHROMIUM_HARNESS_IMAGE}
+  - ${_VIDEO_HARNESS_IMAGE}
+substitutions:
+  _AGENTMESH_BASE: {gcp.registry}/agentmesh-base:0.88.6
+  _AGENTMESH_REQUIRES: agentmesh
+  _HARNESS_IMAGE: {gcp.registry}/agentmesh-harness-base:0.88.6-3
+  _CHROMIUM_BASE: {gcp.registry}/agentmesh-chromium-base:0.88.6-1
+  _CHROMIUM_REQUIRES: agentmesh chromium
+  _CHROMIUM_HARNESS_IMAGE: {gcp.registry}/agentmesh-chromium-harness-base:0.88.6-3
+  _VIDEO_BASE: {gcp.registry}/agentmesh-video-base:0.88.6-1
+  _VIDEO_REQUIRES: agentmesh ffmpeg ffprobe yt-dlp
+  _VIDEO_HARNESS_IMAGE: {gcp.registry}/agentmesh-video-harness-base:0.88.6-3

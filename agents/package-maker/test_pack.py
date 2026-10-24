@@ -484,7 +484,7 @@ class TheAgentsRepository(Harness):
         self.assertEqual(manifest["format"], "agent-repository-v1")
         self.assertEqual(manifest["source"], "source")
 
-        tool = os.path.join(HERE, os.pardir, os.pardir, "tools", "agent-repo.mjs")
+        tool = os.environ.get("AGENT_REPO_TOOL") or os.path.join(HERE, os.pardir, os.pardir, "tools", "agent-repo.mjs")
         checked = subprocess.run(["node", tool, "check", clone], capture_output=True, text=True)
         self.assertEqual(checked.returncode, 0, checked.stderr + checked.stdout)
 

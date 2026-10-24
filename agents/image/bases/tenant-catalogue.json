@@ -1,0 +1,23 @@
+{
+  "format": "agent-image-bases-v1",
+  "note": "The bases a person's own agent may be built on in the tenant project (docs/tenant-isolation-plan.md, technical debt 95). The deployment manager's install-package emits every person's package against this file and no other, so a package is built only on a base that lives in the tenant registry and carries the mesh adapter, which the tenant host needs to serve the agent. There is no harness base here on purpose: the tenant sandbox runs no harness yet, and a package whose work wakes one is refused at install rather than built onto a base that cannot run it.",
+  "bases": [
+    {
+      "image": "{tenants.registry}/agentmesh-base:0.99.7",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh"
+        ]
+      },
+      "why": "node plus the mesh adapter 0.99.7, carrying no key and no address, built in the tenant project by tenant-builder from bases/agentmesh. Every person's package is built on it, because the tenant host inside runs the adapter that holds the agent's key.",
+      "built_from": "node:22-bookworm-slim",
+      "dockerfile": "bases/agentmesh/Dockerfile"
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "format": "agent-image-bases-v1",
+  "note": "The bases this operator has built, and what each one provides. A package says what it needs, in the install file's runtimes[] and binaries[], and never which image to build on: an image reference is an address, and a package carries no address (12.6 rule 3). This file is the other half, and it is the operator's, not any package's. emit-image.mjs picks the first base here that has everything a package declares, so the order matters: plainest first, and a package that needs only node is not built on an image carrying a browser. What is written here is a claim, not a proof. Nothing opens an image to check it. The Dockerfile the emitter writes still checks every declared binary at build time and fails naming it, which is what makes the claim true; this file only moves the failure from a cloud build to an instant refusal.",
+  "harness_note": "`provides.harness` is the one thing here a package never declares. A package says what a host must have and never carries the harness that runs it (12.9), so the emitter asks the WORK instead: a package that names no command for its job (12.3 `run`), or names one that can say the turn needs judgment, will wake a model, and only a base with a harness can be the answer. `bin` is where that base keeps it, and the emitter writes that path into AGENT_HARNESS_BIN rather than its own default, so the operator who built the image is the one who says where it is.",
+  "bases": [
+    {
+      "image": "node:22-bookworm-slim",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": []
+      },
+      "why": "The plainest base: the node runtime and nothing else. A package whose skills are scripts and nothing more wants this one.",
+      "built_from": null,
+      "dockerfile": null
+    },
+    {
+      "image": "{gcp.registry}/agentmesh-base:0.88.6",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh"
+        ]
+      },
+      "why": "node plus the adapter, installed globally, carrying no key and no address. A package whose scripts send as the agent declares the agentmesh binary and needs this one. process-runner built and ran on Cloud Run from it on 2026-09-10.",
+      "built_from": "node:22-bookworm-slim",
+      "dockerfile": "bases/agentmesh/Dockerfile"
+    },
+    {
+      "image": "{gcp.registry}/agentmesh-harness-base:0.88.6-3",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh"
+        ],
+        "harness": {
+          "name": "opencode",
+          "version": "1.18.30",
+          "bin": "/opt/harness/bin/harness"
+        }
+      },
+      "why": "The agentmesh base plus the harness, for a package whose work is a model reading and writing and that needs no browser. Before this existed every such package built cleanly onto a base with no harness and then refused its first message, because AGENT_HARNESS_BIN named a path nothing had. It is above the chromium base on purpose: brief-writer and invoice-reader wake a model and touch no page, and a browser they never open is forty megabytes of image and one more thing that can be wrong.",
+      "built_from": "{gcp.registry}/agentmesh-base:0.88.6",
+      "dockerfile": "bases/agentmesh-harness/Dockerfile"
+    },
+    {
+      "image": "{gcp.registry}/agentmesh-chromium-base:0.88.6-1",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh",
+          "chromium"
+        ]
+      },
+      "why": "The agentmesh base plus Debian's chromium and the fonts it draws with. explainer-critic and explainer-maker declare chromium to render and play a draft, and could be built on nothing until this existed.",
+      "built_from": "{gcp.registry}/agentmesh-base:0.88.6",
+      "dockerfile": "bases/agentmesh-chromium/Dockerfile"
+    },
+    {
+      "image": "{gcp.registry}/agentmesh-video-base:0.88.6-1",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh",
+          "ffmpeg",
+          "ffprobe",
+          "yt-dlp"
+        ]
+      },
+      "why": "The agentmesh base plus the tools that read and fetch video: Debian's ffmpeg, which carries ffprobe with it, and a pinned yt-dlp release rather than the distribution's, because a frozen downloader is on the path and cannot download. video-watcher declares all three and could be built on nothing until this existed; it resolved here with no base named and built on 2026-09-11. The build proves them on a video it makes, not by looking for the names. It carries NO harness, so from 2026-09-11 video-watcher no longer resolves here: it names no command for its job, so every message wakes a model, and the image built from this base would have refused every one of them. The emitter now says so instead of building it. The video harness base at the end of this list is the fix: it is this base with the harness on top, and video-watcher resolves there.",
+      "built_from": "{gcp.registry}/agentmesh-base:0.88.6",
+      "dockerfile": "bases/agentmesh-video/Dockerfile"
+    },
+    {
+      "image": "{gcp.registry}/agentmesh-chromium-video-base:0.88.6-1",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh",
+          "chromium",
+          "ffmpeg",
+          "ffprobe"
+        ]
+      },
+      "why": "The chromium base plus Debian ffmpeg, which carries ffprobe. The animation renderer declares chromium to draw each frame and ffmpeg to join the frames and the narration, and resolved to nothing until this existed (2026-09-23). The build encodes and measures a one-second clip, so an ffmpeg that cannot write h264 and aac fails the build.",
+      "built_from": "{gcp.registry}/agentmesh-chromium-base:0.88.6-1",
+      "dockerfile": "bases/agentmesh-chromium-video/Dockerfile"
+    },
+    {
+      "image": "{gcp.registry}/agentmesh-docs-base:0.88.6-2",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh",
+          "pdfinfo",
+          "pdftoppm",
+          "pdftohtml",
+          "pdffonts",
+          "soffice"
+        ]
+      },
+      "why": "The agentmesh base plus the document tools: Debian's poppler-utils (pdfinfo, pdftoppm, pdftohtml, pdffonts) and LibreOffice Impress and Writer without a desktop (soffice), with the fonts LibreOffice draws the common Office faces with. presentation-viewer declares all five to read a PDF's words and pictures, render its pages and draw a PowerPoint file's slides, and resolved to nothing until this existed (2026-10-05); document-reader declares soffice to save an old .doc as .docx and draw a Word file for its page numbers, which needs Writer (0.88.6-2, 2026-10-06). The build draws a one-slide deck and a one-page text document and reads them back with poppler, so an office suite that cannot draw or a poppler that cannot read fails the build. It carries no harness: presentation-viewer names a command for its job and never wakes a model through one.",
+      "built_from": "{gcp.registry}/agentmesh-base:0.88.6",
+      "dockerfile": "bases/agentmesh-docs/Dockerfile"
+    },
+    {
+      "image": "{gcp.registry}/agentmesh-chromium-harness-base:0.88.6-3",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh",
+          "chromium"
+        ],
+        "harness": {
+          "name": "opencode",
+          "version": "1.18.30",
+          "bin": "/opt/harness/bin/harness"
+        }
+      },
+      "why": "The chromium base plus the harness. explainer-critic is the package that needs both: it plays a staged draft in a browser and then reads it against the story rules, which is a model's work and not a step a program can take. Below every plainer base because it is the only one carrying all four, so nothing lands here that one of them would have taken.",
+      "built_from": "{gcp.registry}/agentmesh-chromium-base:0.88.6-1",
+      "dockerfile": "bases/agentmesh-harness/Dockerfile"
+    },
+    {
+      "image": "{gcp.registry}/agentmesh-video-harness-base:0.88.6-3",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh",
+          "ffmpeg",
+          "ffprobe",
+          "yt-dlp"
+        ],
+        "harness": {
+          "name": "opencode",
+          "version": "1.18.30",
+          "bin": "/opt/harness/bin/harness"
+        }
+      },
+      "why": "The video base plus the harness, out of the same context that makes the other two harness tags. video-watcher is the package that needs both halves: it fetches the video, measures it and cuts the frames with the three binaries, and it names no command for its job, so every message wakes a model. On 2026-09-11 it resolved onto the video base and the image built, and that image could not have answered anything, because nothing was at the harness path. The emitter refused it on the next emit and named the one thing missing, and this base is what that refusal asked for. It is below the video base on purpose: a package that reads video with a script and wakes no model still takes the plainer one.",
+      "built_from": "{gcp.registry}/agentmesh-video-base:0.88.6-1",
+      "dockerfile": "bases/agentmesh-harness/Dockerfile"
+    }
+  ]
+}
