@@ -1,0 +1,542 @@
+{
+  "name": "quiz-maker",
+  "version": "0.1.1",
+  "license": "Apache-2.0",
+  "job_seconds": 900,
+  "description": "Turns source material into a quiz that checks whether somebody understood it: the concepts it will test, named and shown for approval first, then the questions, each one carrying the place in the source it came from and the place to go back to.",
+  "jobs": [
+    {
+      "slug": "make-a-quiz",
+      "title": "Make a quiz",
+      "offered": true,
+      "steps": [
+        "read-the-source",
+        "name-the-concepts",
+        "write-the-questions",
+        "check-the-questions",
+        "stage-the-quiz"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "steps": [
+          {
+            "id": "name-the-concepts",
+            "price": {
+              "model": "flat",
+              "amount_micro": 500000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "write-the-questions",
+            "price": {
+              "model": "flat",
+              "amount_micro": 800000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "check-the-questions",
+            "price": {
+              "model": "flat",
+              "amount_micro": 100000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "stage-the-quiz",
+            "price": {
+              "model": "flat",
+              "amount_micro": 100000,
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      "when": "when somebody has material they want understood and wants to find out whether a person who read or watched it took it in",
+      "good": "A quiz at an address the person can open and take, every question naming the concept it tests, the place in the source the answer came from, and the place to go back to when it is missed; and beside it the concept list the questions were written from.",
+      "empty": "If the source settles no audience, send back that one question and write nothing. If the source is too thin to test, say which concepts it carries and let the person decide whether that is a quiz worth having.",
+      "does": "Turns source material into a quiz that checks whether somebody understood it, staged at an address they can open.",
+      "inputs": [
+        {
+          "name": "transcript",
+          "kind": "text/vtt",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "document",
+          "kind": "document",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "page address",
+          "kind": "url",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "beat script",
+          "kind": "text",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "audience",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "how many questions",
+          "kind": "identifier",
+          "required": false
+        },
+        {
+          "name": "concept list",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "concept list",
+          "kind": "text",
+          "when": "per_task"
+        },
+        {
+          "name": "quiz",
+          "kind": "application/json",
+          "when": "per_task"
+        },
+        {
+          "name": "quiz page",
+          "kind": "text/html",
+          "when": "per_task"
+        },
+        {
+          "name": "quiz address",
+          "kind": "url",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Run `WORK=<work folder> RECORDS=<records folder> JOB_DIR=<job folder> [SOURCES=<json>] [AUDIENCE=<text>] [CONCEPTS=<file or the text>] [HOW_MANY=<n>] [NAME=<slug>] node scripts/make-quiz.mjs`. It runs the five steps in order, calls a model at the two points that are judgment, and prints one JSON object with a reply field. Do not improvise any step it covers: the first multi-agent run failed three times by leaving a written procedure to a model, and everything after the questions are written is mechanics.\n\nA context bag that came with the message is read from the job folder, and nothing has to be passed for it: a brand profile in the bag colors the page and sets its faces, and any entry that is words rather than a shape is carried into both model requests as the caller's own notes, marked as theirs. The bag is found by the schema each entry names and never by what the entry is called. What the profile changed is filed with the job as used.json, and the reply says the three counts. A message with no bag makes the quiz exactly as it always did.\n\nAt least one source is required: a transcript, a document, a page address, a beat script, or notes. More than one is fine and they are read together. The audience decides what the questions are, because the same material tested for a new hire and for an expert is two different quizzes. When no audience is given and the source does not settle one, reply with that one question and write nothing.\n\nNaming the concepts is the cheap moment to say the quiz is about the wrong things, so it is also offered on its own. Given a concept list, this job uses it as it stands and names none: a person who has approved a list must get that list back rather than a fresh attempt at it. Given none, it names them and carries on, and the list is delivered as its own piece either way so the person can see what was tested and ask for that step again.\n\nEvery message arrives with a line `job folder: <absolute path>` naming a folder for that message's job. The concept list, the quiz, the page and the address are the pieces, written under that folder's out/ and listed in pieces.json by scripts/pieces.mjs. The source as received, the reading and the coverage check are records under records/<job>/ and never go in pieces.json. A reply sent without pieces.json carries no job, so the script writes it before replying.",
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "unbounded",
+        "contract": "ends"
+      },
+      "scripts": [
+        "scripts/make-quiz.mjs",
+        "scripts/went-without.mjs",
+        "scripts/read-source.mjs",
+        "scripts/check-quiz.mjs",
+        "scripts/build-quiz-page.mjs",
+        "scripts/stage-quiz.mjs",
+        "scripts/pieces.mjs",
+        "scripts/package.json"
+      ],
+      "references": [
+        "rules.md",
+        "references/shapes.md",
+        "references/question-forms.md"
+      ],
+      "run": {
+        "command": [
+          "node",
+          "{home}/{package}/skills/make-a-quiz/scripts/make-quiz.mjs",
+          "--job",
+          "{job_dir}",
+          "--records",
+          "{records}",
+          "--work",
+          "{work}",
+          "--text-file",
+          "{job_dir}/message.txt"
+        ],
+        "per_file": [
+          "--file",
+          "{file_path}::{file_media_type}"
+        ],
+        "message_file": "{job_dir}/message.txt",
+        "reply": "json:reply"
+      }
+    },
+    {
+      "slug": "read-the-source",
+      "title": "Read the source",
+      "offered": false,
+      "when": "when the material has arrived and nothing has been read from it yet",
+      "good": "One plain reading of everything given, with a place name on every part of it: a cue time for a transcript, a step number for a beat script, a heading or page for a document, a heading for a page address.",
+      "empty": "If nothing was given that can be read, say what arrived and stop. Never write a quiz from the message text alone.",
+      "does": "Reads every source given into one text with a place name on every part, so a question can cite where its answer lives.",
+      "inputs": [
+        {
+          "name": "transcript",
+          "kind": "text/vtt",
+          "required": false
+        },
+        {
+          "name": "document",
+          "kind": "document",
+          "required": false
+        },
+        {
+          "name": "page address",
+          "kind": "url",
+          "required": false
+        },
+        {
+          "name": "beat script",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reading",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Read every source given into one reading, an array of parts, each with its text and its place: a cue time for a transcript, a step number for a beat script, a heading or page number for a document, a heading for a fetched page. The place is what every later question cites, so a part with no place is not written. A page address must open without a sign-in, and a credential pasted into a message is refused.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "scripts": [
+        "scripts/read-source.mjs",
+        "scripts/package.json"
+      ],
+      "references": [
+        "references/shapes.md"
+      ]
+    },
+    {
+      "slug": "name-the-concepts",
+      "title": "Name the concepts",
+      "offered": true,
+      "when": "when the source has been read and nobody has yet said what the quiz is about, or when a person wants the concepts settled before paying for questions",
+      "good": "A short list of the concepts this material teaches this audience, each one a plain phrase, each with the one sentence a person would have to be able to say to have understood it, and each naming where in the source it is taught.",
+      "empty": "If the source settles no audience, reply with that one question and name no concepts. If the material teaches nothing testable, say so plainly rather than inventing concepts to fill a list.",
+      "does": "Names what the material actually teaches this audience, as the list the questions will be written from.",
+      "inputs": [
+        {
+          "name": "reading",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "audience",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "concept list",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Write the concepts this material teaches the stated audience, in the order the source teaches them. Each one is a plain phrase, the one sentence somebody would have to be able to say to have understood it, and the place in the reading where it is taught. A concept the source mentions but does not explain is not a concept: list it under a closing line saying it was mentioned and not taught, so the person can decide whether the source is the problem.\n\nA beat script carries its own words panel, and when one is the source those words are the concept list unless the person says otherwise. Do not name a second set beside them.\n\nThis list goes to the person before any question is written.\n\nThe list also carries the title of the quiz and the audience it is written for, because the list is already the statement of what the quiz is about and both should be settled with the person at the same moment the concepts are.",
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "unbounded",
+        "contract": "ends"
+      },
+      "references": [
+        "rules.md",
+        "references/shapes.md"
+      ]
+    },
+    {
+      "slug": "write-the-questions",
+      "title": "Write the questions",
+      "offered": false,
+      "when": "when the concept list is settled and questions are wanted",
+      "good": "One or two questions per concept, each naming the concept it tests, the place in the source the answer came from, and the place to go back to when it is missed. Each question is either a choice of four with one right answer and one sentence saying why it is right, or a written answer with the answer a person should be able to give.",
+      "empty": "If a concept cannot be tested without asking somebody to recall a number or a name that does not matter, skip it and say in the coverage record that it was left and why.",
+      "does": "Writes the questions from the concept list, each one testing whether the person understood rather than whether they remember the wording.",
+      "inputs": [
+        {
+          "name": "concept list",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "reading",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "how many questions",
+          "kind": "identifier",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "quiz",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Write one or two questions per concept. Each question carries the concept it tests, the place in the source the answer came from, the place to go back to when it is missed, and either four choices with one right answer and one sentence saying why, or the answer a person should be able to write.\n\nTest understanding, not wording. A question whose answer can be found by matching words with the source tests reading. A wrong choice is a way somebody could actually be wrong about the concept, which is why the wrong choices are written from the concept's own sentence rather than made up.\n\nThe number of questions follows the concept list, not a target. When the person asked for a number and the concepts do not fill it, write the questions the concepts carry and say how many that was.\n\nThe questions are written one concept at a time, one call for each, with several concepts in the air at once. Every fault the check step names is a fault in one question, so a question that is refused is written again on its own and a question that passed is never touched again. A concept gets three goes and no more.",
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "unbounded",
+        "contract": "ends"
+      },
+      "references": [
+        "rules.md",
+        "references/question-forms.md",
+        "references/shapes.md"
+      ]
+    },
+    {
+      "slug": "check-the-questions",
+      "title": "Check the questions",
+      "offered": false,
+      "when": "when the questions are written and before anything is staged",
+      "good": "Every mechanical fault found and named at once: a right answer that is not among the choices, a question on a concept the list does not carry, a place to go back to that does not exist, a right answer that is the longest choice, two choices that mean the same thing, a choice reading all of the above, and stacked negation.",
+      "empty": "When nothing is wrong, say so in one line. Never stage a quiz that was not checked.",
+      "does": "Refuses the faults that make a quiz wrong, and the faults that make it test reading rather than knowing.",
+      "inputs": [
+        {
+          "name": "quiz",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "concept list",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "coverage",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Check the quiz by program and write the coverage record: every concept from the list, and for each the questions that test it or the reason it was left. The faults below are refusals rather than findings, and a quiz carrying one is not staged: a right answer that is not among the choices, a question naming a concept the list does not carry, a place to go back to that the source does not have, a right answer that is the longest choice, two choices that mean the same thing, a choice reading all of the above or none of the above, and a question carrying two negations. Report every fault at once rather than the first, so a rewrite fixes them together.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "scripts": [
+        "scripts/check-quiz.mjs"
+      ],
+      "references": [
+        "references/shapes.md"
+      ]
+    },
+    {
+      "slug": "stage-the-quiz",
+      "title": "Stage the quiz",
+      "offered": false,
+      "when": "when the questions have passed the check",
+      "good": "A self-contained page at an address the person can open, which asks the questions, marks the choice questions as they are answered, shows a written answer beside the answer a person should be able to give, and links every missed question back to where it is taught.",
+      "empty": "If the page cannot be placed, say where it failed and keep the quiz as a file, so the questions are not lost with the staging.",
+      "does": "Places the quiz as a page somebody can open and take, marked in their own browser.",
+      "inputs": [
+        {
+          "name": "quiz",
+          "kind": "application/json",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "quiz page",
+          "kind": "text/html",
+          "when": "per_task"
+        },
+        {
+          "name": "quiz address",
+          "kind": "url",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Build one self-contained page from the quiz and place it at the draft host under its own name. The page shows one question at a time, each with its verdict and the reason once it is answered, a way forward and back, and the tally at the end; a quiz whose `view` says all-at-once puts every question on one long page instead. The page marks the choice questions in the browser as they are answered and shows, for each, the sentence saying why the right answer is right and a link back to where the concept is taught. A written question shows the answer a person should be able to give once they have answered it. The page sends nothing anywhere and stores nothing: it is a person checking themselves.\n\nThe quiz file is placed beside the page under the same name, so the questions can be replaced without the page being rebuilt.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "scripts": [
+        "scripts/build-quiz-page.mjs",
+        "scripts/stage-quiz.mjs",
+        "scripts/pieces.mjs"
+      ],
+      "references": [
+        "references/shapes.md"
+      ]
+    }
+  ],
+  "can_use": [
+    {
+      "schema": "https://schemas.agentmesh.ai/brand/v1",
+      "required": false,
+      "reads": [
+        "palette.ink",
+        "palette.ground",
+        "palette.heading",
+        "palette.link",
+        "palette.button",
+        "palette.accent",
+        "palette.contrast_floor",
+        "palette.never_hue_alone",
+        "type.heading.family",
+        "type.heading.fallback",
+        "type.heading.weight",
+        "type.body.family",
+        "type.body.fallback"
+      ],
+      "does": "builds the quiz page in the brand's ground and ink rather than this agent's, colors the title, the links back and the buttons where the brand states those, takes its accent for the rest, sets the title in the brand's heading face at the weight it asks for and everything else in its body face, checks the page it built against the contrast the brand requires and says plainly when the brand's own colors do not reach it, and keeps every right and missed verdict paired with a word and a glyph"
+    }
+  ],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "access": "trigger",
+      "needs": "to name the concepts the material teaches and write the questions that test them, which are the two judgments in this job",
+      "leaves": true,
+      "kind": "service",
+      "credential": "text-reasoning-key",
+      "env": "TEXT_API_KEY",
+      "spends": {
+        "unit": "calls"
+      },
+      "settings": [
+        {
+          "env": "TEXT_MODEL",
+          "purpose": "which model makes the two judgments in this job, naming the concepts and writing the questions. Left unset it is gemini-3.8-flash. Which model wrote somebody's questions is most of what they are worth and most of what they cost, so it is said here rather than held as a constant inside a script where nobody reading this package could find it"
+        }
+      ]
+    },
+    {
+      "name": "source-host",
+      "access": "read",
+      "needs": "to open a page address the person gave and read its text; the address must open without a sign-in, and a credential pasted into a message is refused",
+      "leaves": false,
+      "kind": "service"
+    },
+    {
+      "name": "draft-host",
+      "access": "write",
+      "needs": "to place the quiz page and the quiz file where the person can open them",
+      "kind": "service"
+    }
+  ],
+  "refuses": [
+    "Asking about anything the source did not say. Every question names the place in the source its answer came from, and a question that cannot name one is not written.",
+    "Writing a quiz when the source settles no audience and none was given. Questions for a new hire and questions for an expert are different questions, and a quiz averaged across both is useless to either.",
+    "Recording who answered or what they scored. The quiz is marked in the person's own browser, and nothing is sent anywhere or kept.",
+    "Marking a person. It writes the answer a person should be able to give; it does not grade the one they wrote.",
+    "The tricks that test reading rather than knowing: a right answer that is the longest choice, two choices that mean the same thing, a choice reading all of the above, and stacked negation.",
+    "Publishing anywhere but the quiz address. Putting the quiz in front of anybody is the person's decision."
+  ],
+  "escalates": [
+    "A source that settles no audience goes back to the person as that one question, with no quiz written.",
+    "The concept list goes to the person before any question is written, and their answer is what the questions are written from.",
+    "A source that contradicts itself on a fact a question would test goes back with both readings named, for the person to choose."
+  ],
+  "records": [
+    {
+      "name": "the source as received, per job",
+      "when": "per_task",
+      "file": "*/source/*"
+    },
+    {
+      "name": "the reading, with the place name on every part",
+      "when": "per_task",
+      "file": "*/reading.json"
+    },
+    {
+      "name": "the concept list per job as approved",
+      "when": "per_task",
+      "file": "*/concepts.md"
+    },
+    {
+      "name": "the quiz per job as delivered",
+      "when": "per_task",
+      "file": "*/quiz.json"
+    },
+    {
+      "name": "the coverage check per job: every concept, and for each the questions that test it or the reason it was left",
+      "when": "per_task",
+      "file": "*/coverage.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    },
+    {
+      "name": "every call to the text-reasoning service for a job: how many were made, the ceiling they were made under, which model made them, the step that was running and, where the job stopped, what stopped it",
+      "when": "per_task",
+      "file": "*/calls.json"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    }
+  ],
+  "ceilings": [
+    {
+      "system": "text-reasoning",
+      "per": "task",
+      "suggested": 40
+    }
+  ],
+  "price": {
+    "model": "flat",
+    "amount_micro": 2000000,
+    "currency": "USD",
+    "covers": [
+      "make-a-quiz"
+    ]
+  },
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the source as received, the reading, the concept list, the quiz and the coverage check"
+    }
+  ]
+}

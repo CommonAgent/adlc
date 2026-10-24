@@ -1,0 +1,1 @@
+deploymgr ALL=(root) NOPASSWD: /opt/fleet/deploymgr-steps.py deploy *, /opt/fleet/deploymgr-steps.py update *, /opt/fleet/deploymgr-steps.py model *, /opt/fleet/deploymgr-steps.py remove *, /opt/fleet/deploymgr-steps.py status

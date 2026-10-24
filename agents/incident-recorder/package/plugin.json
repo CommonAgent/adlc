@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "incident-recorder",
+  "version": "0.1.0",
+  "description": "Records an incident when a fleet agent goes quiet or a job fails. Reads platform activity records and the agent's own records around the failure window, builds a strict chronological timeline of known facts and gaps, and writes an incident record attributing every fact to its source. Never guesses causes, never proposes fixes, and never contacts the agent.",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "draft",
+    "record-incident",
+    "read-records",
+    "build-timeline",
+    "write-incident-record"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "descriptor": {
+        "path": "descriptor.json",
+        "sha256": "6ac5ab21a416ff00956e2923592c56664db6bf06046f2d2ffcea1617da673457"
+      },
+      "install": {
+        "path": "install.json",
+        "sha256": "496f46ec9d595c28320ee1147794709b9d5036a646cdf5d579aa204300212977"
+      },
+      "built": true,
+      "draft": true
+    }
+  }
+}

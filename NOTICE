@@ -1,0 +1,11 @@
+The Agent Development Lifecycle
+Copyright 2026 Jeff Schneider
+
+This repository holds reference implementations of the role agents of the
+Agent Development Lifecycle (https://agenticdevelopment.ai), sponsored by
+AgentMesh. The code, its tests, its templates and its documentation are
+licensed under Apache-2.0 (LICENSE).
+
+agents/package-maker/plugin-1.0.0.schema.json is the Agent Plugins manifest
+schema (https://agent-plugins.org/schemas/1.0.0/plugin.schema.json), pinned
+here so a manifest can be checked offline.

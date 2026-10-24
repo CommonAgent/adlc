@@ -1,0 +1,15 @@
+#!/bin/bash
+# The agent builder's pack procedure, run as the ops node's user (mesh-node),
+# which alone can read the builder's folder on the node: the job folders, the
+# files a run handed over, and the builder's key. The builder's own unix user
+# cannot, since the builder moved onto the node (2026-09-22), so every pack
+# answered that its folder did not exist (technical debt 112). Called by
+# /opt/fleet/brains/agentbuilder.sh through one sudoers rule, with the framed
+# prompt in a file, and nothing else.
+set -u
+prompt="${1:-}"
+case "$prompt" in /tmp/tmp.*) ;; *) echo "the pack takes a prompt file the builder's brain made" >&2; exit 2;; esac
+if [ ! -f "$prompt" ] || [ -L "$prompt" ]; then echo "no prompt file at $prompt" >&2; exit 2; fi
+export REQUIRED_CODER="{{pinned_keys.required_coder}}"
+cd /home/mesh-node || exit 1
+exec python3 /opt/fleet/agentbuilder-pack.py --run "$prompt" /opt/fleet/node-ops/agents/agentbuilder/identity.json

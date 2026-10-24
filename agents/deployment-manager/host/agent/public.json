@@ -1,0 +1,3 @@
+{
+  "description": "Installs an agent, keeps it up to date, and removes it, only when its owner says so."
+}

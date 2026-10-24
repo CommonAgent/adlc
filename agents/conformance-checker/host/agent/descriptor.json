@@ -1,0 +1,78 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "1",
+  "does": "Says whether a running agent does the job its package describes, by deriving a test from the package's own declarations and running it.",
+  "offerings": [
+    {
+      "id": "evaluate",
+      "name": "Evaluate an agent",
+      "does": "Derives the conformance test from the package, runs it against the deployed agent, audits the records it left, and returns a graded verdict.",
+      "inputs": [
+        {
+          "name": "the package",
+          "kind": "application/gzip",
+          "required": true
+        },
+        {
+          "name": "the agent's handle",
+          "kind": "identifier",
+          "required": true
+        },
+        {
+          "name": "the agent's records location",
+          "kind": "identifier",
+          "required": true,
+          "external": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the signed verdict",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ]
+    },
+    {
+      "id": "derive-test",
+      "name": "Show the test without running it",
+      "does": "Derives the cases and the records audit a package implies, so a caller can read what would be checked before anything runs.",
+      "inputs": [
+        {
+          "name": "the package",
+          "kind": "application/gzip",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the derived test",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ]
+    }
+  ],
+  "interaction": "service",
+  "refusals": "Does not write test cases from its own opinion. Does not grade the quality of an agent's output. Does not change, redeploy, or remove the agents it evaluates.",
+  "role": "role-agent-evaluator",
+  "interfaces": [
+    "interface-evaluator"
+  ],
+  "fleet": false,
+  "hosted_in": [
+    "us"
+  ],
+  "systems": [
+    {
+      "role": "the mesh registry",
+      "access": "read",
+      "needs": "resolving the subject and confirming its declarations"
+    }
+  ],
+  "limits": {
+    "requests_per_hour": 12,
+    "model_budget_per_day": 500000,
+    "past_them": "held until the window resets"
+  }
+}

@@ -1,0 +1,455 @@
+{
+  "name": "brand-reader",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "job_seconds": 600,
+  "description": "Reads a brand from a domain into a draft brand profile: only what the site states about itself goes in the profile, what it was merely observed doing is reported beside it, and every value says where it was seen. The two values no site declares, which of its colors is the primary and which is the accent, are chosen by a model that is shown a picture of the home page and may only answer with a color the pages declare, and the profile says so on the value.",
+  "jobs": [
+    {
+      "slug": "read-a-brand",
+      "title": "Read a brand",
+      "offered": true,
+      "steps": [
+        "fetch-the-site",
+        "read-what-it-states",
+        "look-at-what-it-does",
+        "choose-the-roles",
+        "write-the-profile"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "steps": [
+          {
+            "id": "fetch-the-site",
+            "price": {
+              "model": "flat",
+              "amount_micro": 300000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "read-what-it-states",
+            "price": {
+              "model": "flat",
+              "amount_micro": 300000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "look-at-what-it-does",
+            "price": {
+              "model": "flat",
+              "amount_micro": 400000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "choose-the-roles",
+            "price": {
+              "model": "flat",
+              "amount_micro": 300000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "write-the-profile",
+            "price": {
+              "model": "flat",
+              "amount_micro": 200000,
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      "when": "when somebody wants a brand profile for a site and does not want to fill one in by hand",
+      "good": "A draft brand profile carrying only what the site states about itself, every value naming where it was seen, and beside it a report of what the site was observed doing, what could not be read from a website at all, and every place the site disagrees with itself.",
+      "empty": "If the site states nothing about itself, say so and write no profile. A profile of guesses is worse than no profile, because the guesses would be handed to other agents as though the owner had said them.",
+      "does": "Turns a domain into a draft brand profile the owner can correct and adopt, with the evidence for every value.",
+      "inputs": [
+        {
+          "name": "domain",
+          "kind": "url",
+          "required": true
+        },
+        {
+          "name": "how many pages",
+          "kind": "identifier",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "brand profile",
+          "kind": "application/json",
+          "when": "per_task"
+        },
+        {
+          "name": "brand report",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Run the five steps in order. Each reads what the one before it wrote. Stop at the first step that cannot finish and say which one and why, except the two that may be skipped: look-at-what-it-does and choose-the-roles each cost the profile something the report then names, and neither ends the job.\n\nThe one rule that decides every other decision in this job: what the OWNER DECLARED goes in the profile, and what was INFERRED goes in the report and never in the profile. How a thing was read says nothing about who said it, so a color the site's own CSS sets on its own headings is a statement whether it was matched in a stylesheet or read off the page in a browser, which is only a better CSS parser. A theme color in the web app manifest is a statement. The color that covers the most pixels is an inference. A font-family the stylesheet names is a statement. The face a heading renders in after four fallbacks is a fact about the reader's machine as much as the site's, so it is not. The difference is not pedantry: the profile is about to be handed to other agents as though the owner had written it, so anything in it that the owner did not say is a lie told on their behalf.\n\nEvery value in the profile carries where it was seen, so a person correcting it can see why this step thought that. A value with no evidence is not written.\n\nThere is ONE value in the profile the site did not say, and it is named as one. Which of a site's colors is its primary and which is its accent is an assignment rather than a place: no site declares it anywhere a reader can find, so no rule reaches it and no page states it. The step that chooses the roles shows a model a picture of the home page and the colors the pages DECLARE, and asks which of those fills each role. The model may answer only with one of those colors or with none, it never supplies a color, and the evidence on the value says a model chose it and the site did not. That is the whole of the intelligence in this job, and every other step is a program.\n\nWhat comes out is a DRAFT. It is not signed, it is not called finished, and the reply says plainly that the owner corrects it and adopts it. A website is one expression of a brand, it is often older than the guidelines and often built by somebody else, so a site that disagrees with itself is reported as disagreeing. Where the pages differ about the same place, the draft carries the value more of them state and the report names the minority with the counts and the pages, which reads the evidence rather than resolving anything; where the pages are split evenly it carries neither.\n\nEvery message arrives with a line `job folder: <absolute path>` naming a folder for that message's job. The profile and the report are the pieces, written under that folder's out/ and listed in pieces.json. The pages as fetched, the statements, the observations, the picture of the home page and the roles as chosen are records under records/<job>/ and never go in pieces.json.",
+      "scripts": [
+        "scripts/read-brand.mjs",
+        "scripts/fetch-site.mjs",
+        "scripts/statements.mjs",
+        "scripts/observe.mjs",
+        "scripts/choose-roles.mjs",
+        "scripts/profile.mjs",
+        "scripts/pieces.mjs",
+        "scripts/package.json",
+        "scripts/package-lock.json"
+      ],
+      "lockfile": "scripts/package-lock.json",
+      "references": [
+        "references/brand-profile.md",
+        "references/what-counts.md"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      },
+      "run": {
+        "command": [
+          "node",
+          "{home}/{package}/skills/read-a-brand/scripts/read-brand.mjs",
+          "--job",
+          "{job_dir}",
+          "--records",
+          "{records}",
+          "--work",
+          "{work}",
+          "--text-file",
+          "{job_dir}/message.txt"
+        ],
+        "message_file": "{job_dir}/message.txt",
+        "reply": "json:reply"
+      }
+    },
+    {
+      "slug": "fetch-the-site",
+      "title": "Fetch the site",
+      "offered": false,
+      "when": "when a domain has arrived and nothing has been fetched from it yet",
+      "good": "The home page, the pages it links to ON THE SAME HOST, five in total counting the home page, the web app manifest, and every stylesheet those pages name, each kept with the address it came from and the moment it was fetched.",
+      "empty": "If the domain will not answer, or answers with something that is not a web page, say what happened and stop. Never read a brand from an error page.",
+      "does": "Fetches the home page, the pages it links to on the same host, the web app manifest and the stylesheets, under a ceiling on each and on all of them together.",
+      "inputs": [
+        {
+          "name": "domain",
+          "kind": "url",
+          "required": true
+        },
+        {
+          "name": "how many pages",
+          "kind": "identifier",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "fetched",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Fetch over https and nothing else. Follow links only to THE SAME HOST, never off it, and never to an address carrying credentials. Another host under the same domain is another site: its ground, its ink and its mark are its own, and reading it as more pages of this one puts two brands in one profile, which then carries neither. A link to another host is named in the record and not followed, because a person is owed the fact rather than a silence. The host is the one the home page settled on, so a domain that sends you to its www is read and not refused, and www is not another host. A stylesheet is the one thing read from another host under the same domain, because a stylesheet on somebody's asset host is how the page that named it is painted. Every request has its own timeout and there is a deadline over all of them together, so a site that answers one byte a second costs this job its deadline and not the whole task. Each page, the web app manifest and each stylesheet is kept with its address and a digest, so a later step can say exactly where a value was seen.\n\nFive pages IN TOTAL, counting the home page, and that is the default. A site that disagrees with itself does so on its first five pages, and a sixth costs a fetch to learn nothing.",
+      "references": [
+        "references/what-counts.md"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "read-what-it-states",
+      "title": "Read what it states",
+      "offered": false,
+      "when": "when the pages and stylesheets have been fetched",
+      "good": "Every statement the site makes about itself, each with the address, the element or rule it was found in, and how many times it was seen: the theme color, the custom properties whose names say brand, the font families the stylesheets name, the mark the site names as its own, the trademark on first mention, and the copyright line.",
+      "empty": "A site that states nothing is a real answer. Say which of the six were looked for and found nothing, and write no statement that was not found.",
+      "does": "Collects the things the site says about itself, each with the place it was said.",
+      "inputs": [
+        {
+          "name": "fetched",
+          "kind": "application/json",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "statements",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "A statement is something the site declares about itself, in a place whose purpose is to declare it. references/what-counts.md lists what qualifies for each part of the profile and what does not, and it is the authority here. The one to watch is the favicon: it is on every site, it is a sixteen pixel tab picture, and a brand profile carrying one as the mark looks deliberate and is wrong, which is the exact silent wrongness this step exists to prevent.\n\nNothing is sampled and nothing is inferred. A color taken out of a logo image, a face guessed from how a heading looks, and a primary color chosen because it appears most are all inferences, and the next step reports them.\n\nThe five colors a site sets on its own elements, its ink, its ground, its heading color, its link color and its button, and the two font stacks it asks for on its body and its headings, are statements too, and this step does not collect them. What a rule sets is not what an element comes to: the cascade, the media queries and the specificity decide between them, and the next step opens the pages and settles that. On a site whose stylesheets all sit on another host, that step is the only one that reads a face at all.",
+      "references": [
+        "references/what-counts.md",
+        "references/brand-profile.md"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "look-at-what-it-does",
+      "title": "Look at what it does",
+      "offered": false,
+      "when": "when the statements are collected and the site is to be looked at as a reader sees it",
+      "good": "The five colors and the two font stacks the site's own CSS sets on its own elements, each naming the element and the page it was read off, and beside them what the pages render: the faces they resolved to after the fallbacks, the colors by how much of the page they cover, the contrast the site achieves between its text and its grounds, and every place the site disagrees with itself.",
+      "empty": "If the pages will not open, say so and carry on with the statements alone. An observation missing is a thinner report and a profile short what the site sets on its own elements; an observation invented is a wrong profile.",
+      "does": "Opens the pages in a browser and reads the five colors and the two font stacks a site sets on its own elements, which are statements, and what the pages render, which is reported and never written into the profile.",
+      "inputs": [
+        {
+          "name": "fetched",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "statements",
+          "kind": "application/json",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "observations",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Open each fetched page in chromium and read it twice over.\n\nFirst, what the site's own CSS sets on its own elements. Five colors: the color of body text, the color behind body text, the color of headings where it differs from body text, the color of a link in running text, and the background of the main call to action. And two faces: the font stack on body text and the font stack on the page's first heading, which is the stack the site ASKS FOR and not the face this machine happened to have. Those seven are STATEMENTS and they reach the profile, each naming the element and the page it was read off. The place is the meaning in all of them, so no judgment goes into placing them, and a browser is only a better CSS parser: it settles the cascade and hands back what the owner declared. references/what-counts.md is the authority and says which element is read for each.\n\nSecond, what the site does: the faces the pages actually rendered in after the fallbacks, the colors by the share of the page they cover, and the contrast ratio between each text color and the ground behind it. Record the disagreements plainly: four blues across five pages, two heading faces, a stated theme color that appears nowhere on any page.\n\nNothing in that second half enters the profile, because placing any of it would take a decision the owner never published. The value of it is the report: an owner who learns their site uses four blues has learned something worth the job on its own.",
+      "scripts": [
+        "scripts/observe.mjs",
+        "scripts/package.json",
+        "scripts/package-lock.json"
+      ],
+      "lockfile": "scripts/package-lock.json",
+      "references": [
+        "references/what-counts.md"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "choose-the-roles",
+      "title": "Choose the roles",
+      "offered": false,
+      "when": "when the colors have been read and the two nobody declares, the primary and the accent, are still empty",
+      "good": "One of the colors these pages declare named as the primary and one named as the accent, or the word none for either, chosen by a model that was shown a picture of the home page and that list, with the choice carried into the profile in words that say a model made it and the site did not.",
+      "empty": "No key, no browser, a site that declares no color, or a model that will not choose is a real answer. Write the record with the reason in it, leave both roles empty and say so. The profile is whole without them, and two values guessed is worse than two values missing.",
+      "does": "Shows a model the home page and the colors the pages declare, and asks which of those is the primary and which is the accent.",
+      "inputs": [
+        {
+          "name": "statements",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "observations",
+          "kind": "application/json",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "roles",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "This is the one step in this agent that calls a model, and it calls it for one thing. Which of a site's colors is its primary and which is its accent is an ASSIGNMENT rather than a place: the site never declares it anywhere a reader can find, so no rule reaches it and the four other steps, which are programs applying written rules, find nothing to apply. Run against a site whose blue is the entire reason anyone can tell it apart, this agent read every color exactly and wrote a profile with no accent in it, indistinguishable from a default. Salience is what eyes are for.\n\nTHE MODEL MAY ONLY CHOOSE FROM COLORS ALREADY READ. It is shown a picture of the home page and the colors the pages DECLARE, numbered, and it answers with a number or with the word none. It never supplies a color. A picture gives a hex that antialiasing, an overlay or a gradient has already moved, so a color read off a picture is not the color the site declared, and one a model made up is not the site's at all. Every value in the list was read exactly, off the element the site sets it on. A model that answers with a color of its own, or with a number that is not in the list, is refused, told what was wrong and asked once more, and then this step yields nothing.\n\nNONE IS A REAL ANSWER and the asking makes it easy to give. A page of black text on white with one grey button has no accent, and a model pressed to pick the closest thing would put a color in somebody's brand profile that nobody chose, which is the exact failure the rest of this agent exists to prevent.\n\nA role the site states for itself is not chosen for it, and a role the site states two ways is left contested and not chosen either: choosing between two things the owner published would be resolving a disagreement, which this agent refuses.\n\nThe choice reaches the profile with evidence in words a person reads, saying it was chosen from the colors these pages declare, by a model reading the home page, and that the site does not say so itself. Vision is for salience only. Every exact value in the profile, every color and every font stack, is read off the DOM and none of it is read off a picture.",
+      "scripts": [
+        "scripts/choose-roles.mjs",
+        "scripts/package.json",
+        "scripts/package-lock.json"
+      ],
+      "lockfile": "scripts/package-lock.json",
+      "references": [
+        "references/what-counts.md"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "ends"
+      }
+    },
+    {
+      "slug": "write-the-profile",
+      "title": "Write the profile",
+      "offered": false,
+      "when": "when the statements and the observations are both in hand, and the roles have been chosen or have not",
+      "good": "A draft brand profile in the published shape carrying only statements, every value naming where it was seen, and a report saying what was found, what the site was observed doing, what cannot be read from a website at all, and where the site disagrees with itself.",
+      "empty": "With no statements there is no profile. Write the report alone and say which parts were looked for.",
+      "does": "Writes the draft profile from the statements and the report from everything else.",
+      "inputs": [
+        {
+          "name": "statements",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "observations",
+          "kind": "application/json",
+          "required": false
+        },
+        {
+          "name": "roles",
+          "kind": "application/json",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "brand profile",
+          "kind": "application/json",
+          "when": "per_task"
+        },
+        {
+          "name": "brand report",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Write the profile in the shape references/brand-profile.md gives. A part with no statement behind it is left out entirely, and the report names it under what could not be read, because absence in the profile means not stated and must never mean a default somebody else will fill in.\n\nA part the site states more than one value for is carried as the value MORE OF THE PAGES STATE, with the counts and the minority in the report and a line of evidence beside the value saying so. A part whose values are stated by the same number of pages is left out, because nothing in a tie says which one the owner meant, and a part whose leaves are tied carries none of its leaves. references/what-counts.md argues that rule, and the argument matters: which of a site's colors is primary is an assignment no count can reach, while four pages saying the heading is one color and one saying another is a fact with weight, and dropping it discards evidence rather than declining to guess.\n\nThe primary and the accent arrive from the step before this one already chosen and already checked against the colors the site declares, so nothing is decided here. A role the site states itself keeps what the site said. A role the site states two ways stays out and is reported. What is written carries the evidence that says a model chose it and the site did not, and a profile whose ONLY value is a choice is not written at all, because that is a profile of guesses. Where the roles were not chosen the report says which of no key, no browser, a site that declares no color and a model that chose none it was, since those are four different things for a person to do next.\n\nThe report says four things in this order: what was found and where, what the site was observed doing that did not go in the profile, what cannot be read from a website at all and has to be typed by a person, and every place the site disagrees with itself. The last two are the parts an owner actually wants. Say plainly in the closing line that this is a draft, that nobody has vouched for it, and that it becomes their profile when they correct it and adopt it.",
+      "scripts": [
+        "scripts/profile.mjs",
+        "scripts/pieces.mjs"
+      ],
+      "references": [
+        "references/brand-profile.md"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    }
+  ],
+  "systems": [
+    {
+      "name": "source-host",
+      "access": "read",
+      "needs": "to fetch the pages, the web app manifest and the stylesheets at the domain the person named, over https, and to open those pages in the browser",
+      "leaves": false,
+      "kind": "service"
+    },
+    {
+      "name": "text-reasoning",
+      "access": "trigger",
+      "needs": "to choose which of the colors the pages declare is the primary and which is the accent, which is the one judgment in this job that no written rule reaches",
+      "leaves": true,
+      "kind": "service",
+      "credential": "text-reasoning-key",
+      "env": "TEXT_API_KEY",
+      "spends": {
+        "unit": "calls"
+      }
+    }
+  ],
+  "refuses": [
+    "Putting anything in the profile the site did not state about itself, with one named exception. A color sampled out of an image, a face guessed from how a heading looks, a primary color chosen because it appears most often, and a favicon used as the mark are all guesses, and a guessed brand is worse than a silent one because it is handed to other agents as though the owner had said it. The exception is which of the colors the site DECLARES is its primary and which is its accent, which a model chooses from that list and never supplies itself; the value was still read off an element exactly, the evidence says a model placed it, and none is an answer the choosing makes easy to give.",
+    "Reading a value off a picture. The step that chooses the roles is shown a screenshot of the home page to judge which of the declared colors carries it, and it may answer only with one of those colors or with none. A hex read off a picture has been through antialiasing, an overlay and a gradient, and naming a face from the shape of its letters is not possible at all, so every exact value in the profile is read off the DOM. Vision is for salience only.",
+    "Making a brand decision for the owner. Which of four blues is the primary one is an assignment nobody publishes, and choosing one is not this agent's to do. Where the pages differ about the SAME PLACE, the draft carries the value more of them state and the report names the minority, the counts and which pages stated which, because a count of the owner's own statements is evidence and not a preference; where no value is stated by more pages than another it carries neither.",
+    "Following a link off the domain it was given, fetching anything that is not https, or fetching an address carrying a credential.",
+    "Signing the profile, calling it finished, or publishing it anywhere. What comes out is a draft, and it becomes a profile when the owner corrects it and adopts it."
+  ],
+  "escalates": [
+    "A domain that will not answer, or answers with something that is not a web page, goes back to the person with what happened.",
+    "A site that states nothing about itself goes back with the report alone and no profile, naming which parts were looked for.",
+    "The parts of a brand that no website carries, the narration voice, the words the brand will not say, and the things that must never be done to the mark, are named in the report for a person to type, because no amount of reading a site will produce them."
+  ],
+  "records": [
+    {
+      "name": "the domain as given, and when it was asked for",
+      "when": "per_task",
+      "file": "*/asked.json"
+    },
+    {
+      "name": "every page, stylesheet and manifest as fetched, with its address, the moment it was fetched and its digest",
+      "when": "per_task",
+      "file": "*/fetched/*"
+    },
+    {
+      "name": "the statements found, each with the address and the place it was said",
+      "when": "per_task",
+      "file": "*/statements.json"
+    },
+    {
+      "name": "the observations, with the counts behind each one",
+      "when": "per_task",
+      "file": "*/observations.json"
+    },
+    {
+      "name": "the picture of the home page the roles were chosen from, as the browser rendered it",
+      "when": "per_task",
+      "file": "*/home-page.png"
+    },
+    {
+      "name": "the roles as chosen: every color that was offered, which of them was named the primary and which the accent, how many calls it took, and the reason where neither was chosen",
+      "when": "per_task",
+      "file": "*/roles.json"
+    },
+    {
+      "name": "the draft profile as delivered",
+      "when": "per_task",
+      "file": "*/brand-profile.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "price": {
+    "model": "flat",
+    "amount_micro": 1500000,
+    "currency": "USD",
+    "covers": [
+      "read-a-brand"
+    ]
+  },
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "chromium",
+      "purpose": "opens each fetched page to read what it renders: the computed faces, the colors by share of the page, and the contrast the site achieves; and takes one picture of the home page for the step that chooses which of the declared colors is the primary and which is the accent"
+    }
+  ],
+  "ceilings": [
+    {
+      "system": "text-reasoning",
+      "per": "task",
+      "suggested": 2
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the domain as asked, the pages as fetched, the statements, the observations, the picture of the home page, the roles as chosen and the draft profile"
+    }
+  ]
+}

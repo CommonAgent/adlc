@@ -1,0 +1,320 @@
+{
+  "name": "explainer-critic",
+  "version": "0.3.2",
+  "license": "Apache-2.0",
+  "job_seconds": 900,
+  "answer": "review",
+  "description": "Plays a staged explainer draft in a browser at both window sizes and checks it against the Explainer's story rules and the brief. Reports at most five findings and names the steps a revision would redo. It never files a change itself.",
+  "jobs": [
+    {
+      "slug": "review-an-explainer",
+      "title": "Review an explainer",
+      "offered": true,
+      "steps": [
+        "play-the-page",
+        "check-the-story",
+        "check-the-brief",
+        "write-the-review"
+      ],
+      "when": "when the Explainer has staged a draft and a person wants it checked against the story rules and the brief before they play it",
+      "good": "One review with at most five findings, each naming the step, the rule it breaks, the fix in one sentence and the steps a revision would redo. When nothing was found, one line saying so.",
+      "empty": "If the draft will not play, say what happened and stop. Never write a review of a page that was not played. If no brief was given, check the story rules alone and say the brief check was skipped.",
+      "does": "Plays a staged explainer draft at both window sizes and reports where it breaks the story rules or misses the brief, and names the steps a revision would redo.",
+      "inputs": [
+        {
+          "name": "draft address",
+          "kind": "url",
+          "required": true
+        },
+        {
+          "name": "beat script",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "brief",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "review",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Run the four skills in order: play the page, check the story, check the brief, write the review. Each skill reads what the one before it wrote. Stop at the first skill that cannot finish and say which one and why. The result is the review; a person reads it and decides what to ask the Explainer for. You report; you never file a change, never message the Explainer, and never touch the draft.\n\nThe inputs. The draft address is a web address the Explainer staged; it must open without a sign-in, and a credential pasted into the message is refused. The beat script is the Explainer's script for that draft; it may arrive pasted in the message or as an attached file whose local path the adapter lists, and it is saved as records/<job>/script.json either way. The brief is optional; when it is given it is saved as records/<job>/brief.md and the brief check runs, and when it is not the brief check is skipped and the review says so.\n\nEvery message arrives with a line `job folder: <absolute path>` naming a folder for that message's job. When the work is delivered, write the review under that folder's out/ and list it in the folder's pieces.json: a JSON array with one entry, `{ \"name\": \"review\", \"step\": \"write-the-review\", \"path\": \"out/review.md\", \"media_type\", \"produced_from\" }`. The review is the only piece; the play log, the screenshots and the checklist are records under records/<job>/ and never go in pieces.json. The review skill's pieces.mjs checks the review's form and writes out/ and pieces.json: `REVIEW=records/<job>/review.md BRIEF=1 node pieces.mjs` (BRIEF only when a brief was given). A reply sent without pieces.json carries no job, so run it before replying.\n\nThis offering has no revisions. A review of a new round is a new job: when a message names a prior job or a new round, play the new draft address from the start and reuse nothing.",
+      "references": [
+        "rules.md",
+        "references/story-rules.md"
+      ],
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "unbounded",
+        "contract": "ends"
+      }
+    },
+    {
+      "slug": "play-the-page",
+      "title": "Play the page",
+      "when": "when a draft address arrives and nothing has been read from the page yet",
+      "good": "every step walked at both window sizes, a screenshot per step per size, and the on-screen text and narration text of every step in the play log",
+      "empty": "If the page does not load, answers with an error or has no steps, say what happened and stop. Never write a play log for a page that did not play, and never guess at a step.",
+      "does": "Opens the draft address in chromium at the two window sizes the Explainer's fit check uses, walks every step, and writes the play log with a screenshot per step per size.",
+      "inputs": [
+        {
+          "name": "draft address",
+          "kind": "url",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "play log",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Run `URL=<draft address> OUT=records/<job> node scripts/play.mjs`. It writes records/<job>/play.json and records/<job>/shots/<size>-NN.png at the wide window (1440 by 860) and the narrow window (1280 by 720), the same sizes the Explainer's fit check uses, and reads each step the way that check does: the step counter, the caption band's title and narration, every text drawn in the canvas group that is on, the lit words, and whether the closing button shows. When it prints `refused:`, the draft did not play; report its line to the person and stop. Do not retry a page that answered with an error; the person decides what to do with the address.",
+      "scripts": [
+        "scripts/play.mjs",
+        "scripts/deps.mjs",
+        "scripts/package.json",
+        "scripts/package-lock.json"
+      ],
+      "lockfile": "scripts/package-lock.json",
+      "references": [
+        "references/play-limits.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "check-the-story",
+      "title": "Check the story",
+      "when": "when the play log exists and the beat script is at hand",
+      "good": "Every step checked against the story rules. The mechanical checks done by script and written to the checklist record. The judgment checks done by reading every step with its screenshots. Each finding naming the step, the rule by its heading (the heading in the story rules it sits under), the fix in one sentence, and the steps to redo.",
+      "empty": "When nothing breaks a rule, say so. Never invent a finding and never report taste as a finding.",
+      "does": "Checks the play log and the beat script against the Explainer's story rules, step by step. Whether a step moves is not checked, since a screenshot cannot show motion.",
+      "inputs": [
+        {
+          "name": "play log",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "beat script",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "brief",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "checklist",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": {
+        "file": "rules.md"
+      },
+      "scripts": [
+        "scripts/checklist.mjs"
+      ],
+      "references": [
+        "references/story-rules.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "unbounded",
+        "contract": "ends"
+      }
+    },
+    {
+      "slug": "check-the-brief",
+      "title": "Check the brief",
+      "when": "when a brief was given with the draft",
+      "good": "The draft makes the brief's point to the brief's audience, every word the brief lists is explained, and the closing button leads where the brief says. Each miss is a finding naming the step and the fix.",
+      "empty": "When no brief was given, skip this check and say so in one line of the review. Never guess what the brief would have said.",
+      "does": "Checks whether the draft makes the brief's point to the brief's audience, explains the brief's words, and sends the closing button where the brief says.",
+      "inputs": [
+        {
+          "name": "play log",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "beat script",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "brief",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "checklist",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Run checklist.mjs again, now with the brief: `PLAY=records/<job>/play.json SCRIPT=records/<job>/script.json BRIEF=records/<job>/brief.md OUT=records/<job>/checklist.json node scripts/checklist.mjs`. It repeats the story checks and adds the brief checks, so the checklist record gains the brief findings. The script checks the brief's words against what the draft says and the closing button's address against the brief. Whether the draft makes the brief's point to the brief's audience is yours to read, from the brief's Audience and The point lines and the play log's narration. A miss is a finding under the rule \"The brief\". Its steps to redo follow the story rules' Revisions section like any other finding.",
+      "scripts": [
+        "scripts/checklist.mjs"
+      ],
+      "references": [
+        "rules.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "unbounded",
+        "contract": "ends"
+      }
+    },
+    {
+      "slug": "write-the-review",
+      "title": "Write the review",
+      "when": "when both checks are done and the findings are known",
+      "good": "At most five findings in the review's form, each naming the step by number and title, the rule by its heading, the fix in one sentence and the steps a revision would redo, then the two Checked by lines. When there were more than five, a line saying how many more. When nothing was found, one line saying so.",
+      "empty": "With no findings, write the one line and deliver it. Never pad a review to five.",
+      "does": "Writes the review from the findings, in the review's form, and places it as the job's one piece.",
+      "inputs": [
+        {
+          "name": "checklist",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "beat script",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "review",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Write records/<job>/review.md in the form the rules give. Take the script's findings from the checklist record and add your own from reading; two findings on the same step under the same rule are one. When there are more than five, keep the five that matter most in the rules' order and say how many more there were. The two Checked by lines copy checked_by_script and checked_by_reading from the checklist record, every item, word for word. When no brief was given, one line says the brief check was skipped. Check the file with `REVIEW=records/<job>/review.md node scripts/check-review.mjs` and fix every problem it prints. Then `REVIEW=records/<job>/review.md BRIEF=1 node scripts/pieces.mjs` (BRIEF only when a brief was given), which refuses a review that does not fit and otherwise writes out/review.md and pieces.json. The reply to the person is the review itself, followed by one line naming where the play log and screenshots are.",
+      "scripts": [
+        "scripts/check-review.mjs",
+        "scripts/checklist.mjs",
+        "scripts/pieces.mjs",
+        "scripts/went-without.mjs"
+      ],
+      "references": [
+        "rules.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    }
+  ],
+  "systems": [
+    {
+      "name": "draft-host",
+      "access": "read",
+      "needs": "to open the draft address in the browser and play every step; the address must open without a sign-in",
+      "kind": "service"
+    }
+  ],
+  "refuses": [
+    "Filing a change request, asking for a revision, or contacting the Explainer itself. The review goes to the person, who decides.",
+    "Reporting taste as a finding. Only the story rules and the brief count, and a finding names the rule by its heading.",
+    "Inventing a finding or padding a review to five. A draft that keeps every rule gets the one-line review.",
+    "Publishing, moving, copying or editing the draft. The Critic only opens it.",
+    "Accepting a credential value pasted into a message. The draft address must open without one."
+  ],
+  "escalates": [
+    "A draft that will not play goes back to the person, with what happened named. That is a page that does not load, answers with an error, or has no steps."
+  ],
+  "records": [
+    {
+      "name": "the beat script as received, per job",
+      "when": "per_task",
+      "file": "*/script.json"
+    },
+    {
+      "name": "the brief as received, per job, when one was given",
+      "when": "per_task",
+      "file": "*/brief.md"
+    },
+    {
+      "name": "the play log per job, with a screenshot of every step at both window sizes",
+      "when": "per_task",
+      "file": "*/play.json"
+    },
+    {
+      "name": "the screenshots the play log names",
+      "when": "per_task",
+      "file": "*/shots/*.png"
+    },
+    {
+      "name": "the checklist results per job: every finding by script, what was checked by script and what by reading",
+      "when": "per_task",
+      "file": "*/checklist.json"
+    },
+    {
+      "name": "the review per job as delivered",
+      "when": "per_task",
+      "file": "*/review.md"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing the review by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    }
+  ],
+  "price": {
+    "model": "flat",
+    "amount_micro": 1000000,
+    "currency": "USD"
+  },
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "chromium",
+      "purpose": "plays every step of the draft at both window sizes and takes the screenshots"
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the beat script and the brief as received, the play log, the screenshots, the checklist and the review, each written there as soon as it exists"
+    }
+  ]
+}

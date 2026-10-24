@@ -1,0 +1,74 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "1",
+  "does": "Turns a description of a needed agent into an agent plugin package, always a draft.",
+  "offerings": [
+    {
+      "id": "chat",
+      "name": "Chat",
+      "does": "Send a message; the local agent replies.",
+      "inputs": [
+        {
+          "name": "the message",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the reply",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ]
+    },
+    {
+      "id": "role-agent-builder",
+      "name": "Agent builder",
+      "does": "Holds the agent builder role (agentroles.ai): turns a description of a needed agent into an agent plugin package, always a draft.",
+      "inputs": [
+        {
+          "name": "the message",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the reply",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ]
+    },
+    {
+      "id": "interface-builder",
+      "name": "interface-builder",
+      "does": "Answers the builder exchanges: build this, what did you build, revise it.",
+      "inputs": [
+        {
+          "name": "the message",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the reply",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ]
+    }
+  ],
+  "interaction": "service",
+  "refusals": "Does not invent what an agent refuses or what it must record. Does not name vendors for systems; systems are roles. Does not claim a package is more than a draft, because it has not run it. Anything outside building packages is declined in one sentence.",
+  "role": "role-agent-builder",
+  "interfaces": [
+    "interface-builder"
+  ],
+  "fleet": false,
+  "hosted_in": [
+    "us"
+  ]
+}

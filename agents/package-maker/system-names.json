@@ -1,0 +1,69 @@
+{
+  "_comment": "The reserved system names a package may declare (docs/account-stack.md section 6). The canonical list lives in services/src/api/system-names.ts, which the platform serves at /v1/stack/vocabulary; this copy is what the package builder reads, and services/__tests__/unit/system-names.test.ts fails when the two drift.",
+  "systems": [
+    {
+      "name": "database",
+      "state": "defined"
+    },
+    {
+      "name": "files",
+      "state": "defined"
+    },
+    {
+      "name": "agent-memory",
+      "state": "defined"
+    },
+    {
+      "name": "sign-in",
+      "state": "defined"
+    },
+    {
+      "name": "mail",
+      "state": "defined"
+    },
+    {
+      "name": "text-reasoning",
+      "state": "defined"
+    },
+    {
+      "name": "image-reading",
+      "state": "defined"
+    },
+    {
+      "name": "speech-to-text",
+      "state": "defined"
+    },
+    {
+      "name": "text-to-speech",
+      "state": "defined"
+    },
+    {
+      "name": "api-gateway",
+      "state": "defined"
+    },
+    {
+      "name": "mcp-gateway",
+      "state": "defined"
+    },
+    {
+      "name": "draft-host",
+      "state": "defined"
+    },
+    {
+      "name": "activity-record",
+      "state": "defined"
+    },
+    {
+      "name": "calendar",
+      "state": "reserved"
+    },
+    {
+      "name": "chat",
+      "state": "reserved"
+    },
+    {
+      "name": "payments",
+      "state": "reserved"
+    }
+  ]
+}

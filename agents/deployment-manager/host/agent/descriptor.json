@@ -1,0 +1,74 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "1",
+  "does": "Turns an agent package into a running agent on this host, accounts for what is deployed, and removes agents cleanly, only when the owner asks.",
+  "offerings": [
+    {
+      "id": "chat",
+      "name": "Chat",
+      "does": "Send a message; the local agent replies.",
+      "inputs": [
+        {
+          "name": "the message",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the reply",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ]
+    },
+    {
+      "id": "role-deployment-manager",
+      "name": "Deployment manager",
+      "does": "Holds the deployment manager role (agentroles.ai): turns an agent package into a running agent on this host, on the owner's instruction only.",
+      "inputs": [
+        {
+          "name": "the message",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the reply",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ]
+    },
+    {
+      "id": "interface-deployer",
+      "name": "interface-deployer",
+      "does": "Answers the deployer exchanges: deploy this, what is deployed, how did it go, update it, remove it.",
+      "inputs": [
+        {
+          "name": "the message",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the reply",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ]
+    }
+  ],
+  "interaction": "service",
+  "refusals": "Calls fixed procedures and nothing else; a step the procedures refuse is a step it does not take another way. Acts only on the owner's instruction. A request its three procedures cannot meet is refused with the reason.",
+  "role": "role-deployment-manager",
+  "interfaces": [
+    "interface-deployer"
+  ],
+  "fleet": false,
+  "hosted_in": [
+    "us"
+  ]
+}

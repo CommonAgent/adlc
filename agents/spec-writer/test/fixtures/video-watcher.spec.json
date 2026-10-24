@@ -1,0 +1,411 @@
+{
+  "name": "video-watcher",
+  "version": "0.4.4",
+  "license": "Apache-2.0",
+  "job_seconds": 5400,
+  "description": "Rips a video into its plain facts: a transcript with one cue per sentence, a frame at every scene change and at least one every interval, a scene list of the words on those frames, and a watch report; it never summarizes, never judges, and never asks for a sign-in.",
+  "jobs": [
+    {
+      "slug": "watch-a-video",
+      "title": "Watch a video",
+      "offered": true,
+      "steps": [
+        "fetch-the-video",
+        "find-the-transcript",
+        "cut-the-scenes",
+        "read-the-screens"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "steps": [
+          {
+            "id": "find-the-transcript",
+            "price": {
+              "model": "flat",
+              "amount_micro": 300000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "cut-the-scenes",
+            "price": {
+              "model": "flat",
+              "amount_micro": 200000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "read-the-screens",
+            "price": {
+              "model": "flat",
+              "amount_micro": 300000,
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      "when": "when a person hands over a video address and wants what is in it written down as facts, before anyone decides what to make of it",
+      "good": "the spoken words as a transcript with one cue per sentence, a frame at every scene change and at least one every interval, a scene list of the same shape whether the frames were read or not, one entry per scene with its start, its end, its frame file name, the words on that frame and one line, and a watch report saying where the transcript came from, how long the video is, how many scenes there are, whether the frames were read and under which setting, how many images were sent for the reading, and what could not be fetched or read",
+      "empty": "If the address needs a sign-in, is not a video, or is longer than thirty minutes, say which and stop. Never ask for a credential. Never guess at what a frame or a sentence says. A frame that was read with nothing readable on it is listed with no words and an empty line. A frame that was never read is listed with no words and the transcript's cue at that second as its line, and the report says why it was not read. A video with no transcript, when none can be made, gets an empty transcript with the reason in the report.",
+      "does": "Rips a video into its plain facts: a transcript with one cue per sentence, a frame at every scene change and at least one every interval, a scene list of the words on those frames, and a watch report. It never summarizes or judges.",
+      "inputs": [
+        {
+          "name": "video address",
+          "kind": "url",
+          "required": true
+        },
+        {
+          "name": "frame interval",
+          "kind": "identifier",
+          "required": false
+        },
+        {
+          "name": "transcript",
+          "kind": "text/vtt",
+          "required": false
+        },
+        {
+          "name": "read the screens",
+          "kind": "identifier",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "transcript",
+          "kind": "text/vtt",
+          "when": "per_task"
+        },
+        {
+          "name": "frames",
+          "kind": "image/jpeg",
+          "when": "per_task"
+        },
+        {
+          "name": "scene list",
+          "kind": "application/json",
+          "when": "per_task"
+        },
+        {
+          "name": "watch report",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Run the four skills in order: fetch the video, find the transcript, cut the scenes, read the screens. Each skill reads what the one before it wrote. Stop at the first skill that cannot finish and say which one and why. Reading the screens is done by a script calling the image-reading service, not by the harness opening the frames itself. It reads only the frames that are not recorded in the job's words.json yet, and never rewrites a frame already read there, so a job the clock cuts short resumes from words.json instead of starting at the first frame again. Under yes every frame is read, under no none is, and under auto six frames spread across the video are read first and the rest are left unread when almost nothing is written on them. The scene list has the same shape in all three cases. The result is four kinds of piece: the transcript, the frames, the scene list and the watch report. Nothing here says what the video is about; a person or another agent decides that from the facts. The video address is required; the frame interval is a whole number of seconds and ten is used when the person gave none; a transcript the person attached is used as it is and none is made; read the screens is one of yes, no and auto, and auto is used when the person gave none.\n\nEvery message arrives with a line `job folder: <absolute path>` naming a folder for that message's job. Keep the video, the sound chunks, the frames and the working files under work/<job id>/, and the records under records/<job id>/. When the work is delivered, write every delivered piece under that folder's out/ and list them in the folder's pieces.json: a JSON array with one entry per piece, `{ \"name\", \"step\", \"path\", \"media_type\", \"produced_from\" }`, where name is the piece as this offering's outputs name it, step is the slug of the skill that made it, and path is out/<file>. Which skill makes which piece: the transcript comes from find-the-transcript; each frame comes from cut-the-scenes and is listed as its own piece, named \"frames (frame-00090.jpg)\" after its file; the scene list and the watch report come from read-the-screens. The fetch record, the transcript record, the spend, the scene boundaries and the words file are records, not pieces; they never go in pieces.json. The last skill's pieces.mjs writes the out/ folder and pieces.json from the work folder: `WORK=<work folder> node pieces.mjs`. A reply sent without pieces.json carries no job, so run it before replying.\n\nA revision arrives with a second line: `revision of job <id>: redo steps <a, b>; prior pieces under <job folder>/prior/, named in prior/manifest.json; reuse every piece you do not redo by listing it in pieces.json with \"reuse\": true`. Redo only the steps that line names, in their usual order; fetch-the-video is never one of them, because fetching again is a new job. A step that is redone reads what an earlier step would have written from prior/ when that earlier step was not redone: prior/manifest.json lists each prior piece with its name, step, media type, size and digest, and the files sit in prior/, one per piece, named after the piece in a safe spelling; list the folder and match by name. The records of the job being revised sit under records/<id>/, and its video under work/<id>/; a redone step reads them when it needs what a step that was not redone wrote, and writes its own records under records/<the revision's job id>/. When the video under work/<id>/ is gone, fetch it again from the address in that job's fetch record with fetch-the-video's script, into the revision's own work folder; that is not a redone step, because nothing the person receives changes. Every piece a redone step makes goes under out/ as above. Every piece you did not redo is listed as `{ \"name\", \"step\", \"reuse\": true }` with no path; pieces.mjs writes those entries for the names given in REUSE=<comma-separated piece names>, where \"frames\" names every frame and \"frames (frame-00090.jpg)\" names one.\n\nA revision may also carry an attached file whose name matches a prior piece: transcript.vtt for the transcript, frame-00090.jpg for one frame, scene-list.json for the scene list, watch-report.txt for the watch report. Such a file is used in place of that piece: the steps that read the piece read the attached file, and pieces.mjs lists the piece as redone, with the attached file under out/ and produced_from naming the attached file, so the manifest carries its new digest. When the attached file is transcript.vtt, report.mjs is given the same EDITED and rewrites the transcript record before the report is written, so the watch report says the transcript is the attached file. Name the attached files in EDITED=<comma-separated paths>. A piece cannot be both edited and reused. If the named steps cannot leave the delivery consistent (a new interval with an unchanged scene list, for example), do what was named and say plainly in the reply what is now out of step; never redo a step that was not named. What to reuse and what to redo is the Revisions section of the watching rules, in references/rules.md.",
+      "references": [
+        "rules.md",
+        "references/address-forms.md",
+        "references/reading-frames.md",
+        "references/transcript-search.md"
+      ],
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "metered",
+        "contract": "ends"
+      }
+    },
+    {
+      "slug": "fetch-the-video",
+      "title": "Fetch the video",
+      "when": "when a video address arrives and nothing has been fetched yet",
+      "good": "the video in the work folder as one mp4 file, its length, size and digest in the fetch record, and a refusal before any bytes move when the address is not a video, needs a sign-in, or is longer than thirty minutes",
+      "empty": "If the address needs a sign-in, say so and send it back to the person. Never ask for a credential and never try one. If the address is not a video or the video is longer than thirty minutes, say which and stop.",
+      "does": "Fetches the video at the address to the work folder as an mp4 file and records its length, size and digest.",
+      "inputs": [
+        {
+          "name": "video address",
+          "kind": "url",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video file",
+          "kind": "video/mp4",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "NEVER refuse an address from reading it. Run `ADDRESS=<address> node scripts/address.mjs` first and refuse only what IT refuses. That script is the one thing that decides an address's kind, and a refusal written from your own reading of the rules is how a real job was lost: an ordinary link to one video on a video site was refused as \"a page\", because the rule that refuses \"any page that is not one video\" was quoted back without its last four words. An address of one video on a video site is the video-site kind and is fetched, whatever the shape of its link.\n\n`ADDRESS=<video address> WORK=<work folder> RECORDS=<records folder> node scripts/fetch-video.mjs`. The script tells the three kinds of address apart and fetches each the right way: a share link from a file host is turned into its download form, and the page a file host shows before a large download is answered by the script; an address on a video site is fetched with the downloader binary; any other https address is fetched as a file. It exits 3 with the reason when it refuses and 4 when the address needs a sign-in, which goes back to the person. The kinds and what is refused are in references/address-forms.md. This skill is never redone in a revision: fetching again is a new job.",
+      "scripts": [
+        "scripts/address.mjs",
+        "scripts/fetch-video.mjs"
+      ],
+      "references": [
+        "references/address-forms.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "find-the-transcript",
+      "title": "Find the transcript",
+      "when": "when the video is in the work folder and there is no transcript yet",
+      "good": "one WebVTT file with one cue per sentence, each with its start and end, found where one already exists and made with speech-to-text only when none does, with the transcript record saying which",
+      "empty": "If no transcript exists and none can be made (the video has no sound, the key for the speech-to-text service is missing, or the video's length would pass the speech-to-text ceiling), deliver an empty transcript, say why in the record, and carry on. Never type out speech by ear.",
+      "does": "Finds the video's transcript where one exists, or makes one with speech-to-text, and rewrites it as one cue per sentence.",
+      "inputs": [
+        {
+          "name": "video file",
+          "kind": "video/mp4",
+          "required": true
+        },
+        {
+          "name": "video address",
+          "kind": "url",
+          "required": true
+        },
+        {
+          "name": "transcript",
+          "kind": "text/vtt",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "transcript",
+          "kind": "text/vtt",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "`ADDRESS=<video address> VIDEO=<work folder>/video.mp4 WORK=<work folder> RECORDS=<records folder> [TRANSCRIPT=<the attached file>] node scripts/find-transcript.mjs`. The order of search is fixed and is in references/transcript-search.md: the transcript the person attached, a subtitle file beside a direct address, the captions the video site carries (captions a person wrote before captions a machine made), and only then speech-to-text. The making path cuts the sound into chunks under a minute and sends each to the service with the key the host placed, after checking the whole video's length against the ceiling when the host set one. When sending the sound would pass the ceiling, nothing is sent. The transcript is then left empty, with the reason in the record, and the job carries on. The same happens when the video has no sound track or the key for the speech-to-text service is not set. The script leaves the transcript record and the spend record, zero when nothing was sent. Redone on its own in a revision, it reads the video from the work folder of the job being revised, or fetches it again from that job's fetch record when it is gone, and its piece is the transcript under the job folder's out/, named \"transcript\".",
+      "scripts": [
+        "scripts/address.mjs",
+        "scripts/transcript.mjs",
+        "scripts/find-transcript.mjs",
+        "scripts/make-transcript.mjs"
+      ],
+      "references": [
+        "references/transcript-search.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "cut-the-scenes",
+      "title": "Cut the scenes",
+      "when": "when the video is in the work folder and the frames have not been taken",
+      "good": "one JPEG at the start, one at every scene change and one more every interval, counted from the last frame, each named by the whole second it was taken from, no two within a second of each other, and the scene boundaries record listing every cut and every frame",
+      "empty": "If the picture never changes and the video is shorter than the interval, there is still the frame at the start. If the video cannot be read, say so and stop.",
+      "does": "Takes a frame at every scene change and at least one every interval, named by the second, and records the scene boundaries.",
+      "inputs": [
+        {
+          "name": "video file",
+          "kind": "video/mp4",
+          "required": true
+        },
+        {
+          "name": "frame interval",
+          "kind": "identifier",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "frames",
+          "kind": "image/jpeg",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "`VIDEO=<work folder>/video.mp4 WORK=<work folder> RECORDS=<records folder> INTERVAL=<seconds> node scripts/cut-scenes.mjs`, with INTERVAL left unset when the person gave no frame interval, so ten is used. The script reads the video through once and that one pass does both jobs: the same decoded frames go down two branches, one writing the frames this job keeps and one reporting every scene change found. A scene change is what the picture's own difference finds at the threshold the script fixes; nothing is judged. The frames land under the work folder's frames/ as JPEG named by the whole second each was taken from, and the scene boundaries record, with every cut, every frame and which scene each frame starts, at the records folder's scenes.json. Redone on its own in a revision (a new interval, most often), it reads the video as find-the-transcript does, and its pieces are the frames under the job folder's out/frames/, each named \"frames (frame-SSSSS.jpg)\".",
+      "scripts": [
+        "scripts/frames.mjs",
+        "scripts/cut-scenes.mjs"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "read-the-screens",
+      "title": "Read the screens",
+      "when": "when the frames are taken and the words on them have not been read",
+      "good": "every word readable on every frame that was read, in reading order and exactly as written, with the largest text marked as the heading; a scene list of one entry per scene, the same shape whether the frames were read or not; and a watch report of facts, including whether the frames were read and under which setting",
+      "empty": "A frame that was read with nothing readable on it gets an empty list of words and an empty line. A frame that was never read gets an empty list of words and the transcript's cue at that second as its line, and the report says why it was not read. Never fill a frame's words in from the transcript, from a neighboring frame, or from what the video seems to be about.",
+      "does": "Reads the words on the frames with the image-reading service, assembles the scene list, and writes the watch report.",
+      "inputs": [
+        {
+          "name": "frames",
+          "kind": "image/jpeg",
+          "required": true
+        },
+        {
+          "name": "read the screens",
+          "kind": "identifier",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "scene list",
+          "kind": "application/json",
+          "when": "per_task"
+        },
+        {
+          "name": "watch report",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "The reading is done by a script, not by the harness opening the frames. Run `FRAMES=<frames folder> WORK=<work folder> RECORDS=<records folder> READ=<yes, no or auto> node scripts/read-screens.mjs`, with READ left unset when the person gave no setting, so auto is used; the frames folder is the work folder's frames/, or the job folder's prior/ when cut-the-scenes was not redone. The script writes the records folder's words.json itself, one entry per frame, keeps every entry already read exactly as it was, and reads only the frames still to be read, so a job the clock cut short resumes from that file rather than reading every frame again. It sends eight frames in one call and four calls at a time, labels every frame with its file name and takes the answer back keyed by that name, sends a call again once when the answer misses a frame or names a stranger, and records with no words and a note the frames it still could not get an answer for. Every image counts against the ceiling and the run stops rather than passing it. What it did is in the records folder's images.json, which is also the spend record for images. The rules for the three settings are in references/reading-frames.md. Then `SCENES=<records folder>/scenes.json WORDS=<records folder>/words.json TRANSCRIPT=<work folder>/transcript.vtt OUT=<work folder>/scene-list.json node scripts/scene-list.mjs`, which refuses a words file with a frame missing, an unknown frame, a word that is not a string, or a heading that is not a run of the frame's words, composes each read frame's line from that frame's words alone, and gives a frame that was never read the transcript's cue at that second. Then `RECORDS=<records folder> SCENE_LIST=<work folder>/scene-list.json OUT=<work folder>/watch-report.txt [EDITED=<file paths>] node scripts/report.mjs`. When the revision attached a transcript.vtt, EDITED names it, and the script rewrites the records folder's transcript.json to say the transcript is the attached file before it writes the report. Last, `WORK=<work folder> [REUSE=<piece names>] [EDITED=<file paths>] node scripts/pieces.mjs`. Redone on its own in a revision, it reads the frames from prior/ and the records from the job being revised, with SCENES and RECORDS pointing at that job's records folder; its pieces are the scene list and the watch report under the job folder's out/.",
+      "scripts": [
+        "scripts/frames.mjs",
+        "scripts/transcript.mjs",
+        "scripts/words-template.mjs",
+        "scripts/read-screens.mjs",
+        "scripts/scene-list.mjs",
+        "scripts/report.mjs",
+        "scripts/pieces.mjs"
+      ],
+      "offered": false,
+      "references": [
+        "references/reading-frames.md"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      }
+    }
+  ],
+  "systems": [
+    {
+      "name": "speech-to-text",
+      "access": "trigger",
+      "needs": "to make a transcript when the video carries none",
+      "leaves": true,
+      "kind": "service",
+      "credential": "stt-key",
+      "env": "STT_API_KEY",
+      "spends": {
+        "unit": "seconds"
+      }
+    },
+    {
+      "name": "image-reading",
+      "access": "trigger",
+      "needs": "to read the words shown on each frame",
+      "leaves": true,
+      "kind": "service",
+      "credential": "image-reading-key",
+      "env": "IMAGE_API_KEY",
+      "spends": {
+        "unit": "images"
+      }
+    }
+  ],
+  "refuses": [
+    "asking for a sign-in, a password, a token or any credential. Never accept a credential a person offers. An address that needs one goes back to the person",
+    "summarizing the video, saying what it is about, or judging anything in it. Only what was said and what was on screen is written down",
+    "watching a video longer than thirty minutes",
+    "fetching an address that is not one video: a page, a playlist, a channel, a folder, a document",
+    "sending sound to speech-to-text when the video's length would pass the ceiling, or when a transcript already exists",
+    "writing a word into the scene list that is not readable on that frame, or a line that is not composed of that frame's words, unless the frame was never read, in which case the words stay empty and the line is the transcript's cue at that second",
+    "sending an image to the image-reading service when it would pass the ceiling; the frames left over stay unread and are named in the report"
+  ],
+  "escalates": [
+    "an address that cannot be fetched without signing in goes back to the person, with the reason"
+  ],
+  "records": [
+    {
+      "name": "the fetch record: the address as given, where it was fetched from, and the video's length, size and digest",
+      "when": "per_task",
+      "file": "*/fetch.json"
+    },
+    {
+      "name": "the transcript record: where the transcript came from, the sources tried, and the seconds sent to speech-to-text",
+      "when": "per_task",
+      "file": "*/transcript.json"
+    },
+    {
+      "name": "the speech-to-text spend for the run, in seconds, zero when nothing was sent. The image-reading spend is a second record, images.json, in images, because a different skill writes it at a different time",
+      "when": "per_task",
+      "file": "*/spend.json"
+    },
+    {
+      "name": "the scene boundaries: every cut found, every frame taken with its second and why, and which scene each frame starts",
+      "when": "per_task",
+      "file": "*/scenes.json"
+    },
+    {
+      "name": "the words read from every frame, as the reading script wrote them, with read: true on every frame that was looked at, whether or not it carried words",
+      "when": "per_task",
+      "file": "*/words.json"
+    },
+    {
+      "name": "the reading of the frames and the image-reading spend for the task, in images: the setting it ran under, the images sent and calls made, how many frames were read and how many were left, the frames the sample looked at and how many of them carried words, why the reading stopped when it stopped short, and every note",
+      "when": "per_task",
+      "file": "*/images.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery and revision, listing every piece by step. The adapter signs it from pieces.json and keeps it beside the reply",
+      "when": "per_task"
+    }
+  ],
+  "price": {
+    "model": "flat",
+    "amount_micro": 2500000,
+    "currency": "USD"
+  },
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "ffmpeg",
+      "purpose": "reads the video: cuts the sound into chunks for speech-to-text and takes the frames"
+    },
+    {
+      "name": "ffprobe",
+      "purpose": "measures the video: its length, size and whether it has a picture track"
+    },
+    {
+      "name": "yt-dlp",
+      "purpose": "fetches a video and its captions from a video site"
+    }
+  ],
+  "ceilings": [
+    {
+      "system": "speech-to-text",
+      "per": "task",
+      "suggested": 1800
+    },
+    {
+      "system": "image-reading",
+      "per": "task",
+      "suggested": 200
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding every record above"
+    },
+    {
+      "name": "work",
+      "purpose": "the video, the sound chunks, the frames and the working files of each job, kept for the revision window"
+    }
+  ]
+}

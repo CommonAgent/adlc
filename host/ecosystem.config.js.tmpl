@@ -1,0 +1,57 @@
+// The pm2 file for a fleet host that runs the ops agents and no bare agents
+// (the dev fleet, docs/env-split-runbook.md 1.6). Installed as
+// /opt/fleet/ecosystem.config.js only where no such file exists: prod's file
+// (deploy/hosts/fleet/ecosystem.config.js.tmpl) also starts the five bare
+// agents' warm servers and reads their key files when it loads, which a host
+// without those agents does not have.
+//
+// The fleet supervisor wakes each ops agent's brain per message from its
+// roster, and roster.mjs builds the roster from the `<name>-attendant` entries
+// below (HOME, BRAIN, NODE_ROOT). The attendants themselves are never started
+// (technical debt 207): start this file with --only responses-bridge,mesh-node-ops.
+const agent = (user) => ([
+  {
+    name: `${user}-attendant`,
+    script: "/opt/fleet/attendant-fast.sh",
+    interpreter: "bash",
+    uid: user, gid: user,
+    env: { HOME: `/home/${user}`, AGENT_NAME: user, NODE_ROOT: "/opt/fleet/node-ops", BRAIN: `/opt/fleet/brains/${user}.sh`, POLL_SECS: "0.25" },
+    autorestart: false,
+    out_file: `/opt/fleet/logs/${user}-attendant.log`,
+    error_file: `/opt/fleet/logs/${user}-attendant.err`,
+    merge_logs: true, log_date_format: "YYYY-MM-DD HH:mm:ss",
+  },
+]);
+
+// The Codex brains reach Claude on Vertex AI through this bridge, signed in as
+// the VM's own service account (client-rig/driver/responses-bridge.mjs).
+// Loopback only, no key; it costs nothing while no brain is thinking.
+const responsesBridge = {
+  name: "responses-bridge",
+  script: "/opt/fleet/responses-bridge.mjs",
+  interpreter: "node",
+  uid: "nobody", gid: "nogroup",
+  env: { BRIDGE_PORT: "8788", BRIDGE_VERTEX_PROJECT: "{{vertex.project}}", BRIDGE_VERTEX_REGION: "global" },
+  max_restarts: 20, restart_delay: 5000, autorestart: true,
+  out_file: "/opt/fleet/logs/responses-bridge.log",
+  error_file: "/opt/fleet/logs/responses-bridge.err",
+  merge_logs: true, log_date_format: "YYYY-MM-DD HH:mm:ss",
+};
+
+// The adapter node that holds the ops agents' inboxes (/opt/fleet/node-ops),
+// one process for the three, as on prod. They act for the operator's
+// organization, never for one person (Common Agent 6.2).
+const nodeOps = {
+  name: "mesh-node-ops",
+  script: "/usr/bin/mesh-adapter",
+  args: "start --inbox --unattended --kind codex --acts-for organization",
+  interpreter: "none",
+  uid: "mesh-node", gid: "mesh-node",
+  env: { HOME: "/home/mesh-node", MESH_ADAPTER_STATE: "/opt/fleet/node-ops", CATALOG_URL: "{{urls.catalog}}" },
+  max_restarts: 20, restart_delay: 5000, autorestart: true,
+  out_file: "/opt/fleet/logs/mesh-node-ops.log",
+  error_file: "/opt/fleet/logs/mesh-node-ops.err",
+  merge_logs: true, log_date_format: "YYYY-MM-DD HH:mm:ss",
+};
+
+module.exports = { apps: [responsesBridge, nodeOps, ...agent("deploymgr"), ...agent("agentbuilder"), ...agent("agentevaluator")] };

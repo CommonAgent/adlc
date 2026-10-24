@@ -1,0 +1,446 @@
+{
+  "name": "brief-writer",
+  "version": "0.5.0",
+  "license": "Apache-2.0",
+  "job_seconds": 900,
+  "answer": "brief",
+  "description": "Turns source material into the brief an explainer is written from. The brief holds the audience, the one-sentence point, the words to explain, and what to keep and drop. Every line points back to where it came from in the source.",
+  "jobs": [
+    {
+      "slug": "write-a-brief",
+      "title": "Write a brief",
+      "offered": true,
+      "steps": [
+        "read-the-source",
+        "settle-the-point",
+        "choose-what-to-keep",
+        "write-the-brief"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "steps": [
+          {
+            "id": "read-the-source",
+            "price": {
+              "model": "flat",
+              "amount_micro": 800000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "settle-the-point",
+            "price": {
+              "model": "flat",
+              "amount_micro": 400000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "choose-what-to-keep",
+            "price": {
+              "model": "flat",
+              "amount_micro": 300000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "write-the-brief",
+            "price": {
+              "model": "flat",
+              "amount_micro": 300000,
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      "when": "when a person has a video, a page or a document they want remade as an explainer and needs the brief the explainer is written from",
+      "good": "One brief a person can check line by line. The audience in one line. The point in one sentence. Every product word with the plain phrase that explains it. Every name with its permission. Every number marked given or illustrative. Where the closing button leads. Which parts of the source become scenes and which are dropped, with a reason for each. Every line ending with the time or the quote it came from.",
+      "empty": "If no source arrived, say so and name the five kinds that can be read. If the source and the notes settle no audience or no point, reply with that one question instead of a brief. If a step stops, say which step and why rather than guessing a section. A revision that cannot leave the brief consistent is still delivered, and the reply says which sections no longer agree.",
+      "does": "Reads source material and writes the brief an explainer is written from. Every line points back to the time or the quote it came from. When the source settles no audience or no point, it asks one question instead.",
+      "inputs": [
+        {
+          "name": "transcript",
+          "kind": "text/vtt",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "scene list",
+          "kind": "application/json",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "frames",
+          "kind": "image/jpeg",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "page address",
+          "kind": "url",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "document",
+          "kind": "document",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "palette",
+          "kind": "identifier",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "source notes",
+          "kind": "text",
+          "when": "per_task",
+          "working": true
+        },
+        {
+          "name": "the point",
+          "kind": "text",
+          "when": "per_task",
+          "working": true
+        },
+        {
+          "name": "keep and drop",
+          "kind": "text",
+          "when": "per_task",
+          "working": true
+        },
+        {
+          "name": "brief",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this package runs on its own, and nothing here is done by opening files and working out what to do next. Every message that reaches this agent is one job, and one command does the whole of it. The package is installed at ~/brief-writer, so the script is always at ~/brief-writer/skills/write-a-brief/scripts/write-brief.mjs.\n\nRun this one command, with these exact paths:\n\n  WORK=<work folder> RECORDS=<records folder> TRANSCRIPT=<path> SCENE_LIST=<path> FRAMES=<folder, or paths separated by commas> PAGE=<address> DOCUMENT=<path> NOTES=<the person's notes, or a file holding them> PALETTE=<identifier> node ~/brief-writer/skills/write-a-brief/scripts/write-brief.mjs\n\nSet only the variables this message brought and leave every other one unset. WORK, RECORDS and JOB_DIR are always set: JOB_DIR is the path on the message's `job folder: <absolute path>` line, and WORK and RECORDS are the work and records directories this agent was installed with, each with this job's own folder under it. The script opens nothing but the files these variables name, so a source that is not named here is a source it does not have. It never goes looking.\n\nWhere each variable comes from. Attached files arrive as local paths in an `attached: N files, already downloaded to this machine:` block the adapter writes under the message, each with its media type in brackets. Match them to the variables by type: text/vtt is TRANSCRIPT, application/json is SCENE_LIST, image/png is FRAMES, and several frames go in FRAMES separated by commas or as the folder holding them. Match by name when the type is plain: a document is DOCUMENT. A page address written in the message text is PAGE. The notes and the palette are in the message text: the person's words about the source go in NOTES, and the palette identifier in PALETTE.\n\nThe script prints one JSON object. Print its `reply` field as your whole answer, and nothing else. Its `pieces` field names the pieces.json the job is listed in, and those pieces are already under the job folder's out/. When it exits 3, print `reply` and stop: either nothing readable arrived or the ceiling left no room for a call, and the reply says which. When it exits 2 the command was called wrong; fix the variables and run it again. Never write a brief yourself, and never fill in a source the script says it did not get.\n\nWhat the script does, so you can see it did the right thing. It writes the notes as received to records/<job>/notes-round-<n>.txt before anything is read, where n is 1 for the first message on a job and one more for each later message. It reads every source it was given and writes what was received to records/<job>/sources.json. It builds one request carrying rules.md, the parts of the story rules that bear on a brief, and the source itself, and sends it to the text-reasoning service. It checks the brief that comes back with check-brief.mjs, and when the check finds something it sends the same request once more with the findings appended. There is never a third call. It writes the four pieces in the work folder as source-notes.md, the-point.md, keep-and-drop.md and brief.md, copies the brief to records/<job>/brief-round-<n>.md, and lists the pieces under the job folder's out/ with pieces.mjs. Every call counts against the ceiling, and records/<job>/calls.json says how many were made.\n\nAt least one source must arrive: a transcript, a scene list, frames, a page address or a document. With none, the script sends nothing, exits 3, and its reply says there is nothing to read and names those five kinds. A page is fetched once and read as it was served; a page that needs a sign-in is reported as unreadable and never signed in to.\n\nThe question path. When the source and the notes settle no audience or no point, the reply is that one question and nothing else, the question is written to records/<job>/question.txt, no brief piece and no point piece is written, and only the source notes are listed. The person's answer comes back as the notes for the next round: run the same command again with the same source and NOTES holding their answer.\n\nA revision arrives with a second line: `revision of job <id>: redo steps <a, b>; prior pieces under <job folder>/prior/, named in prior/manifest.json; reuse every piece you do not redo by listing it in pieces.json with \"reuse\": true`. Run the same command with three more variables: REDO=<the steps that line names>, REUSE=<every piece not redone, by the names source notes, the point, keep and drop, brief>, and PRIOR=<job folder>/prior. Add ATTACHED=<the attached paths, separated by commas> when the person attached an edited copy of a piece; a file named brief.md, the-point.md, keep-and-drop.md or source-notes.md, with or without the prefix the adapter puts on a downloaded file, is their edited copy and is used in place of that piece. Never both attach and reuse the same piece. A revision that redoes only some of the steps can leave the brief out of step with itself; it is delivered as asked, and the reply says which sections no longer agree. What to reuse and what to redo is the Revisions section of rules.md.\n\nThe result is a brief the person reads and changes before an explainer is made from it; the brief is never the finished thing.",
+      "references": [
+        "rules.md",
+        "references/story-rules.md",
+        "references/writing-the-brief.md"
+      ],
+      "scripts": [
+        "scripts/write-brief.mjs",
+        "scripts/went-without.mjs",
+        "scripts/check-brief.mjs",
+        "scripts/pieces.mjs"
+      ],
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "metered",
+        "contract": "ends"
+      }
+    },
+    {
+      "slug": "read-the-source",
+      "title": "Read the source",
+      "when": "when source material arrives and nothing has been read from it yet",
+      "good": "Every fact, quote and on-screen line the source gives, each with the time, the frame, the scene, the page or the quoted words it came from. A list of what was received, with each one's name and size or its address. Nothing summarized, nothing judged, nothing added.",
+      "empty": "If a source cannot be opened or read, say which one and why, and read the rest. If none can be read, stop and say so. Never sign in to reach a page.",
+      "does": "Reads every source the message brought and writes the source notes: the facts, quotes and on-screen lines with where each came from.",
+      "inputs": [
+        {
+          "name": "transcript",
+          "kind": "text/vtt",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "scene list",
+          "kind": "application/json",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "frames",
+          "kind": "image/jpeg",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "page address",
+          "kind": "url",
+          "required": false,
+          "one_of": "source"
+        },
+        {
+          "name": "document",
+          "kind": "document",
+          "required": false,
+          "one_of": "source"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "source notes",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives, whatever it says, is handled by one command, node ~/brief-writer/skills/write-a-brief/scripts/write-brief.mjs, exactly as the write-a-brief skill says; read that skill and run that command with what the message brought. This skill only explains what that command does for this step.\n\nThe script reads every source the variables named it, in the order transcript, scene list, frames, page, document, as the Reading section of rules.md says. It opens nothing it was not given, and it never searches a folder for a file that looks like a source. It writes source-notes.md in the work folder: first what was received, each source by name and size or by address, then the facts, quotes and on-screen lines, each ending with its pointer. The same list of what was received is written as records/<job>/sources.json, and the notes as received go to records/<job>/notes-round-<n>.txt before any source is opened. A source that cannot be read is named in the source notes under what was received and in the reply, and the rest are read; when none can be read the script exits 3 and the reply says so. A page is fetched once and never signed in to. Redone on its own in a revision, this step is named in REDO and the sources must arrive again; with none, the script refuses. The source notes are its only piece under the job folder's out/.",
+      "references": [
+        "rules.md",
+        "references/writing-the-brief.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "settle-the-point",
+      "title": "Settle the point",
+      "when": "when the source notes exist and the audience and the point are not yet written",
+      "good": "One audience line that names who will watch and what they already know. One sentence saying what that audience should believe or do afterwards. Every product word or term of art the audience would not know, each with the plain phrase that explains it. Each line ending with its pointer.",
+      "empty": "When the source and the notes together settle no audience or no point, write nothing and reply with that one question. Never guess an audience from the product or a point from the title.",
+      "does": "Settles who the explainer is for and the one sentence it makes, and lists the words that must be explained. When the source leaves the audience or the point open, it asks that one question instead.",
+      "inputs": [
+        {
+          "name": "source notes",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the point",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives, whatever it says, is handled by one command, node ~/brief-writer/skills/write-a-brief/scripts/write-brief.mjs, exactly as the write-a-brief skill says; read that skill and run that command with what the message brought. This skill only explains what that command does for this step.\n\nThe audience, the point and the words to explain are settled in the same request as the rest, from the source and the notes together, as the Audience, The point and Words to explain sections of rules.md say. The script writes the-point.md in the work folder. When the source and the notes settle no audience or no point, the answer carries that one question instead: the script writes it to records/<job>/question.txt, writes no the-point.md and no brief.md, lists only the source notes with pieces.mjs, and prints the question as the whole of the reply. When both are missing the question asks about the audience first, because the point is written in the audience's words. The person's answer comes back as the notes for the next round, and the same command is run again with the same source and NOTES holding the answer; it is written to records/<job>/notes-round-<n>.txt like any other notes. Redone on its own in a revision, the point is its only piece under the job folder's out/.",
+      "references": [
+        "rules.md",
+        "references/writing-the-brief.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "choose-what-to-keep",
+      "title": "Choose what to keep",
+      "when": "when the point is settled and the parts of the source have not been sorted",
+      "good": "Every part of the source named once. Each part is kept as a scene because it carries one idea the point needs, or dropped because it repeats, is context the audience already has, or is a claim the source does not support. Each has a reason of a few words and a pointer.",
+      "empty": "If a part of the source cannot be placed, keep it and say why it is uncertain rather than dropping it silently. If the point leaves nothing to keep, say so and go back to the point.",
+      "does": "Sorts the parts of the source into the ones that become scenes and the ones that are left out, with a reason for each.",
+      "inputs": [
+        {
+          "name": "source notes",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "the point",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "keep and drop",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives, whatever it says, is handled by one command, node ~/brief-writer/skills/write-a-brief/scripts/write-brief.mjs, exactly as the write-a-brief skill says; read that skill and run that command with what the message brought. This skill only explains what that command does for this step.\n\nThe parts of the source are sorted in the same request as the rest, as the Keep and drop section of rules.md says, and the script writes keep-and-drop.md in the work folder. Every part of the source appears once, kept or dropped, with a reason of a few words and a pointer; a part that is hard to place is kept and marked uncertain rather than dropped in silence. The notes matter here, because they say what the person dislikes and which names may be used, so pieces.mjs names the notes in produced_from whenever NOTES was set. Redone on its own in a revision, keep and drop is its only piece under the job folder's out/.",
+      "references": [
+        "rules.md",
+        "references/writing-the-brief.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "write-the-brief",
+      "title": "Write the brief",
+      "when": "when the source notes, the point and keep and drop exist and the brief has to be assembled",
+      "good": "One brief in the fixed order: Audience, The point, Words to explain, Names and permissions, Numbers, Where the closing button leads, Palette and voice when given, Keep and drop. Every line that is not a heading ends with the time or the quote it came from in square brackets. There are no em dashes. check-brief.mjs reports no findings.",
+      "empty": "If check-brief.mjs reports a finding, fix it and run it again. If a section has nothing to say, write one line saying so with its pointer. Never send a brief that did not pass.",
+      "does": "Assembles the brief in its fixed order from the three pieces before it, the notes and the palette, and checks it before it is sent.",
+      "inputs": [
+        {
+          "name": "source notes",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "the point",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "keep and drop",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "palette",
+          "kind": "identifier",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "brief",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives, whatever it says, is handled by one command, node ~/brief-writer/skills/write-a-brief/scripts/write-brief.mjs, exactly as the write-a-brief skill says; read that skill and run that command with what the message brought. This skill only explains what that command does for this step.\n\nThe brief is assembled in the fixed order The brief's shape in rules.md gives, from the source notes, the point, keep and drop, the notes and the palette, and the script writes brief.md in the work folder. Before anything is written it runs the brief through check-brief.mjs. When the check reports a finding, the script sends the same request once more with the findings appended, and never a third time: the second brief is written as it stands and the reply names every finding that still stands, so a brief that did not pass is never described as one that did. The brief is copied to records/<job>/brief-round-<n>.md. Then pieces.mjs lists the pieces under the job folder's out/, with REUSE naming every piece a revision did not redo and ATTACHED naming any edited copy the person sent. The brief is this step's only piece.",
+      "references": [
+        "rules.md",
+        "references/story-rules.md",
+        "references/writing-the-brief.md"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    }
+  ],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "access": "trigger",
+      "needs": "to turn the source into the brief",
+      "leaves": true,
+      "kind": "service",
+      "credential": "text-reasoning-key",
+      "env": "TEXT_API_KEY",
+      "spends": {
+        "unit": "calls"
+      }
+    },
+    {
+      "name": "the-web",
+      "access": "read",
+      "needs": "to fetch a page address the message names, once, and read it as it was served",
+      "kind": "service"
+    }
+  ],
+  "refuses": [
+    "inventing a fact, a number, a quotation or a name the source did not give",
+    "rewriting a claim the source makes into a stronger one, or stating as given what the source only suggests",
+    "writing a brief when the source and the notes settle no audience or no point; the reply is the one question instead",
+    "naming a real company or a real person unless the notes give the name and the permission to use it",
+    "accepting a credential value, a password or a sign-in to reach a source; a page that needs one is reported as unreadable",
+    "fetching any address but the page address the message names",
+    "dropping a part of the source without saying so; every part appears once in keep and drop, kept or dropped, with its reason",
+    "writing a duration into the brief as if the explainer could say it; a duration is listed and marked, with a line saying the story rules do not let the explainer state it"
+  ],
+  "escalates": [
+    "a source that settles no audience or no point goes back to the person as one question",
+    "every brief goes to a person to read and change before an explainer is made from it",
+    "a revision that leaves the brief out of step with itself is delivered with the reply saying which sections no longer agree"
+  ],
+  "records": [
+    {
+      "name": "the sources as received: each one's name and size, or its address",
+      "when": "per_task",
+      "file": "*/sources.json"
+    },
+    {
+      "name": "the notes as received, per round",
+      "when": "per_task",
+      "file": "*/notes-round-*.txt"
+    },
+    {
+      "name": "the question asked, when the source settled no audience or no point",
+      "when": "per_task",
+      "file": "*/question.txt"
+    },
+    {
+      "name": "the brief for each round",
+      "when": "per_task",
+      "file": "*/brief-round-*.md"
+    },
+    {
+      "name": "the calls made to the text-reasoning service for the task, in calls: how many, the ceiling that applied and what it was per, the round, whether the brief had to be written a second time, whether the job ended in a question, the findings that still stood, and why the run stopped when it stopped short",
+      "when": "per_task",
+      "file": "*/calls.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery and revision, listing every piece by step; the adapter signs it from pieces.json and keeps it beside the reply",
+      "when": "per_task"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    }
+  ],
+  "price": {
+    "model": "flat",
+    "amount_micro": 2000000,
+    "currency": "USD"
+  },
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per brief, holding every record above"
+    },
+    {
+      "name": "work",
+      "purpose": "the source notes, the point, keep and drop, and the brief in progress"
+    }
+  ],
+  "ceilings": [
+    {
+      "system": "text-reasoning",
+      "per": "task",
+      "suggested": 20
+    }
+  ]
+}

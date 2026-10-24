@@ -1,0 +1,35 @@
+{
+  "name": "example",
+  "about": "An example environment for the reference agents. Copy it to env/<name>.json, set AGENTMESH_ENV=<name>, and replace every value with your own. Only the keys the lifecycle agents and their host templates read are here.",
+
+  "gcp": {
+    "project": "example-project",
+    "worker_region": "us-central1",
+    "registry": "gcr.io/example-project",
+    "deploymgr_registry": "gcr.io/example-project/deploymgr",
+    "jobs_sa": "agent-jobs@example-project.iam.gserviceaccount.com"
+  },
+  "vertex": { "project": "example-project" },
+  "urls": {
+    "app": "https://app.mesh.example.com",
+    "api": "https://api.mesh.example.com",
+    "naming": "https://naming.mesh.example.com",
+    "catalog": "https://catalog.mesh.example.com"
+  },
+  "broker": { "wss": "wss://broker.mesh.example.com" },
+  "buckets": { "agent_state": "example-agent-state" },
+  "caller_grants": {
+    "runtime_sa": "agent-runtime@example-project.iam.gserviceaccount.com",
+    "runtime_installs": ""
+  },
+  "service_accounts": { "platform_waker": "platform-waker@example-project.iam.gserviceaccount.com" },
+  "tenants": {
+    "project": "example-tenants",
+    "region": "us-east1",
+    "registry": "us-east1-docker.pkg.dev/example-tenants/agents",
+    "deployer_sa": "tenant-deployer@example-tenants.iam.gserviceaccount.com",
+    "builder_sa": "tenant-builder@example-tenants.iam.gserviceaccount.com",
+    "waker_sa": "tenant-waker@example-tenants.iam.gserviceaccount.com"
+  },
+  "pinned_keys": { "required_coder": "" }
+}

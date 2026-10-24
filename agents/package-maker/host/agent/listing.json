@@ -1,0 +1,19 @@
+{
+  "offerings": [
+    {
+      "id": "chat",
+      "name": "Chat",
+      "description": "Send a message; the agent replies."
+    },
+    {
+      "id": "role-agent-builder",
+      "name": "Agent builder",
+      "description": "Holds the agent builder role (agentroles.ai): turns a description of a needed agent into an agent plugin package, always a draft."
+    },
+    {
+      "id": "interface-builder",
+      "name": "interface-builder",
+      "description": "Answers the builder exchanges: build this, what did you build, revise it."
+    }
+  ]
+}

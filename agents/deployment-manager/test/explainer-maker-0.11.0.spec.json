@@ -1,0 +1,710 @@
+{
+  "name": "explainer-maker",
+  "version": "0.11.0",
+  "license": "Apache-2.0",
+  "job_seconds": 1500,
+  "description": "Turns a written brief into a narrated interactive explainer: a self-contained web page that plays itself step by step with a recorded voice, checked to fit two window sizes, with a thumbnail for a listing.",
+  "jobs": [
+    {
+      "slug": "make-an-explainer",
+      "title": "Make an explainer",
+      "offered": true,
+      "steps": [
+        "write-the-story",
+        "read-the-brand",
+        "lay-out-the-scenes",
+        "record-the-narration",
+        "check-the-fit",
+        "stage-a-draft"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "steps": [
+          {
+            "id": "write-the-story",
+            "price": {
+              "model": "flat",
+              "amount_micro": 500000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "read-the-brand",
+            "price": {
+              "model": "flat",
+              "amount_micro": 100000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "lay-out-the-scenes",
+            "price": {
+              "model": "flat",
+              "amount_micro": 400000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "record-the-narration",
+            "price": {
+              "model": "flat",
+              "amount_micro": 400000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "check-the-fit",
+            "price": {
+              "model": "flat",
+              "amount_micro": 100000,
+              "currency": "USD"
+            }
+          },
+          {
+            "id": "stage-a-draft",
+            "price": {
+              "model": "flat",
+              "amount_micro": 100000,
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      "when": "when a brief arrives and the person wants an explainer they can review",
+      "good": "one explainer at a private link for review: a page that plays itself read in the voice the person chose, at the pace and in the tone they chose, with the names they gave said the way they gave them, every step fitting both window sizes, a thumbnail beside it, the beat script the person can read and change, the reply giving the length measured from the recordings, and, when a web address came with the brief, one closing card after the synopsis carrying that customer's logo and one colour from their own site with our credit on it as a link",
+      "empty": "if the brief settles no audience or no one-sentence point, send it back naming what is missing; never guess; if any step stops, say which step and why rather than staging a page with silent steps",
+      "does": "Turns a brief into a narrated explainer page that plays itself, checked to fit two window sizes, staged at a private link for review with a thumbnail beside it.",
+      "inputs": [
+        {
+          "name": "brief",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "target length",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "palette",
+          "kind": "identifier",
+          "required": false
+        },
+        {
+          "name": "beat script",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "customer web address",
+          "kind": "url",
+          "required": false
+        },
+        {
+          "name": "voice",
+          "kind": "identifier",
+          "required": false,
+          "label": "Voice",
+          "description": "The voice that reads the narration. Charon reads it when you choose none.",
+          "choices": [
+            "Charon (informative)",
+            "Kore (firm)",
+            "Sadaltager (knowledgeable)",
+            "Achird (friendly)",
+            "Sulafat (warm)",
+            "Iapetus (clear)",
+            "Puck (upbeat)",
+            "Aoede (breezy)"
+          ],
+          "link": {
+            "text": "Hear the voices",
+            "href": "/voices"
+          }
+        },
+        {
+          "name": "how it sounds",
+          "kind": "text",
+          "required": false,
+          "label": "How it sounds",
+          "description": "The tone the voice takes.",
+          "choices": [
+            "warm and friendly",
+            "calm and clear",
+            "upbeat",
+            "serious"
+          ]
+        },
+        {
+          "name": "pace",
+          "kind": "text",
+          "required": false,
+          "label": "Pace",
+          "description": "How fast it is read. The story is written to fit the length at this pace, and it is normal when you choose none.",
+          "choices": [
+            "relaxed",
+            "normal",
+            "brisk"
+          ]
+        },
+        {
+          "name": "anything else about the delivery",
+          "kind": "text",
+          "required": false,
+          "label": "Anything else about the delivery",
+          "description": "One short line, if there is something more to say about how it is read.",
+          "example": "Slow down on the last sentence.",
+          "widget": "text",
+          "accepts": [
+            "text"
+          ]
+        },
+        {
+          "name": "how names are said",
+          "kind": "application/json",
+          "required": false,
+          "label": "How names are said",
+          "description": "A name the voice should say differently from how it is written. The captions keep the written spelling.",
+          "parts": [
+            {
+              "name": "written-1",
+              "label": "Written as",
+              "example": "AgentMesh",
+              "row": 1
+            },
+            {
+              "name": "said-1",
+              "label": "Said as",
+              "example": "agent mesh",
+              "row": 1
+            },
+            {
+              "name": "written-2",
+              "label": "Written as",
+              "row": 2
+            },
+            {
+              "name": "said-2",
+              "label": "Said as",
+              "row": 2
+            },
+            {
+              "name": "written-3",
+              "label": "Written as",
+              "row": 3
+            },
+            {
+              "name": "said-3",
+              "label": "Said as",
+              "row": 3
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "explainer page",
+          "kind": "text/html",
+          "when": "per_task"
+        },
+        {
+          "name": "narration clips",
+          "kind": "audio/mpeg",
+          "when": "per_task"
+        },
+        {
+          "name": "thumbnail",
+          "kind": "image/png",
+          "when": "per_task"
+        },
+        {
+          "name": "draft address",
+          "kind": "url",
+          "when": "per_task"
+        },
+        {
+          "name": "beat script",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this package runs on its own, and nothing here is done by opening files and working out what to do next. Every message that reaches this agent is one job, and ONE COMMAND does the whole of it: write the story, lay out the scenes, record the narration, check the fit, stage the draft, and file the delivery. The package is installed at ~/explainer-maker, so the script is always at ~/explainer-maker/skills/make-an-explainer/scripts/make-explainer.mjs.\n\nRun this one command, with these exact paths:\n\n  WORK=<work folder> RECORDS=<records folder> JOB_DIR=<job folder> BRIEF=<file or the text> BEAT_SCRIPT=<file or the JSON, when the message carries approved words> TARGET_LENGTH=<words or seconds> PALETTE=<identifier> CUSTOMER_SITE=<the customer's web address> VOICE=<the voice> SOUNDS=<how it sounds> PACE=<relaxed, normal or brisk> DELIVERY=<anything else about the delivery> SAY_AS=<how names are said, one \"written = said\" a line> node ~/explainer-maker/skills/make-an-explainer/scripts/make-explainer.mjs\n\nWhen the host runs the declared command, the message's labelled sections are read by their names (brief, target length, palette, customer web address, voice, how it sounds, pace, anything else about the delivery, how names are said) and each sets its own variable; only the brief section is the brief. VOICE is one of the voice service's voices and Charon when none was chosen; a voice nobody has stops the job before anything is spent. How it is read is kept in the beat script, so a revision keeps its voice, and a new voice or tone records every clip again. The recorder respells a name only in the words sent to the voice; the captions keep the real spelling.\n\nCUSTOMER_SITE is the customer's own web address, and it is optional. Set it when the message names one; it is normally the same address the closing button goes to, which the brief usually already names. It buys one closing card after the synopsis with their logo and one colour taken from that address, and it changes nothing else about the explainer. Leave it unset and there is no card. Never invent an address, and never use one you were not given.\n\nSet only the variables you were given. It prints one JSON object with a `reply` field; send that reply as it stands. Exit 0 is done, 3 is a job that stopped and the reply says why, 2 is a usage mistake.\n\nDo NOT run the steps yourself, and do not write scripts of your own to join them up. That is what this job used to do, and on 2026-09-12 it wrote a story, laid out the scenes, rendered seven fit-check screenshots, then improvised the last step: nothing was filed, nothing was staged, and the reply said a draft had been staged. The command files the delivery itself, including when a later step failed, so work that exists on disk is handed over rather than thrown away.\n\nA revision arrives with a second line naming the steps to redo and a prior folder. Pass it through: PRIOR=<prior folder> REDO=<steps> REUSE=<piece names> ROUND=<n>. The command reuses every piece it was not asked to redo and never re-records a clip whose narration did not change.",
+      "references": [
+        "rules.md",
+        "references/scene-templates.md",
+        "references/fit-limits.md"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "unbounded",
+        "contract": "ends"
+      },
+      "scripts": [
+        "scripts/build-page.mjs",
+        "scripts/check-script.mjs",
+        "scripts/deps.mjs",
+        "scripts/make-explainer.mjs",
+        "scripts/package-lock.json",
+        "scripts/package.json",
+        "scripts/pieces.mjs",
+        "scripts/read-brand.mjs",
+        "scripts/record-narration.mjs",
+        "scripts/record-one.mjs",
+        "scripts/scenes.mjs",
+        "scripts/settings.mjs",
+        "scripts/stage.mjs",
+        "scripts/sweep.mjs",
+        "scripts/thumbnail.mjs",
+        "scripts/tts-recorder.mjs"
+      ],
+      "run": {
+        "command": [
+          "node",
+          "{home}/{package}/skills/make-an-explainer/scripts/make-explainer.mjs",
+          "--job",
+          "{job_dir}",
+          "--records",
+          "{records}",
+          "--work",
+          "{work}",
+          "--text-file",
+          "{job_dir}/message.txt"
+        ],
+        "per_file": [
+          "--file",
+          "{file_path}::{file_media_type}"
+        ],
+        "message_file": "{job_dir}/message.txt",
+        "reply": "json:reply"
+      }
+    },
+    {
+      "slug": "write-the-story",
+      "title": "Write the story",
+      "when": "when a brief arrives and the explainer has no script yet",
+      "good": "one idea per step, the narration in complete plain sentences a stranger could follow, the on-screen words the same as the spoken words, and every product word explained the moment it arrives",
+      "empty": "say what the brief did not settle (the audience, the one-sentence point, the words that must be explained) and ask for it rather than guessing",
+      "does": "Turns a brief into the beats of an explainer: a title, a stage plan, and the narration for every step.",
+      "inputs": [
+        {
+          "name": "brief",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "target length",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "palette",
+          "kind": "identifier",
+          "required": false
+        },
+        {
+          "name": "pace",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "beat script",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": {
+        "file": "rules.md"
+      },
+      "references": [
+        "references/scene-templates.md"
+      ],
+      "offered": true,
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "unbounded",
+        "contract": "ends"
+      }
+    },
+    {
+      "slug": "read-the-brand",
+      "title": "Read the brand",
+      "when": "when the message names the customer's own web address and the explainer should end on a card that belongs to them",
+      "good": "two things taken from that address and nothing else: a logo the site names as its own mark, and one accent colour the site states about itself; both reported in words, with whatever was passed over and why",
+      "empty": "if the address cannot be read, say so and deliver the explainer without the card; never use a favicon or a share image as a logo, and never sample or guess a colour",
+      "does": "Reads the customer's web address and takes a logo and one accent colour from it, for the closing card and nothing else.",
+      "inputs": [
+        {
+          "name": "customer web address",
+          "kind": "url",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "brand",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "The brand goes on ONE card after the synopsis and nowhere else. We make the explainer and the material in it is the customer's, so a page styled from their brand throughout would read as theirs, and so would every claim in it. A logo is only an image the site names as its own mark: an organisation record that says the word logo, a logo tag, an icon of 180 pixels or more in the site's web app manifest, or the apple touch icon. A favicon, a small icon and a share image are reported and never used. A colour is only a colour the site states, in its manifest or its theme colour tag; nothing is sampled from the logo and nothing is inferred. Every request carries a deadline it cannot outlive, and an address naming a machine on this network is refused before anything is fetched.",
+      "scripts": [
+        "scripts/read-brand.mjs"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "lay-out-the-scenes",
+      "title": "Lay out the scenes",
+      "when": "when a beat script is approved and the page has to be drawn",
+      "good": "every step drawn from one of the eight layouts by the page builder, its text within the layout's capacity, big type that fills the canvas, and no step reserving empty room for a later build-out, and its clips asked for from a folder named after this draft alone",
+      "empty": "if a step fits no layout, say which step and propose the nearest layout or a split; never draw a scene by hand",
+      "inputs": [
+        {
+          "name": "beat script",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "explainer page",
+          "kind": "text/html",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "The page builder is given the draft's slug as NAME, the same slug the staging step uses: it decides which folder the page asks its narration clips from, and it is derived rather than chosen so two drafts can never share one clip folder. Redone on its own in a revision, it reads the beat script from prior/ when write-the-story was not redone, builds the page into the work folder as usual, and the page it built is its piece under the job folder's out/, named \"explainer page\"; it writes nothing else a caller receives.",
+      "references": [
+        "references/scene-templates.md",
+        "references/fit-limits.md"
+      ],
+      "scripts": [
+        "scripts/build-page.mjs",
+        "scripts/check-script.mjs",
+        "scripts/scenes.mjs"
+      ],
+      "assets": [
+        "assets/frame.html"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "record-the-narration",
+      "title": "Record the narration",
+      "when": "when the page's narration text is final and the clips do not yet exist",
+      "good": "one clip per spoken step, a few recorded at a time, in the voice the person chose (Charon when they chose none, or the one the brief names by name), with one style line built from how it sounds, the pace and anything else they said, each name they gave respelled only in the words the voice hears, turned from the voice service's WAV into the MP3 the page plays, with the clip version bumped so a browser never plays a stale clip",
+      "empty": "if the voice service refuses or the credential is missing, stop and say which step was not recorded; never ship a page with silent steps",
+      "inputs": [
+        {
+          "name": "explainer page",
+          "kind": "text/html",
+          "required": true
+        },
+        {
+          "name": "voice",
+          "kind": "identifier",
+          "required": false
+        },
+        {
+          "name": "how it sounds",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "pace",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "anything else about the delivery",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "how names are said",
+          "kind": "application/json",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "narration clips",
+          "kind": "audio/mpeg",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Redone on its own in a revision, it reads the page from prior/ when lay-out-the-scenes was not redone, records only the beats whose narration changed (ONLY=<beat numbers>) or every spoken beat when the voice or the style line changed, or when the prior beat script carries no voice record because its clips came from the voice service used before, and the clips it recorded are its pieces under the job folder's out/, each named \"narration clips (beat-NN.mp3)\"; a clip it did not record is a reused piece, copied from prior/ into the clip folder so the restaged page still finds it. Bumping the clip version means changing the beat script and rebuilding the page, so it happens only when those steps are redone too; otherwise the draft host's short cache life is what refreshes a reviewer's clips.",
+      "scripts": [
+        "scripts/record-narration.mjs",
+        "scripts/record-one.mjs",
+        "scripts/settings.mjs",
+        "scripts/tts-recorder.mjs"
+      ],
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "check-the-fit",
+      "title": "Check the fit",
+      "when": "after every change to the page, before it is shown to anyone",
+      "good": "a screenshot of every step at the large window and a sweep at the small window that reports nothing clipped, no text past its box, and the caption band above the fold",
+      "empty": "report every finding by step and window size, and do not call the page done until the sweep is clean",
+      "inputs": [
+        {
+          "name": "explainer page",
+          "kind": "text/html",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "fit report",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Redone on its own in a revision, it reads the page from prior/ when lay-out-the-scenes was not redone, writes the fit report to the records folder as usual, and puts nothing under the job folder's out/; the fit report is a record, not a piece a caller receives.",
+      "scripts": [
+        "scripts/sweep.mjs",
+        "scripts/deps.mjs",
+        "scripts/package.json",
+        "scripts/package-lock.json"
+      ],
+      "lockfile": "scripts/package-lock.json",
+      "references": [
+        "references/fit-limits.md"
+      ],
+      "offered": true,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "stage-a-draft",
+      "title": "Stage a draft",
+      "when": "when the sweep is clean and a person needs to review the page",
+      "good": "the page, its clips, and a thumbnail placed at the draft address, the cache refreshed, and the address handed back with the round number",
+      "empty": "if the draft host refuses, report it and hand back the local files instead; never publish anywhere but the draft address",
+      "inputs": [
+        {
+          "name": "explainer page",
+          "kind": "text/html",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "draft address",
+          "kind": "url",
+          "when": "per_task"
+        },
+        {
+          "name": "thumbnail",
+          "kind": "image/png",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Redone on its own in a revision, it stages the page, the clips and the thumbnail from prior/ for whatever was not redone, remakes the thumbnail only when the page changed, and then runs pieces.mjs with REUSE naming every piece that was not redone; the thumbnail and the draft address are its pieces under the job folder's out/, named \"thumbnail\" and \"draft address\", the second a small text file holding the address.",
+      "scripts": [
+        "scripts/thumbnail.mjs",
+        "scripts/stage.mjs",
+        "scripts/pieces.mjs",
+        "scripts/deps.mjs",
+        "scripts/package.json",
+        "scripts/package-lock.json"
+      ],
+      "lockfile": "scripts/package-lock.json",
+      "offered": false,
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    }
+  ],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "access": "trigger",
+      "needs": "to write the story from the brief, which is the one judgment in this job",
+      "leaves": true,
+      "kind": "service",
+      "credential": "text-reasoning-key",
+      "env": "TEXT_API_KEY",
+      "spends": {
+        "unit": "calls"
+      }
+    },
+    {
+      "name": "text-to-speech",
+      "access": "trigger",
+      "needs": "to record one clip per step from the narration text, in the voice chosen, with one line on how it should sound",
+      "leaves": true,
+      "kind": "service",
+      "credential": "fleet-gemini-api-key",
+      "env": "TTS_API_KEY",
+      "spends": {
+        "unit": "characters"
+      }
+    },
+    {
+      "name": "draft-host",
+      "access": "write",
+      "needs": "to place the page, its recordings and thumbnail where a reviewer can open them",
+      "kind": "service",
+      "credential": "draft-host-writer",
+      "env": "DRAFT_HOST_CREDENTIAL",
+      "settings": [
+        {
+          "env": "DRAFT_HOST_BUCKET",
+          "purpose": "the bucket the drafts are placed in"
+        },
+        {
+          "env": "DRAFT_HOST_PREFIX",
+          "purpose": "the folder inside it that drafts may be written under, and nowhere else"
+        },
+        {
+          "env": "DRAFT_HOST_URL",
+          "purpose": "the web address where a reviewer can view the drafts"
+        }
+      ]
+    },
+    {
+      "name": "brand-assets",
+      "access": "read",
+      "needs": "the palette, fonts and voice the brief names",
+      "kind": "directory"
+    },
+    {
+      "name": "customer-brand",
+      "access": "read",
+      "needs": "to fetch the customer's own web page and take a logo and one accent colour from it for the closing card",
+      "leaves": false,
+      "kind": "service"
+    }
+  ],
+  "refuses": [
+    "naming a real company or a real person in a story unless the brief supplies the name and permission",
+    "stating how long a change takes, in days, weeks or any other unit",
+    "inventing a fact, a number or a quotation the brief did not give",
+    "publishing anywhere but the draft address; the live site is a person's decision",
+    "recording in any voice but the one the person chose, or Charon when they chose none, or past the spending ceiling",
+    "using a favicon, a small icon or a share image as a customer's logo, or sampling a colour from a picture; a logo is only what a site names as its own mark, and a colour only what it states"
+  ],
+  "escalates": [
+    "every draft goes to a person for review before it is called finished",
+    "a brief with no audience or no one-sentence point goes back to the person who wrote it"
+  ],
+  "records": [
+    {
+      "name": "the brief as received",
+      "when": "per_task",
+      "file": "*/brief.md"
+    },
+    {
+      "name": "the beat script for each round",
+      "when": "per_task",
+      "file": "*/beats-round-*.json"
+    },
+    {
+      "name": "the fit report per window size",
+      "when": "per_task",
+      "file": "*/fit-*.json"
+    },
+    {
+      "name": "the voice spend for the run, in characters, with the voice, the style line and the seconds each clip runs",
+      "when": "per_task",
+      "file": "*/spend.json"
+    },
+    {
+      "name": "the manifest of what was staged, with the hash of the page and every clip",
+      "when": "per_task",
+      "file": "*/staged.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery and revision, listing every piece by step; the adapter signs it from pieces.json and keeps it beside the reply",
+      "when": "per_task"
+    },
+    {
+      "name": "the brand in use for this explainer: the address read, the logo and where it came from, the colour and where it came from, and everything passed over",
+      "when": "per_task",
+      "file": "*/brand.json"
+    }
+  ],
+  "price": {
+    "model": "flat",
+    "amount_micro": 5000000,
+    "currency": "USD",
+    "covers": [
+      "make-an-explainer"
+    ]
+  },
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "chromium",
+      "purpose": "renders every step to check it fits the window and to make the thumbnail"
+    },
+    {
+      "name": "ffmpeg",
+      "purpose": "turns each clip the voice service answers with, a WAV file, into the MP3 the page, the staging and the critic take"
+    },
+    {
+      "name": "ffprobe",
+      "purpose": "measures how long each clip plays, so the reply gives the narration's real length"
+    }
+  ],
+  "ceilings": [
+    {
+      "system": "text-reasoning",
+      "per": "task",
+      "suggested": 40
+    },
+    {
+      "system": "text-to-speech",
+      "per": "task",
+      "suggested": 20000
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per explainer, holding every record above"
+    },
+    {
+      "name": "work",
+      "purpose": "the page and clips in progress"
+    }
+  ]
+}

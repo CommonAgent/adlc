@@ -1,0 +1,62 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      AGENTMESH_ENV: example
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: The lifecycle packages
+        run: |
+          for a in spec-writer solution-planner test-writer code-writer publisher; do
+            echo "== $a"
+            (cd agents/$a && node --test test/*.test.mjs)
+          done
+
+      - name: Each package builds into an Agent Package
+        run: |
+          for a in spec-writer solution-planner test-writer code-writer publisher; do
+            python3 agents/package-maker/build.py agents/$a/spec.json "$RUNNER_TEMP/pkg/$a" | tail -1
+          done
+
+      - name: Package maker
+        run: |
+          cd agents/package-maker
+          node --test connection.test.mjs request.test.mjs
+
+      - name: Conformance checker
+        run: node --test agents/conformance-checker/test/*.test.mjs
+
+      - name: Deployment manager
+        run: |
+          cd agents/deployment-manager
+          python3 -m unittest test_cloud test_executor test_image test_install test_runtime
+          node --test test/guard.test.mjs
+
+      - name: Catalog
+        run: |
+          cd agents/catalog
+          npm install --no-audit --no-fund
+          npm test
+
+      - name: Host templates render with the example environment
+        run: |
+          for t in agents/*/host/*.tmpl host/*.tmpl; do
+            node env/render.mjs "$t" > /dev/null
+          done

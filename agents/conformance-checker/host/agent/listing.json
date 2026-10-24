@@ -1,0 +1,19 @@
+{
+  "offerings": [
+    {
+      "id": "chat",
+      "name": "Chat",
+      "description": "Send a message; the agent replies."
+    },
+    {
+      "id": "role-agent-evaluator",
+      "name": "Agent evaluator",
+      "description": "Holds the agent evaluator role (agentroles.ai): derives a conformance test from a package's own declarations and runs it against the deployed agent."
+    },
+    {
+      "id": "interface-evaluator",
+      "name": "interface-evaluator",
+      "description": "Answers the evaluator exchanges: evaluate this, what is the test, what did you find."
+    }
+  ]
+}

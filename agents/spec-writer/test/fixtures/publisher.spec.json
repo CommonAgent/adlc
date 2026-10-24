@@ -1,0 +1,266 @@
+{
+  "name": "publisher",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "job_seconds": 300,
+  "description": "Puts finished files where a person can open them. It writes under the one folder it was bound to and nowhere else, reads every byte before it goes, and reads back what is served to check it matches what it was handed. It answers with the address and the digest of what is there.",
+  "wants_replies": false,
+  "jobs": [
+    {
+      "slug": "publish",
+      "title": "Publish",
+      "offered": true,
+      "steps": [
+        "read-what-was-given",
+        "place-the-files",
+        "check-what-is-served"
+      ],
+      "when": "when a piece of work is finished and somebody needs an address they can open, or send to somebody else",
+      "good": "An address that opens, serving exactly the bytes that were handed over, with the digest of each file recorded beside the address so anybody can check later that what is served is what was published.",
+      "empty": "If a file was not handed over, it is not published: this job does not go and fetch one. If what is served does not match what was handed over, the address is not given as good, and the reply says what differs.",
+      "does": "Publishes files to an address a person can open, under the one folder this agent is bound to.",
+      "inputs": [
+        {
+          "name": "the files",
+          "kind": "document",
+          "required": true
+        },
+        {
+          "name": "name",
+          "kind": "identifier",
+          "required": false
+        },
+        {
+          "name": "notes",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "address",
+          "kind": "url",
+          "when": "per_task"
+        },
+        {
+          "name": "publication record",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Run `NAME=<slug> node scripts/publish.mjs --job <job folder> --records <records folder> --file <path>::<media type> ...`. It runs the three steps in order and prints one JSON object with a `reply` field. It calls no model: every step is a written procedure and this is the program that runs it.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "scripts": [
+        "scripts/publish.mjs",
+        "scripts/place.mjs",
+        "scripts/inspect.mjs",
+        "scripts/pieces.mjs"
+      ],
+      "references": [
+        "references/what-it-will-not-publish.md"
+      ],
+      "run": {
+        "command": [
+          "node",
+          "{home}/{package}/skills/publish/scripts/publish.mjs",
+          "--job",
+          "{job_dir}",
+          "--records",
+          "{records}",
+          "--work",
+          "{work}",
+          "--text-file",
+          "{job_dir}/message.txt"
+        ],
+        "per_file": [
+          "--file",
+          "{file_path}::{file_media_type}"
+        ],
+        "message_file": "{job_dir}/message.txt",
+        "reply": "json:reply"
+      }
+    },
+    {
+      "slug": "read-what-was-given",
+      "title": "Read what was given",
+      "when": "first, on every job",
+      "good": "Every file read into memory once, hashed, and its real type taken from its bytes rather than from its name, with the name it will be published under settled.",
+      "empty": "If nothing was attached, the job stops and says what this agent takes.",
+      "does": "Reads and hashes every file handed over, and works out what each one actually is.",
+      "inputs": [
+        {
+          "name": "the files",
+          "kind": "document",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the reading",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Read each file once. Hash it. Decide its media type from its first bytes and not from its extension, and refuse the file where the two disagree. Refuse a file that carries a private key or a service-account key, whatever it is called. Settle the name each file will be published under: the name given, or the file's own name reduced to a slug.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "scripts": [
+        "scripts/inspect.mjs"
+      ],
+      "references": [
+        "references/what-it-will-not-publish.md"
+      ]
+    },
+    {
+      "slug": "place-the-files",
+      "title": "Place the files",
+      "when": "after the files are read and none was refused",
+      "good": "Every file placed under the bound folder, under the settled name, with a short cache life so a republish shows within a minute.",
+      "empty": "If the host will not take a file, the job stops and says which one and why. Files already placed stay placed and are named in the reply.",
+      "does": "Writes each file to the folder this agent is bound to.",
+      "inputs": [
+        {
+          "name": "the reading",
+          "kind": "application/json",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "what was placed",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Write each file under the bound bucket and the bound prefix. The bucket and the prefix come from the settings the host placed and are never taken from the message: a caller naming a destination is refused rather than obeyed.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "scripts": [
+        "scripts/place.mjs"
+      ]
+    },
+    {
+      "slug": "check-what-is-served",
+      "title": "Check what is served",
+      "when": "after the files are placed, before any address is given out",
+      "good": "Each address fetched back and the bytes hashed, and every digest equal to the one recorded when the file went up.",
+      "empty": "If an address does not resolve, or serves something with a different digest, the reply says so and does not present the address as good.",
+      "does": "Reads back every address and checks it serves what was published.",
+      "inputs": [
+        {
+          "name": "what was placed",
+          "kind": "application/json",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "address",
+          "kind": "url",
+          "when": "per_task"
+        },
+        {
+          "name": "publication record",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Fetch each address. Hash what comes back. Compare it with the digest recorded at placement. An address is only given out when the two match. This step is the difference between saying a thing is published and knowing it.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "scripts": [
+        "scripts/place.mjs"
+      ]
+    }
+  ],
+  "systems": [
+    {
+      "name": "draft-host",
+      "access": "write",
+      "needs": "to place the files where a person can open them, under one folder and nowhere else",
+      "kind": "service"
+    },
+    {
+      "name": "published-address",
+      "access": "read",
+      "needs": "to fetch back every address it just published and check that what is served is what was handed over",
+      "leaves": true,
+      "kind": "service"
+    }
+  ],
+  "refuses": [
+    "Writing anywhere but the one folder it was bound to. The bucket and the folder are placed by the host at install. A message naming a destination is refused rather than obeyed, and a name that would climb out of the folder is refused too.",
+    "Publishing anything it was not handed. It does not fetch a file from an address in order to publish it, so nothing can be put in front of the public by naming it.",
+    "Publishing bytes it has not read. Every file is read and hashed before it is placed, and the digest is in the record, because publishing is the act that puts something in front of people and a thing nobody looked at is a thing nobody can answer for.",
+    "Publishing a file whose bytes are not what its name says. A page that is not text, or an image that is not an image, is refused with both what it claims and what it is.",
+    "Publishing a private key, a service-account key, or a file that carries one. This is refused on the bytes and not on the name, and it is refused even where the person asked for it.",
+    "Handing over an address it has not read back. Every address is fetched and the digest compared with what was placed, and a mismatch is reported rather than rounded off.",
+    "Replacing something it did not publish. A name already in use by a file this agent has no record of placing is refused, and the reply says the name is taken."
+  ],
+  "escalates": [
+    "A file that is refused for what it carries. The reply names the file and the reason, and the person decides what to do; this agent does not strip, redact or rewrite anything to make it publishable."
+  ],
+  "records": [
+    {
+      "name": "what was handed over per job: each file, its name, its size and its digest",
+      "when": "per_task",
+      "file": "*/reading.json"
+    },
+    {
+      "name": "what was placed per job: each object, its address, its digest and when it went",
+      "when": "per_task",
+      "file": "*/placed.json"
+    },
+    {
+      "name": "the read-back per job: each address, the digest served, and whether it matched",
+      "when": "per_task",
+      "file": "*/served.json"
+    },
+    {
+      "name": "every name this agent has published under, so a name it did not place is not quietly replaced",
+      "when": "standing",
+      "file": "names.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "price": {
+    "model": "flat",
+    "amount_micro": 100000,
+    "currency": "USD",
+    "covers": [
+      "publish"
+    ]
+  },
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding what was handed over, what was placed, and what came back when each address was read"
+    }
+  ]
+}

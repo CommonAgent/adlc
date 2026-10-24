@@ -1,0 +1,19 @@
+{
+  "offerings": [
+    {
+      "id": "chat",
+      "name": "Chat",
+      "description": "Send a message; the agent replies."
+    },
+    {
+      "id": "role-deployment-manager",
+      "name": "Deployment manager",
+      "description": "Holds the deployment manager role (agentroles.ai): turns an agent package into a running agent on this host, on the owner's instruction only."
+    },
+    {
+      "id": "interface-deployer",
+      "name": "interface-deployer",
+      "description": "Answers the deployer exchanges: deploy this, what is deployed, how did it go, update it, remove it."
+    }
+  ]
+}

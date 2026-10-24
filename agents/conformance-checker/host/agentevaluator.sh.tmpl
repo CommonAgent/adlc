@@ -1,0 +1,22 @@
+#!/bin/bash
+# The agent evaluator's brain. Codex, cold, one boot per message.
+#
+# --sandbox workspace-write -c sandbox_workspace_write.network_access=true ON PURPOSE: this agent's whole job is to run
+# `sudo /opt/fleet/deploymgr-steps.py ...`, and Codex's own sandbox would block
+# the sudo. The real containment is the sudoers scope (only the three
+# procedures, each re-validating its input); Codex's sandbox would add nothing
+# here except breaking the job. Everything else the brain can do it does as the
+# unprivileged deploymgr user.
+#
+# The model is Claude on Vertex AI (owner, 2026-10-03). Codex
+# speaks only the Responses API, so it reaches Claude through the host's responses
+# bridge (127.0.0.1:8788, the pm2 app `responses-bridge`, which signs in as the VM's
+# own service account). No key is read here.
+VERTEX=(-c 'model="claude-sonnet-5-5"' -c 'model_provider="vertex"'
+  -c 'model_providers.vertex={ name = "Claude on Vertex AI (fleet bridge)", base_url = "http://127.0.0.1:8788/v1", wire_api = "responses" }')
+cd "$HOME" || exit 1
+out=$(mktemp)
+/usr/bin/codex exec "${VERTEX[@]}" --skip-git-repo-check --sandbox workspace-write -c sandbox_workspace_write.network_access=true \
+  --output-last-message "$out" "$1" >/dev/null 2>&1 </dev/null
+cat "$out"
+rm -f "$out"

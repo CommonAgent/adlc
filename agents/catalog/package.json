@@ -1,0 +1,8 @@
+{
+  "name": "adlc-catalog-source",
+  "private": true,
+  "type": "module",
+  "description": "The catalog agent's Source logic: answers each step of a plan with an agent, a solution, or build one.",
+  "scripts": { "test": "vitest run test/" },
+  "devDependencies": { "vitest": "3.2.4" }
+}

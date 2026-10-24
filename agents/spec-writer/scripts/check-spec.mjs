@@ -1,0 +1,247 @@
+// Does this draft carry what a good spec carries?
+//
+// Not the same question as whether it builds. build.py answers that, and it
+// answers it hard: a spec that does not build is not a spec. This asks the
+// other question, the one nothing else asks, which is whether the thing that
+// builds is any good. A spec can pass every validator and still say nothing
+// useful about when to use the job, what a good result is, or what the agent
+// will refuse to do.
+//
+// Every rule here was read off the eight specs that already produced working
+// agents, and the reference beside this file says where each number came from.
+// Nothing is invented: where the eight disagree, this does not have a rule.
+//
+//   needs: node >= 22
+//   DRAFT=<draft.json> node check-spec.mjs
+import { readFileSync } from "node:fs";
+
+const trim = (s) => String(s ?? "").trim();
+const words = (s) => trim(s).split(/\s+/).filter(Boolean).length;
+
+// Measured across the 43 jobs of the eight existing packages, with headroom.
+// `when` ran 4 to 28 words, `good` 21 to 103, `empty` 13 to 106, `does` 11 to
+// 44. These bound the shape without pretending the measured range is a law.
+export const WHEN_MAX = 45;
+export const GOOD_MIN = 15;
+export const EMPTY_MIN = 10;
+export const DOES_MAX = 60;
+export const REFUSES_MIN = 4;
+
+export const SENTENCES = ["when", "good", "empty", "does"];
+export const HOW_MEMBERS = ["control", "intelligence", "cost", "contract"];
+
+/** A refusal names an act, as a gerund, then says why and what happens
+ *  instead. "Be careful with credentials" is not a refusal; "accepting a
+ *  credential value pasted into a message" is. Checked by the first word,
+ *  which is the only mechanical part of that; the rest is a reader's job. */
+export function refusalProblems(refuses = []) {
+  const out = [];
+  if (!Array.isArray(refuses) || refuses.length < REFUSES_MIN) {
+    out.push(`the spec names ${Array.isArray(refuses) ? refuses.length : 0} refusals; every package that works names at least ${REFUSES_MIN}, and a package with nothing to refuse has not been thought about`);
+    if (!Array.isArray(refuses)) return out;
+  }
+  for (const [i, r] of refuses.entries()) {
+    const text = trim(typeof r === "string" ? r : r?.what ?? r?.name ?? "");
+    if (!text) { out.push(`refusal ${i + 1} is empty`); continue; }
+    const first = text.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, "");
+    if (!first.endsWith("ing")) {
+      out.push(`refusal ${i + 1} begins "${text.split(/\s+/)[0]}"; a refusal names an act as a gerund, as in "publishing anything it was not handed", so that a reader can tell whether a request falls under it`);
+    }
+    if (words(text) < 8) {
+      out.push(`refusal ${i + 1} is ${words(text)} words; a refusal says the act, then why, then what happens instead`);
+    }
+  }
+  return out;
+}
+
+/** The records a spec must declare, and the one it must not.
+ *
+ *  The manifest is unconditional: every package that works declares it.
+ *
+ *  went-without.json is conditional, and the condition is the point. A record
+ *  declared and never written is worse than one absent, because the
+ *  conformance checker audits a package against its own declarations and
+ *  looks for it. So the rule is that the declaration and the ability to write
+ *  it travel together: ship went-without.mjs and declare the record, or ship
+ *  neither. This file used to demand the record from every spec, which is how
+ *  five packages ended up declaring a record nothing in them could write. */
+export function recordProblems(records = [], spec = null) {
+  const out = [];
+  const list = Array.isArray(records) ? records : [];
+  const text = list.map((r) => (typeof r === "string" ? r : `${r?.name ?? ""} ${r?.file ?? ""}`)).join(" ").toLowerCase();
+  const declared = text.includes("went-without");
+  const ships = (spec?.jobs ?? []).some((j) => (j?.scripts ?? []).some((f) => String(f).endsWith("went-without.mjs")));
+  if (declared && !ships) {
+    out.push("a record named went-without.json is declared and no job ships went-without.mjs, so nothing can write it; a record declared and never written is what the conformance checker catches");
+  }
+  if (ships && !declared) {
+    out.push("a job ships went-without.mjs and no record names went-without.json; what a job did not have and did anyway is left for somebody to find rather than declared");
+  }
+  if (!text.includes("manifest")) {
+    out.push("no record for the signed job manifest of each delivery; all eight existing packages declare one");
+  }
+  return out;
+}
+
+export function jobProblems(job) {
+  const out = [];
+  const slug = trim(job?.slug) || "a job with no slug";
+  for (const k of SENTENCES) {
+    if (!trim(job?.[k])) out.push(`job ${slug}: no ${k}`);
+  }
+  if (trim(job?.when) && words(job.when) > WHEN_MAX) {
+    out.push(`job ${slug}: when is ${words(job.when)} words; it is read by somebody choosing between jobs, so it stays under about ${WHEN_MAX}`);
+  }
+  if (trim(job?.good) && words(job.good) < GOOD_MIN) {
+    out.push(`job ${slug}: good is ${words(job.good)} words; it describes the artifact a reader could check, not the effort`);
+  }
+  if (trim(job?.empty) && words(job.empty) < EMPTY_MIN) {
+    out.push(`job ${slug}: empty is ${words(job.empty)} words; it says what the agent does when there is nothing to give, and is not an error message`);
+  }
+  if (trim(job?.does) && words(job.does) > DOES_MAX) {
+    out.push(`job ${slug}: does is ${words(job.does)} words; it is one line for somebody skimming the package`);
+  }
+  const how = job?.how;
+  if (!how || typeof how !== "object") out.push(`job ${slug}: no how; every job says control, intelligence, cost and contract`);
+  else {
+    for (const m of HOW_MEMBERS) if (!trim(how[m])) out.push(`job ${slug}: how names no ${m}`);
+    // Said here as well as in the builder, because the builder's refusal
+    // arrives after a package has been assembled and this one arrives while
+    // the model still has the draft in hand.
+    if (how.control === "model" && how.contract === "full") {
+      out.push(`job ${slug}: how says a model decides what happens next and the whole method is written down. That is the shape that fails. Write it as a program, or say the contract is the ends.`);
+    }
+    if (how.control === "script" && how.intelligence === "open") {
+      out.push(`job ${slug}: how says a program decides what happens next and a model is given the work to find its own way. That is a model with a launcher.`);
+    }
+  }
+  return out;
+}
+
+/** The two forms a kind takes: one of four words, or one media type. The same
+ *  rule the builder applies, said here while the model still has the draft,
+ *  because a container spec is never packed and nothing else would catch it
+ *  (debt 48: "array of application/octet-stream"). */
+export const VALUE_KINDS = ["text", "identifier", "url", "document"];
+const MEDIA_RE = /^[a-z]+\/[a-z0-9][a-z0-9.+-]*$/;
+export const isKind = (k) => typeof k === "string" && (VALUE_KINDS.includes(k) || MEDIA_RE.test(k));
+
+export function kindProblems(job) {
+  const out = [];
+  const slug = trim(job?.slug) || "a job with no slug";
+  for (const side of ["inputs", "outputs"]) {
+    for (const e of Array.isArray(job?.[side]) ? job[side] : []) {
+      if (isKind(e?.kind)) continue;
+      out.push(`job ${slug}: ${side === "inputs" ? "input" : "output"} ${JSON.stringify(e?.name ?? null)} has kind ${JSON.stringify(e?.kind ?? null)}, which is not a kind; a kind is one of ${VALUE_KINDS.join(", ")} or one media type such as application/json, and several files of one kind are one input`);
+    }
+  }
+  return out;
+}
+
+/** The systems the platform brokers: the agent asks the mesh for a short-lived
+ *  grant each time, so the spec names no credential, variable or setting. */
+export const BROKERED = ["draft-host"];
+
+/** Every string under a value, with where it sits. */
+function stringsIn(v, at, out = []) {
+  if (typeof v === "string") out.push([at, v]);
+  else if (Array.isArray(v)) v.forEach((x, i) => stringsIn(x, `${at}[${i}]`, out));
+  else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) stringsIn(x, at ? `${at}.${k}` : k, out);
+  return out;
+}
+
+/** What a package's systems may not carry. An address anywhere in them ends
+ *  in the install file, which the builder refuses whole (debt 67); a brokered
+ *  system given a key asks for one no host holds. */
+export function systemProblems(systems = []) {
+  const out = [];
+  for (const s of Array.isArray(systems) ? systems : []) {
+    const name = trim(s?.name) || "a system with no name";
+    for (const [where, text] of stringsIn(s, "")) {
+      if (/[a-z][a-z0-9+.-]*:\/\//i.test(text)) {
+        out.push(`system ${name}: ${where} carries an address, and the builder refuses a package whose install file carries one. A product somebody binds is named by its system and credential; a public read that needs no key is a system with access read, no credential and no settings, and its address is a constant in the script; an address the caller gives is an input of kind url`);
+        break;
+      }
+    }
+    if (BROKERED.includes(name) && (s.credential || s.env || (Array.isArray(s.settings) && s.settings.length))) {
+      out.push(`system ${name} is brokered: the agent asks the mesh for a short-lived grant each time it writes, so the entry names its access and what it needs, and no credential, env or settings`);
+    }
+  }
+  return out;
+}
+
+export const CONTAINER_KINDS = ["mesh-coded", "third-party-framework"];
+
+/** A container agent's spec: somebody else's program in its own repository.
+ *  The builder checks all of this too; it is said here so the second go can
+ *  fix it rather than the person. */
+export function containerProblems(spec) {
+  if (!CONTAINER_KINDS.includes(trim(spec?.kind))) return [];
+  const out = [];
+  for (const j of Array.isArray(spec.jobs) ? spec.jobs : []) {
+    for (const k of ["scripts", "references", "assets", "run", "instructions"]) {
+      if (j?.[k] && (!Array.isArray(j[k]) || j[k].length)) out.push(`job ${trim(j?.slug) || "?"}: a ${spec.kind} agent's code lives in its own repository, so a job names no ${k}`);
+    }
+  }
+  const c = spec.container;
+  if (!c || typeof c !== "object" || Array.isArray(c)) {
+    out.push("a container agent's spec carries a container block: the repository, the folder, the commit from the scan and the Dockerfile; without the scan, put container in the blanks rather than guessing");
+    return out;
+  }
+  if (!/^[0-9a-f]{40}$/.test(trim(c.commit).toLowerCase())) out.push("container.commit is the full 40-character commit the scan read; a branch moves and a spec must not");
+  if (c.holds_own_key !== true) out.push("container.holds_own_key is true: the lifecycle installs only a container that speaks the mesh with its own key");
+  for (const e of Array.isArray(c.secrets) ? c.secrets : []) {
+    if (e && "value" in e) out.push(`container.secrets: ${e.env ?? "an entry"} carries a value; a secret is named, and its credential is the owner's answer at the deploy`);
+  }
+  return out;
+}
+
+/** Every problem with a draft, as sentences a model can act on. Empty means
+ *  it carries what a good spec carries; it says nothing about whether it
+ *  builds, which is the next step's question. */
+export function checkSpec(spec) {
+  const out = [];
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return ["the draft is not an object"];
+  if (!/^[a-z][a-z0-9-]*$/.test(trim(spec.name))) {
+    out.push(`the name ${JSON.stringify(spec.name ?? null)} is not a handle; it is lower case letters, digits and hyphens, and it becomes the agent's name on the mesh`);
+  }
+  // The builder does not check this, and release pointers are bare semver, so
+  // a version it accepts can still be one that nothing downstream can order.
+  // All eight existing packages are three numbers; "one point oh" builds.
+  if (!/^\d+\.\d+\.\d+$/.test(trim(spec.version))) {
+    out.push(`the version ${JSON.stringify(spec.version ?? null)} is not three numbers; a release is pointed at by bare semver, and the builder will take this without noticing`);
+  }
+  const jobs = Array.isArray(spec.jobs) ? spec.jobs : [];
+  if (!jobs.length) out.push("the spec has no jobs");
+  for (const j of jobs) out.push(...jobProblems(j), ...kindProblems(j));
+  const offered = jobs.filter((j) => j.offered);
+  if (jobs.length && !offered.length) {
+    out.push("no job is marked offered; one of them is what a caller orders and the rest are the steps that deliver it");
+  }
+  out.push(...refusalProblems(spec.refuses));
+  out.push(...recordProblems(spec.records, spec));
+  out.push(...systemProblems(spec.systems));
+  out.push(...containerProblems(spec));
+  // The builder refuses any other value (build.py), so a draft carrying one
+  // would pass here and stop at packing, as the ping-pong smoke test's did
+  // on 2026-10-03 with 30.
+  if (spec.job_seconds !== undefined && !(Number.isInteger(spec.job_seconds) && spec.job_seconds >= 60 && spec.job_seconds <= 7200)) {
+    out.push(`job_seconds ${JSON.stringify(spec.job_seconds)} is not a whole number of seconds from 60 to 7200; it is the longest one job may take, and the builder refuses anything else`);
+  }
+  if (!spec.price || typeof spec.price !== "object") out.push("no price; seven of the eight existing packages are flat and one is free, and a spec with neither has not decided");
+  return out;
+}
+
+const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
+if (thisFile && import.meta.url.endsWith(thisFile)) {
+  const { DRAFT } = process.env;
+  if (!DRAFT) { console.error("DRAFT is required"); process.exit(2); }
+  try {
+    const problems = checkSpec(JSON.parse(readFileSync(DRAFT, "utf8")));
+    console.log(JSON.stringify({ ok: !problems.length, problems }, null, 2));
+    process.exitCode = problems.length ? 1 : 0;
+  } catch (e) {
+    console.error(e.message);
+    process.exitCode = 2;
+  }
+}

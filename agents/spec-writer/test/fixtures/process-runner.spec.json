@@ -1,0 +1,405 @@
+{
+  "name": "process-runner",
+  "version": "0.10.6",
+  "license": "Apache-2.0",
+  "job_seconds": 900,
+  "description": "Runs a process document written in the Agent Processes language, as written: sends each phase to the agent that holds it, stops at every gate for the owner, records who did what and when, and delivers the account and the run record. A run the platform hands over is driven through the platform's own record instead: this agent still decides what happens next, and the platform sends each phase as the account the run names, so the cost falls on whoever is paying and a phase a person holds reaches them on their own page. Every message it receives is handled by running one command, including a one word answer such as yes, stop or status; it never answers a run from its own words.",
+  "wants_replies": true,
+  "jobs": [
+    {
+      "slug": "run-a-process",
+      "title": "Run a process",
+      "offered": true,
+      "steps": [
+        "read-the-document",
+        "bind-the-roster",
+        "advance-the-run",
+        "drive-the-record",
+        "write-the-account"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 30
+        },
+        "steps": [
+          {
+            "id": "write-the-account",
+            "price": {
+              "model": "flat",
+              "amount_micro": 0,
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      "when": "when a person sends a process document with its owner and effective date filled in, a roster of who holds each phase, and the material the trigger delivers",
+      "good": "one run, carried out as the document says: each phase sent to its holder with the handoff it needs and every policy line, every gate held for the owner and answered by name and time, every reply recorded with its id, and at the close an account in plain sentences, the run record with every event, and the final handoff's pieces under their own names. For a run the platform handed over, the same run with the platform's record kept level with it as it moves: each phase asked for once and only while that record has it waiting, every decision said as it is taken, every deviation recorded with what it reopened, and the run finished there when it finishes here",
+      "empty": "if the document names no owner or no effective date, has an unfilled automation level or a blank still open, refuse to start and name every reason; if the owner the document names answers to nobody and the document has a phase a person must do, refuse to start and name that owner and those phases; if a phase's holder cannot be reached or refuses, tell the owner and ask who holds it instead; if a holder raises a question the document does not settle, relay it to the owner rather than guessing; if a run names a platform record this agent cannot reach or may not write, say so and run the whole thing on the mesh rather than half each way; if the platform refuses what was decided, keep this agent's own record, say so in the notes and offer the same decision again next turn; never start a phase early, never skip a gate, never invent an answer",
+      "does": "Runs a process document as written, one message at a time, by sending each phase to its holder and holding every gate for the owner.",
+      "inputs": [
+        {
+          "name": "process document",
+          "kind": "document",
+          "required": true
+        },
+        {
+          "name": "roster",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "material",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "run record",
+          "kind": "application/json",
+          "when": "per_task"
+        },
+        {
+          "name": "account",
+          "kind": "text",
+          "when": "per_task"
+        },
+        {
+          "name": "final handoff",
+          "kind": "document",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Every message that reaches you is one turn of a run, and every turn is the same three steps: read the message, run the turn script once, print the reply it gives you. You never wait for another agent inside a turn; the next message is the next turn. The scripts keep the state of every run under the records directory this agent was installed with, at records/runs/<run id>/, and they keep the rules of the Agent Processes language; you carry the message to them and their words back.\n\nEvery message arrives with a line `job folder: <absolute path>` naming a folder for that message's job. Save the sender's text, exactly as it stands between the BEGIN and END markers, to <job folder>/message.txt. Then run this one command, with these exact paths (the package is installed at ~/process-runner, so the script is always at ~/process-runner/skills/run-a-process/scripts/turn.mjs):\n\n  node ~/process-runner/skills/run-a-process/scripts/turn.mjs --runs <records directory>/runs --job <job folder> --message <the inbox id> --from <the sender's handle, or its key when it has no registered name> --in-reply-to <the id on the `in reply to:` line, or none> --text-file <job folder>/message.txt --file <path>::<media type>\n\nPass one --file for every line under `attached: N files, already downloaded to this machine:`, the path first, then two colons and the media type shown in brackets. Pass --in-reply-to none when the message has no `in reply to:` line. The script prints one JSON object. Print its `reply` field as your whole answer, and nothing else. When its `pieces` field names a pieces.json, the reply carries the run's pieces; they are already under the job folder's out/.\n\nWhat the script does with each kind of message, so you can see it did the right thing:\n\nA message holding a process document (a line starting with PROCESS:, in the text or in an attached text file) is an instruction to start a run. The script refuses a document with no owner, no effective date, an unfilled automation level or a blank still open, and the reply names every reason. Otherwise it reads the roster written before the document (`phase-or-role: handle`, one per line, or a roster.txt attached): a line under a `roster:` line, or a line whose value is a handle or an agent id or whose name is a phase or role of the document. It reads a `budget: ...` line when there is one, and takes every other line as the material, word for word, so a one-word answer such as `voice: Charon` reaches the phases. Then it records the run, sends `here is work` to the holder of every phase that starts at the trigger, and replies with the run id and what was sent. A run the concurrency line forbids is refused and the refusal recorded.\n\nA message whose `in reply to:` id matches work the run sent is a phase agent's reply. Files with it mean the phase delivered: the script records who delivered what and when, and sends the next phase's work with those files, or asks the owner when the next phase is a gate. A reply with no files and a question in it is a block. The script then stops before answering and tells you so in `notes` and `block`. Read the process document at records/runs/<run id>/document.txt and decide: if a policy line, a binding or a phase line settles the question, run the same command again with --answer \"<the answer, quoting that line>\"; if nothing in the document settles it, run it again with --relay and the owner is asked. Never answer from your own opinion, and never state a fact the document does not carry. The second run records nothing twice.\n\nThe run's questions go to the owner the document's owner line names, which is not always whoever sent the message that started the run. An owner line that names the sender's own agent key names the sender, just as its handle does, and nothing is resolved.When the two differ, the script records the owner as the document gives them, sends every question there, and sends whoever instructed the run a copy saying which phase waits and on whom. A yes at a gate, a deviation and the answer to a holder's question are then taken only from the owner; from whoever instructed the run they are recorded and not acted on, and the reply says so. If the owner the document names answers to nobody and the document has a phase a person must do, the run does not start at all and the reply names the owner and those phases, because a gate put to somebody who cannot answer it waits forever and tells no one.\n\nA message from the run's owner is read for what it asks: `yes` at a gate or a held output (a changed file attached with the yes replaces the piece), a deviation named by its key from the document's deviations: block (`changes: what is wrong`, with an optional `steps: a, b` line), `stop`, `<phase or role>: <handle>` to name a holder, `answer: ...` for a block you relayed, `retry` for a holder that could not be reached, `send <phase> again` (or `send it again` when only one phase is in flight) for a phase whose holder has gone quiet, `status`, or `what did you commit`. The script applies it, sends what follows, and replies. A stop reaches every holder still working and closes the run as abandoned. When the run closes on the owner's message, the account, the run record and the final handoff's files are placed in the job folder and listed in pieces.json; when it closes on a worker's reply, they are sent to the owner as a message with the files attached, and the reply to the worker is one sentence.\n\nRules the scripts keep, and you must not work around: order comes only from after: lines, never from the order phases are listed; a phase whose after: names several phases waits for all of them; a phase does not begin before every handoff into it exists; a phase at automation: never stops the run until the owner answers, and one at supervised holds the agent's output until the owner approves it; at assisted and manual the agent may only draft and the person acts; no level is ever raised; every phase leaves a record naming who acted and when; a deviation is the owner naming an edge, never your decision; a phase past its by: bound is recorded as past it and never extended; run-scoped lines are noted in the account and not run.\n\nIf the turn script's JSON has turn \"error\", print its `reply` sentence and stop; do not run the process in your own words. Only one message of yours goes to a sender per turn: the reply. Everything else the run needs is sent by the script.\n\nA revision of this job (the adapter's second line, `revision of job ...`): only write-the-account can be redone. Run `RUN_DIR=<records directory>/runs/<run id> node scripts/account.mjs`, then `RUN_DIR=<records directory>/runs/<run id> node scripts/pieces.mjs`, and reply with one sentence. A revision naming any other step is refused in one sentence: a run is advanced by messages, not by revising the job.",
+      "scripts": [
+        "scripts/turn.mjs",
+        "scripts/parse-process.mjs",
+        "scripts/plan.mjs",
+        "scripts/run-state.mjs",
+        "scripts/match-reply.mjs",
+        "scripts/messages.mjs",
+        "scripts/account.mjs",
+        "scripts/pieces.mjs",
+        "scripts/publish.mjs",
+        "scripts/agreements.mjs",
+        "scripts/drive.mjs"
+      ],
+      "references": [
+        "rules.md",
+        "references/message-forms.md",
+        "sample/video-to-explainer.process.txt",
+        "sample/roster.txt",
+        "sample/creative-assets.process.txt"
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      },
+      "run": {
+        "command": [
+          "node",
+          "{home}/{package}/skills/run-a-process/scripts/turn.mjs",
+          "--runs",
+          "{records}/runs",
+          "--job",
+          "{job_dir}",
+          "--message",
+          "{message_id}",
+          "--from",
+          "{sender}",
+          "--in-reply-to",
+          "{in_reply_to}",
+          "--text-file",
+          "{job_dir}/message.txt"
+        ],
+        "per_file": [
+          "--file",
+          "{file_path}::{file_media_type}"
+        ],
+        "message_file": "{job_dir}/message.txt",
+        "reply": "json:reply",
+        "escalate_when": "json:block"
+      }
+    },
+    {
+      "slug": "read-the-document",
+      "title": "Read the document",
+      "offered": false,
+      "when": "when a process document arrives with an instruction to run it",
+      "good": "the document parsed whole: its id and version, every phase with its kind, owner, after: names and level, every handoff and deviation with its key, and every blank named; and a plain yes or no on whether a run may start, with every reason",
+      "empty": "a document with no owner, no effective date, an unfilled level, an open blank, an after: that names no phase, or a cycle in its after: lines is refused, each reason in one sentence; a document that is not in the language at all is refused in one sentence",
+      "does": "Parses a process document and says whether a run may start from it.",
+      "inputs": [
+        {
+          "name": "process document",
+          "kind": "document",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "parsed document",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives, whatever it says, is handled by one command, node ~/process-runner/skills/run-a-process/scripts/turn.mjs, exactly as the run-a-process skill says; read that skill and run that command with the message. This skill only explains what that command does for this step.\n\nThe turn script does this on every start. To check a document on its own, run `node scripts/parse-process.mjs <document.txt> [--roster <roster.txt>]` from the run-a-process skill's folder: it prints ok, the problems by code, and the parsed document. The codes that block a run are no-owner, no-effective, no-version, blank, no-level, bad-level, unknown-after, prose-after, no-trigger-phase, cycle, no-phases, unknown-handoff-phase and unknown-deviation-phase. open-holder means a phase owner is a blank the roster must fill. no-after, unparsed and run-scoped are notes. The document as received is kept at records/runs/<run id>/document.txt with its digest in the run record; it is never edited.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "bind-the-roster",
+      "title": "Bind the roster",
+      "offered": false,
+      "when": "when a run starts, and again whenever a phase reaches the front with nobody to hold it, or its holder refuses or cannot be reached",
+      "good": "every phase that an agent holds bound to one handle, each with a record of how it was found: named in the roster for the phase, named in the roster for the role, or named by the owner when asked",
+      "empty": "a phase with no holder is not guessed at and not searched for on this host: the owner is asked, in one question naming the phase and the offering the phase runs, and the phase waits",
+      "does": "Binds each phase of a run to the handle that holds it, from the roster the owner sent or from the owner's answer.",
+      "inputs": [
+        {
+          "name": "roster",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "bound roster",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives, whatever it says, is handled by one command, node ~/process-runner/skills/run-a-process/scripts/turn.mjs, exactly as the run-a-process skill says; read that skill and run that command with the message. This skill only explains what that command does for this step.\n\nThe roster is one line per phase or role, `phase-or-role: handle`, sent with the run before the document or attached as roster.txt. In the text of the message a roster line is one under a `roster:` line, or one whose value is a handle (it has an @) or an agent id, or whose name is a phase or role of the document; every other `name: value` line is material, however short. The turn script binds it at the start (see plan.mjs, holderFor) and records each binding in the run record with how it was found. This version does not search the network for a holder: the host's command line has no discovery verb, so a phase whose owner is a blank the roster does not fill is put to the owner as one question, `<phase>: <handle>`, and the owner's answer is recorded as the binding. Never state that a holder is free; the Runner does not ask before sending, and the account says so.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "advance-the-run",
+      "title": "Advance the run",
+      "offered": false,
+      "when": "on every message about an open run: a holder's reply, the owner's answer at a gate, a deviation, a stop",
+      "good": "the message recorded once with its id and time, the run moved exactly as the document's after: lines, handoffs, levels and deviations say, the next work sent with the files it needs and every constraint, and every question to the owner asked once with what they need in hand",
+      "empty": "a reply that cannot be matched to a run by its in_reply_to, by the run and phase named in its text, or by its sender holding exactly one waiting phase is answered with the list of open runs and nothing is changed; a holder's question the document does not settle goes to the owner, never guessed",
+      "does": "Applies one message to a run and carries out what follows: sends work, holds gates, records deviations and stops.",
+      "inputs": [
+        {
+          "name": "message",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reply",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives, whatever it says, is handled by one command, node ~/process-runner/skills/run-a-process/scripts/turn.mjs, exactly as the run-a-process skill says; read that skill and run that command with the message. This skill only explains what that command does for this step.\n\nThis is ~/process-runner/skills/run-a-process/scripts/turn.mjs, run once per message as the run-a-process instructions say. It sends with `agentmesh send <handle> \"<text>\" --file <path> --json` and records the request_id the command prints, so a later reply's in_reply_to matches. A revision of a holder's earlier delivery is sent as a plain message naming the prior job and the steps to redo, because the command line cannot send the adapter's revision fields; it reaches the holder as a new, unlinked job, so the holder may charge its full price and will not automatically reuse prior pieces unless it chooses to, and the account says so. A stop reaches every holder still working as `stop that`. `what did you commit` is answered from the run record: every message sent, to whom, with its id, and the money: none was committed when the instruction carried no budget line, and with one, the ceiling it allowed and every piece of work sent under it.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "write-the-account",
+      "title": "Write the account",
+      "offered": false,
+      "when": "after every turn, and as the delivery when a run closes",
+      "good": "plain sentences a stranger could follow: what ran and under which document version, who held each phase and how they were found, what each delivered and when, what was approved by whom and when, each deviation by name, what was delivered, what money was committed, and what this Runner did not do",
+      "empty": "an open run's account says what it waits on; a stopped run's account says who stopped it, when, and what was left open; nothing is written that the run record does not hold",
+      "does": "Writes the account of a run for its owner, and the run record with every event.",
+      "inputs": [
+        {
+          "name": "run record",
+          "kind": "application/json",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "account",
+          "kind": "text",
+          "when": "per_task"
+        },
+        {
+          "name": "run record",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives, whatever it says, is handled by one command, node ~/process-runner/skills/run-a-process/scripts/turn.mjs, exactly as the run-a-process skill says; read that skill and run that command with the message. This skill only explains what that command does for this step.\n\nThe turn script rewrites records/runs/<run id>/account.txt and run-record.json after every turn. To redo them by hand: `RUN_DIR=<records directory>/runs/<run id> node scripts/account.mjs`. To fill a job folder from a closed run: `RUN_DIR=<records directory>/runs/<run id> node scripts/pieces.mjs`; it lists the run record and the account from this step and every file of the final handoff from advance-the-run, under `final handoff (<file name>)`, a lone web address marked as a link.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    },
+    {
+      "slug": "drive-the-record",
+      "title": "Drive the platform's record",
+      "offered": false,
+      "when": "on every turn of a run the platform handed over, meaning one whose starting message named the platform's own record of it",
+      "good": "the platform's record level with this agent's own: each phase asked for once and only while that record has it waiting, the words the holder reads composed here from the document, every decision said as it is taken, every deviation recorded with the phases it reopened, the run finished there when it finishes here, and every call and its answer appended to the run's own record with no credential value in it",
+      "empty": "a run that named no platform record is left alone entirely and publishes its own as it always has; a platform that refuses what was decided leaves this agent's record standing, puts the refusal in the run's notes and the same decision is offered again next turn; a platform that cannot be reached does the same, because a web service being down must never stop a run",
+      "does": "Tells the platform what this agent decided about a run it holds, and asks it to send each phase.",
+      "inputs": [
+        {
+          "name": "run",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "decisions",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "notes",
+          "kind": "text",
+          "when": "per_task"
+        }
+      ],
+      "instructions": "Nothing in this folder is run on its own. Every message this agent receives is handled by one command, node ~/process-runner/skills/run-a-process/scripts/turn.mjs, exactly as the run-a-process skill says; this step explains what that command does at the end of a turn.\n\nA run is driven only when the message that started it named the platform's record, as a line reading run: <id> on its own before the document. That id is kept on the run and never guessed at: a run either has one for its whole life or has none, because a phase sent by both this agent and the platform is a phase paid for twice.\n\nWhat is driven, and what is not. The platform sends each phase's work, as the account the run names, so the cost falls on whoever is paying rather than on this agent's owner. This agent still decides which phase is next, whether a phase is a gate, how far back a deviation reaches, and what the holder is told; the words are part of deciding, because the policy lines, the automation level and what is agreed about money are in the document and not on the platform's canvas. A status reply, a notice or a report is this agent's own correspondence with a person and stays on the mesh.\n\nA phase is matched to a step by the pairing the platform hands back on every read, never by a label, and it is asked for only while that record has it waiting. What a holder gave back is never reported from here: the platform witnesses its own deliveries, and it wakes this agent when one lands.",
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    }
+  ],
+  "systems": [],
+  "refuses": [
+    "starting a run from a document with no owner or no effective date; that is a reference process, and it runs nowhere",
+    "starting a run from a document with an unfilled automation level or any blank still open, or choosing a level for it",
+    "raising a never or supervised phase, or any phase, to a higher level than the document states, on any flag, override or timeout",
+    "starting a phase before every phase its after: line names has closed and every handoff into it exists",
+    "inferring the order of phases from the order they are listed in",
+    "completing a never phase without the named owner's answer, or reading a posted message, an expiry or silence as an approval",
+    "committing money beyond what the owner's instruction allowed; without a budget line it commissions only free or already-agreed work and says so in every work message",
+    "stating that a holder is free, or has capacity, when it did not ask",
+    "answering a holder's question from its own opinion or with a fact the process document does not carry",
+    "hiding what it committed, or answering `what did you commit` selectively",
+    "acting on a credential value sent in a message, or keeping one in a record; a value that looks like one is removed before anything is written",
+    "altering a record after it is written, including when the document changes",
+    "taking a deviation on its own judgment; a deviation is the owner naming an edge",
+    "extending a phase past its by: bound; a run past its bound is recorded, never extended",
+    "taking a yes at a gate, a deviation or the answer to a holder's question from anybody but the owner the document names; whoever instructed the run may ask for its status, name a holder, send a phase again and stop it, and nothing else of theirs moves it",
+    "taking instructions for a run from anybody but its owner and whoever instructed it",
+    "starting a run whose document names an owner that answers to nobody, when that document has a phase a person must do; the question would go to whoever instructed the run and the run would wait for an answer that never came",
+    "asking a platform to send a phase its own record does not have waiting; a phase sent twice is a job charged twice, so what is already sent is read back from that record rather than assumed",
+    "telling a platform that a holder delivered; what came back is the platform's to witness, and this agent says only what it decided",
+    "carrying on as though a platform took what it refused; the run's own record stands, the refusal goes in the notes, and the same decision is offered again next turn",
+    "driving a platform record half way; a run is either driven there throughout or run on the mesh throughout, because a phase sent by both is a phase paid for twice",
+    "sending a phase's work itself on a run the platform is sending for, and asking the platform to send a phase on a run it is not",
+    "driving a platform record half way; a run is either driven there throughout or run on the mesh throughout, because a phase sent by both is a phase paid for twice",
+    "sending a phase's work itself on a run the platform is sending for, and asking the platform to send a phase on a run it is not"
+  ],
+  "escalates": [
+    "every phase at automation: never goes to the owner the document names, with its inbound handoff and one question, and the run waits; when that owner is not whoever instructed the run, the instructor is sent a copy saying which phase waits and on whom",
+    "every supervised phase's output goes to the owner for approval before it crosses, and every assisted or manual phase's act is the owner's",
+    "a holder's block the process document does not settle goes to the owner as the holder wrote it, at once; the owner's answer goes back to the holder on the next turn after it arrives",
+    "a phase whose holder refused or could not be reached goes to the owner with a request to name another holder",
+    "a phase with no holder in the roster goes to the owner with the offering it runs",
+    "a run past a phase's bound is reported in the account; the bound is never extended",
+    "a run the concurrency line forbids is refused and the refusal reported to the sender"
+  ],
+  "records": [
+    {
+      "name": "the process document as received, with its id, version and digest in the run record; never edited",
+      "when": "per_task",
+      "file": "runs/*/document.txt"
+    },
+    {
+      "name": "the roster used, with how each holder was found: named in the roster for the phase or the role, or named by the owner when asked",
+      "when": "per_task",
+      "file": "runs/*/roster.txt"
+    },
+    {
+      "name": "every message sent and received, with its id, its in_reply_to, the phase, the files, and the time",
+      "when": "per_task",
+      "file": "runs/*/messages/*.txt"
+    },
+    {
+      "name": "every event of the run in order: started, holder, sent, replied, gated, approved, deviated, stopped, closed, noted; appended, never edited",
+      "when": "per_task",
+      "file": "runs/*/events.jsonl"
+    },
+    {
+      "name": "each approval with who gave it and when, and each deviation by name with who named it, when, the phase it returned to and the phases that ran again",
+      "when": "per_task",
+      "file": "runs/*/state.json"
+    },
+    {
+      "name": "the files carried across each handoff, by phase and round",
+      "when": "per_task",
+      "file": "runs/*/files/*"
+    },
+    {
+      "name": "the run record: the run's whole state with every event, and the version of the document it ran under",
+      "when": "per_task",
+      "file": "runs/*/run-record.json"
+    },
+    {
+      "name": "the account for the owner, rewritten after every turn",
+      "when": "per_task",
+      "file": "runs/*/account.txt"
+    },
+    {
+      "name": "every trigger refused under the concurrency line, with the run it clashed with",
+      "when": "standing",
+      "file": "refusals.jsonl"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing every piece by step; the adapter signs it from pieces.json and keeps it beside the reply",
+      "when": "per_task"
+    },
+    {
+      "name": "every call to a platform's engine door and what it answered, with the run, the step and the time; appended, never edited, and never carrying a credential value",
+      "when": "per_task",
+      "file": "runs/*/drove.json"
+    }
+  ],
+  "price": {
+    "model": "free"
+  },
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "agentmesh",
+      "purpose": "sends each phase's work to its holder and each question to the owner, as this agent, and prints the message id the run records"
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per run under runs/, holding every record above, and the refusals ledger"
+    },
+    {
+      "name": "work",
+      "purpose": "the sender's text saved per message before the turn script reads it"
+    }
+  ]
+}
