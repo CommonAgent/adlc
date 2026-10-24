@@ -420,8 +420,18 @@ KEYLESS_VARS = {"google-vertex-anthropic": {"GOOGLE_CLOUD_PROJECT": VERTEX_PROJE
 # nothing else. Google's client libraries read GCE_METADATA_HOST for exactly
 # this. Only the host brain gets it: a Cloud Run job's own metadata server is
 # its own account, and pointing a job at loopback would leave it with none.
-# Empty turns it off, for a host without the stand-in.
-HOST_MODEL_METADATA = os.environ.get("DM_HOST_MODEL_METADATA", "127.0.0.1:8789")
+# Empty turns it off, for a host without the stand-in. The value is written
+# into a shell script, so anything but host:port is ignored for the default.
+# (sudo strips the environment, so the root procedures always see the default.)
+HOST_MODEL_METADATA_DEFAULT = "127.0.0.1:8789"
+
+
+def host_model_metadata(value):
+    v = str(value if value is not None else HOST_MODEL_METADATA_DEFAULT).strip()
+    return v if v == "" or re.fullmatch(r"[0-9A-Za-z.-]+:[0-9]{1,5}", v) else HOST_MODEL_METADATA_DEFAULT
+
+
+HOST_MODEL_METADATA = host_model_metadata(os.environ.get("DM_HOST_MODEL_METADATA"))
 
 
 def provider_of(model):

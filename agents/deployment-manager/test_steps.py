@@ -1664,6 +1664,7 @@ class AModelChangeReachesTheJob(unittest.TestCase):
         self.assertIn(f"AGENT_MODEL={m}", env)
         self.assertIn(f"GOOGLE_CLOUD_PROJECT={steps.VERTEX_PROJECT}", env)
         self.assertIn("GOOGLE_CLOUD_LOCATION=us", env)
+        self.assertNotIn("GCE_METADATA", env, "a job keeps its own metadata server; the host's stand-in is for host brains")
         self.assertFalse(any(a.startswith("--update-secrets") for a in upd), "no key for a keyless provider")
         self.assertIn("--remove-secrets=GOOGLE_GENERATIVE_AI_API_KEY", upd)
         row = steps.load_json_list(steps.CONTAINERS)[0]
@@ -1697,6 +1698,10 @@ class AModelChangeReachesTheJob(unittest.TestCase):
     def test_the_stand_in_reaches_the_host_brain_only_never_a_job(self):
         self.assertNotIn("GCE_METADATA_HOST", steps.keyless_vars("google-vertex-anthropic"))
         self.assertNotIn("GCE_METADATA_HOST", steps.brain_text("opencode", "google/gemini-3.8-flash"))
+        self.assertEqual(steps.host_model_metadata("127.0.0.1:8789"), "127.0.0.1:8789")
+        self.assertEqual(steps.host_model_metadata(""), "")
+        for bad in ("127.0.0.1:8789; rm -rf /", "$(id):1", "host", "a b:1"):
+            self.assertEqual(steps.host_model_metadata(bad), "127.0.0.1:8789", bad)
         with mock.patch.object(steps, "HOST_MODEL_METADATA", ""):
             self.assertNotIn("GCE_METADATA_HOST", steps.brain_text("opencode", "google-vertex-anthropic/claude-sonnet-5-5@default"))
 
