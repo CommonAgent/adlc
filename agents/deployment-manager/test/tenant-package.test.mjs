@@ -202,6 +202,9 @@ test("a person's package is built on the tenant base with the tenant host, and r
   assert.equal(out.handle, "helper.person@example.com");
   assert.equal(out.agent_key, KEY);
   assert.equal(out.tenant, "t-0a1b2c3d4e5f");
+  // This host's settings describe no tenant network, so the record says
+  // nothing about egress rather than guessing (Common Agent 8.3).
+  assert.equal(out.record.egress, undefined);
   // Every call in the tenant project, as the tenant deployer.
   for (const argv of f.calls) {
     assert.ok(argv.includes(`--impersonate-service-account=${DEPLOYER}`), argv.join(" "));

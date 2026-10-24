@@ -171,6 +171,9 @@ test("a new install: built, keyed into its secret without the seed touching a co
   assert.equal(r.record.act, "deploy");
   assert.equal(r.record.target.kind, "cloud-run-service");
   assert.equal(r.record.key_custody.minted, "generated");
+  // A platform container agent has no VPC setting, so nothing of ours limits
+  // what it reaches, and the record says so (Common Agent 8.3 egress).
+  assert.deepEqual(r.record.egress, { policy: "open", enforced_by: "none" });
   assert.equal(r.record.signatures[0].tag, "agent-deployment-record-v1");
   assert.equal(r.record.checks[0].kind, "smoke");
   assert.equal(f.inventory()[0].state, "running");
