@@ -14,34 +14,83 @@ contacts the agent. There is no model in it.
 
 ## What this folder is
 
-`package/` is the built Agent Package, version 0.1.0, exactly as it was
-released, not a package source. It was made by the package maker from a description during the first end to end run
-of the New agent process, on 2026-09-15, and it is a good example of what the
-lifecycle hands over at the end:
+This folder is the agent's source, laid out the way the
+[package maker](../package-maker) builds from:
 
-- `package/plugin.json` is the manifest, with the digests of the descriptor
-  and the install file;
-- `package/descriptor.json` says what the agent offers, refuses and records;
-- `package/install.json` says what a host must have and how each job runs;
-- `package/skills/` holds the four skills and their scripts;
-- `package/net.agentdoc.package/` holds the plain statements of what it will not do,
-  the records it keeps and the systems it uses.
+- `agent-descriptor.json` says what the agent offers, refuses and records;
+- `agent-runtime-requirements.json` says what a host must have and how each
+  job runs;
+- `plugin.json` is the manifest's own members, and in
+  `extensions["net.agentdoc.package"].build` the scripts each skill carries;
+- `skills/<slug>/SKILL.md` is one skill per offering and step;
+- `scripts/` holds the scripts, each kept once;
+- `test/` holds the suites.
 
-The source `spec.json` it was built from was not kept, so this package has no
-tests.
+`package/` is the built Agent Package 0.1.0, exactly as it was released on
+2026-09-15, kept as the record of what that version was. It is not a source
+and nothing builds from it. Version 0.1.1 is built from this folder.
+
+## What changed in 0.1.1
+
+In 0.1.0 the command the runtime requirements start checked its arguments and
+stopped without calling `recordIncident`, so run that way it recorded nothing.
+In 0.1.1 the command reads the message, records the incident, files the
+incident record and the timeline as the job's pieces, and replies. The run
+also passes the attached files (`per_file`), which 0.1.0 did not. The rest of
+the agent is as it was.
 
 ## What it needs
 
-Node 22 or later, and a records folder for each job. It reaches no system and
-no network.
+Node 22 or later, and a records folder. It reaches no system and no network,
+and calls no model.
 
-## A known gap
+## How a job runs
 
-The command-line entry of `package/skills/record-incident/scripts/record-incident.mjs`
-checks its arguments and stops without calling `recordIncident`. Run through
-`install.json`, version 0.1.0 records nothing. The functions it exports work
-when called directly. The next version needs its source spec rebuilt, the entry
-fixed and a suite written by the test writer.
+The host starts
+
+```sh
+node {home}/{package}/skills/record-incident/scripts/record-incident.mjs   --job {job_dir} --records {records} --work {work}   --text-file {job_dir}/message.txt [--file <path>::<media type>]...
+```
+
+The message names the agent and the time it failed as lines of their own, and
+may name a folder of records:
+
+```
+agent: spec-writer.example
+time: 2026-10-24T09:30:00Z
+records: /path/to/records
+```
+
+`agent handle:` and `handle:` are read as `agent:`; `failure time:` and
+`failed at:` as `time:`. The time must be ISO 8601 with its zone. `--agent`
+and `--time` win over the message when given.
+
+The records read are the attached files and the regular files directly inside
+the folder the `records:` line names, each one JSON object per line with a
+`time` and an `event`. A file whose name contains `platform` is taken as the
+platform's activity record, any other as the agent's own.
+
+It writes `incident.json`, `timeline.json`, `inventory.json` and, when
+something was missing, `went-without.json` to `{records}/<job id>/`, adds the
+incident to `{records}/incidents.json`, copies the record and the timeline to
+`{job_dir}/out/` with `{job_dir}/pieces.json` for the adapter to deliver, and
+prints one JSON object whose `reply` says what was recorded. With no records it
+still records the incident, noting the complete absence of records. With no
+agent or no usable time it records nothing and exits 3 with a reply saying what
+it needs.
+
+## Tests
+
+```sh
+cd agents/incident-recorder
+node --test test/*.test.mjs
+python3 ../package-maker/build.py . <out folder>
+```
+
+`test/run.test.mjs` starts the job exactly as the runtime requirements say,
+from a package laid out the way the builder lays it out, with a job folder
+holding `message.txt` and attached records. `test/parts.test.mjs` checks the
+parts it is made of.
 
 ## Replacing it
 

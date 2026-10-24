@@ -1,0 +1,179 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.1",
+  "does": "Records an incident when a fleet agent goes quiet or a job fails. Reads platform activity records and the agent's own records around the failure window, builds a strict chronological timeline of known facts and gaps, and writes an incident record attributing every fact to its source. Never guesses causes, never proposes fixes, and never contacts the agent.",
+  "offerings": [
+    {
+      "id": "record-incident",
+      "name": "Record incident",
+      "does": "Records an incident from an agent handle and failure time, delivering a strict timeline and incident record.",
+      "inputs": [
+        {
+          "name": "agent handle",
+          "kind": "identifier",
+          "required": true
+        },
+        {
+          "name": "failure time",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "records",
+          "kind": "document",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "incident record",
+          "kind": "application/json",
+          "when": "per_task"
+        },
+        {
+          "name": "timeline",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-records",
+          "name": "Read records",
+          "does": "Reads and indexes platform activity records and the target agent's own records for the failure window.",
+          "inputs": [
+            {
+              "name": "agent handle",
+              "kind": "identifier",
+              "required": true
+            },
+            {
+              "name": "failure time",
+              "kind": "text",
+              "required": true
+            },
+            {
+              "name": "records",
+              "kind": "document",
+              "required": false
+            }
+          ],
+          "outputs": [
+            {
+              "name": "record inventory",
+              "kind": "application/json",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "build-timeline",
+          "name": "Build timeline",
+          "does": "Builds a chronological timeline of verified events and explicit gaps from the indexed records.",
+          "inputs": [
+            {
+              "name": "record inventory",
+              "kind": "application/json",
+              "required": true
+            }
+          ],
+          "outputs": [
+            {
+              "name": "timeline",
+              "kind": "application/json",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-incident-record",
+          "name": "Write incident record",
+          "does": "Writes the final incident record and timeline files to the job records directory.",
+          "inputs": [
+            {
+              "name": "timeline",
+              "kind": "application/json",
+              "required": true
+            },
+            {
+              "name": "record inventory",
+              "kind": "application/json",
+              "required": true
+            }
+          ],
+          "outputs": [
+            {
+              "name": "incident record",
+              "kind": "application/json",
+              "when": "per_task"
+            },
+            {
+              "name": "timeline",
+              "kind": "application/json",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Guessing a cause for an incident. It records only verifiable facts and explicit gaps, so no speculation about root causes or agent intent enters the record.\nProposing a fix or remediation. It records what happened rather than how to solve it, so incident reports remain strictly factual without speculative advice.\nContacting the agent being recorded. It never sends a ping, signal, or message to the target agent, reading only records it was handed.\nReaching systems or services outside the records it was given. It accesses no remote APIs or network endpoints, ensuring it cannot alter fleet state or leak data.\nInterpolating events across gaps in the record. Where records are missing, the timeline explicitly notes the gap as unknown rather than assuming normal operation.\nAccepting an unverified fact into the record. Every event in the timeline must trace directly to a verified record entry with a recorded source digest.",
+  "escalates": [
+    "A record payload that is corrupted or unreadable. The reply names the unreadable file and the byte location of the fault; the caller decides whether to provide fresh record extracts."
+  ],
+  "records": [
+    {
+      "name": "the incident record per job: facts, sources, and identified record gaps",
+      "when": "per_task",
+      "file": "*/incident.json"
+    },
+    {
+      "name": "the structured timeline per job: chronological events and gap intervals",
+      "when": "per_task",
+      "file": "*/timeline.json"
+    },
+    {
+      "name": "the raw record inventory per job: platform and agent record files examined with digests",
+      "when": "per_task",
+      "file": "*/inventory.json"
+    },
+    {
+      "name": "standing index of incidents recorded by this agent across all runs",
+      "when": "standing",
+      "file": "incidents.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    }
+  ]
+}

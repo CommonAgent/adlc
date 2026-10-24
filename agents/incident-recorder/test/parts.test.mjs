@@ -1,0 +1,47 @@
+// The parts the run command is made of, called directly: reading the message,
+// checking the time, and the pieces list.
+//   run: node --test test/*.test.mjs
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { fromArgv, fromText, isIsoTime, recordIncident, whatIsMissing } from "../scripts/record-incident.mjs";
+import { plan } from "../scripts/pieces.mjs";
+
+test("the message's agent, time and records lines are read, in the clear forms only", () => {
+  assert.deepEqual(fromText("agent: a.owner@example.com\ntime: 2026-10-24T09:30:00Z\nrecords: /srv/r\n"),
+    { agent: "a.owner@example.com", time: "2026-10-24T09:30:00Z", recordsDir: "/srv/r" });
+  assert.deepEqual(fromText("- Agent handle: `a.example`\n- Failure time: 2026-10-24T09:30:00+02:00\n"),
+    { agent: "a.example", time: "2026-10-24T09:30:00+02:00", recordsDir: "" });
+  // A handle mentioned in passing is not taken.
+  assert.deepEqual(fromText("a.example went quiet at 09:30 today"), { agent: "", time: "", recordsDir: "" });
+});
+
+test("flags are read, files with and without a media type", () => {
+  const a = fromArgv(["--job", "j", "--records", "r", "--work", "w", "--text-file", "m", "--agent", "x", "--time", "t", "--file", "/a/b.jsonl::text/plain", "--file", "/c"]);
+  assert.equal(a.job, "j"); assert.equal(a.agent, "x"); assert.equal(a.time, "t");
+  assert.deepEqual(a.files, [{ path: "/a/b.jsonl", declared: "text/plain" }, { path: "/c", declared: "" }]);
+});
+
+test("only an ISO time with a zone is placed", () => {
+  assert.ok(isIsoTime("2026-10-24T09:30:00Z"));
+  assert.ok(isIsoTime("2026-10-24T09:30Z"));
+  assert.ok(isIsoTime("2026-10-24T09:30:00.250-05:00"));
+  assert.ok(!isIsoTime("2026-10-24T09:30:00"));
+  assert.ok(!isIsoTime("2026-10-24"));
+  assert.ok(!isIsoTime("2026-13-40T09:30:00Z"));
+  assert.equal(whatIsMissing({ agent: "a", time: "2026-10-24T09:30:00Z" }), "");
+});
+
+test("it refuses to probe the agent or reach the network", async () => {
+  assert.match((await recordIncident({ probe: true })).refused, /never sends a ping/);
+  assert.match((await recordIncident({ fetchImpl: () => {} })).refused, /no remote APIs/);
+});
+
+test("the pieces are the incident record and the timeline, both from the write step", () => {
+  const { entries, copies } = plan({ incidentPath: "/r/incident.json", timelinePath: "/r/timeline.json" });
+  assert.deepEqual(entries.map((e) => [e.name, e.step, e.path]), [
+    ["incident record", "write-incident-record", "out/incident.json"],
+    ["timeline", "write-incident-record", "out/timeline.json"],
+  ]);
+  assert.equal(copies.length, 2);
+  assert.throws(() => plan({ incidentPath: "/r/incident.json" }), /timeline is missing/);
+});
