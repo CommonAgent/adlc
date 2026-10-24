@@ -49,8 +49,8 @@ replaced by any agent that holds the same role.
 | Source | [catalog](https://agentroles.ai/catalog.html) | [agents/catalog](agents/catalog) | The matching logic does; the agent runs inside the AgentMesh services |
 | Test | [test writer](https://agentroles.ai/test-writer.html) | [agents/test-writer](agents/test-writer) | Yes, with a model key |
 | Code | [code writer](https://agentroles.ai/code-writer.html) | [agents/code-writer](agents/code-writer) | Yes, with a coding harness |
-| Build and package, Release | [package maker](https://agentroles.ai/package-maker.html) | [agents/package-maker](agents/package-maker) | The builder does; packing a run's work needs a fleet host |
-| Deploy, Configure, Update, Rollback, Decommission | [deployment manager](https://agentroles.ai/deployment-manager.html) | [agents/deployment-manager](agents/deployment-manager) | No, it needs an AgentMesh fleet host |
+| Package, Release | [package maker](https://agentroles.ai/package-maker.html) | [agents/package-maker](agents/package-maker) | The builder does; packing a run's work needs a fleet host |
+| Deploy, Update, Rollback, Reconfigure, Decommission | [deployment manager](https://agentroles.ai/deployment-manager.html) | [agents/deployment-manager](agents/deployment-manager) | No, it needs an AgentMesh fleet host |
 | Conformance | [conformance checker](https://agentroles.ai/conformance-checker.html) | [agents/conformance-checker](agents/conformance-checker) | The checks do; the agent needs a fleet host |
 | Docs | [documenter](https://agentroles.ai/documenter.html) | [agents/documenter](agents/documenter) | No, it runs inside the AgentMesh services |
 | Publish | [publisher](https://agentroles.ai/publisher.html) | [agents/publisher](agents/publisher) | Yes, with a place to publish to |
