@@ -17,10 +17,10 @@
 # own service account). No key is read here.
 VERTEX=(-c 'model="claude-sonnet-5-5"' -c 'model_provider="vertex"'
   -c 'model_providers.vertex={ name = "Claude on Vertex AI (fleet bridge)", base_url = "http://127.0.0.1:8788/v1", wire_api = "responses" }')
-# THE OFFICIAL CODER'S DOOR. Only scripts the code-writer delivered can be
-# packed: the builder checks every script against the signed delivery
-# manifest when this is set. The value is the code-writer's public key.
-export OFFICIAL_CODER="{{pinned_keys.official_coder}}"
+# Any code writer's scripts are packed. The builder's required coder check
+# (REQUIRED_CODER) stays in it, optional and off: an operator who wants only
+# one writer's scripts packed sets it here (Common Agent roles: any code writer
+# may hold the Code stage).
 cd "$HOME" || exit 1
 prompt=$(mktemp)
 printf '%s' "$1" > "$prompt"

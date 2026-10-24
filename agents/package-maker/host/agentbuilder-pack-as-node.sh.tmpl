@@ -10,6 +10,7 @@ set -u
 prompt="${1:-}"
 case "$prompt" in /tmp/tmp.*) ;; *) echo "the pack takes a prompt file the builder's brain made" >&2; exit 2;; esac
 if [ ! -f "$prompt" ] || [ -L "$prompt" ]; then echo "no prompt file at $prompt" >&2; exit 2; fi
-export OFFICIAL_CODER="{{pinned_keys.official_coder}}"
+# No REQUIRED_CODER: the builder packs any code writer's scripts. Setting it
+# here would require one writer's signed delivery manifest for every script.
 cd /home/mesh-node || exit 1
 exec python3 /opt/fleet/agentbuilder-pack.py --run "$prompt" /opt/fleet/node-ops/agents/agentbuilder/identity.json

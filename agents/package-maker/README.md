@@ -51,9 +51,8 @@ it writes is always the current names.
 - `provenance.mjs` is the optional required coder check. Set `REQUIRED_CODER` to
   a code writer's public key (one or several, comma separated) and the builder
   packs only scripts that writer delivered, traced through the signed delivery
-  manifest. `OFFICIAL_CODER` is read too, as the older name, and it is the one
-  the host templates in `host/` export from `pinned_keys.official_coder`. Leave
-  both unset and scripts from any code writer are packed.
+  manifest. `OFFICIAL_CODER` is read too, as the older name. The host
+  templates in `host/` set neither, so scripts from any code writer are packed.
 - `repo.mjs` lays a built agent out as its own git repository.
 - `shared/` holds rules shared with the AgentMesh services: connections,
   credit and trial declarations.

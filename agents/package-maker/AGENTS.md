@@ -200,10 +200,11 @@ the next phase of the run takes. The `job folder:` line of the message is
 the folder; every path under `attached:` is a file. Do not copy the files
 anywhere yourself and do not write a spec of your own from them.
 
-When this host has the official coder's door set, the procedure also
-checks every script against the manifest: a script the code-writer did
-not deliver is refused by name, with the door named. Do not work around
-it; the reply says to send the code through the code-writer.
+Scripts from any code writer are packed. Only where an operator has set a
+required coder (REQUIRED_CODER, off on this platform's hosts) does the
+procedure also check every script against the delivery manifest: a script
+that writer did not deliver is then refused by name. Do not work around it;
+the reply says where to send the code.
 
 Your reply names the package, its version and its sha256 in words as well,
 so a reader without the files still knows what was built.
