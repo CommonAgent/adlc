@@ -253,6 +253,31 @@ class AFolderThatSaysWhatTheBuildWouldNotIsRefused(Harness):
         self.refused("does not exist: notes/style.md")
 
 
+class ABuildNeverWritesOverItsSource(Harness):
+    def test_the_out_folder_may_not_be_the_agent_s_folder_or_hold_it(self):
+        self.convert()
+        same = os.path.join(self.tmp, "folder-check")            # out/<name> is the source
+        inside = os.path.join(self.tmp, "folder-check", "inner")  # out/<name> holds the source
+        os.makedirs(same)
+        os.rename(self.src, inside)
+        for src in (inside, same):
+            if src == same:
+                for n in os.listdir(inside):
+                    shutil.move(os.path.join(inside, n), same)
+                os.rmdir(inside)
+            res, _ = self.run_py(BUILD, src, self.tmp)
+            self.assertFalse(res["ok"], res)
+            self.assertIn("is the folder it is built from or holds it", res["error"])
+            self.assertTrue(os.path.isfile(os.path.join(src, "agent-descriptor.json")), "the source is untouched")
+
+    def test_a_generated_pointer_in_the_folder_is_ignored_out_loud(self):
+        self.convert()
+        self.edit("plugin.json", lambda d: d["extensions"]["net.agentdoc.package"].update(built=True))
+        res, _ = self.build(self.src, "out")
+        self.assertTrue(res["ok"], res)
+        self.assertTrue(any("carries built, which the build writes" in w for w in res["warnings"]), res)
+
+
 class TheGateAllowsTheRenamesAndNothingElse(Harness):
     def old_package(self):
         """A package as the builder before 0.30.0-draft wrote it: the new

@@ -1806,6 +1806,9 @@ def read_folder(folder):
     if exts is not None and not (isinstance(exts, dict) and all(isinstance(v, dict) for v in exts.values())):
         fail(f"{MANIFEST_FILE} extensions maps a namespace to an object")
     own = dict((exts or {}).get(EXT) or {})
+    generated = [k for k in own if k in ("descriptor", RUNTIME_POINTER, LEGACY_RUNTIME_POINTER, "built", "draft")]
+    if generated:
+        warn(f"{MANIFEST_FILE} extensions.{EXT} carries {', '.join(generated)}, which the build writes; what the folder says there is ignored")
     for k in own:
         if k not in ("from", BUILD_MEMBER, "descriptor", RUNTIME_POINTER, LEGACY_RUNTIME_POINTER, "built", "draft"):
             fail(f"{MANIFEST_FILE} extensions.{EXT}.{k} is not something the package's own entry carries")
@@ -2218,6 +2221,12 @@ def build(spec, src_base, out_dir, authored):
     lin = lineage(spec)        # what this package was copied from, if anything
     verify_script(spec, jobs)  # refuse a bad verify before anything is written
     pkg = os.path.join(out_dir, name)
+    # The package folder is emptied before it is written, so it must not be
+    # the source or hold it: `build.py agents/x agents` names agents/x as both.
+    real_pkg = os.path.realpath(pkg)
+    for src in {os.path.realpath(src_base), *([os.path.realpath(authored["folder"])] if authored else [])}:
+        if src == real_pkg or src.startswith(real_pkg + os.sep):
+            fail(f"the package would be written to {pkg}, which is the folder it is built from or holds it; name another out folder")
     if os.path.isdir(pkg):
         shutil.rmtree(pkg)
     PARTIAL.append(pkg)

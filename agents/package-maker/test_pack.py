@@ -204,7 +204,7 @@ class AnAgentsOwnFolder(Harness):
         self.assertNotIn("warnings", res)
         pkg = self.record(res)["package"]
         self.assertIn("runtime_requirements_sha256", pkg)
-        self.assertNotIn("install_sha256", pkg)
+        self.assertEqual(pkg["install_sha256"], pkg["runtime_requirements_sha256"], "the old name, for the readers of records from before")
         with open(os.path.join(res["package_dir"], "plugin.json"), encoding="utf-8") as f:
             own = json.load(f)["extensions"]["net.agentdoc.package"]
         self.assertEqual(pkg["runtime_requirements_sha256"], own["runtime_requirements"]["sha256"])

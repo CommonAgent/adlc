@@ -603,9 +603,11 @@ def main():
                     # verifier can tie the bound descriptor an agent serves back
                     # to the draft that was built (agent-package-draft.md §6).
                     **({"descriptor_sha256": built["descriptor_sha256"]} if built.get("descriptor_sha256") else {}),
-                    # Under its name since Common Agent 0.30.0-draft; a builder
-                    # from before then printed it as install_sha256.
-                    **({"runtime_requirements_sha256": built.get("runtime_requirements_sha256") or built["install_sha256"]}
+                    # Under its name since Common Agent 0.30.0-draft, and under
+                    # install_sha256 too, the name a verifier of a record from
+                    # before then reads, until no reader needs it.
+                    **({"runtime_requirements_sha256": built.get("runtime_requirements_sha256") or built["install_sha256"],
+                        "install_sha256": built.get("runtime_requirements_sha256") or built["install_sha256"]}
                        if built.get("runtime_requirements_sha256") or built.get("install_sha256") else {})},
         # Where the source was read, when it was read from a clean checkout.
         # It is what joins a published package to the repository it came from
