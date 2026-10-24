@@ -413,6 +413,25 @@ VERTEX_PROJECT = _am_env("vertex.project", "DM_VERTEX_PROJECT")
 VERTEX_LOCATION = os.environ.get("DM_VERTEX_LOCATION", "us")
 KEYLESS_VARS = {"google-vertex-anthropic": {"GOOGLE_CLOUD_PROJECT": VERTEX_PROJECT,
                                             "GOOGLE_CLOUD_LOCATION": VERTEX_LOCATION}}
+# Where a brain ON THIS HOST gets the token for a keyless provider. The host
+# keeps every agent's own unix user off its real metadata server (the token
+# there is the host's account), and runs a stand-in on loopback that answers
+# the same paths with a token for an account that may call models and do
+# nothing else. Google's client libraries read GCE_METADATA_HOST for exactly
+# this. Only the host brain gets it: a Cloud Run job's own metadata server is
+# its own account, and pointing a job at loopback would leave it with none.
+# Empty turns it off, for a host without the stand-in. The value is written
+# into a shell script, so anything but host:port is ignored for the default.
+# (sudo strips the environment, so the root procedures always see the default.)
+HOST_MODEL_METADATA_DEFAULT = "127.0.0.1:89"
+
+
+def host_model_metadata(value):
+    v = str(value if value is not None else HOST_MODEL_METADATA_DEFAULT).strip()
+    return v if v == "" or re.fullmatch(r"[0-9A-Za-z.-]+:[0-9]{1,5}", v) else HOST_MODEL_METADATA_DEFAULT
+
+
+HOST_MODEL_METADATA = host_model_metadata(os.environ.get("DM_HOST_MODEL_METADATA"))
 
 
 def provider_of(model):
@@ -439,8 +458,11 @@ def brain_text(harness, model):
         return BRAIN_TEMPLATES[harness]
     prov = provider_of(model) or "google"
     var, keyfile, _ = PROVIDERS[prov]
+    here = keyless_vars(prov)
+    if not var and here and HOST_MODEL_METADATA:
+        here.update({"GCE_METADATA_HOST": HOST_MODEL_METADATA, "GCE_METADATA_IP": HOST_MODEL_METADATA})
     key_line = (f'export {var}="$(cat "$HOME/{keyfile}")"' if var else
-                "; ".join(f"export {k}={v}" for k, v in keyless_vars(prov).items()))
+                "; ".join(f"export {k}={v}" for k, v in here.items()))
     return OPENCODE_BRAIN.format(
         key_line=key_line,
         model_flag=f" --model {model}" if provider_of(model) else "")
