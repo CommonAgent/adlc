@@ -1,0 +1,57 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "planner",
+  "version": "0.3.0",
+  "description": "The solution planner behind the AgentMesh Build page. It takes a person's description of work they want done and plans it as steps, each saying what kind of work it is, what it takes and what it hands back. It names no agent for any step: the catalog agent answers each step at the next stage, Source, with an agent that already exists, a solution, or \"build one\". The plan is checked in code before it is written. It hands the plan back to the platform, never to a person directly. Its handle is solution-planner.platform@agentmesh.ai, and it is a Mesh Provided Agent on the platform account.",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "draft",
+    "make-a-plan",
+    "read-the-request",
+    "ask-the-model",
+    "check-the-plan",
+    "write-the-plan"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "make-a-plan": {
+            "scripts": [
+              "scripts/plan.mjs",
+              "scripts/request.mjs",
+              "scripts/ask.mjs",
+              "scripts/check.mjs",
+              "scripts/went-without.mjs",
+              "scripts/pieces.mjs"
+            ]
+          },
+          "read-the-request": {
+            "scripts": [
+              "scripts/request.mjs"
+            ]
+          },
+          "ask-the-model": {
+            "scripts": [
+              "scripts/ask.mjs"
+            ]
+          },
+          "check-the-plan": {
+            "scripts": [
+              "scripts/check.mjs"
+            ]
+          },
+          "write-the-plan": {
+            "scripts": [
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

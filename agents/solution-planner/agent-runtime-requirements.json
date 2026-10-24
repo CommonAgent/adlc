@@ -1,0 +1,68 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "kind": "service",
+      "credential": "text-reasoning-key",
+      "env": "TEXT_API_KEY",
+      "settings": [
+        {
+          "env": "TEXT_MODEL",
+          "purpose": "the model that drafts the plan. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI, paid for with a token from the machine it runs on, and the credential is then where to call, <project>/<location>. When it is absent the model is the google-vertex-anthropic/ name with claude-sonnet-5-5 after it. A bare name is a Gemini model at Google and the credential is its key. Any other name with a provider in front is refused in words."
+        },
+        {
+          "env": "NEW_AGENT_USD",
+          "purpose": "the estimated cost to build one new agent, written into the plan as new_agent_usd for the platform to count after Source. Default 1.50."
+        }
+      ]
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the model calls, what the checks changed, and what the job went without"
+    }
+  ],
+  "job_seconds": 300,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "agent": true
+    },
+    "price": {
+      "model": "free"
+    }
+  },
+  "run": {
+    "make-a-plan": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/make-a-plan/scripts/plan.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "code-writer",
+  "version": "0.1.6",
+  "description": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. The only code the package-maker packs is what this delivers.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "draft",
+    "write-the-scripts",
+    "lay-out-the-workspace",
+    "check-the-work",
+    "report-the-work"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "write-the-scripts": {
+            "scripts": [
+              "scripts/workspace.mjs",
+              "scripts/check.mjs",
+              "scripts/report.mjs",
+              "scripts/pieces.mjs",
+              "scripts/verify.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/what-the-house-stack-is.md",
+              "references/a-package-that-works",
+              "rules.md"
+            ]
+          },
+          "lay-out-the-workspace": {
+            "scripts": [
+              "scripts/workspace.mjs"
+            ]
+          },
+          "check-the-work": {
+            "scripts": [
+              "scripts/check.mjs",
+              "scripts/workspace.mjs"
+            ]
+          },
+          "report-the-work": {
+            "scripts": [
+              "scripts/report.mjs",
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

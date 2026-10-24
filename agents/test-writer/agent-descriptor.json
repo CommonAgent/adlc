@@ -1,0 +1,196 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.6",
+  "does": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something.",
+  "offerings": [
+    {
+      "id": "write-a-suite",
+      "name": "Write a suite",
+      "does": "Writes the test suite a spec's scripts will have to pass, before those scripts exist, and runs it against nothing to prove it asserts something.",
+      "inputs": [
+        {
+          "name": "the spec",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "the suite it already has",
+          "kind": "text/javascript",
+          "required": false
+        },
+        {
+          "name": "what to add",
+          "kind": "text",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the suite",
+          "kind": "text/javascript",
+          "when": "per_task"
+        },
+        {
+          "name": "what it could not test",
+          "kind": "text/plain",
+          "when": "per_task"
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-spec",
+          "name": "Read the spec",
+          "does": "Records what the spec declares and judges none of it.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-suite",
+          "name": "Write the suite",
+          "does": "Calls the text-reasoning service once, twice at most, to write the suite, and runs it against nothing before taking it.",
+          "how": {
+            "control": "script",
+            "intelligence": "called",
+            "cost": "metered",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-suite",
+          "name": "Check the suite",
+          "does": "Runs the suite and says whether it notices.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "say-what-was-written",
+          "name": "Say what was written",
+          "does": "Writes the reply, with the check's verdict as written.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    },
+    {
+      "id": "prove-a-suite",
+      "name": "Prove a suite",
+      "does": "Runs a package's suite over its scripts, then over the package with each script blanked in turn, and says which breaks went unnoticed.",
+      "inputs": [
+        {
+          "name": "the package folder on this host",
+          "kind": "text",
+          "required": true
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the verdict",
+          "kind": "text/plain",
+          "when": "per_task"
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-spec",
+          "name": "Read the spec",
+          "does": "Records what the spec declares and judges none of it.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-suite",
+          "name": "Check the suite",
+          "does": "Runs the suite and says whether it notices.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "say-what-was-written",
+          "name": "Say what was written",
+          "does": "Writes the reply, with the check's verdict as written.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Delivering a suite that passes against nothing. Every suite is run against empty stand-ins for every script the spec names before it is taken, and one that passes there has asserted nothing; it goes back to the writer with that finding, and if it comes back the same it is delivered with the finding said first, never as a suite.\nWriting the scripts the tests are for. This package writes the tests and the interface those tests call, and the scripts that meet them are the code writer's, checked by these tests because it did not write them.\nChanging a test to make a script pass. When a suite is proved against a package and fails, the failure is reported to whoever owns the scripts; nothing here edits a test so that a run goes green.\nCalling a suite proven when it did not notice a broken script. Each script the spec names is blanked in turn and the suite run again; a script whose absence went unnoticed is named in the reply, and the verdict says the suite is thin there rather than that it passed.\nReaching a network or a model from inside a test. Every suite written here hands in the functions that would reach the world, so a test that fails is a decision that failed and not a host that was down.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every record and every line of the reply.\nRewriting a suite the package already has. When the message carries one, it is kept byte for byte, the writer adds new files beside it, and a file answered under a kept name is sent back as a finding rather than written over a test somebody relied on.\nAsking for a whole suite in one answer when the spec names more scripts than one answer holds. The suite is asked for in parts of three scripts, each checked on its own, because an answer cut at the output limit delivers nothing.\nAsking a third time. The suite is written, checked and written once more with the findings, and then it stands. A model told twice that its suite passes against nothing will not fix it on the third ask, and the person is owed the suite plus the truth about it rather than another wait.",
+  "escalates": [
+    "A suite that still fails its own check after two goes. It is delivered with the finding said first, and what to do about it is the person's decision.",
+    "A script the suite did not notice going missing, when a package was proved. Nothing here writes the missing test; the person or the writer does."
+  ],
+  "records": [
+    {
+      "name": "what the spec declares that a suite can hold the scripts to, per job",
+      "when": "per_task",
+      "file": "*/declared.json"
+    },
+    {
+      "name": "the suite as written: each file, how many tests it carries and their names, what could not be tested, and what the stand-in run said",
+      "when": "per_task",
+      "file": "*/suite.json"
+    },
+    {
+      "name": "what the check said: the stand-in run, the real run and one run per blanked script when a package was named, and the verdict",
+      "when": "per_task",
+      "file": "*/checked.json"
+    },
+    {
+      "name": "how many calls were made to the text-reasoning service, and which model answered",
+      "when": "per_task",
+      "file": "*/calls.json"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "access": "read",
+      "needs": "to write the suite from the spec, which is the one judgment in this package"
+    }
+  ]
+}

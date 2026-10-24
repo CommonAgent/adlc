@@ -1,0 +1,85 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "test-writer",
+  "version": "0.1.6",
+  "description": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "draft",
+    "write-a-suite",
+    "prove-a-suite",
+    "read-the-spec",
+    "write-the-suite",
+    "check-the-suite",
+    "say-what-was-written"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "write-a-suite": {
+            "scripts": [
+              "scripts/job.mjs",
+              "scripts/declared.mjs",
+              "scripts/write-suite.mjs",
+              "scripts/check-suite.mjs",
+              "scripts/reply.mjs",
+              "scripts/went-without.mjs",
+              "scripts/pieces.mjs"
+            ],
+            "references": [
+              "references/what-a-good-suite-carries.md",
+              "references/a-suite-that-works.test.mjs",
+              "references/the-spec-it-tests.json",
+              "rules.md"
+            ]
+          },
+          "prove-a-suite": {
+            "scripts": [
+              "scripts/declared.mjs",
+              "scripts/check-suite.mjs",
+              "scripts/reply.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "rules.md"
+            ]
+          },
+          "read-the-spec": {
+            "scripts": [
+              "scripts/declared.mjs"
+            ]
+          },
+          "write-the-suite": {
+            "scripts": [
+              "scripts/write-suite.mjs",
+              "scripts/check-suite.mjs",
+              "scripts/declared.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/what-a-good-suite-carries.md",
+              "references/a-suite-that-works.test.mjs",
+              "references/the-spec-it-tests.json"
+            ]
+          },
+          "check-the-suite": {
+            "scripts": [
+              "scripts/check-suite.mjs"
+            ]
+          },
+          "say-what-was-written": {
+            "scripts": [
+              "scripts/reply.mjs",
+              "scripts/went-without.mjs"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

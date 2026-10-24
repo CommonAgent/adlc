@@ -1,0 +1,129 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.6",
+  "does": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. The only code the package-maker packs is what this delivers.",
+  "offerings": [
+    {
+      "id": "write-the-scripts",
+      "name": "Write the scripts",
+      "does": "Writes the scripts that pass the suite, in the house stack, round by round until the check says done.",
+      "inputs": [
+        {
+          "name": "the spec",
+          "kind": "application/json",
+          "required": true
+        },
+        {
+          "name": "the suite",
+          "kind": "text/javascript",
+          "required": true
+        },
+        {
+          "name": "a prototype, in any language",
+          "kind": "document",
+          "required": false
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the scripts",
+          "kind": "text/javascript",
+          "when": "per_task"
+        },
+        {
+          "name": "the account",
+          "kind": "text/markdown",
+          "when": "per_task"
+        },
+        {
+          "name": "the run record",
+          "kind": "application/json",
+          "when": "per_task"
+        }
+      ],
+      "how": {
+        "control": "model",
+        "intelligence": "open",
+        "cost": "metered",
+        "contract": "ends"
+      },
+      "steps": [
+        {
+          "id": "lay-out-the-workspace",
+          "name": "Lay out the workspace",
+          "does": "Lays out the workspace and records what it holds.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-work",
+          "name": "Check the work",
+          "does": "Runs the suite, the blanking, the builder and the fence, and says whether the writer is done.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "report-the-work",
+          "name": "Report the work",
+          "does": "Writes the reply and, on a done verdict, files the pieces.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Editing a test. The suite is the test-writer's and it is the contract; every test file's digest is recorded when the workspace is laid out and compared on every round, and a round with a changed test is refused and names the file. A test that cannot pass without breaking what the spec says is reported as a conflict and stops the job.\nEditing the spec. The spec is the person's and the spec-writer's, its digest is checked every round, and nothing written here changes what was asked for; anything the prototype did that the spec never said does not survive the rewrite.\nDelivering scripts the suite fails. A pass is the only exit that files pieces; a job that stops at the ceiling, at the fence or on a conflict delivers nothing, and the reply says which.\nWriting outside scripts/. The account and the conflict note are the only other files; anything else added or changed in the workspace, including the prototype, is a broken fence and the round is refused until it is put back.\nInstalling anything or reaching a network. A package depends on nothing outside node, the suite hands in every function that would reach the world, and there is no credential in the workspace; a script that needs more than node is asking for a spec change, which is not this job's to make.\nSettling a question the spec left open when a test depends on the answer. Where the answer does not change what the suite asserts it is written in the account for the critic; where it does, the job stops and names the conflict, because the answer is a person's to give.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every script, every record and every line of the reply.",
+  "escalates": [
+    "A test that cannot pass without breaking what the spec says. The job stops with the conflict named and nothing delivered; which of the two is wrong is decided at the review gate.",
+    "The rounds used up with the suite still failing. Nothing is delivered; the owner can raise the ceiling and send the run again.",
+    "A script blanked in turn that the suite did not notice. Delivery goes ahead; it is said in the reply for the critic, because the missing test is the test-writer's to write."
+  ],
+  "records": [
+    {
+      "name": "what the workspace held when it was laid out: every script's origin, the prototype's files, and the digests the check holds the folder to",
+      "when": "per_task",
+      "file": "*/workspace.json"
+    },
+    {
+      "name": "every round of the check: the suite's numbers, each failing test by name, and how long it took",
+      "when": "per_task",
+      "file": "*/runs.json"
+    },
+    {
+      "name": "the verdict: done or not, and which of the three stops it was when not, with the blanking and the builder's word",
+      "when": "per_task",
+      "file": "*/verdict.json"
+    },
+    {
+      "name": "the writer's own account of what was written and what the spec did not settle",
+      "when": "per_task",
+      "file": "*/account.md"
+    },
+    {
+      "name": "the conflict between a test and the spec, when the job stopped on one",
+      "when": "per_task",
+      "file": "*/conflict.md"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply; it is the provenance the package-maker's door checks.",
+      "when": "per_task"
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "spec-writer",
+  "version": "0.2.11",
+  "description": "Turns what somebody wants an agent to do into a spec.json the builder will take, and says plainly what it could not settle without them.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "draft",
+    "write-a-spec",
+    "read-what-was-asked",
+    "draft-the-spec",
+    "check-it-builds",
+    "ask-what-is-missing"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "write-a-spec": {
+            "scripts": [
+              "scripts/asked.mjs",
+              "scripts/draft.mjs",
+              "scripts/check-spec.mjs",
+              "scripts/builds.mjs",
+              "scripts/ask.mjs",
+              "scripts/went-without.mjs",
+              "scripts/pieces.mjs"
+            ],
+            "references": [
+              "references/what-a-good-spec-carries.md",
+              "references/a-spec-that-works.json",
+              "rules.md"
+            ]
+          },
+          "read-what-was-asked": {
+            "scripts": [
+              "scripts/asked.mjs"
+            ]
+          },
+          "draft-the-spec": {
+            "scripts": [
+              "scripts/draft.mjs",
+              "scripts/check-spec.mjs",
+              "scripts/asked.mjs"
+            ],
+            "references": [
+              "references/what-a-good-spec-carries.md",
+              "references/a-spec-that-works.json"
+            ]
+          },
+          "check-it-builds": {
+            "scripts": [
+              "scripts/builds.mjs"
+            ]
+          },
+          "ask-what-is-missing": {
+            "scripts": [
+              "scripts/ask.mjs",
+              "scripts/asked.mjs",
+              "scripts/went-without.mjs"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

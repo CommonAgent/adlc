@@ -1,0 +1,74 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "kind": "service",
+      "credential": "text-reasoning-key",
+      "env": "TEXT_API_KEY",
+      "settings": [
+        {
+          "env": "TEXT_MODEL",
+          "purpose": "the model this agent runs, so that changing it is a setting and not a new version. Absent, it is the google-vertex-anthropic/ name with claude-sonnet-5-5 after it. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI, paid for with a token from the machine it runs on, and the credential is then where to call, written <project>/<location>; a bare name is a Gemini model reached at Google, and the credential is then its key; any other name with a provider in front is refused in words"
+        }
+      ]
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "the declaration, the suite, the check and the calls for each job"
+    },
+    {
+      "name": "work",
+      "purpose": "the suite files as written, before they are delivered"
+    }
+  ],
+  "job_seconds": 900,
+  "wants_replies": true,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "write-a-suite",
+        "prove-a-suite"
+      ]
+    },
+    "price": {
+      "model": "flat",
+      "amount_micro": 500000,
+      "currency": "USD"
+    }
+  },
+  "run": {
+    "write-a-suite": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/write-a-suite/scripts/job.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}
