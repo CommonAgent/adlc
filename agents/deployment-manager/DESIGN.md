@@ -82,7 +82,8 @@ offline.
 | Translate for the harness | `translate_for_harness`: the instructions file, the skills linked where the harness discovers them, the harness configuration with every mcp role, the brain. The per-harness residue is `install.HARNESSES`. |
 | Mint the subject, bind the descriptor | `bootstrap` with the named token, then `bind_descriptor`, which reports which members the binding added and changed. |
 | Start and check, grade stated | pm2, then `start_and_smoke`: smoke, and called that. |
-| Produce the record | `record.py`, with the package digest, the bound descriptor's digest, credentials and settings by name, ceilings, dependencies, the ledger, and the checks. |
+| Provide and record the egress | Nothing here restricts it yet. A host agent is a Unix user whose outbound traffic nothing filters, and a Cloud Run job or a platform container service runs with no VPC setting, so each record says `"egress": {"policy": "open", "enforced_by": "none"}` (`steps.EGRESS_OPEN`, `service.mjs` `egressOf`). A tenant agent runs on the tenant network, whose firewall the host describes in `DM_TENANT_EGRESS` (`deploymgr-tenant.json`); its record carries that description, and leaves `egress` out when the host gives none, rather than guessing. The enforcement that turns the open records into allowlists is the egress proxy phase. |
+| Produce the record | `record.py`, with the package digest, the bound descriptor's digest, credentials and settings by name, ceilings, the egress, dependencies, the ledger, and the checks. |
 | The ledger | `write_ledger` to `/opt/fleet/deploymgr-ledgers/<name>.json`, root-owned so the agent cannot rewrite it; `status` rehashes and reports every difference as `drift`. |
 
 **Update** (`update <argfile>`) runs the same steps against a new version

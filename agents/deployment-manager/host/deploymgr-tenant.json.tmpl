@@ -12,5 +12,17 @@
   "DM_TENANT_MAX_INSTANCE_HOURS": "48",
   "DM_TENANT_WAKER": "{{tenants.waker_sa}}",
   "DM_TENANT_WAKE_IDLE_SECONDS": "120",
-  "DM_TENANT_WAKE_MAX_SECONDS": "3300"
+  "DM_TENANT_WAKE_MAX_SECONDS": "3300",
+  "DM_TENANT_EGRESS": {
+    "policy": "allowlist",
+    "allowed": [
+      { "name": "network", "from": "network", "address": "{{vms.broker.ip}}/32" },
+      { "name": "model", "from": "model", "address": "{{vms.broker.ip}}/32" },
+      { "name": "registrar", "from": "registrar", "address": "{{registrar.lb_ip}}/32" },
+      { "name": "google-apis", "from": "host", "address": "199.36.153.8/30" },
+      { "name": "metadata", "from": "host", "address": "169.254.169.254" }
+    ],
+    "denied": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"],
+    "enforced_by": "gcp-vpc-firewall (tenant-vpc, Direct VPC egress all-traffic)"
+  }
 }

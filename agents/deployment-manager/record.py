@@ -210,6 +210,11 @@ def placed_part(res):
         # on dev on 2026-10-07 the two differed. Absent where this producer did
         # not observe it; null where the job carries no model.
         **({"model_placed": res["model_placed"]} if "model_placed" in res else {}),
+        # What the agent can reach on the network after the act, as steps.py
+        # provided it (Common Agent 8.3 `egress`). Copied through, never
+        # filled in: a result that does not carry it leaves it out, which says
+        # this producer did not observe it.
+        **observed(res, "egress"),
         "dependencies": list(res.get("dependencies") or []),
     }
 

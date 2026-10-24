@@ -17,6 +17,8 @@
     "catalog": "https://catalog.mesh.example.com"
   },
   "broker": { "wss": "wss://broker.mesh.example.com" },
+  "vms": { "broker": { "ip": "192.0.2.10" } },
+  "registrar": { "lb_ip": "192.0.2.20" },
   "buckets": { "agent_state": "example-agent-state" },
   "caller_grants": {
     "runtime_sa": "agent-runtime@example-project.iam.gserviceaccount.com",

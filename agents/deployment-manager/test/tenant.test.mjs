@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  buildSubmitArgv, checkTenantLimits, install, platformSettings, readInstruction, resourcesFor, retire, serviceDeployArgv, tenantSettings, tenantUsage, TENANT_AGENT_TAG,
+  buildSubmitArgv, checkTenantLimits, egressOf, install, tenantEgress, platformSettings, readInstruction, resourcesFor, retire, serviceDeployArgv, tenantSettings, tenantUsage, TENANT_AGENT_TAG,
 } from "../service.mjs";
 
 const COMMIT = "48a431e0c1b2d3e4f5a6b7c8d9e0f1a2b3c4d5e6";
@@ -25,6 +25,11 @@ const TENANT = tenantSettings({
   DM_TENANT_PROJECT: "example-tenants", DM_TENANT_REGISTRY: "us-east1-docker.pkg.dev/example-tenants/agents",
   DM_TENANT_DEPLOYER: DEPLOYER, DM_TENANT_BUILDER: BUILDER,
   DM_TENANT_WAKER: "tenant-waker@example-tenants.iam.gserviceaccount.com",
+  DM_TENANT_EGRESS: JSON.stringify({
+    policy: "allowlist",
+    allowed: [{ name: "network", from: "network", address: "192.0.2.10/32" }, { name: "registrar", from: "registrar", address: "192.0.2.20/32" }],
+    denied: ["10.0.0.0/8"], enforced_by: "gcp-vpc-firewall (tenant-vpc, tag tenant-agent)",
+  }),
 });
 const S = { tenant: TENANT, platform: platformSettings({ DM_PLATFORM_WAKER: "platform-waker@langbench-1528148150979.iam.gserviceaccount.com" }),
   wakeHostFile: "/opt/fleet/wake-host.mjs", buildMinutes: 1, readyMinutes: 1, meshApi: "https://api.agentmesh.ai", control: "https://app.agentmesh.ai/v1" };
@@ -148,6 +153,10 @@ test("a tenant install is made entirely as the tenant deployer, in the tenant pr
   assert.equal(row.tenant, "t-0a1b2c3d4e5f");
   assert.equal(row.project, "example-tenants");
   assert.equal(r.record.target.shape.vpc_egress, "all-traffic");
+  assert.equal(r.record.egress.policy, "allowlist");
+  assert.equal(r.record.egress.enforced_by, "gcp-vpc-firewall (tenant-vpc, tag tenant-agent)");
+  assert.deepEqual(r.record.egress.allowed.map((a) => a.from), ["network", "registrar"]);
+  assert.deepEqual(r.record.egress.denied, ["10.0.0.0/8"]);
   assert.ok(!f.calls.some((argv) => argv[2] === "add-iam-policy-binding" && argv[0] === "run"), "the tenant waker holds its role on the tenant project, not per service");
   assert.equal(r.wake_url, "https://agent-helper-bot-abc123-ue.a.run.app");
 });
@@ -178,4 +187,23 @@ test("retiring a tenant's agent is done as the tenant deployer too", async () =>
   const r = await quietly(() => retire("helper-bot", "test", f.deps));
   assert.equal(r.ok, true, JSON.stringify(r.remaining));
   for (const argv of f.calls) assert.ok(argv.includes(`--impersonate-service-account=${DEPLOYER}`));
+});
+
+test("the tenant network's egress is recorded as the host describes it, and never guessed", () => {
+  // No description: the member is left out, which says the egress was not observed.
+  assert.equal(tenantEgress(""), null);
+  assert.equal(egressOf({ tenant: "t-0a1b2c3d4e5f", egress: null }), null);
+  // An allowlist enforced by nothing is not an allowlist (8.3), and neither is one with no entries.
+  assert.equal(tenantEgress(JSON.stringify({ policy: "allowlist", allowed: [{ name: "network", from: "network" }], enforced_by: "none" })), null);
+  assert.equal(tenantEgress(JSON.stringify({ policy: "allowlist", allowed: [], enforced_by: "a firewall" })), null);
+  // An entry from outside the seven sources, or text that is not JSON, is no description.
+  assert.equal(tenantEgress(JSON.stringify({ policy: "allowlist", allowed: [{ name: "x", from: "elsewhere" }], enforced_by: "a firewall" })), null);
+  assert.equal(tenantEgress("{not json"), null);
+  // What the network lets through beyond the derived set is listed too, as the host's.
+  assert.equal(tenantEgress(JSON.stringify({ policy: "allowlist", allowed: [{ name: "metadata", from: "host", address: "169.254.169.254" }], enforced_by: "a firewall" })).allowed[0].from, "host");
+  // Open is a true record too.
+  assert.deepEqual(tenantEgress(JSON.stringify({ policy: "open", enforced_by: "none" })), { policy: "open", enforced_by: "none" });
+  // A platform agent is open whatever the tenant settings say.
+  assert.deepEqual(egressOf({ tenant: null, egress: TENANT.egress }), { policy: "open", enforced_by: "none" });
+  assert.equal(TENANT.egress.policy, "allowlist");
 });

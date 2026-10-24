@@ -278,6 +278,17 @@ IMAGE_HOME = os.environ.get("DM_IMAGE_HOME", "/home/agent")
 # record's target and in the custody of a key the deploy minted, because a seed
 # in a home on this host is a seed this host's root can read.
 HOST = os.environ.get("DM_HOST", "agent-fleet")
+
+# EGRESS, AS IT IS (Common Agent 8.3 `egress`, 12.7). Nothing this file makes
+# limits what an agent reaches on the network. An agent on this host runs as
+# its own Unix user under the supervisor, and nothing on the host filters a
+# user's outbound traffic; the work it places in a Cloud Run job, in our
+# project or a customer's, runs with no VPC setting, so it leaves by Google's
+# own path to the internet. So every record this file makes says `open`,
+# enforced by `none`, which is the true record of a target that does not
+# restrict. When something here starts to restrict, this is the line that has
+# to change with it, and a record must never claim more than that thing does.
+EGRESS_OPEN = {"policy": "open", "enforced_by": "none"}
 # How long an image build may take before this stops following it. A build that
 # outruns it is left running and named, never reported as finished.
 BUILD_MINUTES = int(os.environ.get("DM_BUILD_MINUTES", "40"))
@@ -2135,6 +2146,7 @@ def deploy(argfile):
     out({"ok": True, "act": "deploy", "name": name, "package": pkg_name,
          "version": pkg_version, "sha256": sha256, "url": url,
          "host": HOST, "harness": harness, "interaction": interaction,
+         "egress": dict(EGRESS_OPEN),
          # The model the agent runs with as placed, which is not always the
          # one asked for (technical debt 456).
          **model_placed_of(work, model),
@@ -2711,7 +2723,7 @@ def update(argfile):
     processes = start_processes(name)
     smoke = start_and_smoke(name, ask_model=not reinstall)
     shutil.rmtree(staging, ignore_errors=True)
-    common = {"name": name, "package": pkg_name, "harness": harness,
+    common = {"name": name, "package": pkg_name, "harness": harness, "egress": dict(EGRESS_OPEN),
               "agent_key": ident["public_key"], "handle": entry.get("handle"),
               "previous": {"version": entry.get("version"), "sha256": entry.get("sha256"),
                            "descriptor": old_desc},
@@ -3741,6 +3753,7 @@ def container_step(args, count_against_ceiling=True, alongside=None):
             # the instruction handed over.
             "image_digest": image_digest, "image": started,
             "host": f"cloud-run/{region}", "job": spec["job"], "bucket": bucket,
+            "egress": dict(EGRESS_OPEN),
             "binding": IMAGE.binding_uri(bucket, name), "binding_dir": IMAGE.binding_dir(name),
             "binding_files": sorted(docs),
             # 12.7.1: each directory system bound to storage that outlives a single
@@ -3939,6 +3952,7 @@ def alongside_placed(name, version, row, spec, bucket, binding_name, smoke, f):
             **({"agent_key": agent["key"], "handle": agent.get("handle")} if agent.get("key") else {}),
             "image_digest": f["image_digest"], "image": f["started"],
             "host": f"cloud-run/{f['region']}", "job": spec["job"], "bucket": bucket,
+            "egress": dict(EGRESS_OPEN),
             "binding": IMAGE.binding_uri(bucket, binding_name), "binding_files": sorted(f["docs"]),
             "directories": f["directories"], "interaction": f["interaction"],
             **({"harness": "opencode", "model": f["model"], "secret_placed": f["secret"]} if f["harness"] else {}),

@@ -135,7 +135,11 @@ export function platformSettings(e) {
 function tenantFile(f) {
   try {
     const doc = JSON.parse(readFileSync(f, "utf8"));
-    return Object.fromEntries(Object.entries(doc).filter(([k, v]) => /^DM_TENANT_[A-Z_]+$/.test(k) && typeof v === "string"));
+    // DM_TENANT_EGRESS is the one setting written as an object in the file,
+    // because it is a description rather than a value; it is read as its JSON.
+    return Object.fromEntries(Object.entries(doc)
+      .map(([k, v]) => [k, k === "DM_TENANT_EGRESS" && v && typeof v === "object" ? JSON.stringify(v) : v])
+      .filter(([k, v]) => /^DM_TENANT_[A-Z_]+$/.test(k) && typeof v === "string"));
   } catch { return {}; }
 }
 
@@ -158,6 +162,9 @@ export function tenantSettings(e) {
     // windows: how long it stays up after the last thing happened, and the
     // most one wake may last.
     waker: e.DM_TENANT_WAKER || "",
+    // What the tenant network lets a tenant agent reach, as the deployment
+    // record's `egress` states it (Common Agent 8.3). See tenantEgress.
+    egress: tenantEgress(e.DM_TENANT_EGRESS),
     wake_idle_seconds: num(e.DM_TENANT_WAKE_IDLE_SECONDS, 120),
     wake_max_seconds: num(e.DM_TENANT_WAKE_MAX_SECONDS, 3300),
     limits: {
@@ -172,6 +179,62 @@ export function tenantSettings(e) {
 /** The tag every tenant agent carries: the firewall lets it reach the mesh
  *  and nothing else. */
 export const TENANT_AGENT_TAG = "tenant-agent";
+
+/** EGRESS, AS IT IS (Common Agent 8.3 `egress`, 12.7).
+ *
+ *  A platform container agent runs as a Cloud Run service with no VPC
+ *  setting, so its packets leave by Google's own path to the internet and no
+ *  firewall of ours is in the way. That is `open`, enforced by `none`, and
+ *  the record says so: a target that cannot restrict is recorded as it is.
+ *
+ *  A tenant agent runs with Direct VPC egress, all traffic, on the tenant
+ *  network (tenantNetworkArgv), and that network's firewall decides what it
+ *  reaches. The rules are the platform's, made once for the tenant project and
+ *  checked daily by the tenant audit, and this host's account may not read
+ *  them. They apply to every workload on the network, not to a tag, so the
+ *  description lists everything they let through, including what the agent
+ *  does not need (the Google API range, from "host") and the metadata server,
+ *  which no VPC rule can stop. So the host's tenant settings describe
+ *  them in DM_TENANT_EGRESS, a JSON object spelled as the record spells it:
+ *
+ *    { "policy": "allowlist",
+ *      "allowed": [{ "name": "network", "from": "network", "address": "<range>" }, ...],
+ *      "denied": ["<range>", ...], "enforced_by": "<the mechanism>" }
+ *
+ *  A description this file cannot read, or one that claims an allowlist
+ *  enforced by nothing, is no description: the member is left out of the
+ *  record, which says this producer did not observe the egress, rather than
+ *  guessing at it either way. */
+export const EGRESS_OPEN = Object.freeze({ policy: "open", enforced_by: "none" });
+const EGRESS_FROM = new Set(["system", "network", "registrar", "model", "workspace", "instruction", "host"]);
+
+export function tenantEgress(text) {
+  if (!text) return null;
+  let d;
+  try { d = JSON.parse(text); } catch { return null; }
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  const str = (v) => typeof v === "string" && v.trim() !== "" && v.length <= 200;
+  if (!str(d.enforced_by)) return null;
+  const denied = d.denied === undefined ? null : d.denied;
+  if (denied !== null && (!Array.isArray(denied) || !denied.every(str))) return null;
+  if (d.policy === "open") return { policy: "open", ...(denied?.length ? { denied: [...denied] } : {}), enforced_by: d.enforced_by };
+  if (d.policy !== "allowlist" || d.enforced_by === "none" || !Array.isArray(d.allowed) || !d.allowed.length) return null;
+  const allowed = [];
+  for (const a of d.allowed) {
+    if (!a || !str(a.name) || !EGRESS_FROM.has(a.from) || (a.address !== undefined && !str(a.address))) return null;
+    allowed.push({ name: a.name, from: a.from, ...(a.address ? { address: a.address } : {}) });
+  }
+  return { policy: "allowlist", allowed, ...(denied?.length ? { denied: [...denied] } : {}), enforced_by: d.enforced_by };
+}
+
+/** The egress a container service has, for its record: a tenant's from the
+ *  host's description of the tenant network, null where there is none; a
+ *  platform agent's open. */
+export function egressOf(x) {
+  if (x?.tenant) return x.egress ?? null;
+  return { ...EGRESS_OPEN };
+}
+const egressPart = (x) => { const e = egressOf(x); return e ? { egress: e } : {}; };
 const TENANT_RE = /^t-[a-z0-9]{4,40}$/;
 const SA_EMAIL_RE = /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/;
 /** The most one tenant service may ask for. */
@@ -371,7 +434,7 @@ export function readInstruction(args, s = SETTINGS) {
     tenant,
     always_on: alwaysOn,
     ...(alwaysOn ? {} : { waker, wake_idle_seconds: wakeIdle ?? (tenant !== null ? t.wake_idle_seconds ?? 120 : 120), wake_max_seconds: tenant !== null ? t.wake_max_seconds ?? 3300 : 3300 }),
-    ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder } : {}),
+    ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null } : {}),
     name, handle, request_id: a.request_id ? String(a.request_id) : null,
     source: { repository, path, commit, dockerfile },
     kind: String(a.kind ?? "third-party-framework"),
@@ -641,6 +704,8 @@ export function deploymentRecord(ins, res, r, now) {
     },
     agent: { key: r.agent_key, handle: r.handle },
     ...(r.key_custody ? { key_custody: r.key_custody } : {}),
+    // What the agent can reach on the network after this act (8.3).
+    ...egressPart(ins),
     ...(ins.claims.length ? { declarations: { claims: ins.claims } } : {}),
     settings_placed: Object.keys(ins.settings).sort(),
     credentials_placed: [res.secret, ...Object.values(ins.secrets)],
@@ -1190,7 +1255,7 @@ export function rowInstruction(row, s = SETTINGS, over = {}) {
     claims: row.claims ?? [], settings: {}, secrets: {}, ready_line: over.ready_line ?? row.ready_line ?? null,
     always_on: false, waker, wake_idle_seconds: over.wake_idle_seconds ?? row.wake_idle_seconds ?? 120, wake_max_seconds: 3300,
     instructed_by: "the owner", replaces: null,
-    ...(row.tenant ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder } : {}),
+    ...(row.tenant ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null } : {}),
   };
 }
 
@@ -1282,6 +1347,7 @@ export async function sleepInPlace(name, opts, deps) {
         shape: { min_instances: 0, max_instances: 1, cpu_always_allocated: false, ingress: "all", unauthenticated: false,
           wake: { by: ins.waker, idle_seconds: ins.wake_idle_seconds, max_seconds: ins.wake_max_seconds, request_seconds: 3600 } } },
       previous: { image: row.image, image_digest: row.image_digest ?? null, shape: "always on (min 1, CPU always allocated, internal ingress)" },
+      ...egressPart({ tenant: row.tenant, egress: ins.egress }),
       platform_told: told.ok ? { ok: true } : { ok: false, why: told.why },
       checks: [{ kind: "smoke", passed: ready.smoke.passed, at: deps.now(), what: ready.smoke.what }],
       produced_at: deps.now(), signatures: [],
@@ -1323,6 +1389,7 @@ export async function keepOn(name, reason, deps) {
       target: { kind: "cloud-run-service", service: row.service, project: row.project, region: row.region, revision: ready.revision, previous_revision: row.revision,
         shape: { min_instances: 1, max_instances: 1, cpu_always_allocated: true, ingress: "internal", unauthenticated: false, always_on: "kept on by the owner" } },
       image,
+      ...egressPart(row),
       checks: [{ kind: "smoke", passed: ready.smoke.passed, at: deps.now(), what: ready.smoke.what }],
       produced_at: deps.now(), signatures: [],
     }, TAG, signer.sign, signer.by);
@@ -1420,6 +1487,7 @@ export function readPackageInstruction(args, s = SETTINGS) {
     tenant, kind: "package", name, handle, request_id: String(a.request_id), package_url: url, sha256,
     boot_token: boot, interaction, admit,
     project: t.project, region: t.region, registry: t.registry, network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder,
+    egress: t.egress ?? null,
     waker: t.waker, wake_idle_seconds: t.wake_idle_seconds ?? 120, wake_max_seconds: t.wake_max_seconds ?? 3300,
     cpu: "1", memory: "1Gi", claims: [], settings: {}, secrets: {}, ready_line: TENANT_READY_LINE,
     instructed_by: String(a.instructed_by ?? "the owner").slice(0, 200),

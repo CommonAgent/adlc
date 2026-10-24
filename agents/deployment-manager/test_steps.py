@@ -1306,6 +1306,23 @@ class TheCustomerIsOwedTheList(unittest.TestCase):
         self.assertNotIn("cloud", record.build({k: v for k, v in res.items() if k != "cloud"},
                                                None, "UDM"))
 
+    def test_the_record_carries_the_egress_it_was_given_and_never_invents_one(self):
+        # Common Agent 8.3 `egress`: copied through from the result, and left
+        # out where the result carries none, which says it was not observed.
+        res = {"ok": True, "act": "deploy", "package": "explainer-maker", "version": "0.4.1",
+               "url": "https://agentcatalog.com/x/package.tar.gz", "sha256": "ab" * 32}
+        doc = record.build({**res, "egress": dict(steps.EGRESS_OPEN)}, None, "UDM")
+        self.assertEqual(doc["egress"], {"policy": "open", "enforced_by": "none"})
+        self.assertNotIn("egress", record.build(res, None, "UDM"))
+        upd = record.build({**res, "act": "update", "agent_key": "UAGENT", "previous": {"version": "0.4.0"},
+                            "egress": dict(steps.EGRESS_OPEN)}, None, "UDM")
+        self.assertEqual(upd["egress"]["policy"], "open")
+
+    def test_nothing_this_file_makes_limits_egress_so_it_says_open(self):
+        # A host user under the supervisor and a Cloud Run job with no VPC
+        # setting both reach whatever the host or Google's path reaches.
+        self.assertEqual(steps.EGRESS_OPEN, {"policy": "open", "enforced_by": "none"})
+
     def test_a_refusal_in_their_project_is_recorded_with_the_list_too(self):
         res = {"ok": False, "step": "job", "error": "impersonation refused",
                "cloud": {"provider": "gcp", "project": THEIRS, "service_account": THEIR_ACCOUNT,
