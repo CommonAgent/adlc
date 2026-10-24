@@ -31,5 +31,5 @@
     "builder_sa": "tenant-builder@example-tenants.iam.gserviceaccount.com",
     "waker_sa": "tenant-waker@example-tenants.iam.gserviceaccount.com"
   },
-  "pinned_keys": { "required_coder": "" }
+  "pinned_keys": { "official_coder": "" }
 }

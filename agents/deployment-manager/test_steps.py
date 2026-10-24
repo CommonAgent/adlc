@@ -1888,8 +1888,11 @@ class TheUpdateItselfCarriesThemToTheJob(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp(prefix="dm-carry-test-")
-        build = os.path.join(HERE, "..", "agentbuilder", "build.py")
-        example = os.path.join(HERE, "..", "..", "packages", "runner", "process-runner")
+        build = os.path.join(HERE, "..", "package-maker", "build.py")
+        packages = os.environ.get("ADLC_PACKAGES") or os.path.join(HERE, "..", "..", "packages")
+        example = os.path.join(packages, "runner", "process-runner")
+        if not os.path.isdir(example):
+            raise unittest.SkipTest("set ADLC_PACKAGES to a folder of packages to run this test")
         # The runner as it was when it woke a model (0.10.6 and before: its
         # command could escalate a turn), because this test is about the model
         # variable the update places. From 0.10.7 the live package never wakes
@@ -2026,7 +2029,9 @@ class ANotNowIsAskedAgainAndARefusalIsNot(unittest.TestCase):
     and never more than a minute; a 404 or a digest that does not match still
     stops the step at once, and the step is still called fetch."""
 
-    URL = "https://agentcatalog.com/x/package.tar.gz"
+    # A package address on the catalog this environment names, which is a host
+    # the fetch allows (DM_PACKAGE_HOSTS, or the catalog and the queue).
+    URL = f"{steps._am_env('urls.catalog')}/x/package.tar.gz"
 
     def setUp(self):
         self.dest = os.path.join(TMP, "dm-fetch-test.tar.gz")

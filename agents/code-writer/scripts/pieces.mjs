@@ -1,9 +1,8 @@
 // Fill a job folder from a finished workspace: every script under out/, the
 // writer's account, the run record, and pieces.json, the list the adapter
-// signs when the reply is sent. That signed list is the provenance a package
-// maker checks when its operator requires this code writer: a script is then
-// packed only when a manifest under the required key lists a piece with
-// exactly its bytes.
+// signs when the reply is sent. That signed list is the provenance the
+// package-maker's door checks: a script is packed only when a manifest under
+// the code-writer's key lists a piece with exactly its bytes.
 //
 // Nothing is filed unless the verdict says done. A job that stopped at the
 // ceiling, at the fence or on a conflict delivers nothing, and the reply says

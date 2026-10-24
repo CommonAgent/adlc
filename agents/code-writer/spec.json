@@ -2,7 +2,7 @@
   "name": "code-writer",
   "version": "0.1.6",
   "license": "Apache-2.0",
-  "description": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack.",
+  "description": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. The only code the package-maker packs is what this delivers.",
   "job_seconds": 2400,
   "wants_replies": true,
   "jobs": [
@@ -129,7 +129,7 @@
         "scripts/pieces.mjs",
         "scripts/went-without.mjs"
       ],
-      "instructions": "Nothing in this folder is run on its own; the offering names the commands, and this skill only explains what they do.\n\nreport.mjs reads records/<job>/workspace.json, runs.json, verdict.json, account.md and conflict.md and writes the reply. pieces.mjs files every script under out/, with the account and the run record, and writes pieces.json, which the adapter signs; it refuses to file anything unless the verdict says done. A package maker that requires this code writer checks that signed list: only a script listed in a manifest under the required key is packed."
+      "instructions": "Nothing in this folder is run on its own; the offering names the commands, and this skill only explains what they do.\n\nreport.mjs reads records/<job>/workspace.json, runs.json, verdict.json, account.md and conflict.md and writes the reply. pieces.mjs files every script under out/, with the account and the run record, and writes pieces.json, which the adapter signs; it refuses to file anything unless the verdict says done. That signed list is what the package-maker's door checks: only a script listed in a manifest under the code-writer's key is packed."
     }
   ],
   "verify": {
@@ -183,7 +183,7 @@
       "file": "*/went-without.json"
     },
     {
-      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply; it is the provenance a package maker checks when it requires this code writer.",
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply; it is the provenance the package-maker's door checks.",
       "when": "per_task"
     }
   ],

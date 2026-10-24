@@ -1,0 +1,64 @@
+{
+  "format": "agent-image-bases-v1",
+  "note": "A starting base catalogue, to be copied and filled in. The one beside this file, catalogue.json, is the catalogue of the operator who wrote this repository, and every image in it is in a private registry you cannot pull. This file is the same shape with none of those images in it, so that an operator who is not us has somewhere to start that does not begin by deleting somebody else's answers. Copy it, put your own images in it, and pass it to the emitter as --bases <your file>. Nothing here is read unless you name it: the emitter's default is still catalogue.json.",
+  "what_this_file_is": "The other half of what a package declares. A package says what it needs, in the install file's runtimes[] and binaries[], and never which image to build on: an image reference is an address, and a package carries no address (12.6 rule 3). This file is where the answer lives, and it is the operator's file rather than any package's. emit-image.mjs picks the first base here that has everything the package declares, so the order matters: plainest first, and a package that needs only node is not built on an image carrying a browser. What is written here is a claim and not a proof. Nothing opens an image to look inside it. The Dockerfile the emitter writes still checks every declared binary at build time and fails naming it, which is what makes the claim true; this file only moves the failure from a slow build to an instant refusal.",
+  "what_each_member_is": "format must be agent-image-bases-v1, and a file that says anything else is refused as not being this kind of file at all. bases[] is a list, in the operator's own preference order, plainest first. In each entry: image is the reference a build would pull, checked against the grammar of a container image reference before it can reach a FROM line; provides.runtimes[] names each runtime the image carries and the version it is at, which is read as a floor, so 22 covers a package asking for >=22; provides.binaries[] names each binary on the path, spelled the way packages spell it; provides.harness is the one thing no package ever declares, and it is described below; why is a sentence saying what this base is for, which nothing reads but every person who opens this file does; built_from names the image this one was built on, and dockerfile the build context that built it, both relative to fleet-manager/image. Those last two are what build-bases.mjs reads to work out which base has to be built before which, and what to pass each build.",
+  "harness_note": "provides.harness is the one member here that answers something a package never declares. A package says what a host must have and never carries the harness that runs it (12.9), so the emitter asks the WORK instead: a package that names no command for its job (12.3 run), or names one that can say the turn needs judgment, will wake a model, and only a base with a harness can be the answer. bin is where that base keeps it, and the emitter writes that path into AGENT_HARNESS_BIN rather than a default of its own, so the operator who built the image is the one who says where it is. A base with no harness member has none. Leave it out rather than writing an empty one: an image that claims a harness it has not got builds cleanly and then refuses its first message.",
+  "where_to_keep_this_file": "Wherever your own operational files live, and not inside any package. It records what you have built and what is in your registry, which is a fact about your deployment and nothing to do with the packages you build from. Keep it in version control with the rest of your operational configuration, and pass its path to the emitter with --bases. There is a second place it can go: the deployment manager reads DM_IMAGE_BASES and passes it on, so a host that runs the emitter can be given the file once rather than on every call.",
+  "bases": [
+    {
+      "image": "node:22-bookworm-slim",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": []
+      },
+      "why": "The plainest base: the node runtime and nothing else. This is the one entry nobody has to build, because it is a public image anybody can pull, and it is the right answer for a package whose skills are scripts and nothing more. Keep it as it is.",
+      "built_from": null,
+      "dockerfile": null
+    },
+    {
+      "image": "registry.example.com/your-project/agentmesh-base:0.1.0",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh"
+        ]
+      },
+      "why": "REPLACE THIS. It stands for node plus the AgentMesh adapter, which is how an agent sends: a package whose scripts send as the agent declares the agentmesh binary, and the emitter will not install a declared binary on a package's behalf. Build it from bases/agentmesh, tag it in your own registry, and put that reference here. Until you do, a package that declares the agentmesh binary resolves onto a reference nothing can pull, and the build stops at the pull.",
+      "built_from": "node:22-bookworm-slim",
+      "dockerfile": "bases/agentmesh/Dockerfile"
+    },
+    {
+      "image": "registry.example.com/your-project/agentmesh-harness-base:0.1.0",
+      "provides": {
+        "runtimes": [
+          {
+            "name": "node",
+            "version": "22"
+          }
+        ],
+        "binaries": [
+          "agentmesh"
+        ],
+        "harness": {
+          "name": "opencode",
+          "version": "1.18.30",
+          "bin": "/opt/harness/bin/harness"
+        }
+      },
+      "why": "REPLACE THIS. It stands for the base above plus a harness, for a package whose work is a model reading and writing rather than a command anybody could run. Build it from bases/agentmesh-harness, which installs opencode and the one script that starts it, and put your own reference here. It is below the plainer base on purpose: a package that runs a command and wakes no model must not be handed a harness it never calls.",
+      "built_from": "registry.example.com/your-project/agentmesh-base:0.1.0",
+      "dockerfile": "bases/agentmesh-harness/Dockerfile"
+    }
+  ]
+}

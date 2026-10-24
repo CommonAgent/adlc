@@ -8,8 +8,9 @@ agents/deployment-manager/test/tenant.test.mjs:generic-api-key:20
 agents/test-writer/references/a-suite-that-works.test.mjs:private-key:98
 agents/deployment-manager/test_executor.py:generic-api-key:196
 agents/deployment-manager/test_executor.py:generic-api-key:259
-agents/deployment-manager/test/tenant-package.test.mjs:generic-api-key:24
+agents/deployment-manager/test/tenant-package.test.mjs:generic-api-key:30
 agents/deployment-manager/test/service.test.mjs:generic-api-key:26
 agents/deployment-manager/test/service.test.mjs:generic-api-key:27
 agents/deployment-manager/test_install.py:generic-api-key:187
 agents/deployment-manager/test_steps.py:generic-api-key:679
+agents/image/test/invariants.test.mjs:stripe-access-token:72

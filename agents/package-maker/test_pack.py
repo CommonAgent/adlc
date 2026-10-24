@@ -46,7 +46,8 @@ def spec(**over):
 def catalogue_images():
     # The catalogue names its registry as {gcp.registry}, filled by the
     # resolver from the environment file; the images it answers are filled.
-    env = os.path.join(HERE, os.pardir, os.pardir, "env", (os.environ.get("AGENTMESH_ENV") or "prod") + ".json")
+    env = os.path.join(os.environ.get("AGENTMESH_ENV_DIR") or os.path.join(HERE, os.pardir, os.pardir, "env"),
+                       (os.environ.get("AGENTMESH_ENV") or "prod") + ".json")
     with open(env, encoding="utf-8") as f:
         registry = json.load(f)["gcp"]["registry"]
     with open(CATALOGUE, encoding="utf-8") as f:
@@ -484,7 +485,7 @@ class TheAgentsRepository(Harness):
         self.assertEqual(manifest["format"], "agent-repository-v1")
         self.assertEqual(manifest["source"], "source")
 
-        tool = os.path.join(HERE, os.pardir, os.pardir, "tools", "agent-repo.mjs")
+        tool = os.environ.get("AGENT_REPO_TOOL") or os.path.join(HERE, os.pardir, os.pardir, "tools", "agent-repo.mjs")
         checked = subprocess.run(["node", tool, "check", clone], capture_output=True, text=True)
         self.assertEqual(checked.returncode, 0, checked.stderr + checked.stdout)
 

@@ -46,8 +46,11 @@ jobs:
       - name: Deployment manager
         run: |
           cd agents/deployment-manager
-          python3 -m unittest test_cloud test_executor test_image test_install test_runtime
-          node --test test/guard.test.mjs
+          python3 -m unittest discover -p "test_*.py"
+          node --test "test/*.test.mjs"
+
+      - name: Image tools
+        run: node --test agents/image/test/job-usage.test.mjs agents/image/test/tenant-host.test.mjs agents/image/test/wake-host.test.mjs
 
       - name: Catalog
         run: |

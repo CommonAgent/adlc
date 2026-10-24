@@ -277,7 +277,7 @@ IMAGE_HOME = os.environ.get("DM_IMAGE_HOME", "/home/agent")
 # The host a deploy lands on, by the name the fleet knows it by. It goes in the
 # record's target and in the custody of a key the deploy minted, because a seed
 # in a home on this host is a seed this host's root can read.
-HOST = os.environ.get("DM_HOST", "fleet-host")
+HOST = os.environ.get("DM_HOST", "agent-fleet")
 # How long an image build may take before this stops following it. A build that
 # outruns it is left running and named, never reported as finished.
 BUILD_MINUTES = int(os.environ.get("DM_BUILD_MINUTES", "40"))

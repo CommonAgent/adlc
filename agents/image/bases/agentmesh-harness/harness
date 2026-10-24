@@ -1,0 +1,105 @@
+#!/bin/sh
+# The harness a container wakes: one framed prompt in, the model's words out.
+#
+# WHY THIS FILE EXISTS. one-message.mjs runs the command a package declares for
+# its job (12.3 `run`) when there is one, and otherwise wakes a harness. Every
+# image emitted before this base existed named AGENT_HARNESS_BIN at a path no
+# base had, so a package with no command, which is every package whose work is
+# a model reading and writing, refused its first message with "the harness is
+# not in this container". explainer-critic is that package: its offered job
+# declares control by a model, and reading a page against the story rules is
+# not a step a program can take.
+#
+# THE FLEET'S BRAIN, MINUS THE HOST. On a host the deployment manager writes
+# one of these per agent (steps.py OPENCODE_BRAIN): export the provider's key
+# out of a file it placed in the agent's home, pass the model the owner chose,
+# run opencode on the prompt. A container has no installer to place a file and
+# no durable home to place it in, and an image is built once and copied
+# everywhere, so a key or a model in a layer is bound for every agent ever run
+# from it (12.6 rule 3). The two halves the host reads off disk therefore
+# arrive as variables the deployment sets on the job, out of the same
+# instruction and the same credential store a host deploy reads: AGENT_MODEL,
+# and whichever variable the model's provider reads.
+#
+# This file is the operator's, like the base it sits in. No package carries a
+# harness (12.9) and none may edit this one: it lives outside the agent's home
+# for the reason the entrypoint does.
+set -u
+
+PROMPT="${1:-}"
+if [ -z "$PROMPT" ]; then
+  echo "harness: no prompt. The entrypoint passes the framed message as the one argument." >&2
+  exit 3
+fi
+
+MODEL="${AGENT_MODEL:-}"
+if [ -z "$MODEL" ]; then
+  echo "harness: AGENT_MODEL is not set, so there is no model to wake. Which model this agent thinks with is the owner's instruction and the deployment puts it on the job; this image carries none and nothing is substituted for one." >&2
+  exit 3
+fi
+
+# ASK THE TOOL, DO NOT KEEP A TABLE. `opencode models` lists a provider's
+# models only when that provider's key is in the environment, so the one
+# question answers both halves at once: whether this is a model opencode knows,
+# and whether the key for it arrived. A provider-to-variable table here would
+# be a second spelling of the deployment manager's PROVIDERS and the two would
+# drift (12.6 rule 1).
+#
+# It is asked every message on purpose. Without it a container whose key never
+# arrived wakes the model anyway, opencode fails at the provider, and the
+# sender reads "I could not finish this job and have no answer to give", which
+# is the same words a model that ran and said nothing produces. The two are not
+# the same problem and must not read the same.
+#
+# A MODEL NEWER THAN THE IMAGE. A fresh container has no models cache, so
+# opencode answers from the catalogue it was built with, and a model released
+# after that build is missing even though the provider serves it (Sonnet 5.5
+# on 2026-09-28, the day it came out). So when the model is not listed the
+# catalogue is refreshed from models.dev once and the question asked again.
+# The refresh changes no answer for a model opencode already knew, and a
+# provider whose key is absent is still not listed after it.
+if ! opencode models 2>/dev/null | grep -Fxq "$MODEL"; then
+  opencode models --refresh >/dev/null 2>&1 || true
+fi
+if ! opencode models 2>/dev/null | grep -Fxq "$MODEL"; then
+  echo "harness: opencode does not list $MODEL, even after refreshing its catalogue from models.dev. Either the model names a provider opencode does not have, or that provider's key is not in this container's environment. No model was woken and nothing was substituted for one." >&2
+  exit 3
+fi
+
+cd "${AGENT_HOME:-$HOME}" || {
+  echo "harness: ${AGENT_HOME:-$HOME} is not a directory this container can enter, and it is where the agent's package and its instructions file are." >&2
+  exit 3
+}
+
+# Which directories outside the home this message may touch. opencode asks
+# before it reads or writes an external directory, nobody is here to answer, so
+# it refuses itself: the critic's first run on Cloud Run could not open the
+# file attached to its own message. The job folder and every declared directory
+# are on a mount, which is outside the home by construction (12.7.1). The
+# script beside this one turns the variables the deployment set into the grant,
+# naming those directories and not the mount they sit on: one bucket serves the
+# whole fleet, and a blanket allow would hand every other agent's records to
+# whoever was reading.
+OPENCODE_CONFIG_CONTENT="$(node "$(dirname "$0")/opencode-config.mjs")" || {
+  echo "harness: the directories this container was given could not be turned into a configuration, so opencode would have refused to read its own job folder. Nothing was woken." >&2
+  exit 3
+}
+export OPENCODE_CONFIG_CONTENT
+
+# The answer is collected rather than piped, so opencode's own exit status
+# survives. Piped straight into sed the status is sed's, which is 0 whatever
+# the model did, and a model that failed outright would be filed as a model
+# that ran and answered nothing.
+RAW="$(mktemp)"
+trap 'rm -f "$RAW"' EXIT
+opencode run --model "$MODEL" -- "$PROMPT" </dev/null >"$RAW"
+CODE=$?
+
+# stderr is NOT swallowed, and that is the one deliberate difference from the
+# fleet's brain. There an attendant keeps a log file next to a running agent;
+# here the container is gone a second after it answers, so what opencode said
+# on the way to saying nothing is the only clue anybody gets, and the
+# entrypoint prints it to the container's log on a failure. stdout is what
+# becomes the reply, so none of that noise reaches the sender.
+sed 's/\x1b\[[0-9;]*m//g' "$RAW" | grep -v "^> build" | sed '/^[[:space:]]*$/d'
+exit $CODE

@@ -56,6 +56,10 @@ replaced by any agent that holds the same role.
 | Publish | [publisher](https://agentroles.ai/publisher.html) | [agents/publisher](agents/publisher) | Yes, with a place to publish to |
 | Incident response | [incident recorder](https://agentroles.ai/incident-recorder.html) | [agents/incident-recorder](agents/incident-recorder) | Yes, as a built package |
 
+[agents/image](agents/image) is not an agent. It holds the tools the deployment
+manager uses to turn an Agent Package into a container image's build context,
+and they run with node alone.
+
 Each folder's README says what the agent needs and states plainly anything that
 only runs inside AgentMesh today.
 
@@ -67,6 +71,9 @@ only runs inside AgentMesh today.
   files. The package maker turns a source like this into an Agent Package.
 - `agents/<role>/host/` holds what a fleet host needs to run that agent: its
   descriptor, its listing and the brain the fleet supervisor wakes per message.
+- `agents/image/` holds the image tools: the emitter that turns a package into
+  a build context, the entrypoint that answers one message in a container, the
+  wake host a container agent sleeps behind, and the base image contexts.
 - `host/` holds the one-time bootstrap that installs the package maker, the
   deployment manager and the conformance checker on a fleet host.
 - `env/` holds the environment reader the agents and host templates use, with
@@ -83,14 +90,15 @@ for a in spec-writer solution-planner test-writer code-writer publisher; do
   (cd agents/$a && node --test test/*.test.mjs)
 done
 node --test agents/conformance-checker/test/*.test.mjs
-(cd agents/deployment-manager && python3 -m unittest test_cloud test_executor test_image test_install test_runtime)
+(cd agents/deployment-manager && python3 -m unittest discover -p "test_*.py" && node --test "test/*.test.mjs")
+node --test "agents/image/test/*.test.mjs"
 (cd agents/catalog && npm install && npm test)
 ```
 
-CI runs the same set on every push. Some suites of the package maker and the
-deployment manager build real packages from the AgentMesh repository or call
-its fleet image tools; their READMEs say which, and `ADLC_PACKAGES` points them
-at a folder of packages when you have one.
+CI runs the same set on every push. Some suites of the package maker, the
+deployment manager and the image tools build real packages from the AgentMesh
+repository; their READMEs say which, and `ADLC_PACKAGES` points them at a
+folder of packages when you have one.
 
 ## Notes in the code
 

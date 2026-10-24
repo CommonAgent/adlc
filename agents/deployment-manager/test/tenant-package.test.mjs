@@ -21,6 +21,12 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_FLEET = join(HERE, "..", "..");
+// The tenant image carries the fleet supervisor, which is the host's own
+// program and not one of these tools (on AgentMesh,
+// fleet-manager/runtime/fleet/supervisor.mjs). Name it with
+// ADLC_FLEET_SUPERVISOR to run the tests that build that image.
+const SUPERVISOR = process.env.ADLC_FLEET_SUPERVISOR || join(REPO_FLEET, "runtime", "fleet", "supervisor.mjs");
+const NEEDS_SUPERVISOR = existsSync(SUPERVISOR) ? {} : { skip: "set ADLC_FLEET_SUPERVISOR to the fleet supervisor to run this" };
 const KEY = "UBBW6C2IKGSG2Q3MWCL46LLY7IA2XTGTZDQZ4GXMRUKTCDTNXJG2SGBO";
 const DIGEST = `sha256:${"c".repeat(64)}`;
 const DEPLOYER = "tenant-deployer@example-tenants.iam.gserviceaccount.com";
@@ -89,7 +95,7 @@ function imageDir() {
     "one-message.mjs": join(REPO_FLEET, "image", "one-message.mjs"),
     "check-lockfile.mjs": join(REPO_FLEET, "image", "check-lockfile.mjs"),
     "tenant-host.mjs": join(REPO_FLEET, "image", "tenant-host.mjs"),
-    "supervisor.mjs": join(REPO_FLEET, "runtime", "fleet", "supervisor.mjs"),
+    "supervisor.mjs": SUPERVISOR,
     "bases/tenant-catalogue.json": join(REPO_FLEET, "image", "bases", "tenant-catalogue.json"),
   };
   assert.deepEqual(Object.keys(from).sort(), [...TENANT_IMAGE_FILES].sort(), "the files the host keeps are the files the install reads");
@@ -188,7 +194,7 @@ test("a package archive holds regular files in one folder, and nothing that clim
   assert.throws(() => readTarball(tarGz({ "a/x": "1", "b/y": "2" })), /one top folder/);
 });
 
-test("a person's package is built on the tenant base with the tenant host, and runs in the tenant project as its own agent", async () => {
+test("a person's package is built on the tenant base with the tenant host, and runs in the tenant project as its own agent", NEEDS_SUPERVISOR, async () => {
   const tgz = tarGz(packageFiles());
   const f = fakes(tgz);
   const out = await quietly(() => installPackage(args(sha(tgz)), f.deps));
@@ -246,7 +252,7 @@ test("a person's package is built on the tenant base with the tenant host, and r
   assert.equal(f.inventory()[0].kind, "package");
 });
 
-test("bytes that do not hash to the filed digest are refused before anything is read or made", async () => {
+test("bytes that do not hash to the filed digest are refused before anything is read or made", NEEDS_SUPERVISOR, async () => {
   const tgz = tarGz(packageFiles());
   const f = fakes(tgz);
   const out = await quietly(() => installPackage(args("0".repeat(64)), f.deps));
@@ -255,7 +261,7 @@ test("bytes that do not hash to the filed digest are refused before anything is 
   assert.equal(f.calls.length, 0);
 });
 
-test("a package that asks for a credential, or leaves its work to a harness, is refused before anything exists", async () => {
+test("a package that asks for a credential, or leaves its work to a harness, is refused before anything exists", NEEDS_SUPERVISOR, async () => {
   const withKey = tarGz(packageFiles({ systems: [{ name: "text-reasoning", env: "TEXT_API_KEY", credential: "text-reasoning" }] }));
   const a = fakes(withKey);
   const outA = await quietly(() => installPackage(args(sha(withKey)), a.deps));
@@ -270,7 +276,7 @@ test("a package that asks for a credential, or leaves its work to a harness, is 
   for (const f of [a, b]) assert.ok(!f.calls.some((x) => x[0] === "builds" || x[0] === "iam" || x[0] === "run"));
 });
 
-test("a key the platform did not name as asked is not started", async () => {
+test("a key the platform did not name as asked is not started", NEEDS_SUPERVISOR, async () => {
   const tgz = tarGz(packageFiles());
   const f = fakes(tgz, { handle: null });
   const out = await quietly(() => installPackage(args(sha(tgz)), f.deps));
