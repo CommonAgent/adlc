@@ -22,7 +22,7 @@ refuses.
 
 ```sh
 node --test test/*.test.mjs                                   # 28 tests
-python3 ../package-maker/build.py spec.json ./out             # an Agent Package
+python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
 ## Replacing it

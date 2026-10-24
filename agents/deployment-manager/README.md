@@ -68,7 +68,7 @@ This agent cannot run outside an AgentMesh fleet host as it stands.
 - It reports to the AgentMesh control plane (`urls.app`) with the deploy
   executor's token.
 - The tests that build real packages read them from `ADLC_PACKAGES`, a folder
-  laid out as `<family>/<name>/spec.json` such as the AgentMesh repository's
+  laid out as `<family>/<name>/` (each an agent's own files) such as the AgentMesh repository's
   `packages/`, and are skipped without it.
 - The tenant image carries the AgentMesh fleet supervisor, so the four
   `tenant-package` tests that build it need `ADLC_FLEET_SUPERVISOR`, the path

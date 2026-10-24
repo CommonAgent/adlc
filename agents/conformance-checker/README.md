@@ -41,7 +41,7 @@ runs the conformance check published with the role the agent claims.
 ## Running it
 
 ```sh
-python3 ../package-maker/build.py ../publisher/spec.json /tmp/pkg
+python3 ../package-maker/build.py ../publisher /tmp/pkg
 python3 eval-gen.py /tmp/pkg/publisher          # the cases it would run
 node --test test/*.test.mjs                     # 29 tests
 ```

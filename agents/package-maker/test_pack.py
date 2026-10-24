@@ -159,7 +159,7 @@ class APackageNoBaseCanCarry(Harness):
 
     def test_a_package_with_no_install_file_is_refused_too(self):
         """The failure this check exists for, made on purpose: a build that
-        emits a package and leaves the install file out of it. pack.py builds
+        emits a package and leaves the runtime requirements out of it. pack.py builds
         and checks in one run, so the only way to hand it one is to stand in
         for build.py with something that takes the file back out."""
         stub = os.path.join(self.home, "build-without-an-install-file.py")
@@ -169,12 +169,58 @@ class APackageNoBaseCanCarry(Harness):
                     "p = subprocess.run([sys.executable, real] + sys.argv[1:], capture_output=True, text=True)\n"
                     "res = json.loads(p.stdout.strip().splitlines()[-1])\n"
                     "if res.get('ok'):\n"
-                    "    os.remove(os.path.join(res['path'], 'install.json'))\n"
+                    "    os.remove(os.path.join(res['path'], 'agent-runtime-requirements.json'))\n"
                     "print(json.dumps(res))\n")
         res = self.pack(spec(), pack_py=self.flat(build_py=stub))
         self.assertEqual(res["act"], "refuse", res)
-        self.assertIn("no install file", res["refused"])
+        self.assertIn("no runtime requirements", res["refused"])
         self.assertEqual(self.dist(), [])
+
+
+class AnAgentsOwnFolder(Harness):
+    """pack.py takes an agent's folder as well as a spec, and the record names
+    the runtime requirements by the name Common Agent 0.30.0-draft gave them."""
+
+    def folder(self):
+        spec_path = os.path.join(self.home, "tmp", "packable", "spec.json")
+        os.makedirs(os.path.dirname(spec_path))
+        with open(spec_path, "w", encoding="utf-8") as f:
+            json.dump(spec(), f)
+        p = subprocess.run([sys.executable, os.path.join(HERE, "convert.py"), spec_path], capture_output=True, text=True)
+        self.assertTrue(json.loads(p.stdout.strip().splitlines()[-1])["ok"], p.stdout)
+        os.remove(spec_path)
+        return os.path.dirname(spec_path)
+
+    def run_pack(self, src, *extra):
+        env = dict(os.environ, HOME=self.home, USERPROFILE=self.home)
+        p = subprocess.run([sys.executable, PACK, src, os.path.join(self.home, "identity.json"), *extra],
+                           capture_output=True, text=True, env=env)
+        return json.loads(p.stdout.strip().splitlines()[-1])
+
+    def test_a_folder_packs_and_the_record_names_the_runtime_requirements(self):
+        res = self.run_pack(self.folder())
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["act"], "build")
+        self.assertNotIn("warnings", res)
+        pkg = self.record(res)["package"]
+        self.assertIn("runtime_requirements_sha256", pkg)
+        self.assertNotIn("install_sha256", pkg)
+        with open(os.path.join(res["package_dir"], "plugin.json"), encoding="utf-8") as f:
+            own = json.load(f)["extensions"]["net.agentdoc.package"]
+        self.assertEqual(pkg["runtime_requirements_sha256"], own["runtime_requirements"]["sha256"])
+
+    def test_a_spec_still_packs_and_says_it_is_deprecated(self):
+        res = self.pack(spec())
+        self.assertTrue(res["ok"], res)
+        self.assertTrue(any("deprecated" in w for w in res["warnings"]), res)
+
+    def test_files_are_handed_over_with_a_spec_and_not_a_folder(self):
+        folder = self.folder()
+        stray = os.path.join(self.home, "tmp", "x.mjs")
+        open(stray, "w").close()
+        res = self.run_pack(folder, "--from", stray)
+        self.assertFalse(res["ok"])
+        self.assertIn("already holds the files", res["error"])
 
 
 class AHostThatCannotLook(Harness):

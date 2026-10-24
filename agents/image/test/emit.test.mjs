@@ -191,7 +191,9 @@ test("the emitted record names the package, its digests, and every variable the 
   const { record } = emitTo("explainer-maker", { now: "2026-09-10T00:00:00Z" });
   const manifest = readJson(join(builtPackage("explainer-maker"), "plugin.json"));
   assert.equal(record.package.name, "explainer-maker");
-  assert.equal(record.package.install_sha256, manifest.extensions["net.agentdoc.package"].install.sha256);
+  const own = manifest.extensions["net.agentdoc.package"];
+  assert.equal(record.package.runtime_requirements_sha256, (own.runtime_requirements ?? own.install).sha256);
+  assert.equal(record.package.install_sha256, record.package.runtime_requirements_sha256);
   assert.equal(record.harness.baked, false);
   assert.equal(record.job_seconds, 1500);
   assert.deepEqual(record.binaries, ["chromium", "ffmpeg", "ffprobe"].map((name) => ({ name, checked_at_build: true, installed_here: false })));

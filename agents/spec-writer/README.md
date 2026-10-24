@@ -25,13 +25,14 @@ will not build is caught here.
 
 ## Running it
 
-This folder is a package source. Its jobs and steps are declared in
-`spec.json`, the scripts are in `scripts/`, and the standing rules the model
+This folder is a package source. Its offerings and steps are declared in
+`agent-descriptor.json` and `agent-runtime-requirements.json`, each skill's
+instructions are in `skills/<slug>/SKILL.md`, the scripts are in `scripts/`, and the standing rules the model
 works under are in `rules.md` and `references/`.
 
 ```sh
 node --test test/*.test.mjs                                   # 95 tests
-python3 ../package-maker/build.py spec.json ./out             # an Agent Package
+python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
 Install the package on any host that runs Agent Packages, bind

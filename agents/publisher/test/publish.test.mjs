@@ -28,6 +28,7 @@ import {
 import { API_DEFAULT, askBody, askCanonical, folderFor, jobCredentialOf, readBack, sha } from "../scripts/place.mjs";
 import { NOTHING_GIVEN, fromArgv, knownNames, nameGiven, publish, rememberNames, replyText } from "../scripts/publish.mjs";
 import { plan } from "../scripts/pieces.mjs";
+import { readAgentFolder } from "../../package-maker/agent-folder.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const B = (s) => Buffer.from(s);
@@ -436,7 +437,7 @@ test("the pieces refuse to be filed when nothing is at an address", () => {
 });
 
 test("every step of this job is one of the three the offering names", () => {
-  const spec = JSON.parse(readFileSync(join(here, "..", "spec.json"), "utf8"));
+  const spec = readAgentFolder(join(here, ".."));
   const offered = spec.jobs.find((j) => j.offered);
   assert.deepEqual(offered.steps, ["read-what-was-given", "place-the-files", "check-what-is-served"]);
   for (const s of offered.steps) assert.ok(spec.jobs.some((j) => j.slug === s), `${s} is not a job in this spec`);

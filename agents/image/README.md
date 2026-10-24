@@ -279,7 +279,7 @@ is the one that holds this whole path together for somebody who is not us.
     node --test "test/*.test.mjs"
 
 The fixtures are real packages, built by the package maker beside this folder
-from a folder of package sources laid out as `<family>/<name>/spec.json`, such
+from a folder of package sources laid out as `<family>/<name>/` (each an agent's own files), such
 as the AgentMesh repository's `packages/`. Name it with `ADLC_PACKAGES`; the
 suites that build no package (`job-usage`, `tenant-host` and `wake-host`) run
 without it. One `tenant-host` test drives a message through the AgentMesh

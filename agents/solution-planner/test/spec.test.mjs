@@ -19,10 +19,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { makePlan } from "../scripts/plan.mjs";
 import { FILE } from "../scripts/went-without.mjs";
 import { STEP_OF } from "../scripts/pieces.mjs";
+import { readAgentFolder } from "../../package-maker/agent-folder.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const spec = JSON.parse(readFileSync(join(root, "spec.json"), "utf8"));
+const spec = readAgentFolder(root);
 const job = (slug) => spec.jobs.find((j) => j.slug === slug);
 
 test("every step of the offering is a job of this spec, in the order the spec gives", () => {
@@ -73,7 +74,7 @@ test("went-without.json is declared as a per-job record under the name the share
 test("0.3.0: the spec says the planner names no agent and reads no address of AgentMesh", () => {
   assert.match(spec.description, /names no agent/);
   assert.match(spec.description, /solution-planner\.platform@agentmesh\.ai/);
-  const instructions = job("make-a-plan").instructions;
+  const instructions = job("make-a-plan").skill;
   assert.ok(!/agentcatalog\.com|api\.agentmesh\.ai/.test(instructions), "no AgentMesh address is read");
   assert.ok(spec.refuses.some((r) => /^Naming an agent or an offering for a step/.test(r)));
 });
