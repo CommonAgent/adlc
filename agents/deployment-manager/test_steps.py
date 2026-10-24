@@ -1687,9 +1687,18 @@ class AModelChangeReachesTheJob(unittest.TestCase):
         self.assertIn("export GOOGLE_CLOUD_LOCATION=us", brain)
         self.assertIn("--model google-vertex-anthropic/claude-sonnet-5-5@default", brain)
         self.assertNotIn(".key", brain)
+        # Its token comes from the host's model-only stand-in, never the host's own metadata server.
+        self.assertIn(f"export GCE_METADATA_HOST={steps.HOST_MODEL_METADATA}", brain)
+        self.assertIn(f"export GCE_METADATA_IP={steps.HOST_MODEL_METADATA}", brain)
         self.assertEqual(steps.provider_var_names() & {"GOOGLE_CLOUD_PROJECT", "GOOGLE_GENERATIVE_AI_API_KEY"},
                          {"GOOGLE_CLOUD_PROJECT", "GOOGLE_GENERATIVE_AI_API_KEY"})
         self.assertNotIn(None, steps.provider_var_names())
+
+    def test_the_stand_in_reaches_the_host_brain_only_never_a_job(self):
+        self.assertNotIn("GCE_METADATA_HOST", steps.keyless_vars("google-vertex-anthropic"))
+        self.assertNotIn("GCE_METADATA_HOST", steps.brain_text("opencode", "google/gemini-3.8-flash"))
+        with mock.patch.object(steps, "HOST_MODEL_METADATA", ""):
+            self.assertNotIn("GCE_METADATA_HOST", steps.brain_text("opencode", "google-vertex-anthropic/claude-sonnet-5-5@default"))
 
     def test_a_vertex_model_with_its_version_is_a_model_name(self):
         self.assertTrue(steps.MODEL_RE.match("google-vertex-anthropic/claude-sonnet-5-5@default"))
