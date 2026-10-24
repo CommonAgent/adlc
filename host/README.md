@@ -65,7 +65,8 @@ backup when it changes.
 `env/` at the repository root holds the reader every agent and template uses.
 `AGENTMESH_ENV` names the environment (`env/<name>.json`), and a missing or
 null value stops the read rather than guessing. `env/example.json` lists the
-keys these agents read. `pinned_keys.official_coder` is optional: the package
-maker's brain and pack script export it as `OFFICIAL_CODER`, which the builder
-reads as the older name of `REQUIRED_CODER`. Leave it empty and the package
-maker packs scripts from any code writer.
+keys these agents read. The package maker's brain and pack script set no
+required coder, so the builder packs scripts from any code writer; an operator
+who wants only one writer's scripts packed sets `REQUIRED_CODER` (one or more
+public keys) in those two scripts, and the builder then checks every script
+against that writer's signed delivery manifest.
