@@ -28,7 +28,7 @@ What that asks of a spec:
   keeps a catalogue of the bases they have built; the first base that has
   everything the package declares is the one the package is built on.
 - Nothing is ever installed into a package's image to make a check pass.
-  The install file says check and never substitute (Agent Package spec 12.4
+  The runtime requirements say check and never substitute (Agent Package spec 12.4
   rule 1). When no base has what a package needs, the answer is a new base,
   built by the operator and added to their catalogue. It is never a line in
   the package that installs the missing thing.

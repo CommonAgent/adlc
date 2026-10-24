@@ -5,19 +5,43 @@ role for the Build and package and Release stages of the
 [Agent Development Lifecycle](https://agenticdevelopment.ai/stages.html). On
 AgentMesh it runs under its older name, agentbuilder.
 
-It turns a package source (a `spec.json` and the files it names) into an Agent
-Package in the open format at
-[commonagent.net/package.html](https://commonagent.net/package.html): the
-plugin manifest, a draft descriptor of what the agent does and refuses, an
-install file of what a host must have, the skills and scripts, and a digest
-over each part. It refuses a spec that does not hold together, and the refusal
-says what is wrong. Every package it makes is a draft, because it has not run
-the agent.
+It turns an agent's own files into an Agent Package in the open format at
+[commonagent.net/package.html](https://commonagent.net/package.html). An agent
+is kept the way that format says a package is authored (Common Agent 13.2):
+
+- `agent-descriptor.json`, the draft descriptor: what the agent does, refuses,
+  needs and must record;
+- `agent-runtime-requirements.json`: what a host must have and bind;
+- `plugin.json`: the manifest's own members (name, version, description,
+  license, author, repository), and in its `net.agentdoc.package` entry one
+  member that is the builder's alone, `build`, which lists the files each skill
+  carries, so a script several skills run is kept once beside the agent;
+- `skills/<slug>/SKILL.md`, one per offering and step.
+
+Building checks those files, copies the skills and their files in, generates
+NOT.md, RECORDS.md and SYSTEMS.md, and writes the manifest's digests. It adds
+nothing the files did not say, and it refuses a folder that says something it
+would not have written, naming the member. Every package it makes is a draft,
+because it has not run the agent.
+
+It still reads a `spec.json` (one description of the whole agent, which the
+spec writer drafts and the rest of the lifecycle passes along), with a
+warning, for one transition. `convert.py` turns a spec into the files above.
+Files under the names used before Common Agent 0.30.0-draft (`descriptor.json`,
+`install.json`, format `agent-install-v1`) are read with a warning too; what
+it writes is always the current names.
 
 ## The parts
 
-- `build.py` is the builder: `python3 build.py <spec.json> <out folder>`. It
-  prints one JSON line with the package's name, version, path and digests.
+- `build.py` is the builder: `python3 build.py <agent folder> <out folder>`
+  (or a `spec.json` in place of the folder). It prints one JSON line with the
+  package's name, version, path and digests, and any warnings.
+- `convert.py` writes an agent's own files from its spec:
+  `python3 convert.py <spec.json> [<folder>]`.
+- `compare-packages.py` is the gate the move from spec.json was held to: it
+  builds each agent with the builder from before and with this one, from the
+  folder and from the spec, and compares every file, allowing only the renamed
+  files, pointer and format.
   It runs anywhere with Python 3, and it is what the other agents here use to
   check their own drafts.
 - `pack.py` is the procedure the agent runs on a fleet host for a lifecycle
@@ -48,7 +72,7 @@ the agent.
 ## Running it
 
 ```sh
-python3 build.py ../publisher/spec.json ./out
+python3 build.py ../publisher ./out
 node --test connection.test.mjs request.test.mjs
 AGENTMESH_ENV=example python3 -m unittest test_build test_pack
 ```
@@ -57,7 +81,7 @@ AGENTMESH_ENV=example python3 -m unittest test_build test_pack
 
 - `test_build.py` builds AgentMesh's product packages (the explainer chain and
   others) as its fixtures. Set `ADLC_PACKAGES` to a folder of packages laid out
-  as `<family>/<name>/spec.json`, such as the AgentMesh repository's
+  as `<family>/<name>/` (each an agent's own files), such as the AgentMesh repository's
   `packages/`, and all 97 tests run; without it the module is skipped.
 - The tests in `test_pack.py` that lay a run's work out as the agent's own
   repository need AgentMesh's `tools/agent-repo.mjs`; name it with
