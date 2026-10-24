@@ -49,6 +49,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1596,6 +1597,17 @@ def start_processes(name, step="pm2"):
             "attendant": f"not started: {why}" if held else f"started: {why}"}
 
 
+# THE QUESTION THE SMOKE CHECK ASKS THE BRAIN. Asked plainly ("Reply with one
+# sentence: what is your job?"), a model with tools often went looking for its
+# job first: it globbed and listed its home, ran env and ls /tmp, reached a
+# path its harness would not allow, and ended the run with no final text, so
+# a good install read as failed. On 2026-10-24 that failed every tone-* update
+# on the dev fleet (and some on prod): 1 of 4 runs of the plain question
+# answered on dev, 6 of 6 of this one did. The probe asks whether the brain
+# answers, not what it can find, so it says not to look.
+SMOKE_PROBE = "Without using any tools or reading any files, reply with one sentence: what is your job?"
+
+
 def start_and_smoke(name, ask_model=True):
     """Step 9. Start (or restart) the two processes and check, smoke grade:
     the adapter listens, and the brain answers a direct probe. A reinstall of
@@ -1630,7 +1642,7 @@ def start_and_smoke(name, ask_model=True):
     try:
         probe = subprocess.run(
             ["su", "-", name, "-c",
-             f"timeout 240 bash {BRAINS}/{name}.sh 'Reply with one sentence: what is your job?'"],
+             f"timeout 240 bash {BRAINS}/{name}.sh {shlex.quote(SMOKE_PROBE)}"],
             capture_output=True, text=True, timeout=260).stdout.strip()
     except subprocess.TimeoutExpired:
         pass
