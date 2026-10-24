@@ -109,6 +109,7 @@ export function descriptorOf(spec, jobs, systems, records) {
     if (typeof j.does === "string" && j.does.trim()) o.does = j.does.trim();
     for (const side of ["inputs", "outputs"]) if (j[side] !== undefined && j[side] !== null) o[side] = j[side];
     if ("how" in j) o.how = Object.fromEntries(HOW_KEYS.map((k) => [k, j.how?.[k]]));
+    // cut-ok: the builder's own rule (build.py keeps the first five examples), repeated so the files are its bytes
     if (j.examples !== undefined && j.examples !== null) o.examples = j.examples.map((e) => str(e).trim()).slice(0, 5);
     return o;
   };
@@ -213,6 +214,7 @@ export function runtimeOf(spec, jobs, systems, lockfiles) {
  *  the names each kind of file is placed under in the skill. */
 export function skillMd(job, agentName, copied) {
   const when = str(job.when || "When the request matches this job.").trim();
+  // cut-ok: the builder's own rule (the frontmatter description is the first 1024 characters); the whole sentence is under "When to use this"
   const lines = ["---", `name: ${job.slug}`, `description: ${when.slice(0, 1024)}`, "---", "",
     `# ${job.title}`, "", `Part of ${agentName}. ${when}`, "",
     "## When to use this", "", when, ""];
