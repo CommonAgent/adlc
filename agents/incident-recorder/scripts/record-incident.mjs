@@ -13,9 +13,12 @@
 //
 // --agent and --time, when given, win over the message. The records read are
 // the files attached to the message and the regular files directly inside the
-// folder a `records:` line names. They are copied by their bytes into the
-// job's work folder and read from there, so nothing is read twice and nothing
-// outside them is read at all.
+// folder a `records:` line names. A named folder is read only when it lies
+// inside one of the folders the host lists in INCIDENT_RECORDS_ROOTS (joined
+// by the platform's path delimiter); with none listed, a named folder is not
+// read and the reply says so, because a message must not be able to make this
+// agent read any folder on the host. They are copied by their bytes into the
+// job's work folder and read from there, so nothing outside them is read.
 //
 // It never contacts the agent, reaches no network, wakes no model and never
 // names a cause: it says what the records say and where they say nothing.
@@ -23,8 +26,9 @@
 // It prints one JSON object with a `reply` field. Exit codes: 0 recorded (an
 // empty record is still a record); 2 usage; 3 the job stops and the reply
 // says what is needed, which the harness sends as it stands; 1 failed.
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readRecords } from "./read-records.mjs";
 import { buildTimeline } from "./build-timeline.mjs";
 import { formatIncidentRecord, updateStandingIndex } from "./write-incident.mjs";
@@ -57,7 +61,7 @@ export function fromArgv(args = []) {
 
 /** A value as a person might write it: without the quotes, backticks or angle
  *  brackets around it, and without a full stop at the end of the line. */
-const bare = (v) => trim(v).replace(/^[`'"<]+|[`'">]+$/g, "").replace(/\.$/, "");
+const bare = (v) => trim(v).replace(/\.$/, "").replace(/^[`'"<]+|[`'">]+$/g, "");
 
 const LINES = {
   agent: /^\s*(?:[-*]\s*)?(?:agent(?:\s+handle)?|handle)\s*[:=]\s*(.+?)\s*$/im,
@@ -71,9 +75,9 @@ const LINES = {
  *  about the wrong agent. */
 export function fromText(text = "") {
   const t = String(text ?? "");
-  const got = (re) => { const m = re.exec(t); return m ? bare(m[1]) : ""; };
-  const agent = got(LINES.agent).split(/\s+/)[0] ?? "";
-  return { agent, time: got(LINES.time), recordsDir: got(LINES.records) };
+  const got = (re) => { const m = re.exec(t); return m ? trim(m[1]) : ""; };
+  const first = (v) => bare(v.split(/\s+/)[0] ?? "");
+  return { agent: first(got(LINES.agent)), time: bare(got(LINES.time)), recordsDir: bare(got(LINES.records)) };
 }
 
 /** An ISO 8601 time with a date, hours and minutes and an explicit zone. A
@@ -81,7 +85,13 @@ export function fromText(text = "") {
  *  about which minute the failure was. */
 export const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
 export function isIsoTime(s) {
-  return ISO_TIME.test(trim(s)) && Number.isFinite(new Date(trim(s)).getTime());
+  const t = trim(s);
+  if (!ISO_TIME.test(t)) return false;
+  const [y, m, d] = t.slice(0, 10).split("-").map(Number);
+  // Date rolls 2026-02-30 over to 2 March; a day that does not exist is not a time.
+  const day = new Date(Date.UTC(y, m - 1, d));
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== m - 1 || day.getUTCDate() !== d) return false;
+  return Number.isFinite(new Date(t).getTime());
 }
 
 export const HOW_TO_ASK =
@@ -146,52 +156,99 @@ export async function recordIncident({
     };
     writeFileSync(join(recordsDir, "incident.json"), JSON.stringify(emptyIncident, null, 2));
     writeFileSync(join(recordsDir, "timeline.json"), JSON.stringify(timeline, null, 2));
-    return { code: 3, reply: EMPTY_REPLY, empty: true, files, unreadable, timeline };
+    const indexError = standingDir ? index({ standingDir, incidentId, agent, failureTime }) : "";
+    return { code: 3, reply: EMPTY_REPLY, empty: true, files, unreadable, timeline, indexError };
   }
 
   const incident = formatIncidentRecord({ agent, failureTime, timeline, inventory });
   writeFileSync(join(recordsDir, "incident.json"), JSON.stringify(incident, null, 2));
   writeFileSync(join(recordsDir, "timeline.json"), JSON.stringify(timeline, null, 2));
 
-  if (standingDir) {
+  const indexError = standingDir ? index({ standingDir, incidentId, agent, failureTime }) : "";
+
+  return { code: 0, empty: false, files, unreadable, timeline, indexError };
+}
+
+/** Add the incident to the standing index. A failure here is returned in
+ *  words, never thrown: the job's own record is already written and is still
+ *  delivered. */
+function index({ standingDir, incidentId, agent, failureTime }) {
+  try {
     updateStandingIndex(join(standingDir, "incidents.json"), {
       incidentId: incidentId || "inc-" + Date.now(),
       agent,
       failureTime,
       recordedAt: new Date().toISOString()
     });
+    return "";
+  } catch (e) {
+    return trim(e?.message ?? e);
   }
+}
 
-  return { code: 0, empty: false, files, unreadable, timeline };
+/** The folders a `records:` line may name, as the host lists them. */
+export function allowedRoots(env = process.env) {
+  return trim(env.INCIDENT_RECORDS_ROOTS).split(delimiter).map(trim).filter(Boolean);
+}
+
+/** Is the folder inside one of the roots, once links are resolved. */
+export function insideRoots(folder, roots) {
+  let real;
+  try { real = realpathSync(folder); } catch { return false; }
+  return roots.some((r) => {
+    let root;
+    try { root = realpathSync(r); } catch { return false; }
+    const rel = relative(root, real);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  });
 }
 
 /** Lay the records this job was given out in one folder, by their bytes, so
  *  readRecords reads exactly them. Returns what was laid out and what was
- *  asked for and not there. */
-export function gatherRecords({ files = [], recordsDir = "", into }) {
+ *  asked for and could not be read. A file that cannot be read is noted, never
+ *  fatal. The folder is emptied first, so a job run again reads only what it
+ *  was given this time. */
+export function gatherRecords({ files = [], recordsDir = "", into, roots = [] }) {
+  rmSync(into, { recursive: true, force: true });
   mkdirSync(into, { recursive: true });
   const laid = [];
   const missing = [];
   const taken = new Set();
-  const place = (from) => {
+  const place = (from, wanted) => {
+    let bytes;
+    try { bytes = readFileSync(from); }
+    catch (e) { missing.push({ wanted, why: `it could not be read (${e.code ?? trim(e.message)})` }); return; }
     let name = basename(from);
-    for (let n = 2; taken.has(name); n++) name = `${n}-${basename(from)}`;
-    taken.add(name);
-    writeFileSync(join(into, name), readFileSync(from));
+    // Case-blind, because two names that differ only in case are one file on
+    // some file systems.
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${n}-${basename(from)}`;
+    taken.add(name.toLowerCase());
+    writeFileSync(join(into, name), bytes);
     laid.push({ name, from });
   };
   for (const f of files) {
-    if (f.path && existsSync(f.path) && statSync(f.path).isFile()) place(f.path);
+    let isFile = false;
+    try { isFile = Boolean(f.path) && statSync(f.path).isFile(); } catch { /* not there */ }
+    if (isFile) place(f.path, f.path);
     else missing.push({ wanted: f.path || "an attached file", why: "it was not there when the job ran" });
   }
   if (recordsDir) {
-    if (existsSync(recordsDir) && statSync(recordsDir).isDirectory()) {
+    let isDir = false;
+    try { isDir = statSync(recordsDir).isDirectory(); } catch { /* not there */ }
+    if (!isDir) {
+      missing.push({ wanted: `the records folder ${recordsDir}`, why: "there is no folder at that path on this host" });
+    } else if (!roots.length) {
+      missing.push({ wanted: `the records folder ${recordsDir}`, why: "this host lists no folders a message may name (INCIDENT_RECORDS_ROOTS), so a named folder is not read; attach the records instead" });
+    } else if (!insideRoots(recordsDir, roots)) {
+      missing.push({ wanted: `the records folder ${recordsDir}`, why: "it is not inside a folder this host lets a message name (INCIDENT_RECORDS_ROOTS)" });
+    } else {
       for (const entry of readdirSync(recordsDir).sort()) {
         const p = join(recordsDir, entry);
-        if (statSync(p).isFile()) place(p);
+        let st;
+        try { st = lstatSync(p); } catch { continue; }
+        // Regular files only: a link could point anywhere on the host.
+        if (st.isFile()) place(p, p);
       }
-    } else {
-      missing.push({ wanted: `the records folder ${recordsDir}`, why: "there is no folder at that path on this host" });
     }
   }
   return { laid, missing };
@@ -214,15 +271,18 @@ export function replyText({ agent, time, result, laid = [], missing = [] }) {
       : "The records leave no gap longer than a minute in the window around the failure.");
   }
   for (const u of result.unreadable ?? []) {
-    lines.push(`${u.file} could not be read from byte ${u.byteOffset} on, so nothing after that point in it is in the record. Send a fresh extract of it if you want it read.`);
+    lines.push(u.untimed
+      ? `The line of ${u.file} at byte ${u.byteOffset} has no time with a zone, so it is not in the record: a fact that cannot be placed is not a fact in a timeline.`
+      : `${u.file} could not be read from byte ${u.byteOffset} on, so nothing after that point in it is in the record. Send a fresh extract of it if you want it read.`);
   }
+  if (result.indexError) lines.push(`The incident could not be added to the standing index of incidents (${result.indexError}); this job's own record is complete.`);
   for (const m of missing) lines.push(`I went without ${m.wanted}, because ${m.why}.`);
   lines.push("The incident record and the timeline are filed with the job. They name no cause and no fix.");
   return lines.join(" ");
 }
 
 /** The job, as the runtime requirements start it. */
-export async function runJob(argv = []) {
+export async function runJob(argv = [], env = process.env) {
   const args = fromArgv(argv);
   if (!args.job || !args.records) {
     return { ok: false, code: 2, reply: "This job needs --job <job folder> and --records <records folder>." };
@@ -237,11 +297,13 @@ export async function runJob(argv = []) {
   const id = basename(args.job);
   const RECORDS = join(args.records, id);
   mkdirSync(RECORDS, { recursive: true });
+  // A job run again starts its notes again.
+  rmSync(join(RECORDS, "went-without.json"), { force: true });
   // The records are laid out in the job's work folder; with no --work, beside
   // the job's own records, never in a folder another job shares.
   const WORK = args.work ? join(args.work, id) : RECORDS;
   const given = join(WORK, "records-given");
-  const { laid, missing } = gatherRecords({ files: args.files, recordsDir: said.recordsDir, into: given });
+  const { laid, missing } = gatherRecords({ files: args.files, recordsDir: said.recordsDir, into: given, roots: allowedRoots(env) });
   for (const m of missing) note(RECORDS, { wanted: m.wanted, did: "recorded the incident from the records that were there", why: m.why });
 
   const failureTime = new Date(time).toISOString();
@@ -269,7 +331,12 @@ export async function runJob(argv = []) {
   };
 }
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop())) {
+const startedAsCommand = () => {
+  try { return Boolean(process.argv[1]) && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url)); }
+  catch { return false; }
+};
+
+if (startedAsCommand()) {
   const out = await runJob(process.argv.slice(2)).catch((e) => ({
     ok: false, code: 1, reply: `No incident was recorded, and this is what stopped it: ${trim(e?.message ?? e)}`,
   }));

@@ -67,8 +67,15 @@ and `--time` win over the message when given.
 
 The records read are the attached files and the regular files directly inside
 the folder the `records:` line names, each one JSON object per line with a
-`time` and an `event`. A file whose name contains `platform` is taken as the
-platform's activity record, any other as the agent's own.
+`time` (ISO 8601 with its zone) and an `event`. A line without such a time is
+left out and named in the reply. A file whose name contains `platform` is taken
+as the platform's activity record, any other as the agent's own.
+
+A `records:` folder is read only when it lies inside a folder the host lists in
+`INCIDENT_RECORDS_ROOTS` (several joined by `:`, or `;` on Windows). With none
+listed, a named folder is not read and the reply says so; attached files are
+always read. This keeps a message from making the agent read any folder on the
+host.
 
 It writes `incident.json`, `timeline.json`, `inventory.json` and, when
 something was missing, `went-without.json` to `{records}/<job id>/`, adds the

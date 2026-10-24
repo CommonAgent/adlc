@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
 export function assertFactual(record) {
   if ("cause" in record || "root_cause" in record) {
@@ -32,7 +32,10 @@ export function updateStandingIndex(filePath, entry) {
     list = JSON.parse(readFileSync(filePath, "utf8"));
   }
   list.push(entry);
-  writeFileSync(filePath, JSON.stringify(list, null, 2));
+  // Written beside and renamed over, so a reader never sees half a file.
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(list, null, 2));
+  renameSync(tmp, filePath);
 }
 
 export function writeIncident() {}

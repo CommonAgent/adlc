@@ -38,7 +38,7 @@ function host() {
 }
 
 /** Run one job: write message.txt, attach files, start the run command. */
-function run(h, { id = "job-1", message = "", files = [], extra = [] } = {}) {
+function run(h, { id = "job-1", message = "", files = [], extra = [], env = {} } = {}) {
   const jobDir = join(h.root, "jobs", id);
   mkdirSync(jobDir, { recursive: true });
   writeFileSync(join(jobDir, "message.txt"), message);
@@ -56,7 +56,7 @@ function run(h, { id = "job-1", message = "", files = [], extra = [] } = {}) {
   argv.push(...extra);
   const [cmd, ...args] = argv;
   assert.equal(cmd, "node");
-  const r = spawnSync(process.execPath, args, { encoding: "utf8" });
+  const r = spawnSync(process.execPath, args, { encoding: "utf8", env: { ...process.env, INCIDENT_RECORDS_ROOTS: "", ...env } });
   const out = r.stdout.trim();
   let doc;
   assert.doesNotThrow(() => { doc = JSON.parse(out); }, `stdout is one JSON object, got: ${out}\n${r.stderr}`);
@@ -118,13 +118,14 @@ test("the run command reads the message, records the incident and timeline, and 
 
 test("the records folder a message names is read, and --agent/--time win over the message", () => {
   const h = host();
-  const folder = join(h.root, "fleet-records");
+  const folder = join(h.root, "fleet", "records");
   mkdirSync(join(folder, "nested"), { recursive: true });
   writeFileSync(join(folder, "platform.jsonl"), PLATFORM);
   writeFileSync(join(folder, "nested", "ignored.jsonl"), "not json\n");
   const r = run(h, {
     message: `agent: someone-else.example\ntime: 2020-01-01T00:00:00Z\nrecords: ${folder}\n`,
     extra: ["--agent", "code-writer.platform@example.com", "--time", "2026-10-24T09:30:00Z"],
+    env: { INCIDENT_RECORDS_ROOTS: join(h.root, "fleet") },
   });
   assert.equal(r.status, 0, r.stderr);
   const incident = json(join(r.recordsDir, "incident.json"));
@@ -175,6 +176,60 @@ test("with no records it still records the incident: the absence is stated and t
   assert.equal(timeline.gaps[0].from, "2026-10-24T09:29:00.000Z");
   assert.equal(timeline.gaps[0].to, "2026-10-24T09:31:00.000Z");
   assert.deepEqual(json(join(r.jobDir, "pieces.json")).map((p) => p.name), ["incident record", "timeline"]);
+  // An incident with no records is still an incident in the standing index.
+  assert.deepEqual(json(join(h.records, "incidents.json")).map((e) => e.incidentId), ["job-1"]);
+});
+
+test("a named folder is not read unless the host lists a root it lies inside", () => {
+  const h = host();
+  const folder = join(h.root, "elsewhere");
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "platform.jsonl"), PLATFORM);
+
+  const noRoots = run(h, { id: "j-noroots", message: `${MESSAGE}records: ${folder}\n` });
+  assert.equal(noRoots.status, 0, noRoots.stderr);
+  assert.deepEqual(noRoots.doc.records_read, []);
+  assert.match(noRoots.doc.reply, /lists no folders a message may name/);
+  assert.deepEqual(json(join(noRoots.recordsDir, "incident.json")).facts, []);
+
+  mkdirSync(join(h.root, "fleet"), { recursive: true });
+  const outside = run(h, {
+    id: "j-outside",
+    message: `${MESSAGE}records: ${join(h.root, "fleet", "..", "elsewhere")}\n`,
+    env: { INCIDENT_RECORDS_ROOTS: join(h.root, "fleet") },
+  });
+  assert.equal(outside.status, 0, outside.stderr);
+  assert.deepEqual(outside.doc.records_read, []);
+  assert.match(outside.doc.reply, /not inside a folder this host lets a message name/);
+});
+
+test("a line with no zoned time is left out and named, and the rest of its file is read", () => {
+  const h = host();
+  const text = [
+    JSON.stringify({ event: "restart" }),
+    JSON.stringify({ time: "2026-10-24T09:29:20", event: "no zone" }),
+    JSON.stringify({ time: "2026-10-24T09:29:10Z", event: "timed" }),
+  ].join("\n") + "\n";
+  const r = run(h, { message: MESSAGE, files: [{ name: "agent-own.jsonl", text }] });
+  assert.equal(r.status, 0, r.stderr);
+  const timeline = json(join(r.recordsDir, "timeline.json"));
+  assert.deepEqual(timeline.events.map((e) => e.fact), ["timed"]);
+  assert.deepEqual(timeline.gaps.map((g) => [g.from, g.to]), [["2026-10-24T09:29:10.000Z", "2026-10-24T09:31:00.000Z"]]);
+  assert.match(r.doc.reply, /agent-own\.jsonl at byte 0 has no time with a zone/);
+  assert.equal(r.doc.unreadable.length, 2);
+});
+
+test("a job run again reads only what it was given this time, and a broken index does not stop it", () => {
+  const h = host();
+  const first = run(h, { message: MESSAGE, files: [{ name: "platform.jsonl", text: PLATFORM }] });
+  assert.equal(first.status, 0, first.stderr);
+  writeFileSync(join(h.records, "incidents.json"), "{ half written");
+  const again = run(h, { message: `${MESSAGE}records: ${join(h.root, "nowhere")}\n` });
+  assert.equal(again.status, 0, again.stderr);
+  assert.deepEqual(again.doc.records_read, []);
+  assert.equal(json(join(again.recordsDir, "went-without.json")).length, 1);
+  assert.match(again.doc.reply, /could not be added to the standing index/);
+  assert.deepEqual(json(join(again.jobDir, "pieces.json")).map((p) => p.name), ["incident record", "timeline"]);
 });
 
 test("a records folder that is not there is said in the reply and noted as gone without", () => {

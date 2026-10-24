@@ -11,6 +11,9 @@ test("the message's agent, time and records lines are read, in the clear forms o
     { agent: "a.owner@example.com", time: "2026-10-24T09:30:00Z", recordsDir: "/srv/r" });
   assert.deepEqual(fromText("- Agent handle: `a.example`\n- Failure time: 2026-10-24T09:30:00+02:00\n"),
     { agent: "a.example", time: "2026-10-24T09:30:00+02:00", recordsDir: "" });
+  // Only the handle is taken, without what is said after it.
+  assert.equal(fromText("agent: `a.example` (the writer)\n").agent, "a.example");
+  assert.equal(fromText("agent: <a.owner@example.com> (x)\n").agent, "a.owner@example.com");
   // A handle mentioned in passing is not taken.
   assert.deepEqual(fromText("a.example went quiet at 09:30 today"), { agent: "", time: "", recordsDir: "" });
 });
@@ -28,6 +31,7 @@ test("only an ISO time with a zone is placed", () => {
   assert.ok(!isIsoTime("2026-10-24T09:30:00"));
   assert.ok(!isIsoTime("2026-10-24"));
   assert.ok(!isIsoTime("2026-13-40T09:30:00Z"));
+  assert.ok(!isIsoTime("2026-02-30T09:30Z"));
   assert.equal(whatIsMissing({ agent: "a", time: "2026-10-24T09:30:00Z" }), "");
 });
 

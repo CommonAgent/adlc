@@ -9,6 +9,12 @@ export function hashRecord(buf) {
 
 export function indexRecords() {}
 
+const ZONED = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
+export function hasZonedTime(obj) {
+  return Boolean(obj) && typeof obj === "object" && typeof obj.time === "string"
+    && ZONED.test(obj.time.trim()) && Number.isFinite(new Date(obj.time).getTime());
+}
+
 export async function readRecords({ recordsDir, agent, failureTime, wentWithoutDir }) {
   const result = { unreadable: [], files: [], events: [] };
   if (!existsSync(recordsDir)) return result;
@@ -33,6 +39,14 @@ export async function readRecords({ recordsDir, agent, failureTime, wentWithoutD
       if (lineStr.length > 0) {
         try {
           const obj = JSON.parse(lineStr);
+          // A line with no time carrying a zone cannot be placed in the
+          // timeline, so it is noted and left out rather than sorted as NaN
+          // or read in the host's own zone.
+          if (!hasZonedTime(obj)) {
+            result.unreadable.push({ file, byteOffset: idx, reason: "no time with a zone", untimed: true });
+            idx = next + 1;
+            continue;
+          }
           result.events.push({
             timestamp: obj.time,
             fact: obj.event,
