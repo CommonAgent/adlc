@@ -16,7 +16,7 @@ import {
 } from "../scripts/builds.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BUILD_PY = join(HERE, "..", "..", "..", "..", "fleet-manager", "agentbuilder", "build.py");
+const BUILD_PY = join(HERE, "..", "..", "package-maker", "build.py");
 const env = { BUILD_PY };
 const PUBLISHER = JSON.parse(readFileSync(join(HERE, "fixtures", "publisher.spec.json"), "utf8"));
 const clone = (o) => JSON.parse(JSON.stringify(o));
