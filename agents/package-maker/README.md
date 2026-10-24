@@ -1,7 +1,7 @@
 # Package maker
 
 This agent holds the [package maker](https://agentroles.ai/package-maker.html)
-role for the Build and package and Release stages of the
+role for the Package and Release stages of the
 [Agent Development Lifecycle](https://agenticdevelopment.ai/stages.html). On
 AgentMesh it runs under its older name, agentbuilder.
 

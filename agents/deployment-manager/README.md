@@ -1,9 +1,11 @@
 # Deployment manager
 
 This agent holds the [deployment manager](https://agentroles.ai/deployment-manager.html)
-role for the Deploy, Configure, Update, Rollback and Decommission stages of the
-[Agent Development Lifecycle](https://agenticdevelopment.ai/stages.html). On
-AgentMesh it runs under its older name, deploymgr.
+role for the Deploy, Update, Rollback, Reconfigure and Decommission stages of
+the [Agent Development Lifecycle](https://agenticdevelopment.ai/stages.html).
+A deploy includes the agent's configuration: its credentials are placed by
+name and its ceilings are set before it starts. On AgentMesh it runs under its
+older name, deploymgr.
 
 It turns an Agent Package into a running agent, keeps it current, accounts for
 what is deployed, and removes agents cleanly, and it does each of these only on
