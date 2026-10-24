@@ -210,6 +210,11 @@ def build_account_argv(project):
     build account is named."""
     if not BUILD_SA or not project or cloud_now():
         return []
+    # An account of the project the build runs in, by its own address: one
+    # from another project would need an organization policy these projects
+    # do not have, and a malformed one is not passed to gcloud at all.
+    if not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(project) + r"\.iam\.gserviceaccount\.com", BUILD_SA):
+        return []
     return ["--service-account", f"projects/{project}/serviceAccounts/{BUILD_SA}",
             f"--gcs-source-staging-dir=gs://{project}_cloudbuild/source",
             f"--gcs-log-dir=gs://{project}_cloudbuild/logs"]

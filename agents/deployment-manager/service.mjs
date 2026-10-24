@@ -443,7 +443,7 @@ export function readInstruction(args, s = SETTINGS) {
     always_on: alwaysOn,
     ...(alwaysOn ? {} : { waker, wake_idle_seconds: wakeIdle ?? (tenant !== null ? t.wake_idle_seconds ?? 120 : 120), wake_max_seconds: tenant !== null ? t.wake_max_seconds ?? 3300 : 3300 }),
     ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null }
-      : platformBuilder(s) ? { builder: platformBuilder(s) } : {}),
+      : platformBuilder(s, project) ? { builder: platformBuilder(s, project) } : {}),
     name, handle, request_id: a.request_id ? String(a.request_id) : null,
     source: { repository, path, commit, dockerfile },
     kind: String(a.kind ?? "third-party-framework"),
@@ -1266,14 +1266,16 @@ export function rowInstruction(row, s = SETTINGS, over = {}) {
     always_on: false, waker, wake_idle_seconds: over.wake_idle_seconds ?? row.wake_idle_seconds ?? 120, wake_max_seconds: 3300,
     instructed_by: "the owner", replaces: null,
     ...(row.tenant ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null }
-      : platformBuilder(s) ? { builder: platformBuilder(s) } : {}),
+      : platformBuilder(s, row.project) ? { builder: platformBuilder(s, row.project) } : {}),
   };
 }
 
-/** The platform's build account, when the host names a valid one. */
-export function platformBuilder(s = SETTINGS) {
+/** The platform's build account, when the host names a valid one of the
+ *  project the build runs in. One of another project would need an
+ *  organization policy these projects lack, so it is not used. */
+export function platformBuilder(s = SETTINGS, project = "") {
   const b = String((s.platform ?? {}).builder ?? "");
-  return SA_EMAIL_RE.test(b) ? b : "";
+  return SA_EMAIL_RE.test(b) && project && b.endsWith(`@${project}.iam.gserviceaccount.com`) ? b : "";
 }
 
 /** The argv that moves a running service to the wake shape, keeping every

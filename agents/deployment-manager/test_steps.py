@@ -1096,16 +1096,19 @@ class OurBuildsRunAsTheBuildAccount(unittest.TestCase):
         steps.CURRENT["cloud"] = None
 
     def test_named_it_is_the_account_and_both_buckets(self):
-        with mock.patch.object(steps, "BUILD_SA", "fleet-builder@p1.iam.gserviceaccount.com"):
-            argv = steps.build_account_argv("p1")
-        self.assertEqual(argv, ["--service-account", "projects/p1/serviceAccounts/fleet-builder@p1.iam.gserviceaccount.com",
-                                "--gcs-source-staging-dir=gs://p1_cloudbuild/source", "--gcs-log-dir=gs://p1_cloudbuild/logs"])
+        with mock.patch.object(steps, "BUILD_SA", "fleet-builder@p1-project.iam.gserviceaccount.com"):
+            argv = steps.build_account_argv("p1-project")
+        self.assertEqual(argv, ["--service-account", "projects/p1-project/serviceAccounts/fleet-builder@p1-project.iam.gserviceaccount.com",
+                                "--gcs-source-staging-dir=gs://p1-project_cloudbuild/source", "--gcs-log-dir=gs://p1-project_cloudbuild/logs"])
 
     def test_unnamed_or_with_no_project_it_is_the_call_it_always_was(self):
         with mock.patch.object(steps, "BUILD_SA", ""):
             self.assertEqual(steps.build_account_argv("p1"), [])
         with mock.patch.object(steps, "BUILD_SA", "fleet-builder@p1.iam.gserviceaccount.com"):
             self.assertEqual(steps.build_account_argv(None), [])
+            self.assertEqual(steps.build_account_argv("p2"), [], "an account of another project is not used")
+        with mock.patch.object(steps, "BUILD_SA", "x y@p1.iam.gserviceaccount.com"):
+            self.assertEqual(steps.build_account_argv("p1"), [])
 
     def test_a_customer_project_keeps_the_account_they_granted(self):
         steps.CURRENT["cloud"] = {"grant": {"project": "theirs"}, "actions": []}

@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  buildSubmitArgv, checkTenantLimits, egressOf, install, tenantEgress, platformSettings, readInstruction, resourcesFor, retire, serviceDeployArgv, tenantSettings, tenantUsage, TENANT_AGENT_TAG,
+  buildSubmitArgv, rowInstruction, checkTenantLimits, egressOf, install, tenantEgress, platformSettings, readInstruction, resourcesFor, retire, serviceDeployArgv, tenantSettings, tenantUsage, TENANT_AGENT_TAG,
 } from "../service.mjs";
 
 const COMMIT = "48a431e0c1b2d3e4f5a6b7c8d9e0f1a2b3c4d5e6";
@@ -140,15 +140,18 @@ test("a tenant image is built as the tenant builder", () => {
   assert.ok(!platform.includes("--service-account"));
 });
 
-test("a platform image is built as the platform builder when the host names one, and as before when it names none", () => {
-  const SB = { ...S, platform: platformSettings({ DM_PLATFORM_WAKER: "platform-waker@langbench-1528148150979.iam.gserviceaccount.com", DM_PLATFORM_BUILDER: "fleet-builder@example-platform.iam.gserviceaccount.com" }) };
-  const ins = readInstruction(args({ tenant: undefined }), SB);
-  const argv = buildSubmitArgv(ins, "/tmp/cfg.json");
-  assert.equal(argv[argv.indexOf("--service-account") + 1], `projects/${ins.project}/serviceAccounts/fleet-builder@example-platform.iam.gserviceaccount.com`);
-  const bad = { ...S, platform: platformSettings({ DM_PLATFORM_WAKER: "platform-waker@langbench-1528148150979.iam.gserviceaccount.com", DM_PLATFORM_BUILDER: "not an account" }) };
-  assert.ok(!buildSubmitArgv(readInstruction(args({ tenant: undefined }), bad), "/tmp/cfg.json").includes("--service-account"));
+test("a platform image is built as the platform builder when the host names one of its project, and as before otherwise", () => {
+  const plain = readInstruction(args({ tenant: undefined }), S);
+  const withBuilder = (b) => ({ ...S, platform: platformSettings({ DM_PLATFORM_WAKER: "platform-waker@langbench-1528148150979.iam.gserviceaccount.com", DM_PLATFORM_BUILDER: b }) });
+  const mine = `fleet-builder@${plain.project}.iam.gserviceaccount.com`;
+  const argv = buildSubmitArgv(readInstruction(args({ tenant: undefined }), withBuilder(mine)), "/tmp/cfg.json");
+  assert.equal(argv[argv.indexOf("--service-account") + 1], `projects/${plain.project}/serviceAccounts/${mine}`);
+  for (const other of ["fleet-builder@another-project.iam.gserviceaccount.com", "not an account"]) {
+    assert.ok(!buildSubmitArgv(readInstruction(args({ tenant: undefined }), withBuilder(other)), "/tmp/cfg.json").includes("--service-account"), other);
+  }
+  const row = { name: "helper-bot", project: plain.project, region: "us-east1", image: `gcr.io/x/y@sha256:${"a".repeat(64)}`, source: plain.source };
+  assert.equal(rowInstruction(row, withBuilder(mine)).builder, mine, "a rebuild of an installed row uses it too");
 });
-
 test("a tenant install is made entirely as the tenant deployer, in the tenant project", async () => {
   const f = fakes();
   const r = await quietly(() => install(args(), f.deps));

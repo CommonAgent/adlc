@@ -136,10 +136,12 @@ export function buildConfig(check, commit) {
 }
 
 /** The build account the check runs as, when the host names one in the
- *  check's own project. The check runs the agent's own code, so its build
- *  should hold as little as a build can: an account that may write logs and
- *  read images, never the project's default build account (usually an
- *  Editor). One in another project, or none, leaves the call as it was. */
+ *  check's own project (EVAL_BUILD_SA, else DM_ROLE_CHECK_BUILDER in
+ *  deploymgr-platform.json). The check runs the agent's own code, so its
+ *  build should hold as little as a build can: an account that may write logs
+ *  and read images and nothing else, never the project's default build
+ *  account (usually an Editor) and never the account that writes images.
+ *  One in another project, or none, leaves the call as it was. */
 export function builderArgv(project, builder) {
   const b = String(builder || "");
   if (!project || !b.endsWith(`@${project}.iam.gserviceaccount.com`) || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z0-9-]+\.iam\.gserviceaccount\.com$/.test(b)) return [];
@@ -212,8 +214,10 @@ const parse = (s) => { try { return JSON.parse(s || "{}"); } catch { return {}; 
 export function realDeps() {
   const identity = process.env.EVAL_IDENTITY || "/home/agentevaluator/.agentmesh/adapter/identity.json";
   const require = createRequire(process.env.DM_ADAPTER_MODULES || "/usr/lib/node_modules/mesh-adapter/node_modules/");
+  // Its own account, never the platform's image builder: the check runs the
+  // agent's code, which must not be able to write images.
   let builder = process.env.EVAL_BUILD_SA || "";
-  if (!builder) try { builder = JSON.parse(readFileSync(`${process.env.DM_FLEET || "/opt/fleet"}/deploymgr-platform.json`, "utf8")).DM_PLATFORM_BUILDER || ""; } catch { builder = ""; }
+  if (!builder) try { builder = JSON.parse(readFileSync(`${process.env.DM_FLEET || "/opt/fleet"}/deploymgr-platform.json`, "utf8")).DM_ROLE_CHECK_BUILDER || ""; } catch { builder = ""; }
   return {
     builder,
     gcloud: (argv, timeout = 600_000) => {
