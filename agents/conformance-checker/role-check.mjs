@@ -135,6 +135,17 @@ export function buildConfig(check, commit) {
   };
 }
 
+/** The build account the check runs as, when the host names one in the
+ *  check's own project. The check runs the agent's own code, so its build
+ *  should hold as little as a build can: an account that may write logs and
+ *  read images, never the project's default build account (usually an
+ *  Editor). One in another project, or none, leaves the call as it was. */
+export function builderArgv(project, builder) {
+  const b = String(builder || "");
+  if (!project || !b.endsWith(`@${project}.iam.gserviceaccount.com`) || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z0-9-]+\.iam\.gserviceaccount\.com$/.test(b)) return [];
+  return ["--service-account", `projects/${project}/serviceAccounts/${b}`, `--gcs-source-staging-dir=gs://${project}_cloudbuild/source`];
+}
+
 /** The cases, read off the check's own summary lines. */
 export function readCases(log, check = null) {
   const text = String(log ?? "").replace(/^(?:Step #\d+(?: - "[^"]*")?: )/gm, "");
@@ -201,7 +212,10 @@ const parse = (s) => { try { return JSON.parse(s || "{}"); } catch { return {}; 
 export function realDeps() {
   const identity = process.env.EVAL_IDENTITY || "/home/agentevaluator/.agentmesh/adapter/identity.json";
   const require = createRequire(process.env.DM_ADAPTER_MODULES || "/usr/lib/node_modules/mesh-adapter/node_modules/");
+  let builder = process.env.EVAL_BUILD_SA || "";
+  if (!builder) try { builder = JSON.parse(readFileSync(`${process.env.DM_FLEET || "/opt/fleet"}/deploymgr-platform.json`, "utf8")).DM_PLATFORM_BUILDER || ""; } catch { builder = ""; }
   return {
+    builder,
     gcloud: (argv, timeout = 600_000) => {
       const p = spawnSync(process.env.EVAL_GCLOUD || "gcloud", argv, { encoding: "utf8", timeout, maxBuffer: 64 * 1024 * 1024 });
       return { code: p.status ?? 1, stdout: p.stdout ?? "", stderr: p.stderr ?? "" };
@@ -283,7 +297,7 @@ export async function roleCheck(raw, deps) {
   try {
     deps.write(join(dir, "check.Dockerfile"), checkDockerfile(a, check));
     deps.write(join(dir, "cloudbuild.json"), JSON.stringify(buildConfig(check, commit)));
-    const r = deps.gcloud(["builds", "submit", dir, "--config", join(dir, "cloudbuild.json"), "--project", a.project, "--async", "--format", "json", "--quiet"], 300_000);
+    const r = deps.gcloud(["builds", "submit", dir, "--config", join(dir, "cloudbuild.json"), "--project", a.project, ...builderArgv(a.project, deps.builder ?? ""), "--async", "--format", "json", "--quiet"], 300_000);
     if (r.code !== 0) return { ok: false, step: "build", error: `the check could not be started: ${(r.stderr || "").trim().slice(-300)}` };
     submitted = parse(r.stdout);
   } finally { deps.rmdir(dir); }

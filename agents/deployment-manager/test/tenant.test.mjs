@@ -140,6 +140,15 @@ test("a tenant image is built as the tenant builder", () => {
   assert.ok(!platform.includes("--service-account"));
 });
 
+test("a platform image is built as the platform builder when the host names one, and as before when it names none", () => {
+  const SB = { ...S, platform: platformSettings({ DM_PLATFORM_WAKER: "platform-waker@langbench-1528148150979.iam.gserviceaccount.com", DM_PLATFORM_BUILDER: "fleet-builder@example-platform.iam.gserviceaccount.com" }) };
+  const ins = readInstruction(args({ tenant: undefined }), SB);
+  const argv = buildSubmitArgv(ins, "/tmp/cfg.json");
+  assert.equal(argv[argv.indexOf("--service-account") + 1], `projects/${ins.project}/serviceAccounts/fleet-builder@example-platform.iam.gserviceaccount.com`);
+  const bad = { ...S, platform: platformSettings({ DM_PLATFORM_WAKER: "platform-waker@langbench-1528148150979.iam.gserviceaccount.com", DM_PLATFORM_BUILDER: "not an account" }) };
+  assert.ok(!buildSubmitArgv(readInstruction(args({ tenant: undefined }), bad), "/tmp/cfg.json").includes("--service-account"));
+});
+
 test("a tenant install is made entirely as the tenant deployer, in the tenant project", async () => {
   const f = fakes();
   const r = await quietly(() => install(args(), f.deps));

@@ -1087,6 +1087,32 @@ class EveryCallInTheirProjectIsUnderTheirAccount(unittest.TestCase):
                                                       if k != "service_account"}))
 
 
+class OurBuildsRunAsTheBuildAccount(unittest.TestCase):
+    """With gcp.build_sa named, our own builds run as that account, so this
+    host acts as an account that may only write images and logs, never as the
+    project's default build account."""
+
+    def tearDown(self):
+        steps.CURRENT["cloud"] = None
+
+    def test_named_it_is_the_account_and_both_buckets(self):
+        with mock.patch.object(steps, "BUILD_SA", "fleet-builder@p1.iam.gserviceaccount.com"):
+            argv = steps.build_account_argv("p1")
+        self.assertEqual(argv, ["--service-account", "projects/p1/serviceAccounts/fleet-builder@p1.iam.gserviceaccount.com",
+                                "--gcs-source-staging-dir=gs://p1_cloudbuild/source", "--gcs-log-dir=gs://p1_cloudbuild/logs"])
+
+    def test_unnamed_or_with_no_project_it_is_the_call_it_always_was(self):
+        with mock.patch.object(steps, "BUILD_SA", ""):
+            self.assertEqual(steps.build_account_argv("p1"), [])
+        with mock.patch.object(steps, "BUILD_SA", "fleet-builder@p1.iam.gserviceaccount.com"):
+            self.assertEqual(steps.build_account_argv(None), [])
+
+    def test_a_customer_project_keeps_the_account_they_granted(self):
+        steps.CURRENT["cloud"] = {"grant": {"project": "theirs"}, "actions": []}
+        with mock.patch.object(steps, "BUILD_SA", "fleet-builder@p1.iam.gserviceaccount.com"):
+            self.assertEqual(steps.build_account_argv("theirs"), [])
+
+
 class AMixedUpPairingIsRefusedBeforeAnythingIsCalled(unittest.TestCase):
     """One deployer service account holds grants from many customers, so a bug
     in any of this shows up as acting in one customer's project with another

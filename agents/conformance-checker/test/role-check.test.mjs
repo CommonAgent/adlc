@@ -3,7 +3,7 @@
 // output, and the verdict signed. gcloud, GitHub and the signer stood in.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkDockerfile, readArgs, readCases, roleCheck, ROLE_CHECKS } from "../role-check.mjs";
+import { builderArgv, checkDockerfile, readArgs, readCases, roleCheck, ROLE_CHECKS } from "../role-check.mjs";
 
 const IMAGE = `gcr.io/langbench-1528148150979/deploymgr/crewai-demo@sha256:${"b".repeat(64)}`;
 const KEY = "UBBW6C2IKGSG2Q3MWCL46LLY7IA2XTGTZDQZ4GXMRUKTCDTNXJG2SGBO";
@@ -140,4 +140,18 @@ test("the converter conforms only on its own ten-case summary, never the ring's 
   assert.equal(r.record.claim.role, "input-converter");
   const failing = CONVERTER_LOG.replace("PASS  refuses-to-invent-a-value", "FAIL  refuses-to-invent-a-value").replace(/Conforms: .*$/m, "Does not conform: 9 of 10 passed.");
   assert.equal((await roleCheck(converterArgs(), fakes({ log: failing }).deps)).verdict, "does-not-conform");
+});
+
+test("the check's build runs as the host's build account when one is named in the same project, and as before otherwise", async () => {
+  const P = "langbench-1528148150979";
+  assert.deepEqual(builderArgv(P, `fleet-builder@${P}.iam.gserviceaccount.com`),
+    ["--service-account", `projects/${P}/serviceAccounts/fleet-builder@${P}.iam.gserviceaccount.com`, `--gcs-source-staging-dir=gs://${P}_cloudbuild/source`]);
+  assert.deepEqual(builderArgv(P, "fleet-builder@another-project.iam.gserviceaccount.com"), []);
+  assert.deepEqual(builderArgv(P, ""), []);
+  assert.deepEqual(builderArgv(P, `x; rm -rf /@${P}.iam.gserviceaccount.com`), []);
+  const f = fakes();
+  f.deps.builder = `fleet-builder@${P}.iam.gserviceaccount.com`;
+  await roleCheck(args(), f.deps);
+  const submit = f.calls.find((c) => c[0] === "builds" && c[1] === "submit");
+  assert.equal(submit[submit.indexOf("--service-account") + 1], `projects/${P}/serviceAccounts/fleet-builder@${P}.iam.gserviceaccount.com`);
 });
