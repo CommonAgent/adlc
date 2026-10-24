@@ -26,7 +26,7 @@
 // output limit and delivered nothing.
 //
 //   needs: node >= 22; TEXT_API_KEY for the text-reasoning service
-//   DECLARED=<declared.json> SPEC=<spec.json> RECORDS=<records folder> WORK=<work folder>
+//   DECLARED=<declared.json> SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder> WORK=<work folder>
 //   [EXISTING=<folder holding test/>] [ASKED_TEXT=<the message, as a file>]
 //   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] [TEXT_MODEL=<model>] node write-suite.mjs
 //
@@ -36,11 +36,12 @@
 // 2026-10-03: every Claude call goes through Vertex). Both services are sent
 // the same generous output limit, and an answer cut at that limit is refused
 // as cut, because a cut answer otherwise reads as a malformed one.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { standInRun, suiteFiles } from "./check-suite.mjs";
 import { note } from "./went-without.mjs";
+import { loadSpec } from "./agent-folder.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -467,7 +468,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const read = (p) => (p && existsSync(p) ? readFileSync(p, "utf8") : "");
   try {
     const declared = JSON.parse(readFileSync(DECLARED, "utf8"));
-    const spec = JSON.parse(readFileSync(SPEC, "utf8"));
+    const spec = loadSpec(SPEC);
     const model = modelOf(env);
     mkdirSync(RECORDS, { recursive: true });
     // What the writer works from, and what it goes ahead without when a
@@ -500,7 +501,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const out = await askInParts({
       call, declared, spec, existing,
       asked: read(trim(env.ASKED_TEXT)),
-      run: async (files) => standInRun({ spec, files }),
+      run: async (files) => standInRun({ spec, files, folder: statSync(SPEC).isDirectory() ? SPEC : null }),
       reference: read(referenceAt(env)),
       worked: read(workedAt(env)),
       workedSpec: read(workedSpecAt(env)),

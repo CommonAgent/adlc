@@ -4,11 +4,21 @@
 // The adapter signs the job manifest from that list; a reply with no
 // pieces.json carries no job.
 //
-// Two pieces, and the second one is the point. The spec is what they asked
-// for. What is still open is what they have to do about it, and it goes as a
-// file of its own rather than only as prose in the reply, because a reply is
-// read once and a file is still there next week when somebody comes back to
-// finish the thing.
+// The pieces are the agent's own files, the layout Common Agent 13.2 says a
+// package is authored in: agent-descriptor.json, agent-runtime-requirements.json,
+// plugin.json and one SKILL.md per skill, as builds.mjs took them from what
+// the builder made of the draft. Whoever takes them next (the test writer,
+// the code writer, the package maker) finds each one by its content, and the
+// package maker builds the folder they make. Nothing here delivers a spec.json:
+// the draft is this agent's working record, kept under its records.
+//
+// What is still open goes as a file of its own rather than only as prose in
+// the reply, because a reply is read once and a file is still there next week
+// when somebody comes back to finish the thing.
+//
+// A draft the builder did not take has no files, and none are delivered: a
+// declaration nothing can build is not handed on as though it were one. The
+// reply says why, and the next round starts from the kept draft.
 //
 //   needs: node >= 22
 //   [JOB_DIR=<job folder>, else MESH_JOB_DIR] RECORDS=<records folder> node pieces.mjs
@@ -21,37 +31,64 @@ import { questionsFor } from "./ask.mjs";
  *  source file's mode and is refused by a job folder reached through a mount
  *  that serves a fixed one. */
 const copyBytes = (from, to) => writeFileSync(to, readFileSync(from));
+const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 
 export const STEP_OF = {
-  "spec": "draft-the-spec",
+  "files": "draft-the-spec",
   "what is still open": "ask-what-is-missing",
 };
 
 const ABOUT = {
-  "spec": "The spec.json itself, which is a declaration and not a package: it says what the agent offers, what each job takes and produces, how each job is done, what it refuses, and what it records. The scripts it names do not exist yet.",
-  "what is still open": "The questions nobody else could answer, each one a thing that was deliberately not invented. Until these are settled the spec will not build.",
+  "agent-descriptor.json": "The draft Agent Descriptor: what the agent offers, what each job takes and produces, how each job is done, what it refuses and what it records. One of the agent's own files, with the runtime requirements, plugin.json and the skills; the scripts they name do not exist yet.",
+  "agent-runtime-requirements.json": "The draft runtime requirements: what a host must have and do to run the agent, each system's binding, its directories and how each job runs. One of the agent's own files.",
+  "plugin.json": "The agent's manifest, with the builder's own entry naming the files each skill carries. One of the agent's own files.",
+  skill: "A skill's SKILL.md: when the job is the right one, what a good result looks like, what it does when there is nothing to give, and how it is done. One of the agent's own files.",
+  container: "A container agent's checked spec: its code is a program in its own repository, so it makes no package and has none of the files a package is built from, and a container deploy is filed with this.",
+  "what is still open": "The questions nobody else could answer, each one a thing that was deliberately not invented. Until these are settled the draft is not finished.",
+};
+
+/** The name a file goes under as a piece. The three authored files keep
+ *  theirs; a SKILL.md is named for its skill, because a piece is delivered
+ *  under its name, and several called SKILL.md would be one name for
+ *  different files wherever they land next. */
+export const pieceNameOf = (rel) => {
+  const m = /^skills\/([^/]+)\/SKILL\.md$/.exec(rel);
+  return m ? `${m[1]}.SKILL.md` : rel;
 };
 
 /** What to list and what to copy. Pure, so it can be checked without a folder;
- *  the caller does the copying. */
-export function plan({ draftPath = "", blanks = [] } = {}) {
-  if (!draftPath) throw new Error("there is no draft to deliver: nothing names draft.json");
-  const entries = [{
-    // Named by its file name, because the name is what the file is called
-    // wherever it lands next: the adapter delivers a piece under its name,
-    // and a runner forwards it under that name again. Called "spec" it
-    // reached the code-writer with no extension (2026-09-15).
-    name: "spec.json", step: STEP_OF.spec, path: "out/spec.json",
-    media_type: "application/json", about: ABOUT.spec, produced_from: ["what it should do"],
-  }];
-  const copies = [{ from: draftPath, to: "out/spec.json", what: "the draft spec" }];
+ *  the caller does the copying. `files` is builds.json's list ({path,
+ *  sha256}) and `filesDir` the folder it was written under. */
+export function plan({ files = [], filesDir = "", blanks = [], container = null } = {}) {
+  const entries = [];
+  const copies = [];
+  // A container agent's draft makes no package and has no files: what a
+  // container deploy is filed with is the checked spec, until container
+  // agents carry the two files (the plan's milestone 2). It is the one
+  // spec.json this agent still delivers.
+  if (container) {
+    entries.push({
+      name: "spec.json", step: STEP_OF.files, path: "out/spec.json", media_type: "application/json",
+      about: ABOUT.container, produced_from: ["what it should do"],
+    });
+    copies.push({ from: container, to: "out/spec.json", what: "the container agent's checked spec" });
+  }
+  for (const f of files) {
+    const name = pieceNameOf(f.path);
+    entries.push({
+      name, step: STEP_OF.files, path: `out/agent/${f.path}`,
+      media_type: f.path.endsWith(".json") ? "application/json" : "text/markdown",
+      about: ABOUT[f.path] ?? ABOUT.skill, produced_from: ["what it should do"],
+    });
+    copies.push({ from: join(filesDir, f.path), to: `out/agent/${f.path}`, what: `the draft's ${f.path}`, sha256: f.sha256 });
+  }
   const questions = questionsFor(blanks);
   // Only when there is something open. A file saying nothing is open is a
   // file somebody opens for nothing.
   if (questions.length) {
     entries.push({
       name: "still-open.txt", step: STEP_OF["what is still open"], path: "out/still-open.txt",
-      media_type: "text/plain", about: ABOUT["what is still open"], produced_from: ["spec"],
+      media_type: "text/plain", about: ABOUT["what is still open"], produced_from: ["what it should do"],
     });
     copies.push({
       to: "out/still-open.txt", what: "the open questions",
@@ -83,6 +120,11 @@ export function draftChanged(draftText, calls = null) {
 export function fill(jobDir, { entries, copies }) {
   for (const c of copies) {
     if (c.from && !existsSync(c.from)) throw new Error(`${c.what} is not at ${c.from}`);
+    // The same rule as the draft's: only builds.mjs writes these, and a
+    // file changed after it did is not delivered.
+    if (c.from && c.sha256 && sha256(readFileSync(c.from)) !== c.sha256) {
+      throw new Error(`${c.what} was changed after the builder made it, so nothing is delivered: run the four commands again, and never edit the files by hand`);
+    }
   }
   for (const c of copies) {
     const dest = join(jobDir, c.to);
@@ -110,9 +152,15 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       const changed = draftChanged(readFileSync(draftPath), calls);
       if (changed) { console.log(JSON.stringify({ ok: false, code: 1, reply: changed })); process.exit(1); }
     }
-    const listed = fill(JOB_DIR, plan({ draftPath, blanks }));
+    const buildsPath = join(RECORDS, "builds.json");
+    const builds = existsSync(buildsPath) ? JSON.parse(readFileSync(buildsPath, "utf8")) : null;
+    const listed = fill(JOB_DIR, plan({ files: builds?.files?.list ?? [], filesDir: join(RECORDS, "agent"), blanks,
+      container: builds?.container ? draftPath : null }));
     console.log(`${listed.length} piece${listed.length === 1 ? "" : "s"} listed at ${join(JOB_DIR, "pieces.json")}`);
   } catch (e) {
+    // One JSON object whose reply says why, like the refusal above, so the
+    // skill prints it as the whole answer.
+    console.log(JSON.stringify({ ok: false, code: 1, reply: e.message }));
     console.error(e.message);
     process.exit(1);
   }

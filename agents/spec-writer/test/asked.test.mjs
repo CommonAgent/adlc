@@ -266,3 +266,72 @@ test("run as the harness runs it, a revision writes the answers, takes the earli
     assert.equal(JSON.parse(r2.stdout.trim().split(/\r?\n/).pop()).reply, NO_DRAFT_TO_REVISE);
   } finally { w.drop(); }
 });
+
+test("the agent's own files, sent back with answers, are a revision of the draft they describe", async () => {
+  const { requestParts } = await import("../scripts/draft.mjs");
+  const desc = JSON.stringify({ format: "agent-descriptor-v1", agent_version: "0.1.0", offerings: [{ id: "a" }] });
+  const runtime = JSON.stringify({ format: "agent-runtime-requirements-v1", systems: [] });
+  const manifest = JSON.stringify({ version: "0.1.0", extensions: { "net.agentdoc.package": { build: { skills: { a: {} } } } } });
+  const skill = "---\nname: ab\ndescription: when\n---\n\n# A\n";
+  const bodies = { "/f/0-abcdefgh-agent-descriptor.json": desc, "/f/rr.json": runtime, "/f/plugin.json": manifest, "/f/a.SKILL.md": skill };
+  const io = { exists: (p) => p in bodies, read: (p) => bodies[p], size: (p) => bodies[p].length };
+  assert.equal(kindOf("/f/x.json", "application/json", desc), "an agent's own file");
+  assert.equal(kindOf("/f/x.json", "application/json", runtime), "an agent's own file");
+  assert.equal(kindOf("/f/plugin.json", "application/json", manifest), "an agent's own file");
+  assert.equal(kindOf("/f/a.SKILL.md", "text/markdown", skill), "an agent's own file");
+  assert.ok(KINDS.includes("an agent's own file"));
+  const reading = readingOf({ text: "answer: name: tone-teller", files: Object.keys(bodies).map((path) => ({ path })), io });
+  assert.ok(reading.revision);
+  assert.deepEqual(reading.spec_attached, []);
+  assert.equal(reading.files_attached.length, 4);
+  assert.match(summary(reading), /the agent's own files came with it/);
+  const parts = requestParts({ asked: reading });
+  assert.ok(parts.some((p) => p.includes("The agent's own files above, the ones this agent delivered, are the draft.")));
+  assert.match(NO_DRAFT_TO_REVISE, /Attach the draft's files/);
+  assert.doesNotMatch(NO_DRAFT_TO_REVISE, /spec\.json/);
+});
+
+test("run as the harness runs it, the agent's files sent back are read as the spec they state, and that is the draft revised", async () => {
+  const { mkdtempSync, mkdirSync, copyFileSync, readFileSync: read, readdirSync, rmSync: rm, writeFileSync: write } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { specOfFolder } = await import("../../package-maker/agent-folder.mjs");
+  const pub = pjoin(dirname(fileURLToPath(import.meta.url)), "..", "..", "publisher");
+  const dir = mkdtempSync(pjoin(tmpdir(), "spec-writer-sent-back-"));
+  try {
+    const att = pjoin(dir, "att"); mkdirSync(att);
+    const files = [];
+    const put = (rel, sent) => { const p = pjoin(att, `${files.length}-Ab12cdEF-${sent}`); copyFileSync(pjoin(pub, rel), p); files.push(p); };
+    put("agent-descriptor.json", "agent-descriptor.json");
+    put("agent-runtime-requirements.json", "agent-runtime-requirements.json");
+    put("plugin.json", "plugin.json");
+    for (const slug of readdirSync(pjoin(pub, "skills"))) put(pjoin("skills", slug, "SKILL.md"), `${slug}.SKILL.md`);
+    const records = pjoin(dir, "records", "job-2"); const job = pjoin(dir, "job"); mkdirSync(job, { recursive: true });
+    const textFile = pjoin(dir, "message.txt"); write(textFile, "answer: price: free\n");
+    const r = spawnSync(process.execPath, [ASKED_SCRIPT], { encoding: "utf8",
+      env: { ...process.env, JOB_DIR: job, RECORDS: records, TEXT_FILE: textFile, FILES: files.join(",") } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const asked = JSON.parse(read(pjoin(records, "asked.json"), "utf8"));
+    assert.deepEqual(asked.spec_attached, ["sent-back.json"]);
+    assert.equal(asked.revision.draft_from, "the attached files");
+    assert.deepEqual(JSON.parse(read(pjoin(records, "sent-back.json"), "utf8")), specOfFolder(pub));
+  } finally { rm(dir, { recursive: true, force: true }); }
+});
+
+test("an unnamed draft's files sent back are still the draft revised", async () => {
+  const { mkdtempSync, writeFileSync: write, readFileSync: read, rmSync: rm, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { agentFilesOf } = await import("../scripts/files.mjs");
+  const spec = JSON.parse(read(pjoin(dirname(fileURLToPath(import.meta.url)), "fixtures", "publisher.spec.json"), "utf8"));
+  delete spec.name;
+  const dir = mkdtempSync(pjoin(tmpdir(), "spec-writer-unnamed-back-"));
+  try {
+    const files = Object.entries(agentFilesOf(spec)).map(([rel, text], i) => { const p = pjoin(dir, `${i}-Ab12cdEF-${rel.replace(/\//g, "_")}`); write(p, text); return p; });
+    const records = pjoin(dir, "records", "j"); const job = pjoin(dir, "job"); mkdirSync(job, { recursive: true });
+    const textFile = pjoin(dir, "m.txt"); write(textFile, "answer: name: tone-teller\n");
+    const r = spawnSync(process.execPath, [ASKED_SCRIPT], { encoding: "utf8", env: { ...process.env, JOB_DIR: job, RECORDS: records, TEXT_FILE: textFile, FILES: files.join(",") } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const asked = JSON.parse(read(pjoin(records, "asked.json"), "utf8"));
+    assert.deepEqual(asked.spec_attached, ["sent-back.json"]);
+    assert.equal(asked.attached.find((a) => a.name === "sent-back.json").kind, "a spec");
+  } finally { rm(dir, { recursive: true, force: true }); }
+});

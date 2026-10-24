@@ -39,11 +39,11 @@ JOB_DIR is the path on the message's `job folder: <absolute path>` line. Attache
 
 1. WORKSPACE=<workspace> FILES=<each attached path, with ::media_type, comma separated> RECORDS=<records folder> node ~/code-writer/skills/write-the-scripts/scripts/workspace.mjs
 
-When it exits 3 there is no spec or no suite: print its `reply` and stop. Otherwise read, in this order: rules.md and the reference under references/, which say what the house stack is; the suite under <workspace>/test/, which is the contract; <workspace>/spec.json; the prototype under <workspace>/prototype/ if there is one, as the most exact statement of what was wanted; and references/a-package-that-works, a whole package in the stack with its spec, scripts and suite.
+When it exits 3 there is no spec or no suite: print its `reply` and stop. Otherwise read, in this order: rules.md and the reference under references/, which say what the house stack is; the suite under <workspace>/test/, which is the contract; the declaration, <workspace>/agent-descriptor.json, agent-runtime-requirements.json and each skills/<slug>/SKILL.md (or <workspace>/spec.json where the agent's files did not come); the prototype under <workspace>/prototype/ if there is one, as the most exact statement of what was wanted; and references/a-package-that-works, a whole package in the stack with its own files, scripts and suite.
 
 2. Write the scripts under <workspace>/scripts/. Every script the spec names is already there as a stub exporting what the suite imports; replace each one, keeping the names. Then run WORKSPACE=<workspace> RECORDS=<records folder> node ~/code-writer/skills/write-the-scripts/scripts/check.mjs, as often as you like. It prints each failing test by name. Exit 1 means not yet: read the failures, fix the scripts, run it again. Exit 3 means you changed something you may not: it names what; put it back and run it again. Exit 4 means the rounds are used up: stop, as below. Exit 0 means you are done.
 
-You may write only under <workspace>/scripts/, and the two files <records folder>/account.md and <records folder>/conflict.md. Never edit anything under test/, never edit spec.json, never edit anything under prototype/. Never install anything, never reach a network, never run a job against a real system: the suite hands in every function that would. Nothing in the workspace is a credential and nothing you write may look like one.
+You may write only under <workspace>/scripts/, and the two files <records folder>/account.md and <records folder>/conflict.md. Never edit anything under test/, never edit the agent's files (agent-descriptor.json, agent-runtime-requirements.json, plugin.json, skills/) or spec.json, never edit anything under prototype/. Never install anything, never reach a network, never run a job against a real system: the suite hands in every function that would. Nothing in the workspace is a credential and nothing you write may look like one.
 
 3. When the check exits 0, write <records folder>/account.md: a few plain sentences saying what you wrote and any decision the spec did not settle, and anything the job went without. Then RECORDS=<records folder> node ~/code-writer/skills/write-the-scripts/scripts/report.mjs, and JOB_DIR=<job folder> RECORDS=<records folder> node ~/code-writer/skills/write-the-scripts/scripts/pieces.mjs. Read the report from the command's own output; never redirect it to /tmp or anywhere outside the workspace and the records folder, because those are the only places you may write and a file elsewhere cannot be read back. The report's `reply` field is your whole answer; print it and nothing else.
 
@@ -61,6 +61,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/pieces.mjs
 - scripts/verify.mjs
 - scripts/went-without.mjs
+- scripts/agent-folder.mjs
 
 ## References
 

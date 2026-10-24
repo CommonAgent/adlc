@@ -30,3 +30,4 @@ declared.mjs writes records/<job>/declared.json: per job the four sentences, inp
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/declared.mjs
+- scripts/agent-folder.mjs

@@ -20,11 +20,11 @@ when somebody wants an agent built and has said what it should do, in their own 
 
 ## What a good result looks like
 
-A spec.json the builder takes, carrying the four sentences on every job, a how declaration on each, at least four refusals written as acts, and the records an agent is audited by. Beside it, the questions it could not answer itself, each one something nobody else could have answered.
+The agent's own files, the layout a package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), the same bytes the builder writes for the draft, carrying the four sentences on every job, a how declaration on each, at least four refusals written as acts, and the records an agent is audited by. Beside it, the questions it could not answer itself, each one something nobody else could have answered.
 
 ## What it produces
 
-- spec (application/json, per task)
+- the agent's own files (document, per task)
 - what is still open (text, per task)
 
 ## When it comes back empty
@@ -65,9 +65,11 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/draft.mjs
 - scripts/check-spec.mjs
 - scripts/builds.mjs
+- scripts/files.mjs
 - scripts/ask.mjs
 - scripts/went-without.mjs
 - scripts/pieces.mjs
+- scripts/agent-folder.mjs
 
 ## References
 

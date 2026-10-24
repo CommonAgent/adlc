@@ -313,5 +313,48 @@ class TheGateAllowsTheRenamesAndNothingElse(Harness):
         self.assertEqual(diffs, ["x: skills/summarize/SKILL.md differs"])
 
 
+
+class TheReaderOfAnAgentsFilesReadsWhatTheBuilderReads(Harness):
+    """agent-folder.mjs is what the test writer and the code writer read an
+    agent's files with, since the spec writer hands those on instead of a
+    spec.json. Its specOfFolder must state the spec the builder reads out of
+    the same folder, and the proof is that the spec it states builds the same
+    package, byte for byte, as the folder."""
+
+    def test_the_spec_it_reads_builds_the_folder_s_package_byte_for_byte(self):
+        self.convert()
+        from_folder, _ = self.build(self.src, "a")
+        self.assertTrue(from_folder["ok"], from_folder)
+        js = ("import { specOfFolder } from " + json.dumps("file:///" + os.path.join(HERE, "agent-folder.mjs").replace(os.sep, "/").lstrip("/"))
+              + "; console.log(JSON.stringify(specOfFolder(process.argv[1])));")
+        p = subprocess.run(["node", "--input-type=module", "-e", js, self.src], capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        read = json.loads(p.stdout)
+        read["source"] = self.src
+        rt = os.path.join(self.tmp, "rt", "spec.json")
+        os.makedirs(os.path.dirname(rt))
+        with open(rt, "w", encoding="utf-8") as f:
+            json.dump(read, f)
+        from_read, _ = self.build(rt, "b")
+        self.assertTrue(from_read["ok"], from_read)
+        self.assertEqual(tree(from_folder["path"]), tree(from_read["path"]))
+
+    def test_every_copy_of_it_is_this_one(self):
+        with open(os.path.join(HERE, "agent-folder.mjs"), "rb") as f:
+            canonical = f.read()
+        for agent in ("test-writer", "code-writer", "spec-writer"):
+            with open(os.path.join(HERE, os.pardir, agent, "scripts", "agent-folder.mjs"), "rb") as f:
+                self.assertEqual(f.read(), canonical, f"{agent}/scripts/agent-folder.mjs is not package-maker/agent-folder.mjs")
+
+
+class TheReadmeSaysRuntimeRequirements(Harness):
+    def test_the_generated_readme_names_the_runtime_requirements_and_no_install_file(self):
+        res, _ = self.build(os.path.join(self.src, "spec.json"), "a")
+        self.assertTrue(res["ok"], res)
+        with open(os.path.join(res["path"], "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("runtime requirements", readme)
+        self.assertNotIn("install file", readme)
+
 if __name__ == "__main__":
     unittest.main()

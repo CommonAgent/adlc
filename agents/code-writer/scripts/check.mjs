@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { listing, scriptsOf } from "./workspace.mjs";
+import { specOfFolder } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -142,7 +143,10 @@ export function buildRun({ dir, builder, run = null, stoodIn = [] } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), "code-writer-build-"));
   try {
     const go = run ?? ((args, opts) => spawnSync("python3", args, { encoding: "utf8", ...opts }));
-    const r = go([builder, join(dir, "spec.json"), scratch], { timeout: RUN_SECONDS * 1000 });
+    // The agent's folder is the workspace itself when its files came; a
+    // spec.json, still read for one transition, otherwise.
+    const input = existsSync(join(dir, "agent-descriptor.json")) ? dir : join(dir, "spec.json");
+    const r = go([builder, input, scratch], { timeout: RUN_SECONDS * 1000 });
     let doc = null;
     try { doc = JSON.parse(String(r.stdout ?? "")); } catch { doc = null; }
     if (doc && doc.ok === true) {
@@ -207,7 +211,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       console.log(said);
       process.exit(3);
     }
-    const spec = JSON.parse(readFileSync(join(WORKSPACE, "spec.json"), "utf8"));
+    const spec = existsSync(join(WORKSPACE, "agent-descriptor.json"))
+      ? specOfFolder(WORKSPACE)
+      : JSON.parse(readFileSync(join(WORKSPACE, "spec.json"), "utf8"));
     const paths = suitePaths(WORKSPACE);
     const run = runSuite(WORKSPACE, paths);
     runs.push({ round, at: new Date().toISOString(), tests: run.tests, pass: run.pass, fail: run.fail, failing: run.failing, seconds: run.seconds, timed_out: run.timed_out });

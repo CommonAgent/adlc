@@ -61,7 +61,7 @@ test("no spec among the files is said in the reply and nothing runs; a step's ex
     const ran = [];
     const none = runJob({ job: join(dir, "j"), records: join(dir, "r"), work: join(dir, "w"), files: [{ path: join(dir, "missing") }], spawn: fakeSpawn({}, ran) });
     assert.equal(none.ok, false);
-    assert.match(none.reply, /Nothing attached is a spec/);
+    assert.match(none.reply, /Nothing attached is the agent.s files or a spec/);
     assert.equal(ran.length, 0);
     const spec = join(dir, "spec.json"); writeFileSync(spec, SPEC);
     const stopped = runJob({ job: join(dir, "j"), records: join(dir, "r"), work: join(dir, "w"), files: [{ path: spec }], spawn: fakeSpawn({ "declared.mjs": { ok: false, code: 3, reply: "That is not a spec." } }, ran) });

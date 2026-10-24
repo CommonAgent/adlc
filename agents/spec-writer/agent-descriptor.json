@@ -1,12 +1,12 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.11",
-  "does": "Turns what somebody wants an agent to do into a spec.json the builder will take, and says plainly what it could not settle without them.",
+  "agent_version": "0.3.0",
+  "does": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
   "offerings": [
     {
       "id": "write-a-spec",
       "name": "Write a spec",
-      "does": "Writes a spec.json from what somebody asked for, and names what it could not settle.",
+      "does": "Writes the agent's own files from what somebody asked for, and names what it could not settle.",
       "inputs": [
         {
           "name": "what it should do",
@@ -31,8 +31,8 @@
       ],
       "outputs": [
         {
-          "name": "spec",
-          "kind": "application/json",
+          "name": "the agent's own files",
+          "kind": "document",
           "when": "per_task"
         },
         {
@@ -73,7 +73,7 @@
         {
           "id": "check-it-builds",
           "name": "Check it builds",
-          "does": "Runs the builder over the draft and hands back what it said.",
+          "does": "Runs the builder over the draft, hands back what it said, and keeps the agent's own files from what it built.",
           "how": {
             "control": "script",
             "intelligence": "none",

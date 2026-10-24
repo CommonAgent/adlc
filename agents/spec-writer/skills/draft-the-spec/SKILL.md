@@ -34,6 +34,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/draft.mjs
 - scripts/check-spec.mjs
 - scripts/asked.mjs
+- scripts/agent-folder.mjs
 
 ## References
 

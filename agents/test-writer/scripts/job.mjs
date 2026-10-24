@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { agentFilesAmong, layOutAgentFiles } from "./agent-folder.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -115,15 +116,23 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
   const WORK = join(work, id);
   mkdirSync(RECORDS, { recursive: true });
   mkdirSync(WORK, { recursive: true });
-  const SPEC = findSpec(files, read);
+  // The agent's own files are what the spec writer delivers, and they are
+  // preferred: found by content, laid out as the agent's folder under this
+  // job's records, and the folder is the spec every step reads. A spec.json
+  // is still read where they did not come, for one transition.
+  const agent = agentFilesAmong(files, read);
+  const SPEC = agent
+    ? layOutAgentFiles(agent, join(RECORDS, "agent"), read ? (p) => read(p) : undefined)
+    : findSpec(files, read);
   if (!SPEC) {
-    return { ok: false, code: 3, reply: "Nothing attached is a spec: a suite is written from a spec.json that carries a name, a version and jobs with slugs, and none of the files that came with this message is one. Attach the spec and ask again." };
+    return { ok: false, code: 3, reply: "Nothing attached is the agent's files or a spec: a suite is written from the files the package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files), and none of the files that came with this message is one. Attach them and ask again." };
   }
   const declared = step("declared.mjs", { SPEC, RECORDS }, { spawn });
   if (declared.code === 3 || !declared.ok) return { ok: false, code: declared.code, reply: declared.reply ?? "The spec could not be read." };
   // An existing suite is laid out by its bytes, beside the work folder and
   // never on the job folder's mount, and handed to the writer to add to.
-  const suite = findSuite(files, SPEC, read);
+  const used = new Set(agent?.used ?? []);
+  const suite = findSuite(files.filter((f) => !used.has(f?.path)), SPEC, read);
   const extra = {};
   if (suite.length) {
     const EXISTING = `${WORK}.existing`;

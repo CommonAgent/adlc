@@ -31,3 +31,4 @@ Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/check.mjs
 - scripts/workspace.mjs
+- scripts/agent-folder.mjs

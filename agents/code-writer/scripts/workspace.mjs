@@ -1,9 +1,13 @@
 // Lay out the workspace the harness writes in, and record what was laid out.
 //
 // The harness does the writing; this step makes the folder it writes in and
-// the record the check holds it to. spec.json and the suite go in as they
-// arrived and their digests are recorded, so a changed test or a changed spec
-// is caught by comparison and not by trust. Every script the spec names gets
+// the record the check holds it to. The agent's own files (agent-descriptor.json,
+// agent-runtime-requirements.json, plugin.json and each skills/<slug>/SKILL.md,
+// what the spec writer delivers since 0.3.0) and the suite go in as they
+// arrived and their digests are recorded, so a changed test or a changed
+// declaration is caught by comparison and not by trust. A spec.json is still
+// taken where the agent's files did not come, for one transition, and goes in
+// the same way. Every script the spec names gets
 // a starting file: the prototype's own, when the prototype is already in the
 // house stack and has a file at that path; otherwise a stub exporting every
 // function the suite imports from it, each throwing "not written yet", so the
@@ -22,11 +26,12 @@
 //   WORKSPACE=<folder> FILES=<each attached path, with ::media_type, comma separated>
 //   RECORDS=<records folder> [ROUNDS_MAX=30] node workspace.mjs
 //   or, with the files already sorted into folders:
-//   WORKSPACE=<folder> SPEC=<spec.json> SUITE=<folder holding test/> RECORDS=<records folder>
+//   WORKSPACE=<folder> SPEC=<the agent's folder, or a spec.json> SUITE=<folder holding test/> RECORDS=<records folder>
 //   [CODE=<folder holding a prototype>] [ROUNDS_MAX=30] node workspace.mjs
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative } from "node:path";
+import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, agentFilesAmongTexts, specOfFolder } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 export const digestOf = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -122,7 +127,7 @@ const readOnly = (p) => { try { chmodSync(p, 0o444); } catch { /* a hint, not th
  *  {path, text} with path under test/, `code` the prototype's files as
  *  {path, bytes} relative to its own root, or null. Pure apart from writing
  *  into `workspace`. */
-export function layOut({ workspace, spec, specText, suite = [], code = null } = {}) {
+export function layOut({ workspace, spec, specText, agent = null, suite = [], code = null } = {}) {
   if (!workspace) throw new Error("no workspace folder to lay out");
   const scripts = scriptsOf(spec);
   for (const s of scripts) if (!staysInside(s) || !s.startsWith("scripts/")) throw new Error(`the spec names a script outside scripts/: ${s}`);
@@ -131,9 +136,23 @@ export function layOut({ workspace, spec, specText, suite = [], code = null } = 
   mkdirSync(join(workspace, "test"), { recursive: true });
   mkdirSync(join(workspace, "records"), { recursive: true });
 
-  const specPath = join(workspace, "spec.json");
-  writeFileSync(specPath, specText ?? JSON.stringify(spec, null, 2) + "\n");
-  readOnly(specPath);
+  // The declaration: the agent's own files when they came, written as they
+  // arrived and pinned each by its path; a spec.json otherwise.
+  const declared = {};
+  if (agent) {
+    for (const [rel, text] of Object.entries(agentFilesByPath(agent))) {
+      const at = join(workspace, rel);
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, text);
+      readOnly(at);
+      declared[rel] = digestOf(Buffer.from(text));
+    }
+  } else {
+    const specPath = join(workspace, "spec.json");
+    writeFileSync(specPath, specText ?? JSON.stringify(spec, null, 2) + "\n");
+    readOnly(specPath);
+    declared["spec.json"] = digestOf(readFileSync(specPath));
+  }
 
   // Every file the suite carries goes under test/ as it came and is pinned:
   // the test files, and the helpers, fakes and sample files beside them. A
@@ -241,7 +260,7 @@ export function layOut({ workspace, spec, specText, suite = [], code = null } = 
     extras,
     stood_in: stoodIn,
     unnamed,
-    digests: { "spec.json": digestOf(readFileSync(specPath)), ...tests },
+    digests: { ...declared, ...tests },
     listing: listing(workspace, { skip: ["records"] }),
   };
 }
@@ -263,6 +282,42 @@ const looksLikeSpec = (text) => {
 };
 const importsNodeTest = (text) => /from\s+["']node:test["']/.test(text);
 
+/** The agent's own files, as {rel: text} at the paths they take in a
+ *  folder. `agent` is {descriptor, runtime, manifest, skills: {slug}}, each
+ *  a text. */
+export function agentFilesByPath(agent) {
+  const out = { [DESCRIPTOR_FILE]: agent.descriptor, [RUNTIME_FILE]: agent.runtime, [MANIFEST_FILE]: agent.manifest };
+  for (const [slug, text] of Object.entries(agent.skills ?? {})) out[`skills/${slug}/SKILL.md`] = text;
+  return out;
+}
+
+/** The spec the agent's files state, read the way the builder reads them,
+ *  from a scratch copy laid out as the folder. */
+export function specOfAgent(agent, scratch) {
+  for (const [rel, text] of Object.entries(agentFilesByPath(agent))) {
+    mkdirSync(dirname(join(scratch, rel)), { recursive: true });
+    writeFileSync(join(scratch, rel), text);
+  }
+  return specOfFolder(scratch);
+}
+
+/** The agent's own files among texts, by content: {descriptor, runtime,
+ *  manifest, skills, used} with each a text, or null unless the three
+ *  authored files are all there. Chosen the way agent-folder.mjs chooses
+ *  them (the manifest first, then the descriptor and runtime requirements
+ *  that go with it, and only the skills it names), so a prototype that is
+ *  itself a package stays the prototype. */
+export function agentAmong(got) {
+  const found = agentFilesAmongTexts(got.map((f, i) => ({ key: i, text: f.text })));
+  if (!found) return null;
+  const t = (i) => got[i].text;
+  return {
+    descriptor: t(found.descriptor), runtime: t(found.runtime), manifest: t(found.manifest),
+    skills: Object.fromEntries(Object.entries(found.skills).map(([slug, i]) => [slug, t(i)])),
+    used: found.used.map((i) => got[i]),
+  };
+}
+
 /** Sort the attached files by what is in them, never by their names: the
  *  spec is the JSON with a name, a version and jobs with slugs; a test file
  *  imports node:test and goes under test/ as <name>.test.mjs; a file a test
@@ -279,18 +334,27 @@ export function sortAttachments(paths = [], read = (p) => readFileSync(p)) {
     try { bytes = read(p); } catch { continue; }
     got.push({ from: p, name: plainName(p), bytes: Buffer.from(bytes), text: Buffer.from(bytes).toString("utf8") });
   }
-  const spec = got.find((f) => looksLikeSpec(f.text)) ?? null;
-  const tests = got.filter((f) => f !== spec && importsNodeTest(f.text));
+  // The agent's own files are preferred; a spec.json is read where they did
+  // not come. Neither is a test, a helper or the prototype.
+  const agent = agentAmong(got);
+  const taken = new Set(agent?.used ?? []);
+  const spec = agent ? null : got.find((f) => looksLikeSpec(f.text)) ?? null;
+  if (spec) taken.add(spec);
+  // A spec that came with the agent's files is the older form of the same
+  // declaration: set aside, never laid out as the prototype.
+  if (agent) for (const f of got) if (looksLikeSpec(f.text)) taken.add(f);
+  const tests = got.filter((f) => !taken.has(f) && importsNodeTest(f.text));
   const testName = (n) => (n.endsWith(".test.mjs") ? n : n.endsWith(".mjs") ? `${n.slice(0, -4)}.test.mjs` : `${n}.test.mjs`);
   const helpersWanted = new Set();
   for (const t of tests) for (const m of t.text.matchAll(/from\s+["']\.\/([^"'/]+)["']/g)) helpersWanted.add(m[1]);
-  const helpers = got.filter((f) => f !== spec && !tests.includes(f) && helpersWanted.has(f.name));
+  const helpers = got.filter((f) => !taken.has(f) && !tests.includes(f) && helpersWanted.has(f.name));
   const suite = [
     ...tests.map((f) => ({ path: `test/${testName(f.name)}`, text: f.text })),
     ...helpers.map((f) => ({ path: `test/${f.name}`, text: f.text })),
   ];
-  const code = got.filter((f) => f !== spec && !tests.includes(f) && !helpers.includes(f)).map((f) => ({ path: f.name, bytes: f.bytes }));
-  return { spec: spec ? { from: spec.from, text: spec.text } : null, suite, code };
+  const code = got.filter((f) => !taken.has(f) && !tests.includes(f) && !helpers.includes(f)).map((f) => ({ path: f.name, bytes: f.bytes }));
+  const { used, ...files } = agent ?? {};
+  return { spec: spec ? { from: spec.from, text: spec.text } : null, agent: agent ? files : null, suite, code };
 }
 
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
@@ -299,20 +363,32 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const { WORKSPACE, SPEC, SUITE, RECORDS, CODE, FILES } = env;
   if (!WORKSPACE || !RECORDS || !(FILES || (SPEC && SUITE))) { console.error("WORKSPACE and RECORDS are required, with FILES (the attached files) or SPEC and SUITE"); process.exit(2); }
   try {
-    let specText; let suite; let code = null; let testDir;
+    let specText; let suite; let code = null; let testDir; let agent = null;
     if (FILES) {
       // The attached files, sorted here by what is in them.
       const sorted = sortAttachments(FILES.split(",").map((e) => e.trim()).filter(Boolean).map((e) => e.split("::")[0]));
-      if (!sorted.spec) {
-        console.log(JSON.stringify({ ok: false, code: 3, reply: "Nothing attached is a spec: the scripts are written from a spec.json that carries a name, a version and jobs with slugs, and from the suite written from it. Attach both and ask again." }));
+      if (!sorted.spec && !sorted.agent) {
+        console.log(JSON.stringify({ ok: false, code: 3, reply: "Nothing attached is the agent's files or a spec: the scripts are written from the files the package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files), and from the suite written from them. Attach both and ask again." }));
         process.exit(3);
       }
-      specText = sorted.spec.text;
+      agent = sorted.agent;
+      specText = sorted.spec?.text;
       suite = sorted.suite;
       code = sorted.code.length ? sorted.code : null;
       testDir = "the attached files";
     } else {
-      specText = readFileSync(SPEC, "utf8");
+      if (statSync(SPEC).isDirectory()) {
+        // The agent's own folder: its authored files and each SKILL.md.
+        const read = (rel) => readFileSync(join(SPEC, rel), "utf8");
+        const skills = {};
+        if (existsSync(join(SPEC, "skills"))) for (const slug of readdirSync(join(SPEC, "skills")).sort()) {
+          if (existsSync(join(SPEC, "skills", slug, "SKILL.md"))) skills[slug] = read(join("skills", slug, "SKILL.md"));
+        }
+        // The names before Common Agent 0.30.0-draft are read where the
+        // current ones are absent.
+        const either = (now, old) => (existsSync(join(SPEC, now)) ? now : old);
+        agent = { descriptor: read(either(DESCRIPTOR_FILE, "descriptor.json")), runtime: read(either(RUNTIME_FILE, "install.json")), manifest: read(MANIFEST_FILE), skills };
+      } else specText = readFileSync(SPEC, "utf8");
       testDir = join(SUITE, "test");
       // Everything under test/, helpers and fixtures included; the runner's
       // paths are the *.test.mjs among them.
@@ -324,12 +400,12 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
         code = Object.keys(files).map((p) => ({ path: p, bytes: readFileSync(join(CODE, p)) }));
       }
     }
-    const spec = JSON.parse(specText);
+    const spec = agent ? specOfAgent(agent, join(RECORDS, "agent")) : JSON.parse(specText);
     if (!suite.some((f) => /^test\/[^/]+\.test\.mjs$/.test(f.path))) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: `There is no suite in ${testDir}: nothing named test/<name>.test.mjs. The test-writer writes it from the spec, and the scripts are written to it, so nothing can be written yet.` }));
       process.exitCode = 3;
     } else {
-      const out = layOut({ workspace: WORKSPACE, spec, specText, suite, code });
+      const out = layOut({ workspace: WORKSPACE, spec, specText, agent, suite, code });
       mkdirSync(RECORDS, { recursive: true });
       const record = {
         workspace: "v1", at: new Date().toISOString(), folder: WORKSPACE, rounds_max: roundsMaxOf(env),

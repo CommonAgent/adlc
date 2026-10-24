@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.6",
+  "agent_version": "0.2.0",
   "does": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. The only code the package-maker packs is what this delivers.",
   "offerings": [
     {

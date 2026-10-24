@@ -154,3 +154,20 @@ test("one open question is written as one, not as some of them", () => {
   assert.match(replyText({ spec: SPEC, blanks: [{ key: "name" }, { key: "price" }] }), /I have not guessed at any of them:/);
   assert.match(replyText({ spec: SPEC, blanks: [{ key: "name" }, { key: "price" }] }), /until these are settled/);
 });
+
+test("the reply says which of the agent's own files went, or that none did and why", async () => {
+  const { filesLine } = await import("../scripts/ask.mjs");
+  const went = replyText({ spec: SPEC, files: ["agent-descriptor.json", "agent-runtime-requirements.json", "plugin.json", "skills/a/SKILL.md", "skills/b/SKILL.md"] });
+  assert.match(went, /The agent's own files are delivered, the layout a package is built from: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and two SKILL.md files./);
+  assert.match(filesLine(["plugin.json", "skills/a/SKILL.md"]), /and one SKILL.md\.$/);
+  assert.match(replyText({ spec: SPEC, files: [] }), /No files are delivered with this draft, because the builder did not make a package of it/);
+  // A round that never reached the builder says nothing about files.
+  assert.doesNotMatch(replyText({ spec: SPEC }), /files are delivered/);
+  assert.doesNotMatch(went, /spec\.json/);
+});
+
+test("a container agent's reply says why its spec goes as spec.json", () => {
+  const said = replyText({ spec: SPEC, files: [], container: true });
+  assert.match(said, /This is a container agent: its code is in its own repository and it makes no package, so the checked spec goes as spec.json/);
+  assert.doesNotMatch(said, /No files are delivered/);
+});

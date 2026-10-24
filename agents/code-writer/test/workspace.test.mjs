@@ -248,6 +248,6 @@ test("as a process given FILES it lays the workspace out from the attachments th
     assert.equal(rec.prototype_given, true);
     const none = spawnSync("node", [script], { encoding: "utf8", env: { ...process.env, WORKSPACE: join(at, "ws2"), FILES: t1, RECORDS: join(at, "r2"), SPEC: "", SUITE: "", CODE: "" } });
     assert.equal(none.status, 3);
-    assert.match(JSON.parse(none.stdout).reply, /Nothing attached is a spec/);
+    assert.match(JSON.parse(none.stdout).reply, /Nothing attached is the agent.s files or a spec/);
   });
 });

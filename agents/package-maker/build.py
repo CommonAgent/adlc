@@ -5,7 +5,7 @@ The create half of the create-to-deploy loop. Given a structured spec of an
 agent somebody needs, this emits a complete package in the shape
 docs/agent-package-draft.md describes: an Agent Plugin (plugin.json, skills/)
 carrying the agent's OUTSIDE as a draft Agent Descriptor and its HOST SIDE as
-an install file, so the deployment manager reads it and deploys it with no
+its runtime requirements, so the deployment manager reads it and deploys it with no
 changes, and any client that reads Agent Plugins can take the skills.
 
 WHAT IT WILL NOT INVENT. A package is only as honest as the judgment in it,
@@ -16,7 +16,7 @@ An agent with an empty NOT.md or no records duty is the exact failure the
 conformance eval caught, and a builder that guessed them would manufacture it.
 
 ONE AUTHORED SPELLING. Every caller-facing fact is written once, into
-descriptor.json; every host-facing fact once, into install.json. The manifest
+agent-descriptor.json; every host-facing fact once, into agent-runtime-requirements.json. The manifest
 points at both by path and digest and copies nothing. NOT.md, RECORDS.md and
 SYSTEMS.md are generated from those two files, for harnesses that read
 markdown, and a checker regenerates them to see they still match.
@@ -2340,8 +2340,8 @@ def build(spec, src_base, out_dir, authored):
     open(os.path.join(pkg, "README.md"), "w", encoding="utf-8", newline="\n").write(
         f"# {name}\n\nAn agent built from a description by the Agent Builder, as an\n"
         f"Agent Package: an Agent Plugin carrying a draft Agent Descriptor (what\n"
-        f"the agent does, refuses, needs and records) and an install file (what a\n"
-        f"host must have and do). It carries {len(jobs)} skill(s). Nobody has run\n"
+        f"the agent does, refuses, needs and records) and its runtime requirements\n"
+        f"(what a host must have and do). It carries {len(jobs)} skill(s). Nobody has run\n"
         f"it: this is a draft to review, not a vouched-for agent.\n")
     check_hidden(pkg)
 
