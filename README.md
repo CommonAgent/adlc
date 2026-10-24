@@ -44,8 +44,9 @@ replaced by any agent that holds the same role.
 
 | Stage | Role | Folder | Runs on its own? |
 |---|---|---|---|
-| Requirements, Design | [spec writer](https://agentroles.ai/spec-writer.html) | [agents/spec-writer](agents/spec-writer) | Yes, with a model key |
-| Requirements, Design | [solution planner](https://agentroles.ai/solution-planner.html) | [agents/solution-planner](agents/solution-planner) | Yes, with a model key |
+| Architecture and Design (architecture) | [solution architect](https://agentroles.ai/solution-architect.html) | None | There is no reference agent for this role. A person or any agent that holds the role can do it. |
+| Requirements, Architecture and Design (design) | [spec writer](https://agentroles.ai/spec-writer.html) | [agents/spec-writer](agents/spec-writer) | Yes, with a model key |
+| Requirements, Architecture and Design (design) | [solution planner](https://agentroles.ai/solution-planner.html) | [agents/solution-planner](agents/solution-planner) | Yes, with a model key |
 | Source | [catalog](https://agentroles.ai/catalog.html) | [agents/catalog](agents/catalog) | The matching logic does; the agent runs inside the AgentMesh services |
 | Test | [test writer](https://agentroles.ai/test-writer.html) | [agents/test-writer](agents/test-writer) | Yes, with a model key |
 | Code | [code writer](https://agentroles.ai/code-writer.html) | [agents/code-writer](agents/code-writer) | Yes, with a coding harness |
@@ -55,6 +56,12 @@ replaced by any agent that holds the same role.
 | Docs | [documenter](https://agentroles.ai/documenter.html) | [agents/documenter](agents/documenter) | No, it runs inside the AgentMesh services |
 | Publish | [publisher](https://agentroles.ai/publisher.html) | [agents/publisher](agents/publisher) | Yes, with a place to publish to |
 | Incident response | [incident recorder](https://agentroles.ai/incident-recorder.html) | [agents/incident-recorder](agents/incident-recorder) | Yes, as a built package |
+
+The Architecture and Design stage has two parts, and the architecture comes
+first. The solution architect, or a person, names the systems the agent
+reaches and the product bound to each one in each environment, and records
+every decision with its reason. The spec writer and the solution planner then
+design within those systems.
 
 [agents/image](agents/image) is not an agent. It holds the tools the deployment
 manager uses to turn an Agent Package into a container image's build context,
