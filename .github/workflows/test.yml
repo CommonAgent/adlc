@@ -24,14 +24,15 @@ jobs:
 
       - name: The lifecycle packages
         run: |
-          for a in spec-writer solution-planner test-writer code-writer publisher; do
+          for a in spec-writer solution-planner test-writer code-writer publisher incident-recorder; do
             echo "== $a"
             (cd agents/$a && node --test test/*.test.mjs)
           done
 
       - name: Each package builds into an Agent Package
+        shell: bash
         run: |
-          for a in spec-writer solution-planner test-writer code-writer publisher; do
+          for a in spec-writer solution-planner test-writer code-writer publisher incident-recorder; do
             python3 agents/package-maker/build.py agents/$a "$RUNNER_TEMP/pkg/$a" | tail -1
           done
 
