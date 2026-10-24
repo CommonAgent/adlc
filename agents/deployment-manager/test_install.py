@@ -71,9 +71,30 @@ def copy_pkg():
     return dst
 
 
+def authored(pkg_dir, rel):
+    """The file a package keeps under `rel`'s role: "descriptor.json" names the
+    draft Descriptor and "install.json" the runtime requirements, under
+    whichever name the builder wrote (agent-descriptor.json and
+    agent-runtime-requirements.json since Common Agent 0.30.0-draft)."""
+    names = {"descriptor.json": install.DESCRIPTOR_FILES, "install.json": install.INSTALL_FILES}.get(rel)
+    if not names:
+        return rel
+    return next((n for n in names if os.path.exists(os.path.join(pkg_dir, n))), rel)
+
+
+def pointer_key(manifest, rel):
+    """The manifest pointer at that file, under whichever name it carries."""
+    if rel == "descriptor.json":
+        return "descriptor"
+    ext = manifest["extensions"][install.EXT]
+    return next((k for k in install.INSTALL_POINTERS if k in ext), "install")
+
+
 def rewrite(pkg_dir, rel, mutate):
     """Change a pointed file and keep the manifest's pointer honest, so a
     test sees the semantic problem and not the digest one."""
+    kind = rel
+    rel = authored(pkg_dir, rel)
     path = os.path.join(pkg_dir, rel)
     doc = json.load(open(path, encoding="utf-8"))
     mutate(doc)
@@ -82,7 +103,7 @@ def rewrite(pkg_dir, rel, mutate):
         f.write(data)
     mp = os.path.join(pkg_dir, "plugin.json")
     manifest = json.load(open(mp, encoding="utf-8"))
-    key = "descriptor" if rel == "descriptor.json" else "install"
+    key = pointer_key(manifest, kind)
     manifest["extensions"][install.EXT][key]["sha256"] = hashlib.sha256(data.encode("utf-8")).hexdigest()
     with open(mp, "w", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
@@ -124,7 +145,7 @@ class ReadingThePackage(unittest.TestCase):
 
     def test_a_pointed_file_that_changed_is_refused(self):
         d = copy_pkg()
-        with open(os.path.join(d, "install.json"), "a", encoding="utf-8") as f:
+        with open(os.path.join(d, authored(d, "install.json")), "a", encoding="utf-8") as f:
             f.write("\n")
         problems = install.read_package(d)["problems"]
         self.assertTrue(any("does not hash to the digest" in p for p in problems), problems)
@@ -195,12 +216,98 @@ class ReadingThePackage(unittest.TestCase):
         manifest["extensions"] = {install.OLD_EXT: {"servers": [{"role": "the-ledger", "access": "read"}]}}
         with open(mp, "w", encoding="utf-8") as f:
             json.dump(manifest, f)
-        os.remove(os.path.join(d, "install.json"))
-        os.remove(os.path.join(d, "descriptor.json"))
+        os.remove(os.path.join(d, authored(d, "install.json")))
+        os.remove(os.path.join(d, authored(d, "descriptor.json")))
         pkg = install.read_package(d)
         self.assertTrue(pkg["legacy"])
         self.assertEqual(pkg["problems"], [])
         self.assertEqual([s["name"] for s in pkg["systems"]], ["the-ledger"])
+
+
+def renamed(pkg_dir, current):
+    """The package at `pkg_dir`, its two authored files, the pointer and the
+    format rewritten under the current names (current=True) or the names
+    before Common Agent 0.30.0-draft (current=False), digests kept honest."""
+    desc_from, inst_from = authored(pkg_dir, "descriptor.json"), authored(pkg_dir, "install.json")
+    i = 0 if current else 1
+    desc_to, inst_to = install.DESCRIPTOR_FILES[i], install.INSTALL_FILES[i]
+    if desc_from != desc_to:
+        os.rename(os.path.join(pkg_dir, desc_from), os.path.join(pkg_dir, desc_to))
+    inst = json.load(open(os.path.join(pkg_dir, inst_from), encoding="utf-8"))
+    inst["format"] = install.INSTALL_FORMAT if current else install.LEGACY_INSTALL_FORMAT
+    os.remove(os.path.join(pkg_dir, inst_from))
+    data = json.dumps(inst, indent=2, ensure_ascii=False) + "\n"
+    with open(os.path.join(pkg_dir, inst_to), "w", encoding="utf-8", newline="\n") as f:
+        f.write(data)
+    mp = os.path.join(pkg_dir, "plugin.json")
+    manifest = json.load(open(mp, encoding="utf-8"))
+    ext = manifest["extensions"][install.EXT]
+    for k in install.INSTALL_POINTERS:
+        ext.pop(k, None)
+    ext["descriptor"]["path"] = desc_to
+    ext[install.INSTALL_POINTERS[i]] = {"path": inst_to, "sha256": hashlib.sha256(data.encode("utf-8")).hexdigest()}
+    with open(mp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    return pkg_dir
+
+
+class TheNamesBefore030(unittest.TestCase):
+    """Common Agent 0.30.0-draft renamed descriptor.json, install.json, the
+    pointer install and the format agent-install-v1. A package under either
+    set of names reads the same, and one carrying both reads the current."""
+
+    def facts(self, d):
+        pkg = install.read_package(d)
+        self.assertEqual(pkg["problems"], [])
+        return ({k: pkg[k] for k in ("descriptor", "systems")},
+                {k: v for k, v in pkg["install"].items() if k != "format"})
+
+    def test_the_current_names_and_the_former_names_read_the_same(self):
+        new = renamed(copy_pkg(), current=True)
+        old = renamed(copy_pkg(), current=False)
+        self.assertTrue(os.path.exists(os.path.join(new, "agent-runtime-requirements.json")))
+        self.assertTrue(os.path.exists(os.path.join(old, "install.json")))
+        self.assertEqual(self.facts(new), self.facts(old))
+        self.assertEqual(install.read_package(new)["install"]["format"], "agent-runtime-requirements-v1")
+        self.assertEqual(install.read_package(old)["install"]["format"], "agent-install-v1")
+
+    def test_with_no_pointer_the_files_are_found_by_either_name(self):
+        for current in (True, False):
+            d = renamed(copy_pkg(), current=current)
+            mp = os.path.join(d, "plugin.json")
+            manifest = json.load(open(mp, encoding="utf-8"))
+            ext = manifest["extensions"][install.EXT]
+            for k in ("descriptor", *install.INSTALL_POINTERS):
+                ext.pop(k, None)
+            with open(mp, "w", encoding="utf-8") as f:
+                json.dump(manifest, f)
+            pkg = install.read_package(d)
+            self.assertIsNotNone(pkg["descriptor"], current)
+            self.assertIsNotNone(pkg["install"], current)
+
+    def test_where_both_names_are_present_the_current_one_is_read(self):
+        d = renamed(copy_pkg(), current=True)
+        with open(os.path.join(d, "install.json"), "w", encoding="utf-8") as f:
+            json.dump({"format": "agent-install-v1", "systems": [], "ceilings": [], "job_seconds": 61}, f)
+        pkg = install.read_package(d)
+        self.assertEqual(pkg["problems"], [])
+        self.assertNotEqual(pkg["install"].get("job_seconds"), 61)
+
+    def test_the_translation_reads_either_name(self):
+        new = translate.package_facts(renamed(copy_pkg(), current=True))
+        old = translate.package_facts(renamed(copy_pkg(), current=False))
+        self.assertIsNotNone(new[1])
+        self.assertIsNotNone(new[2])
+        self.assertEqual(new[1], old[1])
+        self.assertEqual(new[3], old[3])
+        self.assertEqual({k: v for k, v in new[2].items() if k != "format"},
+                         {k: v for k, v in old[2].items() if k != "format"})
+
+    def test_a_format_that_is_neither_is_refused(self):
+        d = copy_pkg()
+        rewrite(d, "install.json", lambda doc: doc.update({"format": "agent-install-v2"}))
+        problems = install.read_package(d)["problems"]
+        self.assertTrue(any("format is 'agent-install-v2'" in p for p in problems), problems)
 
 
 class WhatLooksLikeAValue(unittest.TestCase):
@@ -514,9 +621,10 @@ class TheLedger(unittest.TestCase):
         self.assertEqual(install.drift(entries, self.home), [])
         with open(os.path.join(self.home, "AGENTS.md"), "a") as f:
             f.write("a hand edit\n")
-        os.remove(os.path.join(self.home, "explainer-maker", "install.json"))
+        inst_name = authored(os.path.join(self.home, "explainer-maker"), "install.json")
+        os.remove(os.path.join(self.home, "explainer-maker", inst_name))
         self.assertEqual(sorted(install.drift(entries, self.home), key=lambda d: d["path"]),
-                         [{"path": "AGENTS.md", "state": "changed"}, {"path": "explainer-maker/install.json", "state": "missing"}])
+                         [{"path": "AGENTS.md", "state": "changed"}, {"path": f"explainer-maker/{inst_name}", "state": "missing"}])
         self.assertEqual(len(install.ledger_digest(entries)), 64)
 
 

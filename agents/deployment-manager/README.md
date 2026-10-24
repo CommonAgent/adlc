@@ -19,6 +19,18 @@ list of fixed procedures and nothing else. The procedures are the contract.
 [`DESIGN.md`](DESIGN.md) walks through the install step by step and maps each
 of the role's clauses to the code that enforces it.
 
+## The package files it reads
+
+A package's draft Descriptor is `agent-descriptor.json` and its runtime
+requirements are `agent-runtime-requirements.json`, pointed at from
+`plugin.json` under `descriptor` and `runtime_requirements` (Common Agent
+0.30.0-draft). A package built before then uses `descriptor.json`,
+`install.json`, the pointer `install` and the format `agent-install-v1`, and
+it still installs and updates exactly as before. Where both names are present,
+the current one is read. The bound Descriptor the agent serves from its own
+home (`.agentmesh/adapter/descriptor.json`) is not a package file and keeps
+its name.
+
 ## The parts
 
 - `steps.py`, run as root through one sudoers line: deploy, update, remove,

@@ -187,8 +187,15 @@ export function handedPieces(jobDir) {
 const writeJson = (path, doc) => writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
 const newId = () => `c-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
 
-function readInstallOf(env, pkg) {
-  try { return JSON.parse(readFileSync(join(env.AGENT_HOME || process.cwd(), pkg, "install.json"), "utf8")); } catch { return null; }
+export function readInstallOf(env, pkg) {
+  // agent-runtime-requirements.json, or install.json in a package from before
+  // Common Agent 0.30.0-draft renamed it.
+  for (const name of ["agent-runtime-requirements.json", "install.json"]) {
+    const path = join(env.AGENT_HOME || process.cwd(), pkg, name);
+    if (!existsSync(path)) continue;
+    try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
+  }
+  return null;
 }
 
 /**

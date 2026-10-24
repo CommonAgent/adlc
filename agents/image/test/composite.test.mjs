@@ -155,3 +155,20 @@ test("a package its publisher marked combinable may join, and the image carries 
   assert.deepEqual(description.members.map((m) => m.name), ["spec-writer", "brief-writer"]);
   assert.equal(readFileSync(join(out, "entrypoint.mjs"), "utf8"), readFileSync(join(here, "..", "composite.mjs"), "utf8"));
 });
+
+test("a member's runtime requirements are read under the current name, the former one, and the current one first", async () => {
+  const { readInstallOf } = await import("../composite.mjs");
+  const home = tmp("agentmesh-composite-names-");
+  mkdirSync(join(home, "old"), { recursive: true });
+  mkdirSync(join(home, "new"), { recursive: true });
+  mkdirSync(join(home, "both"), { recursive: true });
+  writeJson(join(home, "old", "install.json"), { format: "agent-install-v1", job_seconds: 60 });
+  writeJson(join(home, "new", "agent-runtime-requirements.json"), { format: "agent-runtime-requirements-v1", job_seconds: 60 });
+  writeJson(join(home, "both", "agent-runtime-requirements.json"), { format: "agent-runtime-requirements-v1", job_seconds: 90 });
+  writeJson(join(home, "both", "install.json"), { format: "agent-install-v1", job_seconds: 61 });
+  const env = { AGENT_HOME: home };
+  assert.equal(readInstallOf(env, "old").job_seconds, 60);
+  assert.equal(readInstallOf(env, "new").job_seconds, 60);
+  assert.equal(readInstallOf(env, "both").job_seconds, 90);
+  assert.equal(readInstallOf(env, "none"), null);
+});

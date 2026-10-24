@@ -69,7 +69,29 @@ function amEnv(key) {
 }
 
 export const EXT = "net.agentdoc.package";
-export const INSTALL_FORMAT = "agent-install-v1";
+// The runtime requirements' format (Common Agent 0.30.0-draft, 12.2) and the
+// one before it, which a reader still accepts.
+export const INSTALL_FORMAT = "agent-runtime-requirements-v1";
+export const LEGACY_INSTALL_FORMAT = "agent-install-v1";
+// Each authored file under its name, then its name before 0.30.0-draft; and
+// the manifest pointers at each, the current one first.
+export const DESCRIPTOR_FILES = ["agent-descriptor.json", "descriptor.json"];
+export const INSTALL_FILES = ["agent-runtime-requirements.json", "install.json"];
+export const INSTALL_POINTERS = ["runtime_requirements", "install"];
+
+/** The first of `names` present in `dir`, or null: a package written under
+ *  the current names and one written under the former names both read. */
+export function packageFile(dir, names) {
+  for (const n of names) if (existsSync(join(dir, n))) return n;
+  return null;
+}
+
+/** The manifest's pointer at the runtime requirements: `runtime_requirements`,
+ *  or `install` in a package from before 0.30.0-draft. */
+export function installPointer(ext) {
+  for (const k of INSTALL_POINTERS) if (ext?.[k] && typeof ext[k] === "object") return ext[k];
+  return null;
+}
 export const DESCRIPTOR_FORMAT = "agent-descriptor-v1";
 export const DEFAULT_HOME = "/home/agent";
 // Where the harness will be found. Not installed here: a package declares what
@@ -216,9 +238,10 @@ export function readPackage(dir) {
   // the only thing saying these are the bytes that were built. A package whose
   // install file was edited after the build would otherwise become an image
   // that no build record could be tied to.
-  const pointed = (key, fallback) => {
+  const pointed = (keys, fallbacks) => {
+    const key = keys.find((k) => typeof ext[k]?.path === "string") ?? keys[0];
     const ptr = ext[key];
-    const rel = typeof ptr?.path === "string" ? ptr.path : fallback;
+    const rel = typeof ptr?.path === "string" ? ptr.path : (packageFile(root, fallbacks) ?? fallbacks[0]);
     const path = resolve(root, rel);
     if (!path.startsWith(root)) refuse(`the manifest's ${key} pointer leaves the package: ${rel}`);
     if (!existsSync(path)) refuse(`the manifest points at ${rel} for its ${key} and the file is not there`);
@@ -226,18 +249,20 @@ export function readPackage(dir) {
     if (typeof ptr?.sha256 === "string" && sha256(bytes) !== ptr.sha256) {
       refuse(`${rel} does not hash to the digest the manifest names for it; this is not the package that was built`);
     }
+    paths[key === "descriptor" ? "descriptor" : "install"] = rel;
     return JSON.parse(bytes.toString("utf8"));
   };
-  const descriptor = pointed("descriptor", "descriptor.json");
-  const install = pointed("install", "install.json");
+  const paths = {};
+  const descriptor = pointed(["descriptor"], DESCRIPTOR_FILES);
+  const install = pointed(INSTALL_POINTERS, INSTALL_FILES);
   if (descriptor.subject) {
     refuse("this package carries a bound descriptor, not a draft; a package's descriptor has no subject (12.2)");
   }
   if (descriptor.format !== DESCRIPTOR_FORMAT) {
     refuse(`the descriptor's format is ${JSON.stringify(descriptor.format)}, not ${DESCRIPTOR_FORMAT}`);
   }
-  if (install.format !== INSTALL_FORMAT) {
-    refuse(`the install file's format is ${JSON.stringify(install.format)}, not ${INSTALL_FORMAT}`);
+  if (install.format !== INSTALL_FORMAT && install.format !== LEGACY_INSTALL_FORMAT) {
+    refuse(`the install file's format is ${JSON.stringify(install.format)}, not ${INSTALL_FORMAT} (or ${LEGACY_INSTALL_FORMAT}, its name before 0.30.0-draft)`);
   }
   // An installer refuses a request carrying a credential value before the
   // value is used (12.7). The install file is the one file in a package that
@@ -253,7 +278,9 @@ export function readPackage(dir) {
         + `take it out of the package and let the lockfile be the authority.`);
     }
   }
-  return { root, manifest, descriptor, install, name: manifest.name, version: String(manifest.version ?? "") };
+  // `paths` names the file each was read from, so a reader placed beside the
+  // package (the tenant host, one-message) opens the same one.
+  return { root, manifest, descriptor, install, paths, name: manifest.name, version: String(manifest.version ?? "") };
 }
 
 function skillSlugs(root) {
@@ -775,11 +802,16 @@ export function dockerfileText(pkg, opts = {}) {
       `# runs it and does not wake a model to decide whether to.`,
       `ENV AGENT_RUN_SPEC=${AGENT_DIR}/run.json`);
   }
+  // A package that names no runtime and no binary has nothing to check, and
+  // an empty check is not a RUN line: `RUN set -eu ; \` with nothing after it
+  // runs on into the next instruction and the image build fails there.
+  const checks = [...runtimeLines(install), ...(install.binaries ?? []).flatMap((b) => presenceLines(b.name, b.purpose))];
   say(``,
     `# 12.4 rule 1: check every runtime and binary the install file names, stop`,
     `# when one is missing, and never substitute.`,
-    `RUN set -eu ; \\`,
-    block([...runtimeLines(install), ...(install.binaries ?? []).flatMap((b) => presenceLines(b.name, b.purpose))]),
+    ...(checks.length
+      ? [`RUN set -eu ; \\`, block(checks)]
+      : [`# This package names no runtime and no binary, so there is nothing to check.`]),
     ``);
   if (wakesAModel) {
     say(`# And the harness, checked the same way and for the same reason, even`,
@@ -926,7 +958,8 @@ export function emit(packageDir, outDir, opts = {}) {
     package: {
       name: pkg.name, version: pkg.version,
       descriptor_sha256: pkg.manifest.extensions[EXT].descriptor?.sha256 ?? null,
-      install_sha256: pkg.manifest.extensions[EXT].install?.sha256 ?? null,
+      install_sha256: installPointer(pkg.manifest.extensions[EXT])?.sha256 ?? null,
+      runtime_requirements_sha256: installPointer(pkg.manifest.extensions[EXT])?.sha256 ?? null,
     },
     // Which base, and on whose word. `checked` is false only when the operator
     // named a base the catalogue does not list, so a build that then stops at a

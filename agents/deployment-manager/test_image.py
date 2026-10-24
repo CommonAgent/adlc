@@ -42,8 +42,10 @@ def package_dir(slug):
     if not os.path.isdir(PACKAGES):
         raise unittest.SkipTest("set ADLC_PACKAGES to a folder of packages to run this test")
     for family in sorted(os.listdir(PACKAGES)):
-        if os.path.isfile(os.path.join(PACKAGES, family, slug, "spec.json")):
-            return os.path.join(PACKAGES, family, slug)
+        d = os.path.join(PACKAGES, family, slug)
+        # A spec.json source, or the agent's folder (Common Agent 13.2).
+        if os.path.isfile(os.path.join(d, "spec.json")) or os.path.isfile(os.path.join(d, "agent-descriptor.json")):
+            return d
     raise FileNotFoundError(f"no package named {slug} under packages/<family>/")
 
 
@@ -53,7 +55,8 @@ def spec_for(slug):
     use its draft-host system as the example of a placed credential with
     settings, and from 0.12.0 draft-host is brokered and carries neither."""
     if slug != "explainer-maker":
-        return os.path.join(package_dir(slug), "spec.json")
+        d = package_dir(slug)
+        return os.path.join(d, "spec.json") if os.path.isfile(os.path.join(d, "spec.json")) else d
     doc = json.load(open(os.path.join(HERE, "test", "explainer-maker-0.11.0.spec.json"), encoding="utf-8"))
     doc["source"] = os.path.abspath(package_dir(slug))
     path = os.path.join(TMP, "explainer-maker-0.11.0.spec.json")

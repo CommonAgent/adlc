@@ -24,12 +24,15 @@ export const imageDir = join(here, "..");
 export const packages = process.env.ADLC_PACKAGES || join(imageDir, "..", "..", "packages");
 /** A package's folder, found by its name under its family (packages/<family>/<name>), or beside this folder. */
 export function packageDir(name) {
+  // A spec.json source, or the agent's folder (Common Agent 13.2: the two
+  // authored files beside plugin.json), which the builder reads directly.
+  const isSource = (d) => existsSync(join(d, "spec.json")) || existsSync(join(d, "agent-descriptor.json"));
   if (existsSync(packages)) {
     for (const family of readdirSync(packages)) {
-      if (existsSync(join(packages, family, name, "spec.json"))) return join(packages, family, name);
+      if (isSource(join(packages, family, name))) return join(packages, family, name);
     }
   }
-  if (existsSync(join(imageDir, "..", name, "spec.json"))) return join(imageDir, "..", name);
+  if (isSource(join(imageDir, "..", name))) return join(imageDir, "..", name);
   throw new Error(`no package named ${name} under packages/<family>/; set ADLC_PACKAGES to a folder of packages`);
 }
 export const builder = [join(imageDir, "..", "package-maker", "build.py"), join(imageDir, "..", "agentbuilder", "build.py")].find((p) => existsSync(p));
@@ -64,8 +67,19 @@ export function builtPackage(name) {
   if (!bin) throw new Error("no python on this machine, and the fixtures are built by the real builder (build.py)");
   const out = tmp("agentmesh-pkg-");
   const [example, variant] = name.split("@");
-  let spec = join(packageDir(example), "spec.json");
-  if (variant === "escalating") {
+  const fromSpec = existsSync(join(packageDir(example), "spec.json"));
+  let spec = fromSpec ? join(packageDir(example), "spec.json") : packageDir(example);
+  if (variant === "escalating" && !fromSpec) {
+    // The same change in the agent's folder: its runtime requirements are
+    // where a job's command is authored.
+    const src = join(tmp("agentmesh-spec-"), example);
+    cpSync(packageDir(example), src, { recursive: true, filter: (p) => !p.includes("node_modules") });
+    const rr = join(src, "agent-runtime-requirements.json");
+    const doc = readJson(rr);
+    for (const run of Object.values(doc.run ?? {})) run.escalate_when = "json:block";
+    writeJson(rr, doc);
+    spec = src;
+  } else if (variant === "escalating") {
     // THE PACKAGE THAT RUNS A COMMAND AND CAN STILL WAKE A MODEL. That was
     // process-runner until 0.10.7, when its script began deciding every block
     // itself and `escalate_when` went (the same change 9f8161fa met in the
@@ -103,19 +117,59 @@ export function copyOfPackage(name) {
 }
 
 export const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+
+/** The file a package keeps one authored half in, under whichever name the
+ *  builder wrote: "descriptor" is agent-descriptor.json (descriptor.json
+ *  before Common Agent 0.30.0-draft), "install" is
+ *  agent-runtime-requirements.json (install.json before it). */
+export function authoredName(pkgDir, which) {
+  const names = which === "descriptor" ? ["agent-descriptor.json", "descriptor.json"] : ["agent-runtime-requirements.json", "install.json"];
+  return names.find((n) => existsSync(join(pkgDir, n))) ?? names[0];
+}
+
+/** The runtime requirements of a package directory, under either name. */
+export const installOf = (pkgDir) => readJson(join(pkgDir, authoredName(pkgDir, "install")));
+
+/** A copy of a built package under the current names (current = true) or the
+ *  names before 0.30.0-draft (current = false): the two authored files, the
+ *  manifest pointer and the format, with the pointer digests kept honest. */
+export function renamedPackage(name, current) {
+  const dir = copyOfPackage(name);
+  const descFrom = authoredName(dir, "descriptor"), instFrom = authoredName(dir, "install");
+  const descTo = current ? "agent-descriptor.json" : "descriptor.json";
+  const instTo = current ? "agent-runtime-requirements.json" : "install.json";
+  const descText = readFileSync(join(dir, descFrom));
+  rmSync(join(dir, descFrom));
+  writeFileSync(join(dir, descTo), descText);
+  const inst = readJson(join(dir, instFrom));
+  inst.format = current ? "agent-runtime-requirements-v1" : "agent-install-v1";
+  rmSync(join(dir, instFrom));
+  const instText = JSON.stringify(inst, null, 2) + "\n";
+  writeFileSync(join(dir, instTo), instText);
+  const manifest = readJson(join(dir, "plugin.json"));
+  const ext = manifest.extensions["net.agentdoc.package"];
+  delete ext.install;
+  delete ext.runtime_requirements;
+  ext.descriptor.path = descTo;
+  ext[current ? "runtime_requirements" : "install"] = { path: instTo, sha256: createHash("sha256").update(instText).digest("hex") };
+  writeJson(join(dir, "plugin.json"), manifest);
+  return dir;
+}
 export const writeJson = (path, doc) => writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
 
 /** Rewrite one of the two authored files AND the manifest pointer that names
  *  its digest, so the change reads as a package built that way rather than as
  *  a package edited after the build, which the emitter refuses first. */
 export function rewriteAuthored(pkgDir, which, change) {
-  const path = join(pkgDir, `${which}.json`);
+  const path = join(pkgDir, authoredName(pkgDir, which));
   const doc = readJson(path);
   change(doc);
   const text = JSON.stringify(doc, null, 2) + "\n";
   writeFileSync(path, text);
   const manifest = readJson(join(pkgDir, "plugin.json"));
-  manifest.extensions["net.agentdoc.package"][which].sha256 = createHash("sha256").update(text).digest("hex");
+  const ext = manifest.extensions["net.agentdoc.package"];
+  const key = which === "descriptor" ? "descriptor" : (["runtime_requirements", "install"].find((k) => ext[k]) ?? "install");
+  ext[key].sha256 = createHash("sha256").update(text).digest("hex");
   writeJson(join(pkgDir, "plugin.json"), manifest);
   return pkgDir;
 }
@@ -178,7 +232,7 @@ export function bindingsFor(install) {
 export function installedHome(name) {
   const home = tmp("agentmesh-home-");
   cpSync(builtPackage(name), join(home, name), { recursive: true });
-  const install = readJson(join(home, name, "install.json"));
+  const install = installOf(join(home, name));
   const mount = tmp("agentmesh-mount-");
   const directories = {};
   for (const d of install.directories ?? []) {

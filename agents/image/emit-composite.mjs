@@ -36,6 +36,7 @@ import {
   AGENT_DIR, BASES, BINDING_DIR, DEFAULT_HARNESS_BIN, DEFAULT_HOME, Refusal, binaryRecordLines, block, chooseBase,
   dependencies, forbiddenIn, isImageRef, missingFrom, needsHarness, presenceLines, readBases, readPackage,
   requiredVariables, runSpecOf, runtimeLines, shq,
+  installPointer,
 } from "./emit-image.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -255,7 +256,8 @@ export function emitComposite(plan, outDir, opts = {}) {
     name: plan.name,
     packages: all.map((p) => ({ name: p.name, version: p.version,
       descriptor_sha256: p.manifest.extensions["net.agentdoc.package"].descriptor?.sha256 ?? null,
-      install_sha256: p.manifest.extensions["net.agentdoc.package"].install?.sha256 ?? null })),
+      install_sha256: installPointer(p.manifest.extensions["net.agentdoc.package"])?.sha256 ?? null,
+      runtime_requirements_sha256: installPointer(p.manifest.extensions["net.agentdoc.package"])?.sha256 ?? null })),
     members: description.members.map(({ name, package: pkg, version }) => ({ name, package: pkg, version })),
     trust: { owner_checked: true, combinable: members.filter((m) => m.combinable).map((m) => m.name) },
     base: { image: base.image, from: base.from, checked: base.checked },
