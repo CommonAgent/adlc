@@ -70,3 +70,23 @@ required coder, so the builder packs scripts from any code writer; an operator
 who wants only one writer's scripts packed sets `REQUIRED_CODER` (one or more
 public keys) in those two scripts, and the builder then checks every script
 against that writer's signed delivery manifest.
+
+## Which account a build runs as
+
+Left alone, an image build runs as the project's default build account, which
+on a project made since 2024 is its default compute account, usually an
+Editor; and submitting a build as an account means the host may act as it.
+Three settings name narrower accounts instead, each an account of the
+project the build runs in:
+
+- `gcp.build_sa` in the environment file (or `DM_BUILD_SA`): package image
+  builds. It needs to write images to the deployment manager's registry, read
+  the base images, write logs, and read and write the project's
+  `<project>_cloudbuild` bucket, where the source is staged and the log kept.
+- `DM_PLATFORM_BUILDER` in /opt/fleet/deploymgr-platform.json: the platform's
+  own container images, built from a repository.
+- `DM_ROLE_CHECK_BUILDER` in the same file (or `EVAL_BUILD_SA`): the
+  evaluator's role check, which runs the agent's own code and so gets an
+  account that may read images and write logs, never one that writes images.
+
+The host's own account needs Service Account User on each one it names.

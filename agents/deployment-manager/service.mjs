@@ -126,6 +126,12 @@ export function platformSettings(e) {
     project: e.DM_PLATFORM_PROJECT || "",
     region: e.DM_PLATFORM_REGION || "",
     registry: e.DM_PLATFORM_REGISTRY || "",
+    // The account the platform's own container images are built as. Unset,
+    // Cloud Build uses the project's default build account, and submitting
+    // as that account means this host may act as it; named, the host acts as
+    // an account that may only write images and logs (the tenant builds have
+    // tenant-builder for the same reason).
+    builder: e.DM_PLATFORM_BUILDER || "",
   };
 }
 
@@ -436,7 +442,8 @@ export function readInstruction(args, s = SETTINGS) {
     tenant,
     always_on: alwaysOn,
     ...(alwaysOn ? {} : { waker, wake_idle_seconds: wakeIdle ?? (tenant !== null ? t.wake_idle_seconds ?? 120 : 120), wake_max_seconds: tenant !== null ? t.wake_max_seconds ?? 3300 : 3300 }),
-    ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null } : {}),
+    ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null }
+      : platformBuilder(s, project) ? { builder: platformBuilder(s, project) } : {}),
     name, handle, request_id: a.request_id ? String(a.request_id) : null,
     source: { repository, path, commit, dockerfile },
     kind: String(a.kind ?? "third-party-framework"),
@@ -551,8 +558,9 @@ export function buildSubmitArgv(ins, configPath) {
     ...(ins.source.path ? ["--git-source-dir", ins.source.path] : []),
     "--config", configPath, "--project", ins.project,
     // A tenant image is built as tenant-builder, which may only write to the
-    // tenant registry, never as the project's default build account.
-    ...(ins.tenant ? ["--service-account", `projects/${ins.project}/serviceAccounts/${ins.builder}`] : []),
+    // tenant registry, never as the project's default build account; the
+    // platform's own images as the platform's builder when the host names one.
+    ...(ins.tenant || ins.builder ? ["--service-account", `projects/${ins.project}/serviceAccounts/${ins.builder}`] : []),
     "--async", "--format", "json", "--quiet"];
 }
 
@@ -1257,8 +1265,17 @@ export function rowInstruction(row, s = SETTINGS, over = {}) {
     claims: row.claims ?? [], settings: {}, secrets: {}, ready_line: over.ready_line ?? row.ready_line ?? null,
     always_on: false, waker, wake_idle_seconds: over.wake_idle_seconds ?? row.wake_idle_seconds ?? 120, wake_max_seconds: 3300,
     instructed_by: "the owner", replaces: null,
-    ...(row.tenant ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null } : {}),
+    ...(row.tenant ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null }
+      : platformBuilder(s, row.project) ? { builder: platformBuilder(s, row.project) } : {}),
   };
+}
+
+/** The platform's build account, when the host names a valid one of the
+ *  project the build runs in. One of another project would need an
+ *  organization policy these projects lack, so it is not used. */
+export function platformBuilder(s = SETTINGS, project = "") {
+  const b = String((s.platform ?? {}).builder ?? "");
+  return SA_EMAIL_RE.test(b) && project && b.endsWith(`@${project}.iam.gserviceaccount.com`) ? b : "";
 }
 
 /** The argv that moves a running service to the wake shape, keeping every

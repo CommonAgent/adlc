@@ -189,6 +189,37 @@ try:
     JOBS_SA = _am_env("gcp.jobs_sa", "DM_JOBS_SA")
 except RuntimeError:
     JOBS_SA = ""
+# The account OUR OWN image builds run as, when the environment names one.
+# Left out, Cloud Build uses the project's default build account, which on a
+# project made since 2024 is the default compute account, usually an Editor;
+# and submitting a build as it means this host may act as it, which is the
+# same as being it. With a build account named, this host acts as that
+# account only, and that account may write images and logs and nothing else.
+# A build in a customer's project is theirs and keeps the account they granted.
+try:
+    BUILD_SA = _am_env("gcp.build_sa", "DM_BUILD_SA")
+except RuntimeError:
+    BUILD_SA = ""
+
+
+def build_account_argv(project):
+    """The flags that make one of our own builds run as the build account:
+    the account, and the two buckets a user-specified account needs named
+    (where the source is staged, and where the log goes), both the project's
+    own default build bucket. Nothing on a customer's project, or when no
+    build account is named."""
+    if not BUILD_SA or not project or cloud_now():
+        return []
+    # An account of the project the build runs in, by its own address: one
+    # from another project would need an organization policy these projects
+    # do not have, and a malformed one is not passed to gcloud at all.
+    if not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]@" + re.escape(project) + r"\.iam\.gserviceaccount\.com", BUILD_SA):
+        return []
+    return ["--service-account", f"projects/{project}/serviceAccounts/{BUILD_SA}",
+            f"--gcs-source-staging-dir=gs://{project}_cloudbuild/source",
+            f"--gcs-log-dir=gs://{project}_cloudbuild/logs"]
+
+
 # The account the agents that read a caller's own data run as, and which
 # installs those are (docs/caller-grants-plan.md, section 6). Only this account
 # may act as a customer identity in the grants project, so it is kept off every
@@ -3365,7 +3396,7 @@ def image_step(args, alongside=False):
     # in the resource; following also means a failed build is reported with its
     # own id, which is the only handle anyone has on its log.
     where = ["--project", project] if project else []
-    submitted = json.loads(gcloud(["builds", "submit", ctx, "--tag", image, *where,
+    submitted = json.loads(gcloud(["builds", "submit", ctx, "--tag", image, *where, *build_account_argv(project),
                                    "--async", "--quiet", "--format", "json"], "image", 1200) or "{}")
     build_id = submitted.get("id")
     if not build_id:
