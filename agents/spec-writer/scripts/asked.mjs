@@ -303,6 +303,10 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
         writeFileSync(at, JSON.stringify(specOfFolder(back), null, 2) + "\n");
         reading = readingOf({ text, files: [...files, { path: at, media_type: "application/json" }] });
         reading.revision.draft_from = "the attached files";
+        // The seed is the draft revised whether or not it has a name yet:
+        // an open name is the usual first round.
+        const seed = reading.attached.find((a) => a.path === at);
+        if (seed && seed.kind !== "a spec") { seed.kind = "a spec"; reading.spec_attached.push(seed.name); }
       }
     }
     // A revision with no draft attached takes the newest draft an earlier

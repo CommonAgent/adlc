@@ -132,3 +132,20 @@ test("of two rounds, or a package that came as a prototype, the files that go to
   assert.equal(s["When to use this"], "w");
   assert.equal(s["How to do it"], "Step one.\n\n## When to use this\n\nnot the when");
 });
+
+test("a built package that came as a prototype gives none of its files to the agent's", async () => {
+  const { agentFilesAmongTexts } = await import("../scripts/agent-folder.mjs");
+  const { createHash } = await import("node:crypto");
+  const h = (t) => createHash("sha256").update(t, "utf8").digest("hex");
+  const desc = JSON.stringify({ format: "agent-descriptor-v1", agent_version: "1.0.0", offerings: [{ id: "ab" }] });
+  const rt = JSON.stringify({ format: "agent-runtime-requirements-v1", systems: [] });
+  const theirDesc = JSON.stringify({ format: "agent-descriptor-v1", agent_version: "1.0.0", offerings: [{ id: "zz" }] });
+  const theirRt = JSON.stringify({ format: "agent-runtime-requirements-v1", systems: [{ name: "x" }] });
+  const builtMan = JSON.stringify({ version: "1.0.0", extensions: { "net.agentdoc.package": { descriptor: { sha256: h(theirDesc) }, runtime_requirements: { sha256: h(theirRt) } } } });
+  const man = JSON.stringify({ version: "1.0.0", extensions: { "net.agentdoc.package": { build: { skills: { ab: {} } } } } });
+  const got = agentFilesAmongTexts([
+    { key: "desc", text: desc }, { key: "rt", text: rt }, { key: "man", text: man },
+    { key: "their-man", text: builtMan }, { key: "their-desc", text: theirDesc }, { key: "their-rt", text: theirRt },
+  ]);
+  assert.deepEqual([got.manifest, got.descriptor, got.runtime], ["man", "desc", "rt"]);
+});

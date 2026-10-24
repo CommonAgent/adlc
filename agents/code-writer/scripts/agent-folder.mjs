@@ -37,6 +37,7 @@
 // carries its own scripts. test_folder.py holds every copy to this one.
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
 
 const EXT = "net.agentdoc.package";
 export const DESCRIPTOR_FILE = "agent-descriptor.json";
@@ -249,8 +250,17 @@ export function agentFilesAmongTexts(entries) {
     const k = agentFileKind(text);
     if (!k) continue;
     if (k.kind === "skill") skills.push({ key, slug: k.slug });
-    else of[k.kind].push({ key, doc: k.doc });
+    else of[k.kind].push({ key, doc: k.doc, sha256: createHash("sha256").update(String(text), "utf8").digest("hex") });
   }
+  // A built package's manifest names its two files by digest: those files
+  // are that package's (a prototype that is a package), never the agent's.
+  const built = new Set();
+  for (const m of of.manifest) {
+    const own = m.doc.extensions?.[EXT] ?? {};
+    for (const p of ["descriptor", "runtime_requirements", "install"]) if (typeof own[p]?.sha256 === "string") built.add(own[p].sha256);
+  }
+  of.descriptor = of.descriptor.filter((d) => !built.has(d.sha256));
+  of.runtime = of.runtime.filter((r) => !built.has(r.sha256));
   const lastOf = (xs, ok = () => true) => [...xs].reverse().find(ok) ?? null;
   const manifest = lastOf(of.manifest, (m) => isObj(m.doc.extensions?.[EXT]?.build)) ?? lastOf(of.manifest);
   if (!manifest) return null;

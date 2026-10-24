@@ -292,7 +292,17 @@ def agent_files_among(files):
         if k[0] == "skill":
             skills.append((path, k[1]))
         else:
-            of[k[0]].append((path, k[1]))
+            of[k[0]].append((path, k[1], hashlib.sha256(text.encode("utf-8")).hexdigest()))
+    # A built package's manifest names its two files by digest: those files
+    # are that package's (a prototype that is a package), never the agent's.
+    built = set()
+    for _, doc, _ in of["manifest"]:
+        own = (doc.get("extensions") or {}).get("net.agentdoc.package") or {}
+        for ptr in ("descriptor", "runtime_requirements", "install"):
+            if isinstance(own.get(ptr), dict) and isinstance(own[ptr].get("sha256"), str):
+                built.add(own[ptr]["sha256"])
+    of["descriptor"] = [x for x in of["descriptor"] if x[2] not in built]
+    of["runtime"] = [x for x in of["runtime"] if x[2] not in built]
 
     def last(xs, ok=lambda x: True):
         return next((x for x in reversed(xs) if ok(x)), None)

@@ -180,8 +180,15 @@ export function checkBuilds({ spec, env = {}, io = {}, keep = null } = {}) {
   const drop = io.rm ?? ((d) => rmSync(d, { recursive: true, force: true }));
   const container = CONTAINER_KINDS.includes(spec?.kind);
   const named = NAME_RE.test(trim(spec?.name));
-  const files = container ? null : agentFilesOf(spec ?? {});
+  // A draft so malformed it cannot be written as files at all is refused,
+  // in the builder's own words where the builder is here to say them.
+  let files = null;
+  let unwritable = null;
+  if (!container) {
+    try { files = agentFilesOf(spec ?? {}); } catch (e) { unwritable = `the draft could not be written as the agent's files: ${trim(e?.message) || "it is not the shape a draft has"}`; }
+  }
   const kept = () => (keep && files ? { files: { list: keepFiles(keep, files, io) } } : {});
+  if (unwritable && !exists(buildPy)) return { checked: true, ok: false, problems: [unwritable], stood_in_for: [] };
 
   if (!exists(buildPy)) {
     return {
@@ -196,7 +203,8 @@ export function checkBuilds({ spec, env = {}, io = {}, keep = null } = {}) {
   // The check builds under a stand-in name when the name is open; the files
   // kept carry none.
   const checked = named || container ? spec : { ...spec, name: STAND_IN_NAME };
-  const checkFiles = container ? null : (named ? files : agentFilesOf(checked));
+  const asDraft = container || unwritable;
+  const checkFiles = asDraft ? null : (named ? files : agentFilesOf(checked));
   const dir = mk();
   try {
     const { placed, climbing } = standIn(dir, checked, io, checkFiles);
@@ -206,8 +214,12 @@ export function checkBuilds({ spec, env = {}, io = {}, keep = null } = {}) {
         problems: climbing.map((rel) => `the spec names ${rel}, which climbs out of the package folder; a member is a path inside the spec's own folder`),
       };
     }
-    const r = run([buildPy, container ? join(dir, DRAFT_FILE) : dir, join(dir, "out")], {});
+    const r = run([buildPy, asDraft ? join(dir, DRAFT_FILE) : dir, join(dir, "out")], {});
     const said = builderSaid(r.stdout, r.stderr, r.status);
+    if (unwritable) {
+      return { checked: true, ok: false, stood_in_for: placed,
+        problems: said.ok ? [unwritable] : said.problems };
+    }
     return {
       checked: true, ...said, stood_in_for: placed,
       ...(container ? { container: true } : {}),

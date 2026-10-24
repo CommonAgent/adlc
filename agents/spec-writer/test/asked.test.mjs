@@ -316,3 +316,22 @@ test("run as the harness runs it, the agent's files sent back are read as the sp
     assert.deepEqual(JSON.parse(read(pjoin(records, "sent-back.json"), "utf8")), specOfFolder(pub));
   } finally { rm(dir, { recursive: true, force: true }); }
 });
+
+test("an unnamed draft's files sent back are still the draft revised", async () => {
+  const { mkdtempSync, writeFileSync: write, readFileSync: read, rmSync: rm, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { agentFilesOf } = await import("../scripts/files.mjs");
+  const spec = JSON.parse(read(pjoin(dirname(fileURLToPath(import.meta.url)), "fixtures", "publisher.spec.json"), "utf8"));
+  delete spec.name;
+  const dir = mkdtempSync(pjoin(tmpdir(), "spec-writer-unnamed-back-"));
+  try {
+    const files = Object.entries(agentFilesOf(spec)).map(([rel, text], i) => { const p = pjoin(dir, `${i}-Ab12cdEF-${rel.replace(/\//g, "_")}`); write(p, text); return p; });
+    const records = pjoin(dir, "records", "j"); const job = pjoin(dir, "job"); mkdirSync(job, { recursive: true });
+    const textFile = pjoin(dir, "m.txt"); write(textFile, "answer: name: tone-teller\n");
+    const r = spawnSync(process.execPath, [ASKED_SCRIPT], { encoding: "utf8", env: { ...process.env, JOB_DIR: job, RECORDS: records, TEXT_FILE: textFile, FILES: files.join(",") } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const asked = JSON.parse(read(pjoin(records, "asked.json"), "utf8"));
+    assert.deepEqual(asked.spec_attached, ["sent-back.json"]);
+    assert.equal(asked.attached.find((a) => a.name === "sent-back.json").kind, "a spec");
+  } finally { rm(dir, { recursive: true, force: true }); }
+});

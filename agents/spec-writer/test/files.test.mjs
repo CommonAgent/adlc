@@ -83,3 +83,15 @@ test("with no builder on the host the files are still kept, and said to be unche
     assert.match(verdict(r), /nothing checked whether this draft builds/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("a draft too malformed to write as files is refused in words, the builder's where it is here, and never crashes the step", () => {
+  const spec = JSON.parse(readFileSync(join(HERE, "fixtures", "publisher.spec.json"), "utf8"));
+  const bad = { ...spec, refuses: "a string, not a list" };
+  const BUILD_PY = join(HERE, "..", "..", "package-maker", "build.py");
+  const withBuilder = checkBuilds({ spec: bad, env: { BUILD_PY } });
+  assert.equal(withBuilder.ok, false);
+  assert.ok(withBuilder.problems[0].length > 10);
+  const without = checkBuilds({ spec: bad, env: { BUILD_PY: join(HERE, "nowhere.py") } });
+  assert.equal(without.ok, false);
+  assert.match(without.problems[0], /could not be written as the agent's files/);
+});
