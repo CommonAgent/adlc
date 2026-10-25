@@ -3066,3 +3066,281 @@ class BoundDescriptorFloor(unittest.TestCase):
             rec = json.load(f)
         self.assertEqual(rec["carried"], {"memory": "starts-clean-each-job"})
         self.assertEqual(rec["digest"], hashlib.sha256(raw).hexdigest())
+
+
+class AWatchThatCannotFinishIsAFailedWatch(unittest.TestCase):
+    """2026-10-24, dev fleet: the node was starved of CPU, guard.mjs ran past
+    its limit, and guard() refused the act from inside the watch, before
+    watch_new_install could take the new agent back out. egress-check stayed
+    on its node, served, until somebody removed it by hand. A guard that times
+    out is now a "no": the agent is paused, the node is recovered, and the
+    refusal says the watch could not finish and why."""
+
+    NODE = TheInstallGuardMeasuresFirstAndWatchesAfter.NODE
+
+    def setUp(self):
+        p = mock.patch.object(steps, "GUARD", "/opt/fleet/deploymgr-guard.mjs")
+        p.start()
+        self.addCleanup(p.stop)
+        self.folder = os.path.join(self.NODE["root"], "agents", "egress-check")
+        os.makedirs(self.folder, exist_ok=True)
+        self.addCleanup(shutil.rmtree, self.NODE["root"], True)
+
+    def host(self, *answers, seen):
+        """guard.mjs answering in turn, where "timeout" is a guard that runs
+        past its limit; `agent pause` writes paused.json; pm2 succeeds."""
+        queue = list(answers)
+        folder = self.folder
+
+        def fake(cmd, *a, **k):
+            seen.append(list(cmd))
+            if cmd[0] == "node":
+                got = queue.pop(0)
+                if got == "timeout":
+                    raise subprocess.TimeoutExpired(cmd, k.get("timeout"))
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(got) + "\n", "")
+            if cmd[0] == "su" and "agent pause" in cmd[-1]:
+                with open(os.path.join(folder, "paused.json"), "w") as f:
+                    f.write("{}\n")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return fake
+
+    def test_a_guard_that_times_out_during_a_new_installs_watch_pauses_it_and_recovers_the_node(self):
+        seen = []
+        mark = {"ok": True, "restarts": 7, "log_offset": 9}
+        well = {"ok": True}
+        with mock.patch("steps.subprocess.run", self.host("timeout", mark, well, seen=seen)):
+            r = Refusal(self, steps.watch_new_install, "egress-check", self.NODE, {"restarts": 4, "log_offset": 1},
+                        act="deploy")
+        d = r.doc
+        self.assertEqual(d["step"], "watch")
+        self.assertTrue(d["rolled_back"])
+        self.assertIn("could not finish", d["error"])
+        self.assertIn("timed out after 240s", d["error"])
+        self.assertTrue(os.path.exists(os.path.join(self.folder, "paused.json")), "the agent was taken out")
+        self.assertIn(["pm2", "restart", "mesh-node-platform"], seen, "the node was restarted without it")
+        self.assertIn("the node recovered", d["state"])
+
+    def test_a_mark_that_could_not_be_taken_also_counts_as_a_failed_watch(self):
+        seen = []
+        with mock.patch("steps.subprocess.run", self.host("timeout", seen=seen)):
+            before = steps.watch_mark(self.NODE)
+        self.assertTrue(before["unfinished"])
+        with mock.patch("steps.subprocess.run", self.host({"ok": True}, {"ok": True}, seen=seen)):
+            r = Refusal(self, steps.watch_new_install, "egress-check", self.NODE, before, act="deploy")
+        self.assertIn("no starting mark was taken", r.doc["error"])
+        self.assertTrue(r.doc["rolled_back"])
+
+    def test_a_guard_that_times_out_during_an_update_watch_puts_the_old_version_back(self):
+        put = []
+        seen = []
+
+        def put_old_back():
+            put.append(1)
+            return "0.1.0 was restored from the snapshot and restarted"
+        common = {"name": "egress-check", "package": "egress-check", "version": "0.2.0"}
+        with mock.patch("steps.subprocess.run",
+                        self.host("timeout", {"ok": True, "restarts": 1}, {"ok": True}, seen=seen)):
+            r = Refusal(self, steps.watch_update, "egress-check", self.NODE, {"restarts": 1}, put_old_back, "0.2.0",
+                        common)
+        self.assertEqual(put, [1])
+        self.assertTrue(r.doc["restored"] and r.doc["rolled_back"])
+        self.assertIn("timed out", r.doc["error"])
+
+    def test_a_recovery_whose_guard_times_out_is_reported_not_raised(self):
+        seen = []
+        with mock.patch("steps.subprocess.run", self.host("timeout", "timeout", seen=seen)):
+            got = steps.recovered(self.NODE)
+        self.assertFalse(got["ok"])
+        self.assertIn("timed out", got["reason"])
+        self.assertTrue(steps.rolled_back_state("x", got).startswith("rolled back: x; the node has NOT recovered: "))
+
+    def test_capacity_still_refuses_before_anything_is_placed(self):
+        with mock.patch("steps.subprocess.run", self.host("timeout", seen=[])):
+            r = Refusal(self, steps.capacity_check, "egress-check", HERE, self.NODE)
+        self.assertEqual((r.doc["step"], r.doc["state"]), ("capacity", "nothing created"))
+        self.assertIn("timed out", r.doc["error"])
+
+
+@unittest.skipIf(steps.fcntl is None, "the node lock needs fcntl (Linux)")
+class TheNodeLockIsHeldOnceAndWaitedFor(unittest.TestCase):
+    """Every act that starts or restarts a node, and every removal from one,
+    holds one host-wide lock (node_lock)."""
+
+    def test_it_is_re_entrant_within_one_act(self):
+        with steps.node_lock("outer"):
+            with steps.node_lock("inner"):
+                self.assertEqual(steps._NODE_LOCK["depth"], 2)
+        self.assertEqual(steps._NODE_LOCK["depth"], 0)
+
+    def test_a_second_holder_waits_and_then_refuses_at_the_lock_step(self):
+        import fcntl
+        # Another open file description of the same file, as another act's.
+        fd = os.open(steps.NODE_LOCK, os.O_RDONLY | os.O_CREAT, 0o644)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        with mock.patch.object(steps, "NODE_LOCK_SECONDS", 0.2), mock.patch.object(steps, "NODE_LOCK_SOFT_SECONDS", 0.1):
+            def take():
+                with steps.node_lock("the removal of x"):
+                    pass
+            r = Refusal(self, take)
+            self.assertEqual(r.doc["step"], "lock")
+            self.assertIn("the removal of x did not start", r.doc["error"])
+            with self.assertRaises(steps.NodeLockBusy):
+                with steps.node_lock("recovery", soft=True):
+                    pass
+        self.assertEqual(steps._NODE_LOCK["depth"], 0)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        with steps.node_lock("after"):
+            pass
+
+    def test_an_acts_printed_answer_lets_go_of_the_lock(self):
+        steps.acquire_node_lock("an act")
+        steps.acquire_node_lock("its rollback")
+        emitted(self, steps.out, {"ok": True})
+        self.assertEqual((steps._NODE_LOCK["depth"], steps._NODE_LOCK["fd"]), (0, None))
+
+    def test_a_deploy_refused_the_lock_has_placed_nothing(self):
+        os.makedirs(os.path.join(TMP, "tmp"), exist_ok=True)
+        os.makedirs(steps.TOKENS, exist_ok=True)
+        steps.write_text(f"{steps.TOKENS}/lockcheck-boot.token", "t")
+        argfile = f"{steps.DM_HOME}/tmp/deploy-lockcheck.json"
+        steps.write_text(argfile, json.dumps({
+            "name": "lockcheck", "harness": "opencode", "interaction": "service", "admit": [],
+            "boot_token": "lockcheck-boot", "package_url": "https://agentcatalog.com/x/package.tar.gz",
+            "placement": "host", "host_because": "a test"}))
+        seen = []
+        pkg = {"manifest": {"name": "lockcheck", "version": "0.1.0"}}
+        with mock.patch.object(steps, "user_exists", lambda n: False),                 mock.patch.object(steps, "spend_check_and_record", lambda a: None),                 mock.patch.object(steps, "fetch_and_verify", return_value=(TMP, HERE, "ab" * 32, pkg)),                 mock.patch.object(steps, "check_before_touching", lambda a, p: None),                 mock.patch.object(steps, "capacity_check", lambda *a, **k: seen.append("capacity")),                 mock.patch.object(steps, "acquire_node_lock", lambda *a, **k: steps.fail("lock", "held")),                 mock.patch("steps.subprocess.run", pm2_answering([], record=seen)):
+            r = Refusal(self, steps.deploy, argfile)
+        self.assertEqual(r.doc["step"], "lock")
+        self.assertEqual(r.doc["state"], "nothing created")
+        self.assertEqual(seen, [], "no capacity check, no useradd, no agent add")
+        self.assertEqual(steps.load_list(), [])
+
+
+class ARemovalSeesTheFolderStayGone(unittest.TestCase):
+    """2026-10-24, dev fleet: node-fix-check was removed while another deploy
+    restarted mesh-node-platform, and the node put its folder back and went on
+    serving it. A removal now waits for the node to settle, removes, watches
+    the folder stay gone, and removes again when it comes back."""
+
+    def setUp(self):
+        self.root = os.path.join(TMP, "node-rm")
+        self.folder = os.path.join(self.root, "agents", "scratch")
+        os.makedirs(self.folder, exist_ok=True)
+        self.addCleanup(shutil.rmtree, self.root, True)
+        for name, v in (("NODE_SETTLE_SECONDS", 0), ("NODE_SETTLE_MOST", 0.05), ("REMOVE_VERIFY_SECONDS", 0.05),
+                        ("REMOVE_POLL", 0.001)):
+            p = mock.patch.object(steps, name, v)
+            p.start()
+            self.addCleanup(p.stop)
+        steps.save_list([{"name": "scratch", "state": "running", "node_root": self.root,
+                          "node_proc": "mesh-node-platform", "node_user": "mesh-node"}])
+        self.addCleanup(steps.save_list, [])
+
+    def host(self, comes_back, restarts=None):
+        """pm2 holding the node (its pid changing from the jlist calls named in
+        `restarts` on), `agent remove` deleting the folder, and the folder put
+        back after the first `comes_back` removals, as the racing node did."""
+        calls = {"remove": 0, "jlist": 0}
+        folder = self.folder
+        restarts = restarts or set()
+
+        def fake(cmd, *a, **k):
+            if list(cmd[:2]) == ["pm2", "jlist"]:
+                calls["jlist"] += 1
+                pid = 100 + sum(1 for n in restarts if n <= calls["jlist"])
+                rows = [{"name": "mesh-node-platform", "pid": pid,
+                         "pm2_env": {"status": "online", "restart_time": pid, "pm_uptime": 1000}}]
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(rows), "")
+            if cmd[0] == "su" and "agent remove" in cmd[-1]:
+                calls["remove"] += 1
+                shutil.rmtree(folder, ignore_errors=True)
+                if calls["remove"] <= comes_back:
+                    os.makedirs(folder, exist_ok=True)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return fake, calls
+
+    def run_remove(self, fake):
+        with mock.patch("steps.subprocess.run", fake), \
+                mock.patch.object(steps, "forget_runtime", lambda *a, **k: {"retracted": True}), \
+                mock.patch.object(steps, "supervisor_here", lambda: (True, "held")):
+            return emitted(self, steps.remove, "scratch")
+
+    def test_a_clean_removal_is_verified_in_one_round(self):
+        fake, calls = self.host(comes_back=0)
+        d = self.run_remove(fake)
+        self.assertTrue(d["ok"])
+        self.assertEqual((d["node_removal"]["rounds"], d["node_removal"]["verified"]), (1, True))
+        self.assertEqual(calls["remove"], 1)
+
+    def test_a_folder_that_comes_back_is_removed_again(self):
+        fake, calls = self.host(comes_back=1)
+        d = self.run_remove(fake)
+        self.assertTrue(d["ok"])
+        self.assertEqual(d["node_removal"]["rounds"], 2)
+        self.assertTrue(d["node_removal"]["retried"][0]["folder_came_back"])
+        self.assertEqual(calls["remove"], 2)
+        self.assertFalse(os.path.exists(self.folder))
+
+    def test_a_node_that_restarts_during_the_watch_is_watched_again(self):
+        # The jlist calls: the settle, the mark after the remove, then the change.
+        fake, calls = self.host(comes_back=0, restarts={3})
+        d = self.run_remove(fake)
+        self.assertTrue(d["ok"])
+        self.assertTrue(d["node_removal"]["retried"][0]["node_restarted"])
+        self.assertEqual(calls["remove"], 1, "the folder stayed gone, so there was nothing to remove again")
+
+    def test_a_restart_in_every_round_with_the_folder_gone_is_still_a_removal(self):
+        # As when the removal itself makes the node restart: the folder decides.
+        fake, calls = self.host(comes_back=0, restarts=set(range(3, 40)))
+        d = self.run_remove(fake)
+        self.assertTrue(d["ok"])
+        self.assertTrue(d["node_removal"]["verified"])
+        self.assertEqual(calls["remove"], 1)
+
+    def test_a_removal_refused_the_lock_takes_nothing_down(self):
+        down = []
+        with mock.patch.object(steps, "acquire_node_lock", lambda *a, **k: steps.fail("lock", "held")),                 mock.patch.object(steps, "load_json_list", lambda path: [{"name": "scratch", "job": "j"}]),                 mock.patch.object(steps, "take_down_container", lambda *a: down.append(a) or []):
+            r = Refusal(self, steps.remove, "scratch")
+        self.assertEqual(r.doc["step"], "lock")
+        self.assertEqual(down, [], "the job was not taken down")
+        self.assertTrue(os.path.isdir(self.folder))
+
+    def test_rounds_that_end_on_a_restart_get_one_last_watch_of_the_folder(self):
+        # Restarts in every round, the budget spent, and the folder put back
+        # only after the last round: the last watch sees it.
+        fake, calls = self.host(comes_back=0, restarts=set(range(3, 40)))
+        folder = self.folder
+
+        import threading
+
+        def late(cmd, *a, **k):
+            got = fake(cmd, *a, **k)
+            # The settle after the third round is the tenth pm2 read; the
+            # folder comes back a moment after it, inside the last watch.
+            if list(cmd[:2]) == ["pm2", "jlist"] and calls["jlist"] == 10:
+                threading.Timer(0.1, lambda: os.makedirs(folder, exist_ok=True)).start()
+            return got
+        with mock.patch.object(steps, "REMOVE_VERIFY_SECONDS", 0.3), mock.patch.object(steps, "REMOVE_POLL", 0.01):
+            d = self.run_remove(late)
+        self.assertFalse(d["ok"])
+        self.assertFalse(d["node_removal"]["verified"])
+
+    def test_a_node_pm2_does_not_hold_is_not_waited_for(self):
+        with mock.patch("steps.subprocess.run", pm2_answering([])), mock.patch.object(steps, "NODE_SETTLE_MOST", 30):
+            got = steps.node_settled("mesh-node-platform", steps.time.time() + 30)
+        self.assertTrue(got["settled"])
+        self.assertLess(got["waited_seconds"], 5)
+        self.assertIn("not in pm2", got["node"])
+
+    def test_a_folder_that_keeps_coming_back_is_said_and_the_act_is_not_ok(self):
+        fake, calls = self.host(comes_back=99)
+        d = self.run_remove(fake)
+        self.assertFalse(d["ok"])
+        self.assertEqual(d["step"], "verify")
+        self.assertEqual(calls["remove"], steps.REMOVE_ROUNDS)
+        self.assertFalse(d["node_removal"]["verified"])
+        self.assertIn("may still serve it", d["remaining"][0])
+        self.assertIn("run remove scratch again", d["state"])

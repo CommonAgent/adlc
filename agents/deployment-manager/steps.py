@@ -44,10 +44,15 @@ The per-agent attendant is started only where no fleet supervisor is running on
 this host. The generated pm2 config declares it either way, because the
 supervisor's roster is built out of those entries. See agent_procs.
 """
+import contextlib
 import hashlib
 import importlib.util
 import json
 import os
+try:
+    import fcntl
+except ImportError:  # not on Linux; the node lock below then holds nothing
+    fcntl = None
 import re
 import shlex
 import shutil
@@ -601,6 +606,7 @@ CURRENT = {"entry": None, "cloud": None}
 
 
 def out(obj):
+    release_node_lock(all_of_it=True)
     print(json.dumps(obj))
     sys.exit(0 if obj.get("ok") else 1)
 
@@ -1650,6 +1656,105 @@ def start_and_smoke(name, ask_model=True):
     return {"passed": listening and bool(probe), "listening": listening, "probe_reply": probe[:400]}
 
 
+# ── the node lock ─────────────────────────────────────────────────────────
+#
+# A REMOVAL AND A NODE RESTART MUST NOT OVERLAP. On the dev fleet on
+# 2026-10-24 node-fix-check was removed while another agent's deploy restarted
+# mesh-node-platform: the node that came up had read its roster before the
+# folder went, went on serving the removed agent, and its writers put the
+# folder back. A second `agent remove` cleared it, and only because somebody
+# looked. So every act that starts or restarts a node holds this host-wide
+# lock from the start until its watch is over, and a removal holds it from
+# before it waits for the node to settle until it has seen the folder stay
+# gone. One process runs one act, but an act re-enters it (a deploy's
+# rollback restarts the node inside the deploy's own hold), so it counts.
+NODE_LOCK = os.environ.get("DM_NODE_LOCK", f"{FLEET}/deploymgr-node.lock")
+# HOW LONG AN ACT WAITS FOR THE LOCK. deploy-executor.py adds this same
+# number (the same variable, the same default; keep the two in step) to its
+# DEPLOY_TIMEOUT, so an act that waits its full turn still has the build and
+# the smoke and watch after it before the executor would kill it. A deploy or update takes the lock before
+# anything is placed, so that refusal leaves nothing behind.
+NODE_LOCK_SECONDS = int(os.environ.get("DM_NODE_LOCK_SECONDS", "600"))
+# The wait of a put-back that runs after its act let go of the lock: short,
+# because it is the end of a failing act and must not use up its time.
+NODE_LOCK_SOFT_SECONDS = int(os.environ.get("DM_NODE_LOCK_SOFT_SECONDS", "60"))
+_NODE_LOCK = {"fd": None, "depth": 0}
+
+
+class NodeLockBusy(Exception):
+    pass
+
+
+def acquire_node_lock(why, soft=False):
+    """Take (or re-enter) the host's node lock for `why`. Waits up to
+    NODE_LOCK_SECONDS (NODE_LOCK_SOFT_SECONDS when soft) for another act to
+    let go, then refuses at step "lock" (or, soft, raises NodeLockBusy for a
+    caller that must not refuse, such as a rollback). Every acquire is
+    matched by release_node_lock; out() lets go of whatever is still held,
+    since an act's printed answer is its end."""
+    if _NODE_LOCK["depth"] or fcntl is None:
+        _NODE_LOCK["depth"] += 1
+        return
+    # Opened for reading: flock takes an exclusive lock on any descriptor, and
+    # an act run as a user other than root can still open root's file.
+    fd = os.open(NODE_LOCK, os.O_RDONLY | os.O_CREAT, 0o644)
+    bound = NODE_LOCK_SOFT_SECONDS if soft else NODE_LOCK_SECONDS
+    deadline = time.time() + bound
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.time() >= deadline:
+                os.close(fd)
+                said = (f"another act held the node lock ({NODE_LOCK}) for more than {bound}s, so "
+                        f"{why} did not start; nothing was changed by this act at this step")
+                if soft:
+                    raise NodeLockBusy(said)
+                fail("lock", said)
+            time.sleep(min(1.0, max(0.01, deadline - time.time())))
+    _NODE_LOCK.update(fd=fd, depth=1)
+
+
+def release_node_lock(all_of_it=False):
+    if _NODE_LOCK["depth"] <= 0:
+        return
+    _NODE_LOCK["depth"] = 0 if all_of_it else _NODE_LOCK["depth"] - 1
+    if _NODE_LOCK["depth"] == 0 and _NODE_LOCK["fd"] is not None:
+        fd, _NODE_LOCK["fd"] = _NODE_LOCK["fd"], None
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+@contextlib.contextmanager
+def node_lock(why, soft=False):
+    """The node lock, held for a block (acquire_node_lock)."""
+    acquire_node_lock(why, soft)
+    try:
+        yield
+    finally:
+        release_node_lock()
+
+
+def node_proc_state(proc):
+    """The node process as pm2 has it: {status, pid, restarts, up_since}
+    (seconds since the epoch), or None when pm2 does not hold it."""
+    try:
+        p = subprocess.run(["pm2", "jlist"], capture_output=True, text=True, timeout=10)
+        rows = json.loads(p.stdout or "[]")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    for r in rows if isinstance(rows, list) else []:
+        if isinstance(r, dict) and r.get("name") == proc:
+            env = r.get("pm2_env") or {}
+            up = env.get("pm_uptime")
+            return {"status": env.get("status"), "pid": r.get("pid"), "restarts": env.get("restart_time"),
+                    "up_since": up / 1000 if isinstance(up, (int, float)) else None}
+    return None
+
+
 # ── the install guard (guard.mjs) ─────────────────────────────────────────
 #
 # 2026-09-29: ride-maker, the thirtieth agent on mesh-node-platform, pushed the
@@ -1666,22 +1771,41 @@ WATCH_SECONDS = int(os.environ.get("DM_WATCH_SECONDS", "120"))
 RECOVERY_SECONDS = int(os.environ.get("DM_RECOVERY_SECONDS", "60"))
 
 
-def guard(argv, step, timeout):
-    """One guard.mjs answer, parsed. A guard that is missing or says nothing
-    refuses the step: an install that could not be measured is not one this
-    procedure may call safe."""
+def guard_answer(argv, timeout):
+    """One guard.mjs answer, parsed, or None and why there is none. Never
+    refuses: what a missing answer means is the caller's to say."""
     if not GUARD:
-        fail(step, "the install guard (deploymgr-guard.mjs) is not beside this file, so the node and the host "
-                   "could not be measured")
+        return None, ("the install guard (deploymgr-guard.mjs) is not beside this file, so the node and the host "
+                      "could not be measured")
     try:
         p = subprocess.run(["node", GUARD, *argv], capture_output=True, text=True, timeout=timeout)
         lines = [ln for ln in (p.stdout or "").splitlines() if ln.strip()]
         res = json.loads(lines[-1]) if lines else None
+    except subprocess.TimeoutExpired:
+        return None, f"the install guard timed out after {timeout}s"
     except (OSError, ValueError, subprocess.SubprocessError) as e:
-        fail(step, f"the install guard could not be run: {str(e)[:200]}")
+        return None, f"the install guard could not be run: {str(e)[:200]}"
     if not isinstance(res, dict):
-        fail(step, f"the install guard gave no answer: {(p.stderr or '')[-300:]}")
+        return None, f"the install guard gave no answer: {(p.stderr or '')[-300:]}"
+    return res, ""
+
+
+def guard(argv, step, timeout):
+    """One guard.mjs answer, parsed. A guard that is missing or says nothing
+    refuses the step: an install that could not be measured is not one this
+    procedure may call safe. Used where nothing is placed yet (capacity); the
+    watch, which runs after the install is in, uses guard_answer and treats no
+    answer as a failed watch (watch_after)."""
+    res, why = guard_answer(argv, timeout)
+    if res is None:
+        fail(step, why)
     return res
+
+
+def unfinished_watch(why, during="watch"):
+    """A watch that could not be completed, said as a failed one. Its reason
+    is what an operator acts on."""
+    return {"ok": False, "act": during, "unfinished": True, "reason": f"the {during} could not finish: {why}"}
 
 
 def bytes_under(path):
@@ -1719,8 +1843,14 @@ def capacity_check(name, pkg_dir, holder, update=False):
 
 def watch_mark(holder):
     """Where the holder's pm2 restart count and log stand before this install
-    starts anything, so the watch can tell what the install did."""
-    return guard(["mark", "--proc", holder["proc"], "--log", holder["log"]], "watch", 90)
+    starts anything, so the watch can tell what the install did.
+
+    A mark the guard could not take comes back as an unfinished watch rather
+    than a refusal: in a deploy the agent is already added to its node when
+    this runs, and a refusal here would leave it served with nobody watching
+    (watch_new_install counts it as a failed watch and takes the agent out)."""
+    res, why = guard_answer(["mark", "--proc", holder["proc"], "--log", holder["log"]], 90)
+    return res if res is not None else unfinished_watch(why, "mark")
 
 
 def watch_after(name, holder, before, seconds=None, agent=True):
@@ -1738,7 +1868,21 @@ def watch_after(name, holder, before, seconds=None, agent=True):
         argv += ["--restarts-before", str(before["restarts"])]
     if isinstance(before.get("log_offset"), int):
         argv += ["--log-from", str(before["log_offset"])]
-    return guard(argv, "watch", seconds + 120)
+    # A WATCH THAT COULD NOT FINISH IS A FAILED WATCH. Until 2026-10-24 a guard
+    # that ran past its limit refused the act from inside guard(), which ended
+    # the procedure before watch_new_install could take the new agent back out:
+    # on the dev fleet two egress-check installs were refused that way while
+    # the starved node answered nothing, and the first one stayed on its node,
+    # served and unpaused, until somebody removed it by hand. The answer that
+    # never came is now a "no", so the rollback runs.
+    if before.get("unfinished"):
+        # No baseline was taken, so a restart the install caused cannot be told
+        # from one before it. A watch that passed without one is not a pass.
+        return unfinished_watch(f"no starting mark was taken ({before.get('reason')})")
+    res, why = guard_answer(argv, seconds + 120)
+    if res is None:
+        return unfinished_watch(why)
+    return res
 
 
 def recovered(holder, restart=True):
@@ -1748,11 +1892,23 @@ def recovered(holder, restart=True):
     adapter shared it with nobody, so there is nothing to confirm."""
     if not holder.get("root"):
         return {"ok": True, "act": "watch", "note": "the agent had its own adapter; no other agent shared it"}
-    mark = watch_mark(holder)
-    if restart:
-        subprocess.run(["pm2", "restart", holder["proc"]], capture_output=True, text=True, timeout=90)
-    return watch_after("-", holder, {"restarts": mark.get("restarts"), "log_offset": mark.get("log_offset")},
-                       seconds=RECOVERY_SECONDS, agent=False)
+    # Nothing here may raise past the rollback that called it: a recovery that
+    # could not be watched is reported as not recovered, and the refusal after
+    # it still says what was taken out.
+    try:
+        with node_lock("the recovery watch", soft=True):
+            mark = watch_mark(holder)
+            if restart:
+                try:
+                    subprocess.run(["pm2", "restart", holder["proc"]], capture_output=True, text=True, timeout=90)
+                except subprocess.TimeoutExpired:
+                    return unfinished_watch(f"pm2 restart {holder['proc']} did not return in 90s", "recovery watch")
+            if mark.get("unfinished"):
+                return unfinished_watch(mark.get("reason"), "recovery watch")
+            return watch_after("-", holder, {"restarts": mark.get("restarts"), "log_offset": mark.get("log_offset")},
+                               seconds=RECOVERY_SECONDS, agent=False)
+    except NodeLockBusy as e:
+        return unfinished_watch(str(e), "recovery watch")
 
 
 def rolled_back_state(what, recovery):
@@ -1815,6 +1971,14 @@ def pause_new_agent(name, holder):
             f"(docs/technical-debt.md item 100)")
 
 
+def watch_failure(what, watched):
+    """The refusal's sentence: a node that did not stay well, or a watch that
+    could not finish and so counts as one that failed."""
+    if watched.get("unfinished"):
+        return f"the watch after {what} could not finish, so it counts as failed: {watched.get('reason')}"
+    return f"the node did not stay well after {what}: {watched.get('reason')}"
+
+
 def watch_new_install(name, holder, before, **report):
     """Watch a NEW agent's node; on failure pause the agent on its node,
     confirm the node recovers, and refuse with "rolled back" and the reason.
@@ -1824,7 +1988,7 @@ def watch_new_install(name, holder, before, **report):
         return watched
     what = pause_new_agent(name, holder)
     recovery = recovered(holder)
-    fail("watch", f"the node did not stay well after {name} was placed: {watched.get('reason')}",
+    fail("watch", watch_failure(f"{name} was placed", watched),
          state=rolled_back_state(what, recovery), rolled_back=True, name=name,
          watch=watched, recovery=recovery, **report)
 
@@ -1839,7 +2003,7 @@ def watch_update(name, holder, before, put_old_back, version, common):
         return watched
     what = put_old_back()
     recovery = recovered(holder, restart=False)
-    fail("watch", f"the node did not stay well after {name} {version} was placed: {watched.get('reason')}",
+    fail("watch", watch_failure(f"{name} {version} was placed", watched),
          state=rolled_back_state(what, recovery), act="update", restored=True, rolled_back=True,
          recovery=recovery, **{**common, "watch": watched})
 
@@ -2037,6 +2201,10 @@ def deploy(argfile):
     # agent on them, before the unix user exists (guard.mjs precheck).
     on_node_first, _ = node_here()
     holder = holder_of(name, node_for_owner(args.get("owner")) if on_node_first else None)
+    # The node lock, from before anything exists to the end of the watch: an
+    # agent added to its node is served from that moment, so a lock refused
+    # after `agent add` would leave it served and unwatched (node_lock).
+    acquire_node_lock(f"the deploy of {name}")
     capacity = capacity_check(name, pkg_dir, holder)
     home = f"/home/{name}"
     bindings = INSTALL.plan_bindings(args, pkg, home)
@@ -2179,18 +2347,22 @@ def deploy(argfile):
                   **({"trial_allowance": trial_allowance} if trial_allowance else {}),
                   "state": "running"})
     save_list([a for a in load_list() if a["name"] != name] + [entry])
-    before = watch_mark(holder)
-    processes = start_processes(name)
-    smoke = start_and_smoke(name)
+    # Held (since before anything was placed) to the end of the watch and any
+    # rollback in it, so no removal runs while this node is coming up.
+    with node_lock(f"the deploy of {name}"):
+        before = watch_mark(holder)
+        processes = start_processes(name)
+        smoke = start_and_smoke(name)
 
-    # 9b. The watch. Two minutes of the node holding its connection with this
-    # agent on it, and the agent and three neighbours answering, before anything
-    # says deployed; otherwise the agent is taken back out and the node is
-    # confirmed well without it. Before the work is placed, so a rolled-back
-    # install builds no image.
-    watched = watch_new_install(name, holder, before, act="deploy", package=pkg_name, version=pkg_version,
-                                host=HOST, agent_key=agent_key, handle=handle, capacity=capacity, smoke=smoke)
+        # 9b. The watch. Two minutes of the node holding its connection with this
+        # agent on it, and the agent and three neighbours answering, before anything
+        # says deployed; otherwise the agent is taken back out and the node is
+        # confirmed well without it. Before the work is placed, so a rolled-back
+        # install builds no image.
+        watched = watch_new_install(name, holder, before, act="deploy", package=pkg_name, version=pkg_version,
+                                    host=HOST, agent_key=agent_key, handle=handle, capacity=capacity, smoke=smoke)
 
+    release_node_lock()  # the hold taken before capacity_check
     # 10. Where the work runs. On a host placement the answer is "the same
     # machine as the adapter", which is the boring case and is exactly why it
     # has to be said: an owner reading a page that says nothing cannot tell a
@@ -2684,6 +2856,9 @@ def update(argfile):
     holder = holder_of(name, {"root": entry["node_root"], "proc": entry.get("node_proc") or NODE_PROC,
                               "user": entry.get("node_user") or NODE_USER}
                        if entry.get("node_root") else None)
+    # The node lock, from before the new version is placed to the end of the
+    # watch, so a refusal to wait places nothing (node_lock).
+    acquire_node_lock(f"the update of {name}")
     capacity = capacity_check(name, pkg_dir, holder, update=True)
     bindings = INSTALL.plan_bindings(args, pkg, home)
     names = INSTALL.placed_names(bindings)
@@ -2783,47 +2958,51 @@ def update(argfile):
     # to name the attendant on the way in as well, which is how five of them
     # returned to a host whose work the supervisor had taken over; deleting the
     # name either way means an update also clears one an earlier install left.
-    before = watch_mark(holder)
-    for proc in (f"{name}-adapter", f"{name}-attendant"):
-        subprocess.run(["pm2", "delete", proc], capture_output=True, text=True)
-    processes = start_processes(name)
-    smoke = start_and_smoke(name, ask_model=not reinstall)
-    shutil.rmtree(staging, ignore_errors=True)
-    common = {"name": name, "package": pkg_name, "harness": harness, "egress": dict(EGRESS_OPEN),
-              "agent_key": ident["public_key"], "handle": entry.get("handle"),
-              "previous": {"version": entry.get("version"), "sha256": entry.get("sha256"),
-                           "descriptor": old_desc},
-              "version": pkg_version, "sha256": sha256, "url": url,
-              "exposed_a2a": entry.get("exposed_a2a", False),
-              **({"price": price} if price else {}),
-              **({"trial_allowance": trial_allowance} if trial_allowance else {}),
-              "descriptor": descriptor, "credentials_placed": names["credentials"],
-              "settings_placed": names["settings"], "ceilings": names["ceilings"],
-              # What the account's stack bound for this version, per system.
-              **({"bindings": stack_bindings} if stack_bindings else {}),
-              "dependencies": dependencies, "drift_before": drift_before,
-              "processes": processes, "smoke": smoke, "capacity": capacity,
-              **({"reinstall": True} if reinstall else {})}
-    if not smoke["passed"]:
-        restore(name, home, old_ledger, prev, pkg_name)
-        # The processes this host starts, and no other: restarting a name pm2
-        # does not hold fails, and on a supervisor host the attendant is such a
-        # name. The restore has to put back what was running, not what an older
-        # copy of this procedure used to run.
-        subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
-        fail("check", f"the smoke check failed on {pkg_version}; {entry.get('version')} was restored from the snapshot",
-             state=f"restored to {entry.get('version')}; processes restarted", act="update", restored=True, **common)
+    # Held (since before the new version was placed) to the end of the watch
+    # and any rollback in it, so no removal runs while this node comes up.
+    with node_lock(f"the update of {name}"):
+        before = watch_mark(holder)
+        for proc in (f"{name}-adapter", f"{name}-attendant"):
+            subprocess.run(["pm2", "delete", proc], capture_output=True, text=True)
+        processes = start_processes(name)
+        smoke = start_and_smoke(name, ask_model=not reinstall)
+        shutil.rmtree(staging, ignore_errors=True)
+        common = {"name": name, "package": pkg_name, "harness": harness, "egress": dict(EGRESS_OPEN),
+                  "agent_key": ident["public_key"], "handle": entry.get("handle"),
+                  "previous": {"version": entry.get("version"), "sha256": entry.get("sha256"),
+                               "descriptor": old_desc},
+                  "version": pkg_version, "sha256": sha256, "url": url,
+                  "exposed_a2a": entry.get("exposed_a2a", False),
+                  **({"price": price} if price else {}),
+                  **({"trial_allowance": trial_allowance} if trial_allowance else {}),
+                  "descriptor": descriptor, "credentials_placed": names["credentials"],
+                  "settings_placed": names["settings"], "ceilings": names["ceilings"],
+                  # What the account's stack bound for this version, per system.
+                  **({"bindings": stack_bindings} if stack_bindings else {}),
+                  "dependencies": dependencies, "drift_before": drift_before,
+                  "processes": processes, "smoke": smoke, "capacity": capacity,
+                  **({"reinstall": True} if reinstall else {})}
+        if not smoke["passed"]:
+            restore(name, home, old_ledger, prev, pkg_name)
+            # The processes this host starts, and no other: restarting a name pm2
+            # does not hold fails, and on a supervisor host the attendant is such a
+            # name. The restore has to put back what was running, not what an older
+            # copy of this procedure used to run.
+            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+            fail("check", f"the smoke check failed on {pkg_version}; {entry.get('version')} was restored from the snapshot",
+                 state=f"restored to {entry.get('version')}; processes restarted", act="update", restored=True, **common)
 
-    # The watch, as a deploy has it: two minutes of the node staying well with
-    # the new version before anything says updated. Otherwise the old version
-    # is put back exactly as a failed smoke check puts it back, and the node is
-    # confirmed well again.
-    def put_old_back():
-        restore(name, home, old_ledger, prev, pkg_name)
-        subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
-        return f"{entry.get('version')} was restored from the snapshot and restarted"
-    common["watch"] = watch_update(name, holder, before, put_old_back, pkg_version, common)
+        # The watch, as a deploy has it: two minutes of the node staying well with
+        # the new version before anything says updated. Otherwise the old version
+        # is put back exactly as a failed smoke check puts it back, and the node is
+        # confirmed well again.
+        def put_old_back():
+            restore(name, home, old_ledger, prev, pkg_name)
+            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+            return f"{entry.get('version')} was restored from the snapshot and restarted"
+        common["watch"] = watch_update(name, holder, before, put_old_back, pkg_version, common)
 
+    release_node_lock()  # the hold taken before capacity_check
     ledger = write_ledger(name, home, [pkg_name, *placed, *env_files, ".agentmesh/adapter/descriptor.json",
                                        *([".agentmesh/adapter/price.json"] if price else [])],
                           withhold={".config/fleet/env"})
@@ -2855,7 +3034,12 @@ def update(argfile):
     if in_container and not reinstall:
         def put_back(step):
             restore(name, home, old_ledger, prev, pkg_name)
-            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+            busy = ""
+            try:
+                with node_lock(f"putting {name}'s host half back", soft=True):
+                    subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+            except NodeLockBusy as e:
+                busy = f"; its processes were NOT restarted: {e}"
             for k, v in before.items():
                 if v is None:
                     entry.pop(k, None)
@@ -2863,7 +3047,7 @@ def update(argfile):
                     entry[k] = v
             save_list([a for a in load_list() if a["name"] != name] + [entry])
             return (f"the container half failed at {step}; the host half was put back to {before.get('version')}, "
-                    f"which is the version job {in_container.get('job')} still runs")
+                    f"which is the version job {in_container.get('job')} still runs{busy}")
         CURRENT["on_fail"] = put_back
         work = place_in_cloud_run(container_args_for_update(args, in_container, entry, harness, model))
         CURRENT["on_fail"] = None
@@ -4336,6 +4520,110 @@ def take_down_container(name, entry):
     return remaining
 
 
+# How long a removal waits, in all, for a node that has just (re)started to
+# settle; how long it watches the folder stay gone each round; the bound on
+# one `agent remove`. THE MOST A REMOVAL HOLDS THE NODE LOCK is the settle
+# budget, shared by every wait for it, plus REMOVE_ROUNDS times (the remove
+# command and one watch), plus one last watch after a restart: 120 + 3 x
+# (60 + 30) + 30 = 420 seconds by default, plus a few ten-second pm2 reads.
+# That is inside NODE_LOCK_SECONDS (600), so a deploy waiting behind a removal
+# gets the lock rather than a refusal.
+NODE_SETTLE_SECONDS = int(os.environ.get("DM_NODE_SETTLE_SECONDS", "60"))
+NODE_SETTLE_MOST = int(os.environ.get("DM_NODE_SETTLE_MOST", "120"))
+REMOVE_VERIFY_SECONDS = int(os.environ.get("DM_REMOVE_VERIFY_SECONDS", "30"))
+REMOVE_COMMAND_SECONDS = 60
+REMOVE_ROUNDS = 3
+REMOVE_POLL = float(os.environ.get("DM_REMOVE_POLL", "2"))
+
+
+def node_settled(proc, until):
+    """Wait until the node process is online and has been up NODE_SETTLE_SECONDS,
+    at most until the time `until`. A node that has only just started has its
+    roster in memory and may not have read the folder this removal deletes;
+    removed under it, the folder is put back. A node pm2 does not hold, or holds
+    stopped or errored, serves nothing and has nothing to race, so that is
+    answered at once. Returns what was seen."""
+    start = time.time()
+    while True:
+        st = node_proc_state(proc)
+        if not st or st.get("status") in ("stopped", "errored"):
+            return {"settled": True, "waited_seconds": round(time.time() - start, 1),
+                    "node": f"{proc} is {st.get('status') if st else 'not in pm2'}, so it serves nothing"}
+        up = (time.time() - st["up_since"]) if st.get("up_since") else None
+        if st.get("status") == "online" and up is not None and up >= NODE_SETTLE_SECONDS:
+            return {"settled": True, "waited_seconds": round(time.time() - start, 1)}
+        if time.time() >= until:
+            return {"settled": False, "waited_seconds": round(time.time() - start, 1), "node": st}
+        time.sleep(REMOVE_POLL)
+
+
+def remove_from_node(name, entry, remaining):
+    """Take one agent off its node and see that it stays off.
+
+    Under the node lock (no act of this procedure starts or restarts the node
+    meanwhile), after the node has settled, `mesh-adapter agent remove`; then
+    the folder is watched for REMOVE_VERIFY_SECONDS. A folder that comes back
+    is removed again, up to REMOVE_ROUNDS times. A node that restarts in the
+    watch (pm2 restarted it, the removal made it, or something outside this
+    procedure did) is a reason to settle and look again, not a failure by
+    itself: what decides is the folder, looked at last after the node settled.
+    Appends to `remaining` what is left, and returns {rounds, verified, said, ...}."""
+    root = entry["node_root"]
+    user = entry.get("node_user") or NODE_USER
+    proc = entry.get("node_proc") or NODE_PROC
+    folder = f"{root}/agents/{name}"
+    retried = []
+    rounds = 0
+    with node_lock(f"the removal of {name}"):
+        until = time.time() + NODE_SETTLE_MOST
+        settle = node_settled(proc, until)
+        for rounds in range(1, REMOVE_ROUNDS + 1):
+            if rounds == 1 or os.path.exists(folder):
+                try:
+                    p = subprocess.run(["su", "-", user, "-c",
+                                        f"env MESH_ADAPTER_STATE={root} /usr/bin/mesh-adapter agent remove {name}"],
+                                       capture_output=True, text=True, timeout=REMOVE_COMMAND_SECONDS)
+                    said = (p.stderr or p.stdout).strip()[:200] if p.returncode != 0 else ""
+                except subprocess.TimeoutExpired:
+                    said = f"agent remove did not return in {REMOVE_COMMAND_SECONDS}s"
+                if said and rounds == 1:
+                    remaining.append(f"the node did not remove {name}: {said}")
+            before = node_proc_state(proc)
+            back = restarted = False
+            end = time.time() + REMOVE_VERIFY_SECONDS
+            while True:
+                if os.path.exists(folder):
+                    back = True
+                    break
+                now = node_proc_state(proc)
+                if before and now and (now.get("pid") != before.get("pid") or now.get("restarts") != before.get("restarts")):
+                    restarted = True
+                    break
+                if time.time() >= end:
+                    break
+                time.sleep(REMOVE_POLL)
+            if not back and not restarted:
+                break
+            retried.append({"round": rounds, "folder_came_back": back, "node_restarted": restarted})
+            if restarted:
+                node_settled(proc, until)
+        if retried and retried[-1]["node_restarted"] and rounds == REMOVE_ROUNDS:
+            # The rounds ended on a restart, perhaps after the settle budget was
+            # spent: one more fixed watch of the folder, so a node that came up
+            # holding the agent has the time to put its folder back.
+            end = time.time() + REMOVE_VERIFY_SECONDS
+            while not os.path.exists(folder) and time.time() < end:
+                time.sleep(REMOVE_POLL)
+        verified = not os.path.exists(folder)
+    said = ""
+    if not verified:
+        said = (f"{name}'s folder on {proc} came back after {rounds} removals, so the node may still serve it "
+                f"({folder})")
+        remaining.insert(0, said)
+    return {"rounds": rounds, "verified": verified, "said": said, "settle": settle,
+            "verify_seconds": REMOVE_VERIFY_SECONDS, **({"retried": retried} if retried else {})}
+
+
 def remove(name):
     if not NAME_RE.match(name):
         fail("validate", f"bad agent name {name!r}")
@@ -4347,6 +4635,10 @@ def remove(name):
             remove_container(name, contained)
         fail("validate", f"{name} is not in the deployment inventory")
     remaining = []
+    # The node lock first, before anything is taken down: a removal refused at
+    # the lock after its Cloud Run job was gone would say nothing was changed
+    # when half of it had been. remove_from_node re-enters it.
+    acquire_node_lock(f"the removal of {name}")
     # A PLACED agent is in both inventories: its adapter is here and its work is
     # in a job. Both halves go in one act, because an owner who removed an agent
     # and was left with a Cloud Run job still costing them money did not remove
@@ -4362,12 +4654,9 @@ def remove(name):
     # An agent on the node has no adapter process of its own: the node lets
     # go of it (deregister, detach) and its folder goes with it. The node keeps
     # running for the others.
+    node_removal = None
     if entry.get("node_root"):
-        p = subprocess.run(["su", "-", entry.get("node_user") or NODE_USER, "-c",
-                            f"env MESH_ADAPTER_STATE={entry['node_root']} /usr/bin/mesh-adapter agent remove {name}"],
-                           capture_output=True, text=True)
-        if p.returncode != 0:
-            remaining.append(f"the node did not remove {name}: {(p.stderr or p.stdout).strip()[:200]}")
+        node_removal = remove_from_node(name, entry, remaining)
     for proc in ([f"{name}-attendant"] if entry.get("node_root") else [f"{name}-adapter", f"{name}-attendant"]):
         p = subprocess.run(["pm2", "delete", proc], capture_output=True, text=True)
         if p.returncode != 0 and entry.get("state") == "running" and not (held and proc.endswith("-attendant")):
@@ -4397,7 +4686,15 @@ def remove(name):
     # to what it showed before any of this existed, which is the behaviour every
     # agent without a record already has.
     runtime = forget_runtime(entry.get("agent_key"), removed=True)
-    out({"ok": True, "act": "remove", "name": name, "was": entry,
+    # A node that kept the folder is a removal that did not happen where it
+    # matters most, whatever else went: said as a refusal, so nobody reads
+    # "removed" over an agent its node still serves.
+    still_served = bool(node_removal) and not node_removal["verified"]
+    out({"ok": not still_served, "act": "remove", "name": name, "was": entry,
+         **({"step": "verify", "error": node_removal["said"],
+             "state": f"removed from this host except its folder on {entry.get('node_proc') or NODE_PROC}, which "
+                      f"came back; run remove {name} again once the node is steady"} if still_served else {}),
+         **({"node_removal": node_removal} if node_removal else {}),
          # The other half of a placed agent, where there was one, so the record
          # of the removal names the job it took down and not only the home.
          **({"work_was": contained} if contained else {}),
@@ -4546,10 +4843,12 @@ def set_model(name, model, harness=None):
     # the attendant is such a name. Naming it would turn a model change into a
     # procedure that fails at its last step having already done everything.
     procs, _, _ = agent_procs(name)
-    run(["pm2", "restart", *procs], "pm2", 90)
-    # The check is of the side that thinks: the host's brain where the work
-    # runs here, and one message through the job where it runs in a container.
-    smoke = container["check"] if container else start_and_smoke(name)
+    # Under the node lock, for the restart and the check after it (node_lock).
+    with node_lock(f"the model change of {name}"):
+        run(["pm2", "restart", *procs], "pm2", 90)
+        # The check is of the side that thinks: the host's brain where the work
+        # runs here, and one message through the job where it runs in a container.
+        smoke = container["check"] if container else start_and_smoke(name)
     # The runtime record names the model the agent runs, so this act changes
     # something an owner reads and has to re-state it. Where the work runs is
     # untouched, and the helper reads that off the inventories.
