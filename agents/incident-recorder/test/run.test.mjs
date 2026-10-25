@@ -98,8 +98,8 @@ test("the run command reads the message, records the incident and timeline, and 
   assert.equal(inventory.files.length, 2);
   assert.equal(inventory.files.find((f) => f.name === "platform-activity.jsonl").origin, "platform");
   // The gap after the last event up to the end of the window is stated, not filled in.
-  assert.deepEqual(timeline.gaps.map((g) => [g.from, g.to]), [["2026-10-24T09:29:45.000Z", "2026-10-24T09:31:00.000Z"]]);
-  assert.match(r.doc.reply, /1 gap where the records say nothing/);
+  assert.deepEqual(timeline.gaps.map((g) => [g.from, g.to]), [["2026-10-24T09:15:00.000Z", "2026-10-24T09:29:05.000Z"], ["2026-10-24T09:29:45.000Z", "2026-10-24T09:35:00.000Z"]]);
+  assert.match(r.doc.reply, /2 gaps where the records say nothing/);
   assert.ok(timeline.gaps.every((g) => g.status === "unknown" && g.interpolated === false));
 
   // Filed as pieces for the adapter to deliver.
@@ -173,8 +173,9 @@ test("with no records it still records the incident: the absence is stated and t
   assert.deepEqual(incident.facts, []);
   assert.deepEqual(timeline.events, []);
   assert.equal(timeline.gaps.length, 1);
-  assert.equal(timeline.gaps[0].from, "2026-10-24T09:29:00.000Z");
-  assert.equal(timeline.gaps[0].to, "2026-10-24T09:31:00.000Z");
+  // The whole window read: fifteen minutes before the failure to five after.
+  assert.equal(timeline.gaps[0].from, "2026-10-24T09:15:00.000Z");
+  assert.equal(timeline.gaps[0].to, "2026-10-24T09:35:00.000Z");
   assert.deepEqual(json(join(r.jobDir, "pieces.json")).map((p) => p.name), ["incident record", "timeline"]);
   // An incident with no records is still an incident in the standing index.
   assert.deepEqual(json(join(h.records, "incidents.json")).map((e) => e.incidentId), ["job-1"]);
@@ -214,7 +215,7 @@ test("a line with no zoned time is left out and named, and the rest of its file 
   assert.equal(r.status, 0, r.stderr);
   const timeline = json(join(r.recordsDir, "timeline.json"));
   assert.deepEqual(timeline.events.map((e) => e.fact), ["timed"]);
-  assert.deepEqual(timeline.gaps.map((g) => [g.from, g.to]), [["2026-10-24T09:29:10.000Z", "2026-10-24T09:31:00.000Z"]]);
+  assert.deepEqual(timeline.gaps.map((g) => [g.from, g.to]), [["2026-10-24T09:15:00.000Z", "2026-10-24T09:29:10.000Z"], ["2026-10-24T09:29:10.000Z", "2026-10-24T09:35:00.000Z"]]);
   assert.match(r.doc.reply, /agent-own\.jsonl at byte 0 has no time with a zone/);
   assert.equal(r.doc.unreadable.length, 2);
 });
@@ -250,4 +251,48 @@ test("an unreadable record is named with its byte offset and the readable ones s
   const offset = Buffer.byteLength(bad.split("\n")[0]) + 1;
   assert.match(r.doc.reply, new RegExp(`agent-broken\\.jsonl could not be read from byte ${offset}`));
   assert.equal(json(join(r.recordsDir, "incident.json")).facts.length, 3);
+});
+
+test("only lines in the window around the failure and about the failing agent are facts; the rest are counted", () => {
+  const h = host();
+  const platform = [
+    { time: "2026-10-24T07:00:00Z", event: "nightly sweep started" },
+    { time: "2026-10-24T09:14:59Z", event: "one second before the window" },
+    { time: "2026-10-24T09:20:00Z", agent: "spec-writer", event: "job 41 queued" },
+    { time: "2026-10-24T09:29:05Z", agent: "spec-writer.platform@example.com", event: "job 41 started" },
+    { time: "2026-10-24T09:29:30Z", agent: "tone-check.platform@example.com", event: "another agent's job started" },
+    { time: "2026-10-24T09:29:40Z", handle: "SPEC-WRITER.platform@example.com", event: "job 41 heartbeat" },
+    { time: "2026-10-24T09:29:50Z", agent: "spec-writer-two", event: "a namesake prefix is another agent" },
+    { time: "2026-10-24T09:35:00Z", event: "the last instant of the window" },
+    { time: "2026-10-24T09:35:01Z", event: "one second after the window" },
+  ].map((o) => JSON.stringify(o)).join("\n") + "\n";
+  const { status, doc, recordsDir } = run(h, { message: MESSAGE, files: [{ name: "platform-activity.jsonl", text: platform }] });
+  assert.equal(status, 0, doc.reply);
+  const incident = JSON.parse(readFileSync(join(recordsDir, "incident.json"), "utf8"));
+  assert.deepEqual(incident.facts.map((f) => f.fact),
+    ["job 41 queued", "job 41 started", "job 41 heartbeat", "the last instant of the window"]);
+  assert.deepEqual(incident.window, { from: "2026-10-24T09:15:00.000Z", to: "2026-10-24T09:35:00.000Z" });
+  assert.deepEqual(incident.left_out, { outsideWindow: 3, otherAgent: 2 });
+  const inventory = JSON.parse(readFileSync(join(recordsDir, "inventory.json"), "utf8"));
+  assert.deepEqual(inventory.left_out, { outsideWindow: 3, otherAgent: 2 });
+  assert.deepEqual(doc.left_out, { outsideWindow: 3, otherAgent: 2 });
+  assert.match(doc.reply, /I left out 3 lines outside the window I read \(2026-10-24T09:15:00.000Z to 2026-10-24T09:35:00.000Z\) and 2 lines about other agents/);
+  // Every fact still names its source, digest and byte offset.
+  assert.ok(incident.facts.every((f) => f.sourceFile === "platform-activity.jsonl" && f.sourceDigest && Number.isInteger(f.byteOffset)));
+});
+
+test("records all outside the window or about other agents give an empty record that says why", () => {
+  const h = host();
+  const platform = [
+    { time: "2026-10-23T09:29:05Z", event: "a day early" },
+    { time: "2026-10-24T09:29:05Z", agent: "tone-check.platform@example.com", event: "another agent" },
+  ].map((o) => JSON.stringify(o)).join("\n") + "\n";
+  const { status, doc, recordsDir } = run(h, { message: MESSAGE, files: [{ name: "platform-activity.jsonl", text: platform }] });
+  assert.equal(status, 0, doc.reply);
+  assert.equal(doc.facts, 0);
+  const incident = JSON.parse(readFileSync(join(recordsDir, "incident.json"), "utf8"));
+  assert.equal(incident.summary, "complete absence of records");
+  assert.deepEqual(incident.left_out, { outsideWindow: 1, otherAgent: 1 });
+  assert.match(doc.reply, /holds a readable entry for spec-writer.platform@example.com between 2026-10-24T09:15:00.000Z and 2026-10-24T09:35:00.000Z/);
+  assert.match(doc.reply, /I left out 1 line outside the window/);
 });

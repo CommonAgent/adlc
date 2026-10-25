@@ -29,7 +29,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readRecords } from "./read-records.mjs";
+import { readRecords, windowAround } from "./read-records.mjs";
 import { buildTimeline } from "./build-timeline.mjs";
 import { formatIncidentRecord, updateStandingIndex } from "./write-incident.mjs";
 import { note, read as wentWithout } from "./went-without.mjs";
@@ -126,24 +126,26 @@ export async function recordIncident({
     return { refused: "accesses no remote APIs or network endpoints" };
   }
 
-  const { unreadable, files, events } = await readRecords({
+  // The window the records are read in is the window the timeline covers, so
+  // a gap is a gap inside it and never the distance to a line left out.
+  const { windowStart, windowEnd } = windowAround(failureTime);
+  const { unreadable, files, events, leftOut } = await readRecords({
     recordsDir: recordsPath,
     agent,
     failureTime,
-    wentWithoutDir: recordsDir
+    wentWithoutDir: recordsDir,
+    windowStart,
+    windowEnd
   });
-
-  const tStart = new Date(failureTime).getTime() - 60000;
-  const tEnd = new Date(failureTime).getTime() + 60000;
 
   const timeline = buildTimeline({
     events,
-    windowStart: new Date(tStart).toISOString(),
-    windowEnd: new Date(tEnd).toISOString(),
+    windowStart,
+    windowEnd,
     expectedCadenceMs: 60000
   });
 
-  const inventory = { files, unreadable };
+  const inventory = { files, unreadable, window: { from: windowStart, to: windowEnd }, left_out: leftOut };
   writeFileSync(join(recordsDir, "inventory.json"), JSON.stringify(inventory, null, 2));
 
   if (events.length === 0) {
@@ -151,22 +153,25 @@ export async function recordIncident({
       agent,
       failureTime,
       summary: "complete absence of records",
+      window: { from: windowStart, to: windowEnd },
+      left_out: leftOut,
       facts: [],
       gaps: timeline.gaps
     };
     writeFileSync(join(recordsDir, "incident.json"), JSON.stringify(emptyIncident, null, 2));
     writeFileSync(join(recordsDir, "timeline.json"), JSON.stringify(timeline, null, 2));
     const indexError = standingDir ? index({ standingDir, incidentId, agent, failureTime }) : "";
-    return { code: 3, reply: EMPTY_REPLY, empty: true, files, unreadable, timeline, indexError };
+    return { code: 3, reply: EMPTY_REPLY, empty: true, files, unreadable, timeline, indexError, leftOut, window: { from: windowStart, to: windowEnd } };
   }
 
-  const incident = formatIncidentRecord({ agent, failureTime, timeline, inventory });
+  const incident = { ...formatIncidentRecord({ agent, failureTime, timeline, inventory }),
+    window: { from: windowStart, to: windowEnd }, left_out: leftOut };
   writeFileSync(join(recordsDir, "incident.json"), JSON.stringify(incident, null, 2));
   writeFileSync(join(recordsDir, "timeline.json"), JSON.stringify(timeline, null, 2));
 
   const indexError = standingDir ? index({ standingDir, incidentId, agent, failureTime }) : "";
 
-  return { code: 0, empty: false, files, unreadable, timeline, indexError };
+  return { code: 0, empty: false, files, unreadable, timeline, indexError, leftOut, window: { from: windowStart, to: windowEnd } };
 }
 
 /** Add the incident to the standing index. A failure here is returned in
@@ -262,13 +267,20 @@ export function replyText({ agent, time, result, laid = [], missing = [] }) {
   const gaps = result.timeline.gaps;
   if (result.empty) {
     lines.push(laid.length
-      ? `None of the ${many(laid.length, "record file")} I was given holds a readable entry for ${agent} around ${time}, so the incident record notes the complete absence of records and the timeline has no events, only the gap that covers the whole window. Nothing was guessed about what happened.`
+      ? `None of the ${many(laid.length, "record file")} I was given holds a readable entry for ${agent} between ${result.window?.from ?? "the start"} and ${result.window?.to ?? "the end"}, so the incident record notes the complete absence of records and the timeline has no events, only the gap that covers the whole window. Nothing was guessed about what happened.`
       : `No records came with this job, so the incident record for ${agent} at ${time} notes the complete absence of records and the timeline has no events, only the gap that covers the whole window. Nothing was guessed about what happened. To have the records read, attach them, or name a folder of them with a line \`records: <folder>\`, and ask again.`);
   } else {
     lines.push(`I recorded the incident for ${agent} at ${time}: ${many(facts, "fact")} from ${many(laid.length, "record file")}, each with the file it came from, that file's digest and the byte offset of the line.`);
     lines.push(gaps.length
       ? `There ${gaps.length === 1 ? "is 1 gap" : `are ${gaps.length} gaps`} where the records say nothing (${gaps.map((g) => `${g.from} to ${g.to}`).join("; ")}), marked unknown rather than filled in.`
       : "The records leave no gap longer than a minute in the window around the failure.");
+  }
+  const out = result.leftOut ?? {};
+  if (out.outsideWindow || out.otherAgent) {
+    const parts = [];
+    if (out.outsideWindow) parts.push(`${many(out.outsideWindow, "line")} outside the window I read (${result.window?.from} to ${result.window?.to})`);
+    if (out.otherAgent) parts.push(`${many(out.otherAgent, "line")} about other agents`);
+    lines.push(`I left out ${parts.join(" and ")}; the record inventory counts them.`);
   }
   for (const u of result.unreadable ?? []) {
     lines.push(u.untimed
@@ -325,6 +337,8 @@ export async function runJob(argv = [], env = process.env) {
     facts: result.timeline.events.length,
     gaps: result.timeline.gaps.length,
     records_read: laid.map((l) => l.name),
+    window: result.window,
+    left_out: result.leftOut,
     unreadable: result.unreadable ?? [],
     went_without: wentWithout(RECORDS),
     listed,
