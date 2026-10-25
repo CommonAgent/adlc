@@ -3179,7 +3179,7 @@ class TheNodeLockIsHeldOnceAndWaitedFor(unittest.TestCase):
         fd = os.open(steps.NODE_LOCK, os.O_RDONLY | os.O_CREAT, 0o644)
         self.addCleanup(os.close, fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
-        with mock.patch.object(steps, "NODE_LOCK_SECONDS", 0.2):
+        with mock.patch.object(steps, "NODE_LOCK_SECONDS", 0.2), mock.patch.object(steps, "NODE_LOCK_SOFT_SECONDS", 0.1):
             def take():
                 with steps.node_lock("the removal of x"):
                     pass
@@ -3193,6 +3193,30 @@ class TheNodeLockIsHeldOnceAndWaitedFor(unittest.TestCase):
         fcntl.flock(fd, fcntl.LOCK_UN)
         with steps.node_lock("after"):
             pass
+
+    def test_an_acts_printed_answer_lets_go_of_the_lock(self):
+        steps.acquire_node_lock("an act")
+        steps.acquire_node_lock("its rollback")
+        emitted(self, steps.out, {"ok": True})
+        self.assertEqual((steps._NODE_LOCK["depth"], steps._NODE_LOCK["fd"]), (0, None))
+
+    def test_a_deploy_refused_the_lock_has_placed_nothing(self):
+        os.makedirs(os.path.join(TMP, "tmp"), exist_ok=True)
+        os.makedirs(steps.TOKENS, exist_ok=True)
+        steps.write_text(f"{steps.TOKENS}/lockcheck-boot.token", "t")
+        argfile = f"{steps.DM_HOME}/tmp/deploy-lockcheck.json"
+        steps.write_text(argfile, json.dumps({
+            "name": "lockcheck", "harness": "opencode", "interaction": "service", "admit": [],
+            "boot_token": "lockcheck-boot", "package_url": "https://agentcatalog.com/x/package.tar.gz",
+            "placement": "host", "host_because": "a test"}))
+        seen = []
+        pkg = {"manifest": {"name": "lockcheck", "version": "0.1.0"}}
+        with mock.patch.object(steps, "user_exists", lambda n: False),                 mock.patch.object(steps, "spend_check_and_record", lambda a: None),                 mock.patch.object(steps, "fetch_and_verify", return_value=(TMP, HERE, "ab" * 32, pkg)),                 mock.patch.object(steps, "check_before_touching", lambda a, p: None),                 mock.patch.object(steps, "capacity_check", lambda *a, **k: seen.append("capacity")),                 mock.patch.object(steps, "acquire_node_lock", lambda *a, **k: steps.fail("lock", "held")),                 mock.patch("steps.subprocess.run", pm2_answering([], record=seen)):
+            r = Refusal(self, steps.deploy, argfile)
+        self.assertEqual(r.doc["step"], "lock")
+        self.assertEqual(r.doc["state"], "nothing created")
+        self.assertEqual(seen, [], "no capacity check, no useradd, no agent add")
+        self.assertEqual(steps.load_list(), [])
 
 
 class ARemovalSeesTheFolderStayGone(unittest.TestCase):
@@ -3267,6 +3291,21 @@ class ARemovalSeesTheFolderStayGone(unittest.TestCase):
         self.assertTrue(d["ok"])
         self.assertTrue(d["node_removal"]["retried"][0]["node_restarted"])
         self.assertEqual(calls["remove"], 1, "the folder stayed gone, so there was nothing to remove again")
+
+    def test_a_restart_in_every_round_with_the_folder_gone_is_still_a_removal(self):
+        # As when the removal itself makes the node restart: the folder decides.
+        fake, calls = self.host(comes_back=0, restarts=set(range(3, 40)))
+        d = self.run_remove(fake)
+        self.assertTrue(d["ok"])
+        self.assertTrue(d["node_removal"]["verified"])
+        self.assertEqual(calls["remove"], 1)
+
+    def test_a_node_pm2_does_not_hold_is_not_waited_for(self):
+        with mock.patch("steps.subprocess.run", pm2_answering([])), mock.patch.object(steps, "NODE_SETTLE_MOST", 30):
+            got = steps.node_settled("mesh-node-platform", steps.time.time() + 30)
+        self.assertTrue(got["settled"])
+        self.assertLess(got["waited_seconds"], 5)
+        self.assertIn("not in pm2", got["node"])
 
     def test_a_folder_that_keeps_coming_back_is_said_and_the_act_is_not_ok(self):
         fake, calls = self.host(comes_back=99)
