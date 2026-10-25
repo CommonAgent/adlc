@@ -240,6 +240,8 @@ test("a host whose tenant file carries the egress description loads it when the 
     const egress = JSON.parse(out.trim().split("\n").pop());
     assert.equal(egress.policy, "allowlist");
     assert.ok(egress.allowed.some((a) => a.from === "host" && a.address === "169.254.169.254"), "the metadata server is listed");
+    assert.ok(egress.allowed.some((a) => a.name === "api" && a.address === "192.0.2.11/32"), "the API host is listed (egress step 2)");
+    assert.ok(!egress.allowed.some((a) => a.address === "199.36.153.8/30"), "a tenant agent no longer reaches Google APIs; only the sandbox does");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

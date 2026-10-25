@@ -184,8 +184,9 @@ CHECKOUT_URL = _am_env("urls.app", "DM_CHECKOUT_URL", "/agreements")
 # from there, so one image runs against dev or prod by the job it is placed in
 # (env split runbook 1.6).
 API_BASE = _am_env("urls.app", "DM_API_BASE")
-# The account our own jobs run as, when the environment names one. Prod names
-# none, and its jobs run on the default compute account as they always have.
+# The account our own jobs run as, when the environment names one (gcp.jobs_sa;
+# both environments name one since 2026-10-25). Unnamed, a job runs on the
+# project's default compute account.
 try:
     JOBS_SA = _am_env("gcp.jobs_sa", "DM_JOBS_SA")
 except RuntimeError:
