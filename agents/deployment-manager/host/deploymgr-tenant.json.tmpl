@@ -19,10 +19,10 @@
       { "name": "network", "from": "network", "address": "{{vms.broker.ip}}/32" },
       { "name": "model", "from": "model", "address": "{{vms.broker.ip}}/32" },
       { "name": "registrar", "from": "registrar", "address": "{{registrar.lb_ip}}/32" },
-      { "name": "google-apis", "from": "host", "address": "199.36.153.8/30" },
+      { "name": "api", "from": "network", "address": "{{vms.app.ip}}/32" },
       { "name": "metadata", "from": "host", "address": "169.254.169.254" }
     ],
     "denied": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"],
-    "enforced_by": "gcp-vpc-firewall (tenant-vpc, Direct VPC egress all-traffic)"
+    "enforced_by": "gcp-vpc-firewall (tenant-vpc rules on tag tenant-agent, logged; Direct VPC egress all-traffic)"
   }
 }
