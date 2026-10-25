@@ -598,6 +598,29 @@ def alongside_binding_name(name, version):
     return f"{name}--v{version_slug(version)}"
 
 
+# The network tags every worker job carries when it runs in a VPC: one for
+# all of them, which the rules every worker shares target, and one of its
+# own, which its own destination rule targets. A tag is 1-63 characters of
+# lowercase letters, digits and hyphens.
+WORKER_TAG = "agent-worker"
+TAG_RE = re.compile(r"^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def worker_tag(name):
+    """The network tag of one agent's worker job: w-<name>."""
+    tag = f"w-{name}"
+    if not TAG_RE.match(tag):
+        raise ValueError(f"{tag!r} is not a network tag")
+    return tag
+
+
+def vpc_argv(vpc):
+    """Direct VPC egress for a worker job: the network, the subnet, every
+    packet through it, and the job's two tags."""
+    return ["--network", vpc["network"], "--subnet", vpc["subnet"], "--vpc-egress", "all-traffic",
+            "--network-tags", ",".join(vpc["tags"])]
+
+
 def create_job_argv(spec, exists=False):
     """`gcloud run jobs create` (or `update`) for this agent: the image it
     starts, the bucket mounted where the message and the binding are, the
@@ -653,6 +676,11 @@ def create_job_argv(spec, exists=False):
         *(["--service-account", spec["service_account"]] if spec.get("service_account") else []),
         *(["--memory", spec["memory"]] if spec.get("memory") else []),
         *(["--cpu", spec["cpu"]] if spec.get("cpu") else []),
+        # WHERE ITS TRAFFIC GOES, only where the host names a network for our
+        # own jobs (gcp.worker_network and gcp.worker_subnet): all of it through
+        # that VPC, tagged so the network's rules can tell the agents apart
+        # (egress step 3). Left off, the job keeps Google's default egress.
+        *(vpc_argv(spec["vpc"]) if spec.get("vpc") else []),
         "--max-retries", "0",
         "--task-timeout", f"{cap + 120}s",
         "--quiet", "--format", "value(metadata.name)",
