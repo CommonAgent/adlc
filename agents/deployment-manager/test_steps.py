@@ -3384,3 +3384,20 @@ class WorkerJobsRunInTheNetworkTheHostNames(unittest.TestCase):
                          ["compute", "firewall-rules", "delete", "egress-observe-x-agent"])
         with self.assertRaises(ValueError):
             steps.IMAGE.worker_tag("x" * 70)
+
+    def test_a_retire_that_cannot_remove_the_rule_says_so_and_gone_is_fine(self):
+        class R:
+            def __init__(self, code, err): self.returncode, self.stderr = code, err
+        with mock.patch.object(steps, "WORKER_NETWORK", "mesh"):
+            with mock.patch.object(steps, "gcloud_quiet", return_value=(R(1, "ERROR: The resource was not found"), None)):
+                self.assertIsNone(steps.remove_observe_rule("x-agent", "p1"))
+            with mock.patch.object(steps, "gcloud_quiet", return_value=(R(1, "ERROR: Required 'compute.firewalls.delete' permission"), None)):
+                self.assertIn("was not removed", steps.remove_observe_rule("x-agent", "p1"))
+
+    def test_once_enforcing_a_leftover_observe_rule_is_taken_away(self):
+        class R:
+            def __init__(self, code): self.returncode, self.stderr = code, ""
+        calls = []
+        with mock.patch.object(steps, "WORKER_NETWORK", "mesh"), mock.patch.object(steps, "WORKER_SUBNET", "s"),              mock.patch.object(steps, "WORKER_EGRESS", "enforce"),              mock.patch.object(steps, "gcloud_quiet", return_value=(R(0), None)),              mock.patch.object(steps, "gcloud", side_effect=lambda argv, *a, **k: calls.append(argv) or ""):
+            self.assertEqual(steps.place_observe_rule("x-agent", "p1"), "removed")
+        self.assertEqual(calls[0][:3], ["compute", "firewall-rules", "delete"])
