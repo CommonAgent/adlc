@@ -87,7 +87,12 @@ STEPS = f"{FLEET}/deploymgr-steps.py"
 # check on either side of the build. A timeout shorter than the procedure is
 # the worst kind: the executor reports a failure while the deploy carries on
 # and finishes, and the two records then disagree about what happened.
-DEPLOY_TIMEOUT = int(os.environ.get("DM_BUILD_MINUTES", "40")) * 60 + 900
+# Plus the longest a deploy may wait for the host's node lock before it starts
+# (deploymgr-steps.py NODE_LOCK_SECONDS, read from the same variable with the
+# same default; keep the two in step), so a deploy that waited its full turn
+# still has the build and the 900 seconds of smoke and watch after it.
+DEPLOY_TIMEOUT = (int(os.environ.get("DM_BUILD_MINUTES", "40")) * 60 + 900
+                  + int(os.environ.get("DM_NODE_LOCK_SECONDS", "600")))
 RECORD = f"{FLEET}/deploymgr-record.py"
 DM_HOME = "/home/deploymgr"
 DM_TOKENS = f"{DM_HOME}/secrets/boot-tokens"

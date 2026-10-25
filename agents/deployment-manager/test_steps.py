@@ -3300,6 +3300,34 @@ class ARemovalSeesTheFolderStayGone(unittest.TestCase):
         self.assertTrue(d["node_removal"]["verified"])
         self.assertEqual(calls["remove"], 1)
 
+    def test_a_removal_refused_the_lock_takes_nothing_down(self):
+        down = []
+        with mock.patch.object(steps, "acquire_node_lock", lambda *a, **k: steps.fail("lock", "held")),                 mock.patch.object(steps, "load_json_list", lambda path: [{"name": "scratch", "job": "j"}]),                 mock.patch.object(steps, "take_down_container", lambda *a: down.append(a) or []):
+            r = Refusal(self, steps.remove, "scratch")
+        self.assertEqual(r.doc["step"], "lock")
+        self.assertEqual(down, [], "the job was not taken down")
+        self.assertTrue(os.path.isdir(self.folder))
+
+    def test_rounds_that_end_on_a_restart_get_one_last_watch_of_the_folder(self):
+        # Restarts in every round, the budget spent, and the folder put back
+        # only after the last round: the last watch sees it.
+        fake, calls = self.host(comes_back=0, restarts=set(range(3, 40)))
+        folder = self.folder
+
+        import threading
+
+        def late(cmd, *a, **k):
+            got = fake(cmd, *a, **k)
+            # The settle after the third round is the tenth pm2 read; the
+            # folder comes back a moment after it, inside the last watch.
+            if list(cmd[:2]) == ["pm2", "jlist"] and calls["jlist"] == 10:
+                threading.Timer(0.1, lambda: os.makedirs(folder, exist_ok=True)).start()
+            return got
+        with mock.patch.object(steps, "REMOVE_VERIFY_SECONDS", 0.3), mock.patch.object(steps, "REMOVE_POLL", 0.01):
+            d = self.run_remove(late)
+        self.assertFalse(d["ok"])
+        self.assertFalse(d["node_removal"]["verified"])
+
     def test_a_node_pm2_does_not_hold_is_not_waited_for(self):
         with mock.patch("steps.subprocess.run", pm2_answering([])), mock.patch.object(steps, "NODE_SETTLE_MOST", 30):
             got = steps.node_settled("mesh-node-platform", steps.time.time() + 30)

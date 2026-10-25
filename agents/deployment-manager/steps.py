@@ -1669,10 +1669,10 @@ def start_and_smoke(name, ask_model=True):
 # gone. One process runs one act, but an act re-enters it (a deploy's
 # rollback restarts the node inside the deploy's own hold), so it counts.
 NODE_LOCK = os.environ.get("DM_NODE_LOCK", f"{FLEET}/deploymgr-node.lock")
-# HOW LONG AN ACT WAITS FOR THE LOCK. Well inside the 900 seconds the executor
-# allows beyond the image build (deploy-executor.py DEPLOY_TIMEOUT), so an act
-# that waits and is then refused still prints, and is still recorded, before
-# the executor would kill it. A deploy or update takes the lock before
+# HOW LONG AN ACT WAITS FOR THE LOCK. deploy-executor.py adds this same
+# number (the same variable, the same default; keep the two in step) to its
+# DEPLOY_TIMEOUT, so an act that waits its full turn still has the build and
+# the smoke and watch after it before the executor would kill it. A deploy or update takes the lock before
 # anything is placed, so that refusal leaves nothing behind.
 NODE_LOCK_SECONDS = int(os.environ.get("DM_NODE_LOCK_SECONDS", "600"))
 # The wait of a put-back that runs after its act let go of the lock: short,
@@ -4524,9 +4524,10 @@ def take_down_container(name, entry):
 # settle; how long it watches the folder stay gone each round; the bound on
 # one `agent remove`. THE MOST A REMOVAL HOLDS THE NODE LOCK is the settle
 # budget, shared by every wait for it, plus REMOVE_ROUNDS times (the remove
-# command and one watch): 120 + 3 x (60 + 30) = 390 seconds by default, plus a
-# few ten-second pm2 reads. That is inside NODE_LOCK_SECONDS (600), so a
-# deploy waiting behind a removal gets the lock rather than a refusal.
+# command and one watch), plus one last watch after a restart: 120 + 3 x
+# (60 + 30) + 30 = 420 seconds by default, plus a few ten-second pm2 reads.
+# That is inside NODE_LOCK_SECONDS (600), so a deploy waiting behind a removal
+# gets the lock rather than a refusal.
 NODE_SETTLE_SECONDS = int(os.environ.get("DM_NODE_SETTLE_SECONDS", "60"))
 NODE_SETTLE_MOST = int(os.environ.get("DM_NODE_SETTLE_MOST", "120"))
 REMOVE_VERIFY_SECONDS = int(os.environ.get("DM_REMOVE_VERIFY_SECONDS", "30"))
@@ -4606,6 +4607,13 @@ def remove_from_node(name, entry, remaining):
             retried.append({"round": rounds, "folder_came_back": back, "node_restarted": restarted})
             if restarted:
                 node_settled(proc, until)
+        if retried and retried[-1]["node_restarted"] and rounds == REMOVE_ROUNDS:
+            # The rounds ended on a restart, perhaps after the settle budget was
+            # spent: one more fixed watch of the folder, so a node that came up
+            # holding the agent has the time to put its folder back.
+            end = time.time() + REMOVE_VERIFY_SECONDS
+            while not os.path.exists(folder) and time.time() < end:
+                time.sleep(REMOVE_POLL)
         verified = not os.path.exists(folder)
     said = ""
     if not verified:
@@ -4627,6 +4635,10 @@ def remove(name):
             remove_container(name, contained)
         fail("validate", f"{name} is not in the deployment inventory")
     remaining = []
+    # The node lock first, before anything is taken down: a removal refused at
+    # the lock after its Cloud Run job was gone would say nothing was changed
+    # when half of it had been. remove_from_node re-enters it.
+    acquire_node_lock(f"the removal of {name}")
     # A PLACED agent is in both inventories: its adapter is here and its work is
     # in a job. Both halves go in one act, because an owner who removed an agent
     # and was left with a Cloud Run job still costing them money did not remove
