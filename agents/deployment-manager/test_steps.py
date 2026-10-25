@@ -3344,3 +3344,60 @@ class ARemovalSeesTheFolderStayGone(unittest.TestCase):
         self.assertFalse(d["node_removal"]["verified"])
         self.assertIn("may still serve it", d["remaining"][0])
         self.assertIn("run remove scratch again", d["state"])
+
+
+class WorkerJobsRunInTheNetworkTheHostNames(unittest.TestCase):
+    """Egress step 3: with gcp.worker_network and gcp.worker_subnet named, our
+    own worker jobs send every packet through that VPC, tagged agent-worker and
+    w-<name>; in the observe phase each agent gets its own logged rule."""
+
+    def tearDown(self):
+        steps.CURRENT["cloud"] = None
+
+    def test_named_the_job_carries_the_network_the_subnet_and_two_tags(self):
+        with mock.patch.object(steps, "WORKER_NETWORK", "mesh"), mock.patch.object(steps, "WORKER_SUBNET", "dev-us-south1"):
+            vpc = steps.worker_vpc("spec-writer")
+        self.assertEqual(vpc, {"network": "mesh", "subnet": "dev-us-south1", "tags": ["agent-worker", "w-spec-writer"]})
+        argv = steps.IMAGE.vpc_argv(vpc)
+        self.assertEqual(argv, ["--network", "mesh", "--subnet", "dev-us-south1", "--vpc-egress", "all-traffic",
+                                "--network-tags", "agent-worker,w-spec-writer"])
+        spec = {"job": "spec-writer-worker", "image": "i@sha256:" + "a" * 64, "region": "us-south1", "bucket": "b",
+                "env_file": "/tmp/e", "vpc": vpc}
+        self.assertIn("--vpc-egress", steps.IMAGE.create_job_argv(spec))
+
+    def test_unnamed_or_in_a_customers_project_nothing_changes(self):
+        with mock.patch.object(steps, "WORKER_NETWORK", ""), mock.patch.object(steps, "WORKER_SUBNET", ""):
+            self.assertIsNone(steps.worker_vpc("x-agent"))
+        steps.CURRENT["cloud"] = {"grant": {"project": "theirs"}, "actions": []}
+        with mock.patch.object(steps, "WORKER_NETWORK", "mesh"), mock.patch.object(steps, "WORKER_SUBNET", "s"):
+            self.assertIsNone(steps.worker_vpc("x-agent"))
+        spec = {"job": "j", "image": "i", "region": "r", "bucket": "b", "env_file": "/tmp/e"}
+        self.assertNotIn("--network", steps.IMAGE.create_job_argv(spec))
+
+    def test_the_observe_rule_is_the_agents_own_logged_allow_all(self):
+        argv = steps.observe_rule_argv("x-agent", "p1", "mesh")
+        self.assertEqual(argv[:4], ["compute", "firewall-rules", "create", "egress-observe-x-agent"])
+        for flag, val in (("--target-tags", "w-x-agent"), ("--direction", "EGRESS"), ("--action", "ALLOW"), ("--network", "mesh")):
+            self.assertEqual(argv[argv.index(flag) + 1], val)
+        self.assertIn("--enable-logging", argv)
+        self.assertEqual(steps.observe_rule_argv("x-agent", "p1", "mesh", delete=True)[:4],
+                         ["compute", "firewall-rules", "delete", "egress-observe-x-agent"])
+        with self.assertRaises(ValueError):
+            steps.IMAGE.worker_tag("x" * 70)
+
+    def test_a_retire_that_cannot_remove_the_rule_says_so_and_gone_is_fine(self):
+        class R:
+            def __init__(self, code, err): self.returncode, self.stderr = code, err
+        with mock.patch.object(steps, "WORKER_NETWORK", "mesh"):
+            with mock.patch.object(steps, "gcloud_quiet", return_value=(R(1, "ERROR: The resource was not found"), None)):
+                self.assertIsNone(steps.remove_observe_rule("x-agent", "p1"))
+            with mock.patch.object(steps, "gcloud_quiet", return_value=(R(1, "ERROR: Required 'compute.firewalls.delete' permission"), None)):
+                self.assertIn("was not removed", steps.remove_observe_rule("x-agent", "p1"))
+
+    def test_once_enforcing_a_leftover_observe_rule_is_taken_away(self):
+        class R:
+            def __init__(self, code): self.returncode, self.stderr = code, ""
+        calls = []
+        with mock.patch.object(steps, "WORKER_NETWORK", "mesh"), mock.patch.object(steps, "WORKER_SUBNET", "s"),              mock.patch.object(steps, "WORKER_EGRESS", "enforce"),              mock.patch.object(steps, "gcloud_quiet", return_value=(R(0), None)),              mock.patch.object(steps, "gcloud", side_effect=lambda argv, *a, **k: calls.append(argv) or ""):
+            self.assertEqual(steps.place_observe_rule("x-agent", "p1"), "removed")
+        self.assertEqual(calls[0][:3], ["compute", "firewall-rules", "delete"])

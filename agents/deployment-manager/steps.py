@@ -227,6 +227,83 @@ def build_account_argv(project):
             f"--gcs-log-dir=gs://{project}_cloudbuild/logs"]
 
 
+# The network our own worker jobs run in (egress step 3), when the environment
+# names one: gcp.worker_network and gcp.worker_subnet (a subnet in
+# gcp.worker_region). Named, every job this host creates or updates on our own
+# project sends all its traffic through that VPC with the tags agent-worker
+# and w-<name>, which the network's rules target. With gcp.worker_egress
+# "observe" the host also makes the agent's own logged allow-all rule,
+# egress-observe-<name>, at install and removes it at retire: the observe
+# phase, whose logs become the agent's destination list. Unnamed, nothing
+# changes. A job in a customer's project never gets these.
+def _optional_env(key, override):
+    try:
+        return _am_env(key, override)
+    except RuntimeError:
+        return ""
+
+
+WORKER_NETWORK = _optional_env("gcp.worker_network", "DM_WORKER_NETWORK")
+WORKER_SUBNET = _optional_env("gcp.worker_subnet", "DM_WORKER_SUBNET")
+WORKER_EGRESS = _optional_env("gcp.worker_egress", "DM_WORKER_EGRESS")
+# "observe" makes each agent's logged allow-all rule; "enforce" means the
+# agent's own deny-by-default rules are elsewhere (a firewall policy), so an
+# observe rule left over from before is taken away at the next deploy, since
+# an allow-all VPC rule would otherwise be evaluated before the policy.
+if WORKER_EGRESS not in ("", "observe", "enforce"):
+    raise RuntimeError(f"gcp.worker_egress is {WORKER_EGRESS!r}; it is observe, enforce, or not set")
+
+
+def worker_vpc(name):
+    """The VPC placement of one agent's worker job, or None."""
+    if not WORKER_NETWORK or not WORKER_SUBNET or cloud_now():
+        return None
+    return {"network": WORKER_NETWORK, "subnet": WORKER_SUBNET, "tags": [IMAGE.WORKER_TAG, IMAGE.worker_tag(name)]}
+
+
+def observe_rule_argv(name, project, network, delete=False):
+    """The agent's own logged allow-all egress rule (the observe phase)."""
+    rule = f"egress-observe-{name}"
+    where = ["--project", project] if project else []
+    if delete:
+        return ["compute", "firewall-rules", "delete", rule, *where, "--quiet"]
+    return ["compute", "firewall-rules", "create", rule, *where, "--network", network, "--direction", "EGRESS",
+            "--priority", "1000", "--action", "ALLOW", "--rules", "all", "--destination-ranges", "0.0.0.0/0",
+            "--target-tags", IMAGE.worker_tag(name), "--enable-logging", "--logging-metadata", "include-all",
+            "--description", f"Observe phase (egress step 3): everything {name}'s worker reaches is allowed and logged.",
+            "--quiet"]
+
+
+def place_observe_rule(name, project):
+    """In the observe phase, make the agent's observe rule (asked first, so a
+    second deploy finds it and moves on). Once enforcing, take a leftover one
+    away, so it cannot outrank the agent's own rules."""
+    if not worker_vpc(name):
+        return None
+    where = ["--project", project] if project else []
+    p, _ = gcloud_quiet(["compute", "firewall-rules", "describe", f"egress-observe-{name}", *where, "--format", "value(name)"], 120)
+    if WORKER_EGRESS == "observe":
+        if p.returncode != 0:
+            gcloud(observe_rule_argv(name, project, WORKER_NETWORK), "job", 300)
+        return f"egress-observe-{name}"
+    if WORKER_EGRESS == "enforce" and p.returncode == 0:
+        gcloud(observe_rule_argv(name, project, WORKER_NETWORK, delete=True), "job", 300)
+        return "removed"
+    return None
+
+
+def remove_observe_rule(name, project):
+    """Take the agent's observe rule away at retire. Returns None when it is
+    gone (or was never there), else the line `remaining` should carry."""
+    if not WORKER_NETWORK:
+        return None
+    p, _ = gcloud_quiet(observe_rule_argv(name, project, WORKER_NETWORK, delete=True), 300)
+    err = (p.stderr or "").strip()
+    if p.returncode == 0 or re.search(r"not found|was not found|notFound|does not exist", err, re.I):
+        return None
+    return f"the egress rule egress-observe-{name} was not removed: {err[-200:]}"
+
+
 # The account the agents that read a caller's own data run as, and which
 # installs those are (docs/caller-grants-plan.md, section 6). Only this account
 # may act as a customer identity in the grants project, so it is kept off every
@@ -3914,7 +3991,9 @@ def container_step(args, count_against_ceiling=True, alongside=None):
                 # always has, unless the environment names the account our jobs
                 # run as (gcp.jobs_sa; dev's workers account, env split 1.6).
                 **({"service_account": CLOUD.runs_as(cloud_now()["grant"])} if cloud_now()
-                   else {"service_account": jobs_account_for(name)} if jobs_account_for(name) else {})}
+                   else {"service_account": jobs_account_for(name)} if jobs_account_for(name) else {}),
+                **({"vpc": worker_vpc(name)} if worker_vpc(name) else {})}
+        place_observe_rule(name, project)
         gcloud(IMAGE.create_job_argv(spec, exists=exists), "job", 900)
     except (KeyError, ValueError) as e:  # noqa: BLE001
         fail("job", str(e))
@@ -4504,6 +4583,11 @@ def take_down_container(name, entry):
             if d.returncode != 0:
                 remaining.append(f"the binding at {held['binding']} was not removed: "
                                  f"{cloud_reason(action, (d.stderr or '').strip()[:200])}")
+    # Its own egress rule goes with it (the observe phase's, egress step 3).
+    if not entry.get("cloud"):
+        left = remove_observe_rule(name, spec.get("project"))
+        if left:
+            remaining.append(left)
     save_json_list(CONTAINERS, [e for e in load_json_list(CONTAINERS) if e.get("name") != name])
     # The credentials were placed as variables ON the job, so they go with it,
     # and the job folders of messages already answered stay on the bucket
