@@ -28,7 +28,22 @@ This folder is the agent's source, laid out the way the
 
 `package/` is the built Agent Package 0.1.0, exactly as it was released on
 2026-09-15, kept as the record of what that version was. It is not a source
-and nothing builds from it. Version 0.1.1 is built from this folder.
+and nothing builds from it. Version 0.1.2 is built from this folder.
+
+## What changed in 0.1.2
+
+Records are read in a window around the failure and about the failing agent
+only. In 0.1.1 every timed line of every file became a fact, so a record of a
+whole day's activity, or one that covered many agents, went into one agent's
+incident whole, and the distance from the last stray line to the failure read
+as a gap. Now a line is a fact only when its time lies between fifteen minutes
+before the failure and five minutes after it, and, when the line names an
+agent (`agent`, `agent_handle` or `handle`), only when it names the failing
+one. A handle is compared whole; a bare name such as `tone-check` is the
+agent whose handle starts with `tone-check.`. A line that names no agent is
+kept. The timeline covers the same window, the incident record and the record
+inventory say which window was read and how many lines were left out and why,
+and the reply says so.
 
 ## What changed in 0.1.1
 

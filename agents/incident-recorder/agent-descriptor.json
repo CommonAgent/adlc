@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.1",
+  "agent_version": "0.1.2",
   "does": "Records an incident when a fleet agent goes quiet or a job fails. Reads platform activity records and the agent's own records around the failure window, builds a strict chronological timeline of known facts and gaps, and writes an incident record attributing every fact to its source. Never guesses causes, never proposes fixes, and never contacts the agent.",
   "offerings": [
     {

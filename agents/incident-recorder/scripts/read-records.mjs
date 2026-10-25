@@ -15,8 +15,52 @@ export function hasZonedTime(obj) {
     && ZONED.test(obj.time.trim()) && Number.isFinite(new Date(obj.time).getTime());
 }
 
-export async function readRecords({ recordsDir, agent, failureTime, wentWithoutDir }) {
-  const result = { unreadable: [], files: [], events: [] };
+// THE WINDOW AND THE AGENT (0.1.2). Until 0.1.1 every timed line of every
+// file became a fact, so a record of a whole day's activity put lines from
+// hours away and lines about other agents into one agent's incident, and the
+// gap between the last of them and the failure read as a gap in the failure.
+// A line now counts only when its time lies in the window around the failure,
+// and only when it is about the failing agent: a line that names an agent
+// (`agent`, `agent_handle` or `handle`) names this one, and a line that names
+// none is kept, since it is in a file the job was given about this incident.
+// What is left out is counted and said, never silently dropped.
+export const WINDOW_BEFORE_MS = 15 * 60 * 1000;
+export const WINDOW_AFTER_MS = 5 * 60 * 1000;
+
+/** The window read around a failure, as ISO times. */
+export function windowAround(failureTime) {
+  const t = new Date(failureTime).getTime();
+  return { windowStart: new Date(t - WINDOW_BEFORE_MS).toISOString(), windowEnd: new Date(t + WINDOW_AFTER_MS).toISOString() };
+}
+
+const AGENT_MEMBERS = ["agent", "agent_handle", "handle"];
+
+/** The agent a record line names, or "" when it names none. */
+export function agentOfLine(obj) {
+  for (const k of AGENT_MEMBERS) {
+    if (typeof obj?.[k] === "string" && obj[k].trim()) return obj[k].trim();
+  }
+  return "";
+}
+
+/** Is `named` the failing agent? Handles are compared whole, without regard to
+ *  case. A bare name (no @) is the agent whose handle starts with that name and
+ *  a dot, so `tone-check` is `tone-check.platform@example.com`; two bare names
+ *  are compared whole. */
+export function sameAgent(named, agent) {
+  const a = String(named ?? "").trim().toLowerCase();
+  const b = String(agent ?? "").trim().toLowerCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes("@") && !b.includes("@")) return a.startsWith(`${b}.`);
+  if (b.includes("@") && !a.includes("@")) return b.startsWith(`${a}.`);
+  return false;
+}
+
+export async function readRecords({ recordsDir, agent, failureTime, wentWithoutDir, windowStart, windowEnd }) {
+  const result = { unreadable: [], files: [], events: [], leftOut: { outsideWindow: 0, otherAgent: 0 } };
+  const from = windowStart ? new Date(windowStart).getTime() : -Infinity;
+  const to = windowEnd ? new Date(windowEnd).getTime() : Infinity;
   if (!existsSync(recordsDir)) return result;
 
   const files = readdirSync(recordsDir);
@@ -44,6 +88,18 @@ export async function readRecords({ recordsDir, agent, failureTime, wentWithoutD
           // or read in the host's own zone.
           if (!hasZonedTime(obj)) {
             result.unreadable.push({ file, byteOffset: idx, reason: "no time with a zone", untimed: true });
+            idx = next + 1;
+            continue;
+          }
+          const at = new Date(obj.time).getTime();
+          if (at < from || at > to) {
+            result.leftOut.outsideWindow++;
+            idx = next + 1;
+            continue;
+          }
+          const named = agentOfLine(obj);
+          if (agent && named && !sameAgent(named, agent)) {
+            result.leftOut.otherAgent++;
             idx = next + 1;
             continue;
           }

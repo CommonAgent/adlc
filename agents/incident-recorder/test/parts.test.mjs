@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fromArgv, fromText, isIsoTime, recordIncident, whatIsMissing } from "../scripts/record-incident.mjs";
 import { plan } from "../scripts/pieces.mjs";
+import { agentOfLine, sameAgent, windowAround } from "../scripts/read-records.mjs";
 
 test("the message's agent, time and records lines are read, in the clear forms only", () => {
   assert.deepEqual(fromText("agent: a.owner@example.com\ntime: 2026-10-24T09:30:00Z\nrecords: /srv/r\n"),
@@ -48,4 +49,23 @@ test("the pieces are the incident record and the timeline, both from the write s
   ]);
   assert.equal(copies.length, 2);
   assert.throws(() => plan({ incidentPath: "/r/incident.json" }), /timeline is missing/);
+});
+
+test("a line's agent is matched by handle, or by bare name against the handle's start", () => {
+  assert.equal(agentOfLine({ agent: " a.owner@example.com " }), "a.owner@example.com");
+  assert.equal(agentOfLine({ agent_handle: "a.owner@example.com" }), "a.owner@example.com");
+  assert.equal(agentOfLine({ handle: "a" }), "a");
+  assert.equal(agentOfLine({ event: "x" }), "");
+  assert.ok(sameAgent("A.Owner@Example.com", "a.owner@example.com"));
+  assert.ok(sameAgent("tone-check", "tone-check.platform@example.com"));
+  assert.ok(sameAgent("tone-check.platform@example.com", "tone-check"));
+  assert.ok(sameAgent("tone-check", "tone-check"));
+  assert.ok(!sameAgent("tone", "tone-check.platform@example.com"));
+  assert.ok(!sameAgent("tone-check-two", "tone-check.platform@example.com"));
+  assert.ok(!sameAgent("b.owner@example.com", "a.owner@example.com"));
+  assert.ok(!sameAgent("", "a"));
+});
+
+test("the window is fifteen minutes before the failure and five after", () => {
+  assert.deepEqual(windowAround("2026-10-24T09:30:00Z"), { windowStart: "2026-10-24T09:15:00.000Z", windowEnd: "2026-10-24T09:35:00.000Z" });
 });
