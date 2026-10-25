@@ -64,6 +64,13 @@ test("a line's agent is matched by handle, or by bare name against the handle's 
   assert.ok(!sameAgent("tone-check-two", "tone-check.platform@example.com"));
   assert.ok(!sameAgent("b.owner@example.com", "a.owner@example.com"));
   assert.ok(!sameAgent("", "a"));
+  // Names may hold dots: a name is the handle up to one dot before the owner.
+  assert.ok(!sameAgent("spec", "spec.writer.platform@example.com"));
+  assert.ok(!sameAgent("spec.writer.platform@example.com", "spec"));
+  assert.ok(sameAgent("spec.writer", "spec.writer.platform@example.com"));
+  // An agent member that is not a name cannot be compared.
+  assert.equal(agentOfLine({ agent: { handle: "a.owner@example.com" } }), null);
+  assert.equal(agentOfLine({ agent: null, handle: "a" }), "a");
 });
 
 test("the window is fifteen minutes before the failure and five after", () => {

@@ -35,25 +35,38 @@ export function windowAround(failureTime) {
 
 const AGENT_MEMBERS = ["agent", "agent_handle", "handle"];
 
-/** The agent a record line names, or "" when it names none. */
+/** The agent a record line names: its handle or name, "" when it names none,
+ *  and null when an agent member is there but is not a name (an object, a
+ *  number), which cannot be compared and so is never taken as this agent. */
 export function agentOfLine(obj) {
   for (const k of AGENT_MEMBERS) {
-    if (typeof obj?.[k] === "string" && obj[k].trim()) return obj[k].trim();
+    const v = obj?.[k];
+    if (v === undefined || v === null || v === "") continue;
+    if (typeof v !== "string") return null;
+    if (v.trim()) return v.trim();
   }
   return "";
 }
 
 /** Is `named` the failing agent? Handles are compared whole, without regard to
- *  case. A bare name (no @) is the agent whose handle starts with that name and
- *  a dot, so `tone-check` is `tone-check.platform@example.com`; two bare names
+ *  case. A bare name (no @) is the agent whose handle is that name, one dot and
+ *  an owner address with no dot before its @, so `tone-check` is
+ *  `tone-check.platform@example.com`, and `spec` is not
+ *  `spec.writer.platform@example.com` (names may hold dots). Two bare names
  *  are compared whole. */
 export function sameAgent(named, agent) {
   const a = String(named ?? "").trim().toLowerCase();
   const b = String(agent ?? "").trim().toLowerCase();
   if (!a || !b) return false;
   if (a === b) return true;
-  if (a.includes("@") && !b.includes("@")) return a.startsWith(`${b}.`);
-  if (b.includes("@") && !a.includes("@")) return b.startsWith(`${a}.`);
+  const nameOf = (bare, handle) => {
+    if (!handle.startsWith(`${bare}.`)) return false;
+    const owner = handle.slice(bare.length + 1);
+    const at = owner.indexOf("@");
+    return at > 0 && !owner.slice(0, at).includes(".");
+  };
+  if (a.includes("@") && !b.includes("@")) return nameOf(b, a);
+  if (b.includes("@") && !a.includes("@")) return nameOf(a, b);
   return false;
 }
 
@@ -98,7 +111,7 @@ export async function readRecords({ recordsDir, agent, failureTime, wentWithoutD
             continue;
           }
           const named = agentOfLine(obj);
-          if (agent && named && !sameAgent(named, agent)) {
+          if (agent && (named === null || (named && !sameAgent(named, agent)))) {
             result.leftOut.otherAgent++;
             idx = next + 1;
             continue;

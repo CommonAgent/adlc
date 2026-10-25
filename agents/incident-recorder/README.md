@@ -40,8 +40,9 @@ as a gap. Now a line is a fact only when its time lies between fifteen minutes
 before the failure and five minutes after it, and, when the line names an
 agent (`agent`, `agent_handle` or `handle`), only when it names the failing
 one. A handle is compared whole; a bare name such as `tone-check` is the
-agent whose handle starts with `tone-check.`. A line that names no agent is
-kept. The timeline covers the same window, the incident record and the record
+agent whose handle is that name, one dot and an owner address with no dot
+before its `@` (`tone-check.platform@example.com`). A line that names no agent
+is kept; one whose agent member is not a name is left out. The timeline covers the same window, the incident record and the record
 inventory say which window was read and how many lines were left out and why,
 and the reply says so.
 
