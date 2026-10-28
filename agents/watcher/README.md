@@ -41,13 +41,48 @@ agentmesh-worker/v1
 status
 ```
 
-with `agentmesh messages send <handle> <text> --wait <seconds> --json`, as
-itself, to all the agents at once. On an AgentMesh fleet host the loop that
+as itself, to every watched agent. On an AgentMesh fleet host the loop that
 runs the agent's work answers it from the agent's state, with no model woken
 and no job started, and says what its last job was and how it ended. An answer
 comes back only if the message got through the agent's door and its work loop
 picked it up, which is what presence does not show. Silence within the wait is
 reported as not answering, and keeps an open alert.
+
+## A watch is a round
+
+The watcher's work runs where it holds no signing key (on an AgentMesh fleet,
+a container for one job), so it cannot send a message itself or wait for an
+answer inside one job. It leaves each message for its host in
+`out/outbox.jsonl`, the host sends them under the watcher's key as the job
+ends, and each answer comes back as a message of its own. So a watch is a
+round, kept in `{records}/rounds/`:
+
+- **A request, no round open.** The watcher reads the watch list, and leaves
+  the status question for every agent (in one thread, so the answers are
+  worked on one at a time) and one message for itself. The round opens. The
+  reply says so.
+- **An answer.** It is matched by what it replies to: the host writes the id
+  each question went out as in `out/outbox.sent.jsonl`, and an answer whose
+  `in_reply_to` is that id is that agent's. Until the ids can be read, only
+  the worker interface's own status answer from the agent asked counts. When
+  every agent asked has answered, the round closes and its report goes, as a
+  message with the report and the record attached, to whoever asked.
+- **The message to itself.** Its job waits out the wait (ANSWER_SECONDS, at
+  most 240 seconds, inside the job's 300) and then closes the round if the
+  answers have not: whoever has not answered did not answer within the wait,
+  and the report goes to whoever asked. Only the watcher's own message closes
+  a round this way.
+- **A request while a round is open.** Before the wait is over, it says how
+  many have answered and asks nobody again. After it (when the message to
+  itself could not be sent), the round closes, its report is this job's
+  pieces and goes to whoever asked as well, and a new round opens.
+
+A question the host reports it could not send is a gap in the watch, not the
+agent's silence, and is not raised. A round's readings (presence, runs,
+ceilings and spend) are taken when it closes, so the report is current as of
+then. Every change to a round is made under a lock in `{records}/rounds/`,
+because a request, an answer and the message to itself can be worked on at
+the same time.
 
 [references/what-the-watcher-reads.md](references/what-the-watcher-reads.md)
 lists every reading, who may read it, and what it proves and does not.
@@ -89,9 +124,9 @@ input: a message with `agent: <handle>` and `time: <ISO time>` as lines of
 their own, and a file `watch-platform-<agent>.jsonl` of what the watcher saw,
 one `{time, agent, event, source, seen_by}` per line. The watcher sends it to
 the incident recorder the install names. An agent the watcher could not ask
-(held at its door, refused, or no way to send) also gets an open alert, since
-it has no current answer, but it is not raised as an incident: the watcher
-has not seen it fail.
+(no agent id to address) also gets an open alert, since it has no current
+answer, but that alone does not raise it as an incident: the watcher has not
+seen it fail.
 
 An alert stays open across watches. `{records}/open-alerts.json` keeps, per
 agent, the reasons raised, when, and the message they were raised as; a later
@@ -100,6 +135,15 @@ it again, a new reason raises it again, and a watch that finds the agent
 clear closes it. An alarm that did not reach the recorder is not kept, so the
 next watch tries again. One watch covers at most 50 agents, the most the
 spend report reads at once.
+
+## What changed in 0.1.1
+
+0.1.0 was never installed. The deployment manager refused its install file,
+which named a handle as an example, and installing it showed that the
+platform runs an agent's work in a container that cannot send or wait for an
+answer. In 0.1.1 the install file names no handle, and a watch is a round:
+the questions and the alarms are left for the host to send, and each answer
+is a message of its own (`wants_replies`).
 
 ## What this folder is
 
@@ -121,10 +165,10 @@ This folder is the agent's source, laid out the way the
 
 ## What it needs
 
-Node 22 or later, a records folder, and the `agentmesh` command on the path,
-running as this agent. With the agent's node running on the host (a fleet
-host's case) the questions go out at once through it; with none, the command
-connects on its own for each send, so the questions go one at a time. The install places one credential and four settings:
+Node 22 or later, a records folder that lasts from one job to the next, and a
+host that sends what a job leaves in `out/outbox.jsonl` and hands the agent
+the answers to what it sent (`wants_replies`). The install places one
+credential and four settings:
 
 | Variable | What it is |
 |---|---|
@@ -132,18 +176,17 @@ connects on its own for each send, so the questions go one at a time. The instal
 | `MESH_API_BASE` | the platform's origin, with no path |
 | `WATCH_AGENTS` | the agents to watch, by handle, separated by commas; the owner names them |
 | `INCIDENT_RECORDER` | the incident recorder's handle; without it alarms are handed back, not sent |
-| `ANSWER_SECONDS` | how long each agent has to answer, 5 to 600; 60 by default |
+| `ANSWER_SECONDS` | how long each agent has to answer, 5 to 240; 60 by default |
 
-Each watched agent must admit the watcher, or its question is held at the
-door and the agent is reported as having no current answer. The incident
-recorder must admit it too, or its alarms are held.
+Each watched agent must admit the watcher, and the incident recorder too;
+agents of the same owner admit each other.
 
 ## How a job runs
 
 The host starts
 
 ```sh
-node {home}/{package}/skills/watch-the-fleet/scripts/watch.mjs --job {job_dir} --records {records} --work {work} --text-file {job_dir}/message.txt
+node {home}/{package}/skills/watch-the-fleet/scripts/watch.mjs --job {job_dir} --records {records} --work {work} --text-file {job_dir}/message.txt --from {sender} --in-reply-to {in_reply_to} --message {message_id}
 ```
 
 A message may narrow the watch to some of the listed agents, and name the
@@ -159,12 +202,14 @@ An agent a message names that is not on the owner's list is not watched, and
 the reply says so. With no agent named at all it watches nothing and exits 3
 with a reply saying how the owner names them.
 
-It writes `watch-record.json`, `watch-report.md`, `alarms/*.jsonl`,
-`raised.json` and, when something was missing, `went-without.json` to
-`{records}/<job id>/`, copies the report, the record and the alarms to
+for every message, a request or an answer. A job that closes a round writes
+`watch-record.json`, `watch-report.md`, `alarms/*.jsonl`, `raised.json` and,
+when something was missing, `went-without.json` to `{records}/<job id>/`; a
+request that closes one copies the report, the record and the alarms to
 `{job_dir}/out/` with `{job_dir}/pieces.json` for the adapter to deliver, and
-prints one JSON object whose `reply` says what was found. An open alert is a
-finding, not a failure: the job delivers with exit 0.
+an answer that closes one leaves the report for the host to send to whoever
+asked. Every job prints one JSON object whose `reply` says what it did. An
+open alert is a finding, not a failure: the job ends with exit 0.
 
 Nothing starts a watch on a schedule by itself. Something has to send the
 watcher a message: a person, or a schedule the owner sets on the platform.
@@ -179,7 +224,8 @@ python3 ../package-maker/build.py . <out folder>
 
 `test/run.test.mjs` starts the job exactly as the runtime requirements say,
 from a package laid out the way the builder lays it out, against a platform
-on a local port and a stand-in for the agentmesh command. Its first test is
+on a local port, reads what each job left for the host, and runs the answers
+the agents would send back as messages of their own. Its first test is
 the role's own check: three named agents, one of which stopped answering and
 one of which crossed its ceiling; the report names the quiet one as not
 answering, names the crossed ceiling, and carries spend figures equal to the

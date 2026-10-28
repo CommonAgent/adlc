@@ -68,7 +68,7 @@ test("the platform reads are GETs only, and the only key is the read key", () =>
     const text = readFileSync(join(AGENT, f), "utf8");
     assert.doesNotMatch(text, /credits\/purchase|\/budget|\/allowance\b/, f);
     for (const m of text.matchAll(/process\.env\.([A-Z_]+)|env\.([A-Z_]+)/g)) {
-      assert.ok(["WATCH_AGENTS", "MESH_API_BASE", "WATCH_TOKEN", "INCIDENT_RECORDER", "ANSWER_SECONDS", "AGENTMESH_BIN"].includes(m[1] ?? m[2]), `${f} reads ${m[1] ?? m[2]}`);
+      assert.ok(["WATCH_AGENTS", "MESH_API_BASE", "WATCH_TOKEN", "INCIDENT_RECORDER", "ANSWER_SECONDS", "MESH_JOB_OUT", "MESH_SELF_HANDLE", "MESH_SENDER"].includes(m[1] ?? m[2]), `${f} reads ${m[1] ?? m[2]}`);
     }
   }
 });
@@ -88,4 +88,9 @@ test("the pieces it files are declared outputs, by name or as <output> (<file>)"
   const declared = new Set(D.offerings[0].outputs.map((o) => o.name));
   const { entries } = plan({ reportPath: "r", recordPath: "w", alarms: [{ agent: "a", file: "watch-platform-a.jsonl", path: "p" }] });
   for (const e of entries) assert.ok(declared.has(e.name.replace(/ \(.*\)$/, "")), e.name);
+});
+
+test("the install file carries no address, account identifier or credential, as the image emitter requires", async () => {
+  const { forbiddenIn } = await import("../../image/emit-image.mjs");
+  assert.deepEqual(forbiddenIn(JSON.stringify(R), "the install file"), []);
 });

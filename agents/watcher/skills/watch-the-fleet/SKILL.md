@@ -14,6 +14,7 @@ when the owner wants to know which of the agents they named are alive, answering
 ## What this needs
 
 - what to watch (text, optional)
+- status answers (text, optional)
 
 ## What a good result looks like
 
@@ -31,7 +32,7 @@ With no agent named to watch nothing is watched, and the reply says how the owne
 
 ## How to do it
 
-Run `node scripts/watch.mjs --job <job folder> --records <records folder> --work <work folder> --text-file <job folder>/message.txt`. The install's settings say what is watched and where it is read (WATCH_AGENTS, MESH_API_BASE, WATCH_TOKEN, INCIDENT_RECORDER, ANSWER_SECONDS); the message may only narrow the watch and name the spend window. It runs the steps in order, keeps the record, the report, the alarms and what became of them in `<records folder>/<job id>/`, files the report, the record and the alarms as the job's pieces, and prints one JSON object with a `reply` field. An open alert is a finding, not a failure: the job still delivers. It calls no model and spends nothing.
+Run `node scripts/watch.mjs --job <job folder> --records <records folder> --work <work folder> --text-file <job folder>/message.txt --from <sender> --in-reply-to <message id or none> --message <message id>` for every message: a request for a watch, and each answer a watched agent sends back. A watch is a round (scripts/rounds.mjs): a request with no round open reads the platform and leaves the status questions for the host to send; each answer is recorded; the round closes when every agent asked has answered (its report then goes to whoever asked, as a message) or when a request comes after the wait (its report is then that job's pieces, and a new round opens). The install's settings say what is watched and where it is read (WATCH_AGENTS, MESH_API_BASE, WATCH_TOKEN, INCIDENT_RECORDER, ANSWER_SECONDS); the message may only narrow the watch and name the spend window. It keeps the rounds in `<records folder>/rounds/`, the record, the report, the alarms and what became of them in `<records folder>/<job id>/`, leaves every message for the host in `out/outbox.jsonl`, and prints one JSON object with a `reply` field. An open alert is a finding, not a failure: the job still delivers. It calls no model and spends nothing.
 
 ## Scripts
 
@@ -40,13 +41,13 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/watch.mjs
 - scripts/watch-list.mjs
 - scripts/ask.mjs
-- scripts/send.mjs
+- scripts/outbox.mjs
+- scripts/rounds.mjs
 - scripts/platform.mjs
 - scripts/checks.mjs
 - scripts/spend.mjs
 - scripts/write-report.mjs
 - scripts/alarms.mjs
-- scripts/raise.mjs
 - scripts/pieces.mjs
 - scripts/went-without.mjs
 

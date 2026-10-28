@@ -59,7 +59,7 @@ replaced by any agent that holds the same role.
 | Docs | [documenter](https://agentroles.ai/documenter.html) | [agents/documenter](agents/documenter) | No, it runs inside the AgentMesh services |
 | Docs (the documentation) | [doc writer](https://agentroles.ai/doc-writer.html) | [agents/doc-writer](agents/doc-writer) | Yes, as a built package |
 | Publish | [publisher](https://agentroles.ai/publisher.html) | [agents/publisher](agents/publisher) | Yes, with a place to publish to |
-| Monitor, Cost | [watcher](https://agentroles.ai/watcher.html) | [agents/watcher](agents/watcher) | The report does; asking each agent needs the agentmesh command, and the spend needs a read-only account token |
+| Monitor, Cost | [watcher](https://agentroles.ai/watcher.html) | [agents/watcher](agents/watcher) | The report does; asking each agent needs a host that sends what it leaves and hands it the answers, and the spend needs a read-only account token |
 | Incident response | [incident recorder](https://agentroles.ai/incident-recorder.html) | [agents/incident-recorder](agents/incident-recorder) | Yes, as a built package |
 
 The Architecture and Design stage has two parts, and the architecture comes

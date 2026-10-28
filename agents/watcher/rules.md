@@ -14,6 +14,8 @@ Alive is the registry's live presence, as the agent's storefront shows it: wheth
 
 Answering is an answer to a question sent to the agent: the worker interface's `status`, two lines, `agentmesh-worker/v1` and `status`, sent as this agent through the agent's own door. It gets an answer only when the message got through the door, reached the inbox, and the loop that runs the agent's work picked it up and replied. On an AgentMesh fleet host that loop answers it from the agent's own state, with no model woken and no job started, and says what the agent's last job was and how it ended. Any answer counts as answering; one that is not the worker interface's is reported in its own words.
 
+The watcher cannot send or wait inside one job: it leaves each question for its host, which sends it under the watcher's key when the job ends, and each answer comes back as a message of its own. So a watch is a round. It opens when a watch is asked for, records each answer as it arrives, and closes when every agent asked has answered or when the wait is over (the watcher sends itself a message whose job waits it out); its readings are taken when it closes, and its report goes to whoever asked. Nobody is asked twice while a round is open. An answer counts only when it replies to the question that agent was sent, or, until the host has said what each question went out as, when it is that agent's own worker-interface status answer: another message from a watched agent is never taken for its answer. A question the host could not send is a gap in the watch, said as one, not the agent's silence.
+
 Silence is a failure. An agent that did not answer within the wait is reported as not answering, it keeps an open alert, and it stays in the report. It is never read as no news.
 
 ## Limits are what was declared, held against what was recorded
@@ -35,7 +37,7 @@ The spend is read with an account API token that carries the `credits:read` scop
 
 ## An alert, and where it goes
 
-An agent gets an open alert when it is not alive, did not answer, or is outside a limit; each reason is named, with where it was seen. It also gets one when the watcher could not ask it (the question was held at its door, refused, or could not be sent), because the stage is done only when each agent has a current answer or an open alert.
+An agent gets an open alert when it is not alive, did not answer, or is outside a limit; each reason is named, with where it was seen. It also gets one when the watcher could not ask it (it had no agent id to address the question to), because the stage is done only when each agent has a current answer or an open alert.
 
 Only an agent seen failing is raised to the incident recorder. An agent the watcher could not ask has not been seen failing, and recording an incident against it would record the watcher's own gap as the agent's. Its alert stays open in the report, with why.
 

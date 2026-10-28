@@ -39,7 +39,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/checks.mjs
 - scripts/platform.mjs
 - scripts/ask.mjs
-- scripts/send.mjs
+- scripts/outbox.mjs
 - scripts/spend.mjs
 
 ## References

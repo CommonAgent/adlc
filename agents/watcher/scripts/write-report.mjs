@@ -15,7 +15,7 @@
 //   import { writeReport, WATCHER } from "./write-report.mjs"
 import { agentName, agentSpendWords, allowedWords, moneyWords } from "./spend.mjs";
 
-export const WATCHER = "watcher 0.1.0";
+export const WATCHER = "watcher 0.1.1";
 
 /** A reason as a sentence of its own: its first letter raised. */
 const cap = (s) => { const t = String(s ?? ""); return t ? t[0].toUpperCase() + t.slice(1) : t; };
@@ -29,11 +29,12 @@ function totalWords(totals) {
 }
 
 /** The header block, as `name: value` lines. */
-export function header({ watchedAt, account, agents, spend }) {
+export function header({ watchedAt, round = null, account, agents, spend }) {
   const count = (pred) => agents.filter(pred).length;
   return [
     `watched_by: ${WATCHER}`,
     `watched_at: ${watchedAt}`,
+    ...(round ? [`round: ${round.id}`, `asked_at: ${round.opened_at}`, `wait_seconds: ${round.wait_seconds}`] : []),
     `account: ${account ?? "not known"}`,
     `agents: ${agents.length}`,
     `alive: ${count((a) => a.alive.state === "yes")}`,
@@ -57,8 +58,8 @@ function agentSection(a) {
   const w = a.answering;
   if (w.state === "yes") {
     L.push(w.as_worker
-      ? `- Answering: yes. Asked the worker interface's status at ${w.asked_at}, it answered after ${w.seconds}s at ${w.answered_at}: its job ${w.job ?? "(none named)"} is ${w.job_state ?? "not said"}${w.detail ? ` (${w.detail})` : ""}.`
-      : `- Answering: yes. Asked the worker interface's status at ${w.asked_at}, it answered after ${w.seconds}s at ${w.answered_at}, but not as the worker interface: "${w.words}".`);
+      ? `- Answering: yes. Asked the worker interface's status at ${w.asked_at}, its answer reached the watcher ${w.seconds}s later, at ${w.answered_at}: its job ${w.job ?? "(none named)"} is ${w.job_state ?? "not said"}${w.detail ? ` (${w.detail})` : ""}.`
+      : `- Answering: yes. Asked the worker interface's status at ${w.asked_at}, its answer reached the watcher ${w.seconds}s later, at ${w.answered_at}, but not as the worker interface: "${w.words}".`);
   } else {
     L.push(`- Answering: ${yesNo(w.state)}. ${cap(w.why)}.${w.asked_at ? ` Asked at ${w.asked_at}.` : ""}`);
   }
@@ -153,8 +154,8 @@ function spendSections(spend) {
  * The report. `agents` are checks.mjs results; `spend` is readSpend's result
  * with `read_from` set, or { ok: false, why }; `raised` is raise.mjs's result.
  */
-export function writeReport({ watchedAt, account, agents, spend, raised = [], notKnown = [], sources = [] }) {
-  const L = ["# Watch report", "", ...header({ watchedAt, account, agents, spend }), ""];
+export function writeReport({ watchedAt, round = null, account, agents, spend, raised = [], notKnown = [], sources = [] }) {
+  const L = ["# Watch report", "", ...header({ watchedAt, round, account, agents, spend }), ""];
   L.push("Each agent was asked one question and read from the platform's own records, and each line says where. Silence counts as a failure. Nothing here was estimated.", "");
 
   L.push("## Agents", "");
@@ -175,10 +176,10 @@ export function writeReport({ watchedAt, account, agents, spend, raised = [], no
       L.push(`### ${a.handle}`, "");
       L.push(`- Opened at ${a.alert.at}: ${a.alert.reasons.join("; ")}.`);
       const so = a.alert.still_open;
-      if (so) L.push(`- Still open since ${so.since}: raised to the incident recorder ${so.raised_to ?? "named then"}${so.request_id ? ` as message ${so.request_id}` : ""}${so.raised_at ? ` at ${so.raised_at}` : ""}. Nothing new has been seen, so it was not raised again.`);
+      if (so) L.push(`- Still open since ${so.since}: raised to the incident recorder ${so.raised_to ?? "named then"}${so.raised_at ? ` at ${so.raised_at}` : ""}. Nothing new has been seen, so it was not raised again.`);
       else if (!a.alert.raise) L.push("- Not raised to the incident recorder: the watcher could not ask this agent, which is a gap in the watch, not a failure seen in the agent.");
       else if (!r) L.push("- Not raised to the incident recorder.");
-      else if (r.sent) L.push(`- Raised to the incident recorder ${r.to}${r.request_id ? ` as message ${r.request_id}` : ""}, with \`${r.file}\` attached.`);
+      else if (r.sent) L.push(`- Raised to the incident recorder ${r.to}: its message, \`agent:\` and \`time:\` with \`${r.file}\` attached, was left for this agent's host, which sends it as the job that closed this watch ends.`);
       else L.push(`- Not raised to the incident recorder: ${r.why}. Its alarm, \`${r.file}\`, is handed back with this report.`);
       L.push("");
     }
