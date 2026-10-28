@@ -90,7 +90,7 @@ test("the role's check: the quiet one is not answering, the crossed ceiling is n
     const r = await runJob(h, { from: OWNER, env });
     assert.equal(r.status, 0, JSON.stringify(r.doc));
     const md = readFileSync(join(r.jobDir, "out", "watch-report.md"), "utf8");
-    assert.match(md, /^# Watch report\n\nwatched_by: watcher 0\.1\.3\n/);
+    assert.match(md, /^# Watch report\n\nwatched_by: watcher 0\.1\.4\n/);
     assert.match(md, /^agents: 3$/m);
     assert.match(md, /^answering: 2$/m);
     assert.match(md, /^open_alerts: 2$/m);

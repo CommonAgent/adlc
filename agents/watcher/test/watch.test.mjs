@@ -110,12 +110,12 @@ test("the spend's arithmetic is checked again, and a report that says it reconci
 
 test("an alarm is the recorder's two lines and a file named for the platform", () => {
   const c = checkAgent({ named: A, card: read(storefront(A)), record: read({ runs: 0 }), agentdoc: read(agentdoc(A)), asked: { handle: A, sent_at: "2026-10-28T06:00:00.000Z", gave_up_at: "2026-10-28T06:01:00.000Z", outcome: "silent", why: "no answer" }, waitSeconds: 60 });
-  const al = alarmFor(c, { watcher: "watcher 0.1.3" });
+  const al = alarmFor(c, { watcher: "watcher 0.1.4" });
   assert.match(al.text, /^agent: alpha\.platform@agentmesh\.ai\ntime: 2026-10-28T06:01:00\.000Z\n/);
   assert.equal(al.file, alarmFileName(A));
   assert.match(al.file, /platform/);
   const lines = al.jsonl.trim().split("\n").map((l) => JSON.parse(l));
-  assert.ok(lines.every((l) => l.time && l.event && l.agent === A && l.seen_by === "watcher 0.1.3"));
+  assert.ok(lines.every((l) => l.time && l.event && l.agent === A && l.seen_by === "watcher 0.1.4"));
   assert.deepEqual(lines.map((l) => l.time), [...lines.map((l) => l.time)].sort());
   assert.ok(lines.every((l) => l.time <= "2026-10-28T06:01:00.000Z"));
 });
