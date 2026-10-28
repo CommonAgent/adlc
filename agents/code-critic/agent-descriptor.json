@@ -1,6 +1,8 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.1",
+  "agent_version": "0.1.2",
+  "name": "Code critic",
+  "summary": "Reviews a change to an agent package and hands back findings, each naming a place, a claim and its consequence, for you to answer.",
   "does": "Reviews a change to an agent package, its scripts, tests and declarations alike, and hands back findings for a person to answer, each naming a place, a claim and a consequence. It checks the house architecture rules with a program and calls a model once for the rest, and it changes nothing.",
   "offerings": [
     {
@@ -121,10 +123,32 @@
             "contract": "full"
           }
         }
-      ]
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     }
   ],
   "refusals": "Changing the code under review. This agent reports findings and nothing else: it writes no patch, edits no file of the package and suggests no replacement code, and a request to fix the change is answered with the findings and a sentence saying the change is for whoever owns the code.\nOpening a pull request, committing or pushing anything. What becomes of a finding is a person's act, taken where they keep their code.\nGrading the change as a whole. There is no score, no approval and no verdict on the work; a finding the model writes that praises or grades is dropped, and the record says so.\nDelivering a finding without a place. Every finding names a file of the package and a line in it, a claim and a consequence; one that does not is dropped with its reason, kept in the job's records so nothing the model said disappears.\nDeciding what the agent may be given. Whether a package may reach a system, and at what access, is the security reviewer's call. A new access in a declaration is reported as a finding so the change is not missed, and never judged here.\nDeciding a finding. Accepting or rejecting a finding is the person's; an answer by a reason is carried into the next review as it was written, and this agent does not argue with it.\nRunning the package under review. Nothing given is executed, installed or imported; every check reads the files as text.\nNaming a model. The model is the one the install configured, read through the caller, and this package names none of its own; with none configured, the house-rule findings go and the reply says the review went without the model.\nAccepting a credential value written into a message or carried in the package. A credential is named, never carried: anything that looks like one is left out of every record, the model's prompt and every line of the reply, a file that looks like one is not read, and where either was is a finding.\nAsking a third time. The model is asked once, and again only when its answer could not be read; then the review stands on what it has, and says so.",
+  "will_not": [
+    "It will not change the code it reviews, or write a patch for it.",
+    "It will not open a pull request, commit or push anything.",
+    "It will not grade or approve the change as a whole.",
+    "It will not run, install or import anything in the package it reviews.",
+    "It will not repeat a credential it finds; it names where it was."
+  ],
   "escalates": [
     "A finding answered by a reason that the next review finds again. It is carried as answered, with the reason as written, and whether the reason stands is the person's decision.",
     "A package larger than one review holds. The files left out of the model's review are named in the findings, the house-rule check still reads them, and whether to review them in parts is the person's decision."
@@ -196,5 +220,6 @@
       "access": "trigger",
       "needs": "to review the code for what a program cannot see, which is the one judgment in this package. It needs text and a context long enough to hold a whole package at once."
     }
-  ]
+  ],
+  "can_use": []
 }

@@ -1,6 +1,8 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.1",
+  "agent_version": "0.1.2",
+  "name": "Doc writer",
+  "summary": "Writes the documentation a person reads to use an agent, from the agent's own declaration and records, with every line traced to its source.",
   "does": "Writes the documentation a person reads to use an agent: what it does, where to send it work, what each job takes and hands back, what it will not do, reaches, costs and leaves behind, with examples from its records. It writes only from the agent's descriptor, its AgentDoc, its records and the verdicts about it, marks every line with the place it came from, and lists everything those sources are silent on.",
   "offerings": [
     {
@@ -223,10 +225,32 @@
             "contract": "full"
           }
         }
-      ]
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     }
   ],
   "refusals": "Writing a sentence no source carries. Every line is a fixed template filled from one place in one source, and the check refuses any line it cannot re-derive from the place its mark names, so the documentation says only what the agent's own records say.\nFilling a silence. Where the sources say nothing, the line says that they say nothing and is gathered under Not documented, rather than guessed at from what agents like it usually do.\nDescribing behaviour the declaration does not declare. Nothing is read from the agent's scripts, its name or its reputation, so a job, a refusal or a system appears only when the declaration names it.\nChanging anything it documents. The descriptor, the AgentDoc, the records and the verdicts are read and never written; an owner who wants the documentation to say something different changes the record it is written from.\nFetching a source from an address. It reads only the files attached to the job and reaches no network, so nothing can be documented by naming it.\nDelivering documentation that failed its check. A finding stops the delivery, the reply names it, and nothing is changed to make it pass.\nQuoting a record that looks like it holds a credential. That record is named under Not documented and none of its lines are shown.\nGrading the agent. Whether its work is any good is the agent critic's judgment, and whether it keeps its promises is the conformance checker's; this documents what the records say.\nSigning or publishing the documentation. The AgentDoc is signed by the documenter, and putting documentation in front of the public is the publisher's act.",
+  "will_not": [
+    "It will not write a sentence that no source says.",
+    "It will not guess where the sources are silent; it lists those gaps.",
+    "It will not change the agent or the records it documents.",
+    "It will not fetch anything from an address; it reads only the files you attach.",
+    "It will not publish or sign the documentation."
+  ],
   "escalates": [
     "A job with neither an agent descriptor nor an AgentDoc. Nothing is written, and the reply asks for one of them by name."
   ],
@@ -255,5 +279,6 @@
       "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
       "when": "per_task"
     }
-  ]
+  ],
+  "can_use": []
 }

@@ -1,6 +1,8 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.1",
+  "agent_version": "0.1.2",
+  "name": "Impact analyst",
+  "summary": "Tells you what a change to an agent touches before it is built: every dependent, and whether the change is compatible, breaking or a change of behavior for each.",
   "does": "Works out what a change to an agent touches before anything is built. Given the agent's declaration as it runs today and as it would be after the change, and the platform's list of what depends on it, it names every dependent with where it was learned of, and answers each one compatible, breaking or a change of behavior, with the reason. It reads the dependent solutions' canvases and the agents that take what it hands back when they are given, and compares kinds by the platform's own rule for whether a line fits. It files a dependency debt in the ledger, owed to the dependent's owner, for each one that is not compatible, and writes the impact report the person who asked for the change approves or refuses it from. It calls no model, changes nothing it reports on and approves nothing. It holds the impact analyst role (agentroles.ai) for the Impact stage of the Agent Development Lifecycle.",
   "offerings": [
     {
@@ -128,10 +130,31 @@
             "contract": "full"
           }
         }
-      ]
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     }
   ],
   "refusals": "Approving a change, or saying whether to go ahead with it. The person who asked for the change decides from the report; asked to approve, the reply says no, and the report is delivered as it stands.\nChanging, building or deploying the agent, or anything that depends on it. It writes the report and files ledger items, and nothing else.\nJudging whether the change is worth making. The report says what the change touches, never whether it is a good idea.\nRunning the new version. Whether a change of behavior matters is settled by running the new version against each dependent's own check, which is the conformance checker's work once the new version exists.\nCalling a dependent compatible when it could not be told. An answer it cannot work out from the declarations and the lines is breaking, and the report says why it could not tell.\nLeaving a dependent out. Every dependent the platform's list names and every one given is in the report with where it was found, and a source of dependents that could not be read is named as not read.\nFiling the same debt twice. An item already in the ledger for the same change, owed to the same owner for the same dependent, is reported by its number and not filed again.\nReading anything a message names. It reads the files attached to the job and nothing else; a path or an address in the message is not followed.\nCalling a model. The comparison follows written rules, so the same two versions and the same dependents always give the same report.",
+  "will_not": [
+    "It will not approve or refuse the change; you decide from its report.",
+    "It will not change, build or deploy the agent or anything that depends on it.",
+    "It will not call a dependent compatible when it cannot tell.",
+    "It will not follow a path or an address written in your message; it reads only the files you attach."
+  ],
   "escalates": [
     "The decision on the change. The report goes to the person who asked for the change, and whether the change goes ahead is theirs."
   ],
@@ -157,5 +180,6 @@
       "access": "write",
       "needs": "to file a dependency debt, owed to the dependent's owner, for each dependent answered breaking or change of behavior, and to read what is already filed so nothing is filed twice"
     }
-  ]
+  ],
+  "can_use": []
 }
