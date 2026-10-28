@@ -99,6 +99,20 @@ with it. A Builder's package carries the bytes it pinned, so an agent built
 or checked by it was held to exactly that version, and its records can cite
 that digest.
 
+## Levels, and raising them
+
+Each check in the audit checklist has a level: `refuse` fails the audit,
+`warn` passes it with findings, and `info` is shown in the report and does
+not count toward the verdict. The checklist here requires artifacts and
+checks, not a particular lifecycle: the artifacts before the package (the
+statement, the architecture record, the design, the tests, the review
+findings, the security statement) are optional evidence at `info`, accepted
+from whoever made and signed them, while the package, its build record, its
+deployment record and its conformance verdict, and every agent's signed
+Descriptor and registration, are required. An organization may raise any
+`info` check to `warn` or `refuse` in its own checklist, a standing asset at
+its own layer, because a rule may only tighten as it goes down the layers.
+
 ## Changing a standard
 
 Change the file here, in a pull request. Record the person who approved the
