@@ -1,6 +1,8 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "1",
+  "agent_version": "2",
+  "name": "Conformance checker",
+  "summary": "Checks whether a running agent does the job its package says, by testing it against its own declarations.",
   "does": "Says whether a running agent does the job its package describes, by deriving a test from the package's own declarations and running it.",
   "offerings": [
     {
@@ -11,27 +13,45 @@
         {
           "name": "the package",
           "kind": "application/gzip",
-          "required": true
+          "required": true,
+          "given_by": "either"
         },
         {
           "name": "the agent's handle",
           "kind": "identifier",
-          "required": true
+          "required": true,
+          "given_by": "either"
         },
         {
           "name": "the agent's records location",
           "kind": "identifier",
           "required": true,
-          "external": true
+          "external": true,
+          "given_by": "either"
         }
       ],
       "outputs": [
         {
           "name": "the signed verdict",
-          "kind": "application/json",
+          "kind": "application/vnd.agentmesh.conformance-verdict+json",
           "when": "per_task"
         }
-      ]
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     },
     {
       "id": "derive-test",
@@ -41,20 +61,41 @@
         {
           "name": "the package",
           "kind": "application/gzip",
-          "required": true
+          "required": true,
+          "given_by": "either"
         }
       ],
       "outputs": [
         {
           "name": "the derived test",
-          "kind": "application/json",
+          "kind": "application/vnd.agentmesh.conformance-test+json",
           "when": "per_task"
         }
-      ]
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     }
   ],
   "interaction": "service",
   "refusals": "Does not write test cases from its own opinion. Does not grade the quality of an agent's output. Does not change, redeploy, or remove the agents it evaluates.",
+  "will_not": [
+    "It will not write test cases from its own opinion; every case comes from the package.",
+    "It will not grade the quality of an agent's work.",
+    "It will not change, redeploy or remove the agent it checks."
+  ],
   "role": "role-agent-evaluator",
   "interfaces": [
     "interface-evaluator"
@@ -74,5 +115,6 @@
     "requests_per_hour": 12,
     "model_budget_per_day": 500000,
     "past_them": "held until the window resets"
-  }
+  },
+  "can_use": []
 }

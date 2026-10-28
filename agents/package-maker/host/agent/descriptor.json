@@ -1,6 +1,8 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "1",
+  "agent_version": "2",
+  "name": "Package maker",
+  "summary": "Turns the description of an agent you need into a draft agent package, ready for review and deploy.",
   "does": "Turns a description of a needed agent into an agent plugin package, always a draft.",
   "offerings": [
     {
@@ -11,16 +13,32 @@
         {
           "name": "the message",
           "kind": "text",
-          "required": true
+          "required": true,
+          "given_by": "either"
         }
       ],
       "outputs": [
         {
           "name": "the reply",
-          "kind": "text",
+          "kind": "text/markdown",
           "when": "per_task"
         }
-      ]
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     },
     {
       "id": "role-agent-builder",
@@ -30,16 +48,32 @@
         {
           "name": "the message",
           "kind": "text",
-          "required": true
+          "required": true,
+          "given_by": "either"
         }
       ],
       "outputs": [
         {
           "name": "the reply",
-          "kind": "text",
+          "kind": "text/markdown",
           "when": "per_task"
         }
-      ]
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     },
     {
       "id": "interface-builder",
@@ -49,20 +83,42 @@
         {
           "name": "the message",
           "kind": "text",
-          "required": true
+          "required": true,
+          "given_by": "either"
         }
       ],
       "outputs": [
         {
           "name": "the reply",
-          "kind": "text",
+          "kind": "text/markdown",
           "when": "per_task"
         }
-      ]
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     }
   ],
   "interaction": "service",
   "refusals": "Does not invent what an agent refuses or what it must record. Does not name vendors for systems; systems are roles. Does not claim a package is more than a draft, because it has not run it. Anything outside building packages is declined in one sentence.",
+  "will_not": [
+    "It will not invent what an agent refuses or what records it must leave; it asks for them.",
+    "It will not name a vendor's product for a system; a system is named by what it does.",
+    "It will not call a package more than a draft, because it has not run it.",
+    "It will not do work other than building packages."
+  ],
   "role": "role-agent-builder",
   "interfaces": [
     "interface-builder"
@@ -70,5 +126,6 @@
   "fleet": false,
   "hosted_in": [
     "us"
-  ]
+  ],
+  "can_use": []
 }
