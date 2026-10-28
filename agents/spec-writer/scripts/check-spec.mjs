@@ -206,9 +206,9 @@ export function formatProblems(spec, { earlier = new Set() } = {}) {
 }
 
 /** A model named by its own name (the families the platform's agents have
- *  called, with a version or size after the family), the same pattern the
- *  package maker refuses in a new agent's scripts and skills. */
-export const MODEL_NAME_RE = /(?<![\w.-])(?:[a-z][a-z0-9-]*\/)?(gemini-(?:\d[\w.-]*|pro\b[\w.-]*|flash\b[\w.-]*|ultra\b[\w.-]*)|gpt-(?:\d[\w.-]*|4o[\w.-]*)|claude-(?:opus|sonnet|haiku|instant|\d)[\w.-]*|o[134]-(?:mini|preview|pro)[\w.-]*|llama-?\d[\w.-]*|mistral-(?:large|medium|small|tiny)[\w.-]*|command-r[\w.-]*)/gi;
+ *  called, with a version or size after the family, or in words), the same
+ *  pattern the package maker refuses in a new agent's scripts and skills. */
+export const MODEL_NAME_RE = /(?<![\w-])(?:[a-z][a-z0-9-]*[\/.])*(gemini-(?:\d[\w.-]*|pro\b[\w.-]*|flash\b[\w.-]*|ultra\b[\w.-]*|embedding-[\w.-]+)|gemma-?\d[\w.-]*|(?:chat)?gpt-(?:\d(?![\w.]*-(?:encoder|tokens?|tokenizer)\b)[\w.-]*|4o[\w.-]*|oss[\w.-]*)|text-embedding-(?:\d|ada)[\w.-]*|claude-(?:opus|sonnet|haiku|instant|\d)[\w.:-]*|o[134]-(?:mini|preview|pro)[\w.-]*|llama-?\d[\w.-]*|mistral-(?:large|medium|small|tiny)[\w.-]*|command-r(?:-plus)?(?:-\d[\w.-]*)?(?![\w-])|deepseek-(?:r\d|v\d|chat|coder|reasoner)[\w.-]*|qwen-?\d[\w.-]*|grok-\d[\w.-]*|gemini \d(?:\.\d+)?(?: (?:pro|flash|ultra)\b(?:[ -]lite)?)?|claude (?:opus|sonnet|haiku) \d(?:\.\d+)?|gpt (?:4o|\d(?:\.\d+)?)\b)/gi;
 
 /** Every model the draft names, anywhere in it, with where. A model is a
  *  bound system (text-reasoning, access trigger) and the spec says the
@@ -217,7 +217,8 @@ export function modelProblems(spec) {
   const out = [];
   const told = new Set();
   for (const [where, text] of stringsIn(spec, "")) {
-    for (const m of String(text).matchAll(MODEL_NAME_RE)) {
+    for (const found of String(text).matchAll(MODEL_NAME_RE)) {
+      const m = [found[0], found[1].replace(/[.:-]+$/, "")];
       const key = `${where}:${m[1].toLowerCase()}`;
       if (told.has(key)) continue;
       told.add(key);

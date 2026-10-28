@@ -1272,3 +1272,56 @@ class WhereThePiecesAreRead(Harness):
         res, _ = self.build(format_spec(scripts=["scripts/pieces.mjs"]))
         self.assertFalse(res["ok"], res)
         self.assertIn("delivers a piece 'replay report'", res["error"])
+
+
+class AModelNamedAnyWay(Harness):
+    """The model check reads the forms a model is written in (a Bedrock id, a
+    name in words, a newer family) and leaves ordinary words alone; it skips
+    comments by the file's language; and it reads what an agent folder's own
+    skill carries, not only the scripts a job names."""
+
+    def setUp(self):
+        super().setUp()
+        self._env = os.environ.pop("FORMAT_EXISTING", None)
+
+    def tearDown(self):
+        if self._env is not None:
+            os.environ["FORMAT_EXISTING"] = self._env
+        super().tearDown()
+
+    def test_forms_and_families(self):
+        hits = lambda t: [m for m, _ in build.model_names_in(t, markdown=True)]
+        self.assertEqual(hits("anthropic.claude-3-5-sonnet-20240620-v1:0 us.anthropic.claude-sonnet-4"),
+                         ["claude-3-5-sonnet-20240620-v1:0", "claude-sonnet-4"])
+        self.assertEqual(hits("Use Gemini 2.5 Flash or Claude Sonnet 4.5, or GPT 4o."), ["Gemini 2.5 Flash", "Claude Sonnet 4.5", "GPT 4o"])
+        self.assertEqual(hits("gemma-3-27b deepseek-r1 qwen2.5-72b grok-4 chatgpt-4o-latest text-embedding-3-small"),
+                         ["gemma-3-27b", "deepseek-r1", "qwen2.5-72b", "grok-4", "chatgpt-4o-latest", "text-embedding-3-small"])
+        self.assertEqual(hits("use gemini-2.5-flash."), ["gemini-2.5-flash"])
+        self.assertEqual(hits("command-runner command-reference gpt-3-encoder lib/gpt-4-tokens.js"), [])
+        self.assertEqual(hits("command-r-plus"), ["command-r-plus"])
+
+    def test_comments_are_skipped_by_language(self):
+        self.assertEqual(build.model_names_in(' * gpt-4o in a block comment\n// gemini-2.5-flash once', lang="js"), [])
+        self.assertEqual([m for m, _ in build.model_names_in('  #model = "gpt-4o";', lang="js")], ["gpt-4o"])
+        self.assertEqual([m for m, _ in build.model_names_in('    **{"model": "gemini-2.5-flash"},', lang="hash")], ["gemini-2.5-flash"])
+        self.assertEqual(build.model_names_in('# gemini-2.5-flash, said in a comment', lang="hash"), [])
+
+    def test_a_spec_skills_sentences_are_read_too(self):
+        doc = format_spec()
+        doc["jobs"][0]["good"] = "Points as good as claude-opus-4 would write."
+        res, _ = self.build(doc)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("skills/list-the-points/SKILL.md names the model 'claude-opus-4'", res["error"])
+
+    def test_what_an_agent_folders_own_skill_carries_is_read(self):
+        # The spec-writer's own folder carries scripts that name its default
+        # models; built as a new agent, they are found where they ship.
+        src = os.path.join(HERE, "..", "spec-writer")
+        os.environ["FORMAT_EXISTING"] = "0"
+        try:
+            p = subprocess.run([sys.executable, BUILD, src, os.path.join(self.tmp, "out")], capture_output=True, text=True)
+        finally:
+            os.environ.pop("FORMAT_EXISTING", None)
+        res = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertFalse(res["ok"], res)
+        self.assertIn("names the model 'claude-sonnet-5-5'", res["error"])

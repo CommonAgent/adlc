@@ -141,7 +141,7 @@ AGENTMESH_ENV=example python3 -m unittest test_build test_pack
 - `test_build.py` builds AgentMesh's product packages (the explainer chain and
   others) as its fixtures. Set `ADLC_PACKAGES` to a folder of packages laid out
   as `<family>/<name>/` (each an agent's own files), such as the AgentMesh repository's
-  `packages/`, and all 116 tests run; without it the module is skipped.
+  `packages/`, and all 120 tests run; without it the module is skipped.
 - The tests in `test_pack.py` that lay a run's work out as the agent's own
   repository need AgentMesh's `tools/agent-repo.mjs`; name it with
   `AGENT_REPO_TOOL`. The image tools they also read are in

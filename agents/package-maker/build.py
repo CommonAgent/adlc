@@ -1200,34 +1200,55 @@ def is_declared_piece(piece, declared):
 # called, with a version or a size after the family. A provider prefix
 # (google-vertex-anthropic/, openai/) is read with it.
 MODEL_NAME_RE = re.compile(
-    r"(?<![\w.-])(?:[a-z][a-z0-9-]*/)?("
-    r"gemini-(?:\d[\w.-]*|pro\b[\w.-]*|flash\b[\w.-]*|ultra\b[\w.-]*)"
-    r"|gpt-(?:\d[\w.-]*|4o[\w.-]*)"
-    r"|claude-(?:opus|sonnet|haiku|instant|\d)[\w.-]*"
+    r"(?<![\w-])(?:[a-z][a-z0-9-]*[/.])*("
+    r"gemini-(?:\d[\w.-]*|pro\b[\w.-]*|flash\b[\w.-]*|ultra\b[\w.-]*|embedding-[\w.-]+)"
+    r"|gemma-?\d[\w.-]*"
+    r"|(?:chat)?gpt-(?:\d(?![\w.]*-(?:encoder|tokens?|tokenizer)\b)[\w.-]*|4o[\w.-]*|oss[\w.-]*)"
+    r"|text-embedding-(?:\d|ada)[\w.-]*"
+    r"|claude-(?:opus|sonnet|haiku|instant|\d)[\w.:-]*"
     r"|o[134]-(?:mini|preview|pro)[\w.-]*"
     r"|llama-?\d[\w.-]*"
     r"|mistral-(?:large|medium|small|tiny)[\w.-]*"
-    r"|command-r[\w.-]*"
+    r"|command-r(?:-plus)?(?:-\d[\w.-]*)?(?![\w-])"
+    r"|deepseek-(?:r\d|v\d|chat|coder|reasoner)[\w.-]*"
+    r"|qwen-?\d[\w.-]*"
+    r"|grok-\d[\w.-]*"
+    # Named in words, as a person writes it in a SKILL.md or a spec.
+    r"|gemini \d(?:\.\d+)?(?: (?:pro|flash|ultra)\b(?:[ -]lite)?)?"
+    r"|claude (?:opus|sonnet|haiku) \d(?:\.\d+)?"
+    r"|gpt (?:4o|\d(?:\.\d+)?)\b"
     r")", re.I)
-COMMENT_LINE_RE = re.compile(r"^\s*(//|/\*|\*|#(?!#))")
+# Comment lines, by the language of the file: // and /* and a * continuation
+# in JavaScript (not #, which starts a private field there), # in Python and
+# shell (not **, which unpacks in Python).
+COMMENT_LINE_RES = {
+    "js": re.compile(r"^\s*(//|/\*|\*/|\*(\s|$))"),
+    "hash": re.compile(r"^\s*#(?!\{)"),
+}
 
 
-def model_names_in(text, markdown=False):
+def model_names_in(text, markdown=False, lang="js"):
     """(model, line number) for every model named in a file's text, comment
-    lines left out (a script's // and /* lines; nothing is left out of a
-    SKILL.md, which is read whole by a harness)."""
+    lines left out (a script's comments, by its language; nothing is left out
+    of a SKILL.md, which is read whole by a harness)."""
     out = []
+    comment = None if markdown else COMMENT_LINE_RES.get(lang)
     for n, line in enumerate(str(text).splitlines(), 1):
-        if not markdown and COMMENT_LINE_RE.match(line):
+        if comment and comment.match(line):
             continue
         for m in MODEL_NAME_RE.finditer(line):
-            out.append((m.group(1), n))
+            out.append((m.group(1).rstrip(".:-"), n))
     return out
 
 
+SCRIPT_LANGS = {".mjs": "js", ".js": "js", ".cjs": "js", ".ts": "js", ".py": "hash", ".sh": "hash"}
+
+
 def model_findings(jobs, src_base, authored=None):
-    """A sentence for every literal model name in a job's scripts, its
-    SKILL.md (an agent folder's own) or its instructions (a spec's)."""
+    """A sentence for every literal model name in what a job ships: its
+    scripts (a folder named under scripts is read whole), every script and
+    SKILL.md already inside an agent folder's own skill, and for a spec the
+    instructions and the sentences the builder writes into its SKILL.md."""
     found = []
     told = set()
 
@@ -1240,30 +1261,43 @@ def model_findings(jobs, src_base, authored=None):
                          f"with access trigger: read it from AGENT_MODEL or TEXT_MODEL through the shared caller so the "
                          f"install and a run config choose it, and say in the spec the capability the job needs "
                          f"(text, vision, long context), never a model")
+
+    def read_file(path, where):
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in SCRIPT_LANGS and ext != ".md":
+            return
+        try:
+            text = open(path, encoding="utf-8").read()
+        except (OSError, UnicodeDecodeError):
+            return
+        say(where, model_names_in(text, markdown=(ext == ".md"), lang=SCRIPT_LANGS.get(ext, "js")))
+
+    def read_tree(path, where):
+        if os.path.isdir(path):
+            for root, dirs, files in os.walk(path):
+                dirs[:] = [d for d in dirs if d not in ("node_modules", ".git")]
+                for f in sorted(files):
+                    p = os.path.join(root, f)
+                    read_file(p, (where.rstrip("/") + "/" + os.path.relpath(p, path)).replace(os.sep, "/"))
+        else:
+            read_file(path, where)
+
     for j in jobs:
         for rel in j.get("scripts") or []:
-            try:
-                text = open(os.path.normpath(os.path.join(src_base, rel)), encoding="utf-8").read()
-            except (OSError, UnicodeDecodeError):
-                continue
-            say(str(rel).replace(os.sep, "/"), model_names_in(text))
-        md = None
+            read_tree(os.path.normpath(os.path.join(src_base, rel)), str(rel).replace(os.sep, "/"))
         if authored and j["slug"] in (authored.get("skills") or {}):
-            try:
-                md = open(os.path.join(authored["skills"][j["slug"]], "SKILL.md"), encoding="utf-8").read()
-            except OSError:
-                md = None
-        elif isinstance(j.get("instructions"), str):
-            md = j["instructions"]
-        elif isinstance(j.get("instructions"), dict) and j["instructions"].get("file"):
-            try:
-                md = open(os.path.normpath(os.path.join(src_base, j["instructions"]["file"])), encoding="utf-8").read()
-            except OSError:
-                md = None
-        if md:
-            say(f"skills/{j['slug']}/SKILL.md", model_names_in(md, markdown=True))
+            # Everything the folder's own skill carries ships as it is.
+            read_tree(authored["skills"][j["slug"]], f"skills/{j['slug']}")
+            continue
+        ins = j.get("instructions")
+        if isinstance(ins, dict) and ins.get("file"):
+            read_file(os.path.normpath(os.path.join(src_base, ins["file"])), str(ins["file"]).replace(os.sep, "/"))
+        text = "\n".join(str(j.get(k)) for k in ("when", "good", "empty", "does") if isinstance(j.get(k), str))
+        if isinstance(ins, str):
+            text = ins + "\n" + text
+        if text.strip():
+            say(f"skills/{j['slug']}/SKILL.md", model_names_in(text, markdown=True))
     return found
-
 
 def format_findings(jobs, src_base, authored=None):
     """Every finding of the three rules, as sentences."""
