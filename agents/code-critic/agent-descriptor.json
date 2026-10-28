@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.2",
+  "agent_version": "0.1.3",
   "name": "Code critic",
   "summary": "Reviews a change to an agent package and hands back findings, each naming a place, a claim and its consequence, for you to answer.",
   "will_not": [

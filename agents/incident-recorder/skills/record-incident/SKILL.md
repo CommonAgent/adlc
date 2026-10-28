@@ -39,6 +39,7 @@ Run `node scripts/record-incident.mjs --job <job folder> --records <records fold
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/record-incident.mjs
+- scripts/declines.mjs
 - scripts/read-records.mjs
 - scripts/build-timeline.mjs
 - scripts/write-incident.mjs

@@ -17,6 +17,11 @@ The model is in control of this one job, so the check sits outside the work.
 folder before the reply is accepted. It reads only what came in and what went
 out, never a verdict the harness wrote.
 
+When a script blanked in turn is not noticed by the suite, delivery still goes
+ahead: the reply says which script nothing tests, for the code critic, because
+the missing test is the test writer's to write. Nobody is asked to decide
+anything, so it is not an escalation.
+
 ## What it needs
 
 - Node 22 or later.

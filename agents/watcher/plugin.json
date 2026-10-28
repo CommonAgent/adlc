@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "watcher",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Watches the agents its owner names and reports, for each, whether it is alive, whether it answers a question sent to it, and whether it is inside the limits it declared, and what each spent, job by job, per agent, per owner and in total, against what its owner allowed, with whether every spend traces to a job and whether the totals reconcile. It reads the platform's own records and asks each agent one light question, the worker interface's status; it spends nothing, changes nothing it watches and calls no model. Each open alert goes to the incident recorder in the shape it takes.",
   "license": "Apache-2.0",
   "author": {
@@ -23,6 +23,7 @@
         "skills": {
           "watch-the-fleet": {
             "scripts": [
+              "scripts/declines.mjs",
               "scripts/watch.mjs",
               "scripts/watch-list.mjs",
               "scripts/ask.mjs",

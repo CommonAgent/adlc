@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "incident-recorder",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Records an incident when a fleet agent goes quiet or a job fails. Reads platform activity records and the agent's own records around the failure window, builds a strict chronological timeline of known facts and gaps, and writes an incident record attributing every fact to its source. Never guesses causes, never proposes fixes, and never contacts the agent.",
   "license": "Apache-2.0",
   "author": {
@@ -22,6 +22,7 @@
           "record-incident": {
             "scripts": [
               "scripts/record-incident.mjs",
+              "scripts/declines.mjs",
               "scripts/read-records.mjs",
               "scripts/build-timeline.mjs",
               "scripts/write-incident.mjs",

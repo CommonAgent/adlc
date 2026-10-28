@@ -15,7 +15,7 @@
 //   import { writeReport, WATCHER } from "./write-report.mjs"
 import { agentName, agentSpendWords, allowedWords, moneyWords } from "./spend.mjs";
 
-export const WATCHER = "watcher 0.1.4";
+export const WATCHER = "watcher 0.1.5";
 
 /** A reason as a sentence of its own: its first letter raised. */
 const cap = (s) => { const t = String(s ?? ""); return t ? t[0].toUpperCase() + t.slice(1) : t; };

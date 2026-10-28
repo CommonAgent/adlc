@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.4",
+  "agent_version": "0.1.5",
   "name": "Watcher",
   "summary": "Checks that the agents you name are alive, answering and inside their limits, and reports what each spent against what you allowed.",
   "will_not": [
