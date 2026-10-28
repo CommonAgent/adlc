@@ -13,7 +13,7 @@ when a spec exists and its scripts do not yet, and somebody wants the tests thos
 
 ## What this needs
 
-- the spec (application/json, required)
+- the spec (document, required)
 - the suite it already has (text/javascript, optional)
 - what to add (text, optional)
 
@@ -24,7 +24,7 @@ A suite of test files that run under node's own runner and nothing else, one fil
 ## What it produces
 
 - the suite (text/javascript, per task)
-- what it could not test (text/plain, per task)
+- what it could not test (text/markdown, per task)
 
 ## When it comes back empty
 

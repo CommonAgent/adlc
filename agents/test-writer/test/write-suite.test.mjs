@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  INSTRUCTION, MODEL, TRIES, answerFrom, askForSuite, modelOf, requestParts, staticFindings, standInFindings,
+  INSTRUCTION, TRIES, answerFrom, askForSuite, modelOf, requestParts, staticFindings, standInFindings,
   suiteRequest, testNamesOf,
 } from "../scripts/write-suite.mjs";
 
@@ -47,11 +47,12 @@ test("a roster that is not a list is refused", () => {
 `;
 const answer = (files, extra = "") => files.map((f) => `<<<FILE ${f.path}>>>\n${f.text}<<<END>>>`).join("\n") + extra;
 
-test("the model is a setting, and the default is the current generation", () => {
-  assert.equal(MODEL, "google-vertex-anthropic/claude-sonnet-5-5");
-  assert.equal(modelOf({}), MODEL);
+test("the model is a setting, and the package names none of its own", () => {
+  assert.equal(modelOf({}), "", "the package names no model of its own");
   assert.equal(modelOf({ TEXT_MODEL: "gemini-3.8-pro" }), "gemini-3.8-pro");
-  assert.equal(modelOf({ TEXT_MODEL: "  " }), MODEL, "a blank setting is not a model");
+  assert.equal(modelOf({ AGENT_MODEL: "gemini-3.8-flash" }), "gemini-3.8-flash", "the host's model when the install sets none");
+  assert.equal(modelOf({ TEXT_MODEL: "x", AGENT_MODEL: "y" }), "x", "the text-reasoning setting comes first");
+  assert.equal(modelOf({ TEXT_MODEL: "  " }), "", "a blank setting is not a model");
   assert.equal(suiteRequest({ env: { TEXT_MODEL: "x" } }).model, "x");
   assert.equal(TRIES, 2);
 });

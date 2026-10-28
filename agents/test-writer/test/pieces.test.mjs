@@ -27,12 +27,12 @@ test("one piece per test file, with the step that made it, and what could not be
   assert.deepEqual(entries.map((e) => [e.name, e.step, e.path, e.media_type]), [
     ["read.test.mjs", STEP_OF["test file"], "out/test/read.test.mjs", "text/javascript"],
     ["say.test.mjs", STEP_OF["test file"], "out/test/say.test.mjs", "text/javascript"],
-    ["what it could not test", STEP_OF["what it could not test"], "out/could-not-test.txt", "text/plain"],
+    ["what it could not test", STEP_OF["what it could not test"], "out/could-not-test.md", "text/markdown"],
   ]);
   assert.match(entries[0].about, /^read\.test\.mjs: The reader/);
   assert.deepEqual(entries[0].produced_from, ["spec"]);
   assert.equal(copies[0].from, join("/w", "test/read.test.mjs"));
-  assert.equal(copies[2].text, "the platform read: no stand-in\n", "a could-not with nothing in it is not written");
+  assert.equal(copies[2].text, "# What it could not test\n\n- the platform read: no stand-in\n", "a could-not with nothing in it is not written");
   const none = plan({ workDir: "/w", files, couldNot: [] });
   assert.equal(none.entries.length, 2, "no file saying nothing could not be tested");
 });
@@ -57,7 +57,7 @@ test("nothing is written until every copy has a source, and then every piece is 
     const listed = fill(job, plan({ workDir: work, files: [files[0]], couldNot: [{ what: "x", why: "y" }] }));
     assert.equal(listed.length, 2);
     assert.equal(readFileSync(join(job, "out", "test", "read.test.mjs"), "utf8"), FILE);
-    assert.equal(readFileSync(join(job, "out", "could-not-test.txt"), "utf8"), "x: y\n");
+    assert.equal(readFileSync(join(job, "out", "could-not-test.md"), "utf8"), "# What it could not test\n\n- x: y\n");
     assert.deepEqual(JSON.parse(readFileSync(join(job, "pieces.json"), "utf8")).map((e) => e.name), ["read.test.mjs", "what it could not test"]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

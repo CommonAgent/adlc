@@ -35,8 +35,8 @@ test("nothing is planned unless the verdict says done, and every script goes wit
   assert.deepEqual(entries.map((e) => [e.name, e.step, e.path, e.media_type]), [
     ["add.mjs", STEP_OF.script, "out/scripts/add.mjs", "text/javascript"],
     ["x.mjs", STEP_OF.script, "out/scripts/deep/x.mjs", "text/javascript"],
-    ["account", STEP_OF.account, "out/account.md", "text/markdown"],
-    ["the run record", STEP_OF.runs, "out/runs.json", "application/json"],
+    ["the account", STEP_OF.account, "out/account.md", "text/markdown"],
+    ["the run record", STEP_OF.runs, "out/runs.json", "application/vnd.agentmesh.code-runs+json"],
   ]);
   assert.match(entries[0].about, /^add\.mjs: Adds two numbers/);
   assert.deepEqual(entries[0].produced_from, ["the spec", "the suite"]);

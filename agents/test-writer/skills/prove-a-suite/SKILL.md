@@ -21,7 +21,7 @@ A verdict in words: whether the suite passes against the package's own scripts, 
 
 ## What it produces
 
-- the verdict (text/plain, per task)
+- the verdict (text/markdown, per task)
 
 ## When it comes back empty
 

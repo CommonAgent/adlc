@@ -67,7 +67,7 @@ export function plan({ workspace = "", verdict = null, scripts = [], accountPath
   }
   if (accountPath) {
     entries.push({
-      name: "account", step: STEP_OF.account, path: "out/account.md", media_type: "text/markdown",
+      name: "the account", step: STEP_OF.account, path: "out/account.md", media_type: "text/markdown",
       about: "The writer's own account: what was written, in a few sentences, and any decision the spec did not settle. For the code critic and the person at the review gate.",
       produced_from: ["the spec", "the suite"],
     });
@@ -75,7 +75,7 @@ export function plan({ workspace = "", verdict = null, scripts = [], accountPath
   }
   if (runsPath) {
     entries.push({
-      name: "the run record", step: STEP_OF.runs, path: "out/runs.json", media_type: "application/json",
+      name: "the run record", step: STEP_OF.runs, path: "out/runs.json", media_type: "application/vnd.agentmesh.code-runs+json",
       about: "Every round of the check: how many tests passed and failed and which failed by name, so a reader sees how many rounds the scripts took and where they were hard.",
       produced_from: ["the suite"],
     });

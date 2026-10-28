@@ -125,6 +125,8 @@ export function descriptorOf(spec, jobs, systems, records) {
     const o = { ...projected.get(j.slug) };
     if (j.steps?.length) o.steps = j.steps.map((s) => ({ ...(projected.get(s) ?? { id: s }) }));
     if ("revisions" in j) o.revisions = j.revisions;
+    if ("started_by" in j) o.started_by = [...j.started_by];
+    if ("works_as" in j) o.works_as = j.works_as;
     if ("trial" in j) o.trial = j.trial;
     if ("scopes" in j) o.scopes = (j.scopes ?? []).map((s) => ({ id: s.id, description: str(s.description).trim() }));
     offerings.push(o);
@@ -132,6 +134,10 @@ export function descriptorOf(spec, jobs, systems, records) {
   const doc = {
     format: "agent-descriptor-v1",
     agent_version: pyStr(spec.version ?? "1.0.0"),
+    // The members a person reads, as build.py's person_members writes them.
+    ...("display_name" in spec ? { name: str(spec.display_name).trim() } : {}),
+    ...("summary" in spec ? { summary: str(spec.summary).trim() } : {}),
+    ...("will_not" in spec ? { will_not: (spec.will_not ?? []).map((w) => str(w).trim()) } : {}),
     does: str(spec.description).trim(),
     offerings,
     refusals: (spec.refuses ?? []).map(sentence).join("\n"),
@@ -145,7 +151,8 @@ export function descriptorOf(spec, jobs, systems, records) {
       ...(s.leaves === true ? { leaves: true } : {}),
     }));
   }
-  if (Array.isArray(spec.can_use) && spec.can_use.length) doc.can_use = canUse(spec.can_use);
+  // An empty can_use is carried: it says the agent reads no standing asset.
+  if (Array.isArray(spec.can_use)) doc.can_use = canUse(spec.can_use);
   if (isObj(spec.run_config)) doc.run_config = runConfig(spec.run_config);
   return doc;
 }

@@ -15,7 +15,7 @@ when somebody wants an agent built and has said what it should do, in their own 
 
 - what it should do (text, required)
 - the architecture record (text/markdown, optional)
-- an existing spec (application/json, optional)
+- an existing spec (document, optional)
 - notes or a document (document, optional)
 - answers to earlier questions (text, optional)
 
@@ -26,7 +26,8 @@ The agent's own files, the layout a package is built from (agent-descriptor.json
 ## What it produces
 
 - the agent's own files (document, per task)
-- what is still open (text, per task)
+- what is still open (text/markdown, per task)
+- the container spec (application/vnd.agentmesh.agent-spec+json, per task)
 
 ## When it comes back empty
 
