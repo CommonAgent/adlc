@@ -29,7 +29,7 @@ const NOT = (why) => ({ result: "not checked", evidence: why, why });
 
 /** The Descriptor the design-time checks read: the package's own, or the served one. */
 function designDescriptor(ctx) {
-  if (ctx.facts.pkg?.descriptor) return { doc: ctx.facts.pkg.descriptor, from: "the package's agent-descriptor.json" };
+  if (ctx.facts.pkg?.descriptor) return { doc: ctx.facts.pkg.descriptor, from: `the package's ${ctx.facts.pkg.descriptorPath ?? "agent-descriptor.json"}` };
   if (ctx.facts.dev.descriptor?.doc) return { doc: ctx.facts.dev.descriptor.doc, from: "the Descriptor the registry serves (the package's bytes were not read)" };
   return null;
 }
@@ -101,15 +101,19 @@ export const REGISTERED = {
     if (!ctx.facts.target.digest) return FAIL("no package is on record for this version, so the served Descriptor is in no package", "the package");
     if (!ctx.facts.pkg) return NOT("the package's bytes could not be read, so its Descriptor could not be compared");
     const draft = ctx.facts.pkg.descriptor;
-    if (!draft) return FAIL("the package carries no agent-descriptor.json", "the package");
+    if (!draft) return FAIL("the package carries no draft Descriptor (no agent-descriptor.json, no descriptor.json, and none plugin.json points at)", "the package");
     if (!served) return FAIL("no Descriptor is served to compare with the package's", "the served Descriptor");
     const dep = ctx.lines.find((x) => x.stage === "deployment-record")?.record?.descriptor ?? {};
-    const bound = new Set(["subject", "signatures", ...(Array.isArray(dep.added) ? dep.added : []), ...(Array.isArray(dep.changed) ? dep.changed : [])]);
+    // shape left the format in Common Agent 0.28.0-draft, and the deployment
+    // manager's binding takes it out of any draft that still carries one, so
+    // a removed shape is the deploy's doing, never a difference.
+    const bound = new Set(["subject", "signatures", "shape", ...(Array.isArray(dep.added) ? dep.added : []), ...(Array.isArray(dep.changed) ? dep.changed : [])]);
     if (!Array.isArray(dep.added)) for (const k of ["interaction", "samples_ref", "fleet", "acts_for"]) bound.add(k);
     const keys = [...new Set([...Object.keys(draft), ...Object.keys(served)])].filter((k) => !bound.has(k)).sort();
     const differ = keys.filter((k) => canonical(draft[k] ?? null) !== canonical(served[k] ?? null));
     const ev = `members a deploy binds, set aside: ${[...bound].sort().join(", ")}${Array.isArray(dep.added) ? " (as the deployment record names them)" : " (the deployment record names none, so the ones a deploy usually binds)"}`;
-    return differ.length ? FAIL(`the served Descriptor differs from the package's in ${differ.join(", ")}; ${ev}`, "the served Descriptor") : PASS(`every other member is the package's, byte for byte in canonical form; ${ev}`);
+    const file = ctx.facts.pkg.descriptorPath ?? "agent-descriptor.json";
+    return differ.length ? FAIL(`the served Descriptor differs from the package's ${file} in ${differ.join(", ")}; ${ev}`, "the served Descriptor") : PASS(`every other member is the package's ${file}, byte for byte in canonical form; ${ev}`);
   },
 
   "descriptor-person-members": (entry, ctx) => {
