@@ -22,6 +22,29 @@ export function holderHandles(path = null) {
   throw new Error("references/stage-holders.json is not beside the scripts");
 }
 
+/** The draft Descriptor's file names: the current one, then the name before
+ *  Common Agent 0.30.0-draft. The deployment manager and the conformance
+ *  checker read both, so a package that installs is a package audited. */
+export const DESCRIPTOR_FILES = ["agent-descriptor.json", "descriptor.json"];
+
+/** A package's draft Descriptor, found the way the deployment manager finds
+ *  it: the file plugin.json points at (`extensions["net.agentdoc.package"]
+ *  .descriptor.path`, or a top-level `descriptor`), else agent-descriptor.json,
+ *  else descriptor.json. {path, doc}, with doc null when the file is not JSON,
+ *  or null when the package carries none. */
+export function descriptorOf(files) {
+  let pointer = null;
+  try {
+    const plugin = JSON.parse(files.get("plugin.json")?.toString("utf8") ?? "null");
+    const ext = plugin?.extensions?.["net.agentdoc.package"]?.descriptor ?? plugin?.extensions?.["com.agentcatalog.agent"]?.descriptor;
+    const top = plugin?.descriptor;
+    pointer = trim(typeof ext === "object" ? ext?.path : ext) || trim(typeof top === "object" ? top?.path : top) || null;
+  } catch { pointer = null; }
+  const path = [pointer, ...DESCRIPTOR_FILES].map((p) => trim(p).replace(/^\.\//, "")).find((p) => p && files.has(p));
+  if (!path) return null;
+  try { return { path, doc: JSON.parse(files.get(path).toString("utf8")) }; } catch { return { path, doc: null }; }
+}
+
 /** A semantic version compared to another: negative, zero, positive. */
 export function versionOrder(a, b) {
   const pa = trim(a).split(/[.+-]/).map((x) => (/^\d+$/.test(x) ? Number(x) : x));
@@ -102,8 +125,7 @@ export async function gather({ asked, attached, dev, prod = null, holders = hold
   for (const p of attached.packages) {
     try {
       const pkg = readPackage(p.bytes);
-      let version = null;
-      try { version = JSON.parse(pkg.files.get("agent-descriptor.json")?.toString("utf8") ?? "{}").agent_version ?? null; } catch { /* none */ }
+      const version = trim(descriptorOf(pkg.files)?.doc?.agent_version) || null;
       attachedPackages.push({ name: p.name, digest: sha256(p.bytes), files: pkg.files, root: pkg.root, version, source: "attached" });
     } catch (e) { notes.push({ wanted: `the attached package ${p.name}`, did: "audited without it", why: e.message }); }
   }
@@ -126,7 +148,9 @@ export async function gather({ asked, attached, dev, prod = null, holders = hold
   }
   if (pkg) {
     pkg.digests = new Map([...pkg.files].map(([path, bytes]) => [sha256(bytes), path]));
-    try { pkg.descriptor = JSON.parse(pkg.files.get("agent-descriptor.json")?.toString("utf8") ?? "null"); } catch { pkg.descriptor = null; }
+    const d = descriptorOf(pkg.files);
+    pkg.descriptor = d?.doc ?? null;
+    pkg.descriptorPath = d?.path ?? null;
   }
 
   // When the agent was first released: the earliest of its requests in this

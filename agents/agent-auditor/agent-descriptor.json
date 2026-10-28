@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.0",
+  "agent_version": "0.3.0",
   "does": "Audits one built agent version, named by its handle and its version or package digest, against an audit checklist: the standards/audit-checklist.md it carries, or one it is given. For each lifecycle stage it finds the stage's record and checks it is present, signed by the stage's holder and bound to the package digest. It runs every checklist entry through the test registered for it, reusing the package maker's own checks, the platform's rule against model names in code, the test writer's delivered-formats check and the registry's signed Descriptor, and reads the agent as it runs on dev and prod. A check with no registered test is reported as not checked, never skipped. It files each finding as a debt in the platform's ledger, routed to the stage that fixes it, and hands back one signed audit report, which it files where the Deployment Manager and the Catalog read it by package digest. It calls no model and approves nothing. It holds the audit role for the Prove phase of the Agent Development Lifecycle.",
   "offerings": [
     {
