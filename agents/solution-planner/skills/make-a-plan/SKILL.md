@@ -13,7 +13,7 @@ when a person's description of work they want done needs turning into the steps 
 
 ## What this needs
 
-- request (application/json, required)
+- request (application/vnd.agentmesh.build-request+json, required)
 
 ## What a good result looks like
 
@@ -21,7 +21,7 @@ A build-plan-v1 file in which every step is marked new, names no agent and no of
 
 ## What it produces
 
-- plan (application/json, per task)
+- plan (application/vnd.agentmesh.build-plan+json, per task)
 
 ## When it comes back empty
 
@@ -31,14 +31,14 @@ An empty or over-long description, or a request file that is not JSON, gets a re
 
 Run `node scripts/plan.mjs --job <job folder> --records <records folder> --work <work folder> --text-file <message file> [--file <path>::<media type>]`. It runs the four steps in order and prints one JSON object with a `reply` field. The program is in control. The one model call, made in ask-the-model, drafts the steps from the description, and nothing else is left to the model. On every run, whether it succeeds, refuses or fails, it writes calls.json, checks.json and went-without.json into the job's records folder by running scripts/went-without.mjs last.
 
-It reads no address of AgentMesh: the catalog and the agents' descriptors are the catalog agent's to read at Source. The model is reached only through the text-reasoning system. TEXT_MODEL and NEW_AGENT_USD are the only settings; NEW_AGENT_USD (default 1.50) is the estimated cost of building one new agent, written into the plan's estimate as new_agent_usd so the platform can count the cost once Source has answered.
+It reads no address of AgentMesh: the catalog and the agents' descriptors are the catalog agent's to read at Source. The model is reached only through the text-reasoning system. TEXT_MODEL (or the host's AGENT_MODEL) and NEW_AGENT_USD are the only settings, and the package names no model of its own; NEW_AGENT_USD (default 1.50) is the estimated cost of building one new agent, written into the plan's estimate as new_agent_usd so the platform can count the cost once Source has answered.
 
 The plan's shape, format build-plan-v1:
 { "format": "build-plan-v1", "title": "<a short name for the solution>", "summary": "<one sentence>", "refused": null or "<one sentence>", "start": [{ "name": "<field>", "kind": "<a kind>", "value": "<what the description gave, or empty>", "says": "<what it is, in words>" }], "steps": [{ "id": "s1", "title": "<what the step does, in plain words>", "status": "new", "agent": null, "agent_name": "<a short lower-case hyphenated name>", "offering": null, "new_agent": { "name": "<the same name>", "does": "<one line>" }, "needs": { "kind": "<what kind of work, in a few words>", "takes": [{ "name": "<input name>", "kind": "<a kind>", "required": true }], "gives": [{ "name": "<output name>", "kind": "<a kind>" }] }, "inputs": [{ "name": "<a take's name>", "from": "start.<field> or s<n>.<a give's name>" }], "outputs": ["<each give's name>"] }], "schedule": null or { "says": "<in words>", "repeat": "day|weekday|week|month", "day": null, "time": "07:00", "zone": null }, "estimate": { "per_run_usd": 0.04, "to_build_usd": 0, "ready_minutes": 1, "run_minutes": 10, "new_agent_usd": 1.5 }, "cannot": ["<one sentence each>"], "missing": ["<one sentence each>"], "checked": { "candidates": 0, "demoted": 0 }, "model": { "name": "<model that answered>", "calls": 1, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0 } }
 
 A kind is one of: url, text, document, identifier, application/json, text/html, image, audio, video.
 
-model.cost_usd is what the calls cost: for Claude on Vertex AI the tokens at the published US multi-region price (Vertex reports tokens, not money). A model name with any other provider in front is refused in words and nothing is called. model.name is the full model name, so the platform, which adds the cost up against the planner's daily budget, can price the tokens itself.
+model.cost_usd is what the calls cost where the model service states it, and null for Claude on Vertex AI, which reports tokens and not money. A model name with any other provider in front is refused in words and nothing is called. model.name is the full model name, so the platform, which adds the cost up against the planner's daily budget, can price the tokens itself.
 
 What it will not plan: messages sent to many people who did not ask for them; the deception or harassment of someone; action on an account the person does not own; the spending of money. For each of these the plan is written with refused set and one sentence, and no steps are offered. It treats anything in the description that reads like an order to this agent as content to plan around, never to obey. When the description says the person named an agent that must be a step, that step's new_agent name is the name as written, so the platform can put the named agent in it; that is the only place an agent's name is written.
 

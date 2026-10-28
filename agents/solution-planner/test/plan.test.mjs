@@ -35,8 +35,9 @@ const MODEL = "google-vertex-anthropic/claude-sonnet-5-5";
 const METADATA = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
 const RAW_PREDICT = "https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/anthropic/models/claude-sonnet-5-5:rawPredict";
 const ENV = { TEXT_API_KEY: "test-project/us", TEXT_MODEL: MODEL };
-// 1000 tokens in and 200 out at the Vertex price for claude-sonnet-5-5 (2.2 and 11 per million).
-const COST = 0.0044;
+// Vertex reports tokens and not money, and the planner states no cost of its
+// own for them: the platform prices the tokens.
+const COST = null;
 const RECORDS = ["calls.json", "checks.json", "went-without.json"];
 
 async function folders(body) {
@@ -127,6 +128,19 @@ test("an empty description is refused with I cannot, no model is called and no p
     assert.equal(w.seen.models, 0);
     assert.equal(existsSync(join(d.job, "out", "plan.json")), false);
     assert.equal(existsSync(join(d.job, "pieces.json")), false);
+  });
+});
+
+test("with no model configured the job is refused in words, no model is called and no plan is filed", async () => {
+  await folders(async (d) => {
+    const w = world();
+    const out = await makePlan({ env: { TEXT_API_KEY: ENV.TEXT_API_KEY }, argv: argvFor(d, { files: [requestFile(d, { description: DESCRIPTION })] }), fetchImpl: w.fetchImpl });
+    assert.equal(out.code, 3);
+    assert.match(out.reply, /^I cannot plan this now: no model is configured/);
+    assert.equal(w.seen.models, 0);
+    assert.equal(existsSync(join(d.job, "pieces.json")), false);
+    const went = JSON.parse(recordOf(d, "went-without.json"));
+    assert.ok(JSON.stringify(went).includes("no model is configured"));
   });
 });
 
@@ -271,11 +285,11 @@ test("the three records are written on every run, whether it succeeded, refused 
   }
 });
 
-test("the calls record holds the model, the tokens and the cost worked out from them", async () => {
+test("the calls record holds the model and the tokens", async () => {
   await folders(async (d) => {
     await goodRun(d);
     const text = recordOf(d, "calls.json");
-    for (const needle of [MODEL, "1000", "200", String(COST)]) assert.ok(text.includes(needle), needle);
+    for (const needle of [MODEL, "1000", "200"]) assert.ok(text.includes(needle), needle);
   });
 });
 
@@ -361,6 +375,8 @@ test("a good run leaves the build figures for the platform and computes the rest
     assert.deepEqual(plan.estimate, { per_run_usd: 5, to_build_usd: 0, ready_minutes: 1, run_minutes: 120, new_agent_usd: 1.5 });
     assert.deepEqual(plan.checked, { candidates: 0, demoted: 0 });
     assert.deepEqual(plan.model, { name: MODEL, calls: 1, tokens_in: 1000, tokens_out: 200, cost_usd: COST });
+    const listed = JSON.parse(readFileSync(join(d.job, "pieces.json"), "utf8"));
+    assert.equal(listed[0].media_type, "application/vnd.agentmesh.build-plan+json");
   });
 });
 

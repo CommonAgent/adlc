@@ -13,7 +13,7 @@ last, after the plan is checked or refused
 
 ## What this needs
 
-- checked plan (application/json, required)
+- checked plan (application/vnd.agentmesh.build-plan+json, required)
 
 ## What a good result looks like
 
@@ -21,7 +21,7 @@ out/plan.json written in build-plan-v1 with the checked and model counts filled 
 
 ## What it produces
 
-- plan (application/json, per task)
+- plan (application/vnd.agentmesh.build-plan+json, per task)
 
 ## When it comes back empty
 

@@ -13,7 +13,7 @@ after the files are read and none was refused
 
 ## What this needs
 
-- the reading (application/json, required)
+- the reading (application/vnd.agentmesh.publish-reading+json, required)
 
 ## What a good result looks like
 
@@ -21,7 +21,7 @@ Every file placed under the bound folder, under the settled name, with a short c
 
 ## What it produces
 
-- what was placed (application/json, per task)
+- what was placed (application/vnd.agentmesh.placed-files+json, per task)
 
 ## When it comes back empty
 

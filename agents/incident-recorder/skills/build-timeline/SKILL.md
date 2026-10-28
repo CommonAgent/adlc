@@ -13,7 +13,7 @@ after the records for the window are read and indexed
 
 ## What this needs
 
-- record inventory (application/json, required)
+- record inventory (application/vnd.agentmesh.record-inventory+json, required)
 
 ## What a good result looks like
 
@@ -21,7 +21,7 @@ A strict chronological sequence of known events with source attributions and exp
 
 ## What it produces
 
-- timeline (application/json, per task)
+- timeline (application/vnd.agentmesh.incident-timeline+json, per task)
 
 ## When it comes back empty
 

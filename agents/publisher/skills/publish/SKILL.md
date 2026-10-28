@@ -24,7 +24,7 @@ An address that opens, serving exactly the bytes that were handed over, with the
 ## What it produces
 
 - address (url, per task)
-- publication record (application/json, per task)
+- publication record (application/vnd.agentmesh.publication-record+json, per task)
 
 ## When it comes back empty
 

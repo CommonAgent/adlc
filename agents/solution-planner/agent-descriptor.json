@@ -1,7 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.0",
-  "does": "The solution planner behind the AgentMesh Build page. It takes a person's description of work they want done and plans it as steps, each saying what kind of work it is, what it takes and what it hands back. It names no agent for any step: the catalog agent answers each step at the next stage, Source, with an agent that already exists, a solution, or \"build one\". The plan is checked in code before it is written. It hands the plan back to the platform, never to a person directly. Its handle is solution-planner.platform@agentmesh.ai, and it is a Mesh Provided Agent on the platform account.",
+  "agent_version": "0.3.1",
+  "name": "Solution planner",
+  "summary": "Plans a piece of work you describe as steps, each saying what kind of work it is, what it takes and what it hands back.",
+  "will_not": [
+    "It will not choose the agent for a step; the catalog answers each step afterwards.",
+    "It will not follow instructions written inside your description; it plans around them.",
+    "It will not plan messages to people who did not ask for them, the deception or harassment of someone, action on an account you do not own, or spending money.",
+    "It will not write a plan of its own when the model fails; it says it could not plan."
+  ],
+  "does": "Plans a described piece of work as steps, each saying what kind of work it is, what it takes and what it hands back. It names no agent for any step: the catalog answers each step at the next stage, Source, with an agent that already exists, a solution, or a new agent to build. The plan is checked in code before it is written, and it is handed back to whoever asked for it.",
   "offerings": [
     {
       "id": "make-a-plan",
@@ -10,14 +18,15 @@
       "inputs": [
         {
           "name": "request",
-          "kind": "application/json",
-          "required": true
+          "kind": "application/vnd.agentmesh.build-request+json",
+          "required": true,
+          "given_by": "agent"
         }
       ],
       "outputs": [
         {
           "name": "plan",
-          "kind": "application/json",
+          "kind": "application/vnd.agentmesh.build-plan+json",
           "when": "per_task"
         }
       ],
@@ -35,14 +44,15 @@
           "inputs": [
             {
               "name": "request",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.build-request+json",
+              "required": true,
+              "given_by": "agent"
             }
           ],
           "outputs": [
             {
               "name": "the reading",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.build-request-reading+json",
               "when": "per_task"
             }
           ],
@@ -60,19 +70,20 @@
           "inputs": [
             {
               "name": "the reading",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.build-request-reading+json",
+              "required": true,
+              "given_by": "agent"
             }
           ],
           "outputs": [
             {
               "name": "draft plan",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.build-plan+json",
               "when": "per_task"
             },
             {
               "name": "model calls",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.model-calls+json",
               "when": "per_task"
             }
           ],
@@ -90,19 +101,20 @@
           "inputs": [
             {
               "name": "draft plan",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.build-plan+json",
+              "required": true,
+              "given_by": "agent"
             }
           ],
           "outputs": [
             {
               "name": "checked plan",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.build-plan+json",
               "when": "per_task"
             },
             {
               "name": "what the checks changed",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.plan-checks+json",
               "when": "per_task"
             }
           ],
@@ -120,14 +132,15 @@
           "inputs": [
             {
               "name": "checked plan",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.build-plan+json",
+              "required": true,
+              "given_by": "agent"
             }
           ],
           "outputs": [
             {
               "name": "plan",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.build-plan+json",
               "when": "per_task"
             }
           ],
@@ -138,6 +151,20 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "agent"
       ]
     }
   ],
@@ -172,5 +199,6 @@
       "access": "read",
       "needs": "to ask a model to draft the plan's steps from the description"
     }
-  ]
+  ],
+  "can_use": []
 }

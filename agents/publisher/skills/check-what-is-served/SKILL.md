@@ -13,7 +13,7 @@ after the files are placed, before any address is given out
 
 ## What this needs
 
-- what was placed (application/json, required)
+- what was placed (application/vnd.agentmesh.placed-files+json, required)
 
 ## What a good result looks like
 
@@ -22,7 +22,7 @@ Each address fetched back and the bytes hashed, and every digest equal to the on
 ## What it produces
 
 - address (url, per task)
-- publication record (application/json, per task)
+- publication record (application/vnd.agentmesh.publication-record+json, per task)
 
 ## When it comes back empty
 

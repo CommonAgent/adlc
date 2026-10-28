@@ -71,9 +71,9 @@ test("went-without.json is declared as a per-job record under the name the share
   assert.ok(!spec.records.some((r) => r.file === "*/candidates.json"), "0.3.0 reads no candidates");
 });
 
-test("0.3.0: the spec says the planner names no agent and reads no address of AgentMesh", () => {
+test("the spec says the planner names no agent and reads no address of AgentMesh", () => {
   assert.match(spec.description, /names no agent/);
-  assert.match(spec.description, /solution-planner\.platform@agentmesh\.ai/);
+  assert.ok(!/@agentmesh\.ai|AgentMesh Build page/.test(spec.description), "the description names no handle and no page");
   const instructions = job("make-a-plan").skill;
   assert.ok(!/agentcatalog\.com|api\.agentmesh\.ai/.test(instructions), "no AgentMesh address is read");
   assert.ok(spec.refuses.some((r) => /^Naming an agent or an offering for a step/.test(r)));

@@ -17,12 +17,13 @@ role was renamed. The folder carries the role's name.
 
 - Node 22 or later. The scripts use only node's own modules.
 - A text model, bound as the `text-reasoning` system: `TEXT_API_KEY`, and
-  `TEXT_MODEL` to pick the model. The default is Claude on Google Vertex AI.
+  `TEXT_MODEL` to pick the model, or the host's `AGENT_MODEL`. The package
+  names no model of its own; with neither set, it refuses in words.
 
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 81 tests
+node --test test/*.test.mjs                                   # 83 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

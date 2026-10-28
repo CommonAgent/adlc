@@ -1,6 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.3",
+  "agent_version": "0.2.4",
+  "name": "Publisher",
+  "summary": "Puts the finished files you give it at a public address, checks what is served matches, and hands back the address.",
+  "will_not": [
+    "It will not write anywhere but the one folder it was set up with.",
+    "It will not fetch a file from an address in order to publish it.",
+    "It will not publish a private key or a file that carries one, even when asked.",
+    "It will not replace a file it did not publish.",
+    "It will not hand back an address it has not read back."
+  ],
   "does": "Puts finished files where a person can open them. It writes under the one folder it was bound to and nowhere else, reads every byte before it goes, and reads back what is served to check it matches what it was handed. It answers with the address and the digest of what is there.",
   "offerings": [
     {
@@ -11,17 +20,20 @@
         {
           "name": "the files",
           "kind": "document",
-          "required": true
+          "required": true,
+          "given_by": "either"
         },
         {
           "name": "name",
           "kind": "identifier",
-          "required": false
+          "required": false,
+          "given_by": "person"
         },
         {
           "name": "notes",
           "kind": "text",
-          "required": false
+          "required": false,
+          "given_by": "person"
         }
       ],
       "outputs": [
@@ -32,7 +44,7 @@
         },
         {
           "name": "publication record",
-          "kind": "application/json",
+          "kind": "application/vnd.agentmesh.publication-record+json",
           "when": "per_task"
         }
       ],
@@ -51,13 +63,14 @@
             {
               "name": "the files",
               "kind": "document",
-              "required": true
+              "required": true,
+              "given_by": "either"
             }
           ],
           "outputs": [
             {
               "name": "the reading",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.publish-reading+json",
               "when": "per_task"
             }
           ],
@@ -75,14 +88,15 @@
           "inputs": [
             {
               "name": "the reading",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.publish-reading+json",
+              "required": true,
+              "given_by": "agent"
             }
           ],
           "outputs": [
             {
               "name": "what was placed",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.placed-files+json",
               "when": "per_task"
             }
           ],
@@ -100,8 +114,9 @@
           "inputs": [
             {
               "name": "what was placed",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.placed-files+json",
+              "required": true,
+              "given_by": "agent"
             }
           ],
           "outputs": [
@@ -112,7 +127,7 @@
             },
             {
               "name": "publication record",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.publication-record+json",
               "when": "per_task"
             }
           ],
@@ -123,6 +138,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 100000,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -168,5 +198,6 @@
       "needs": "to fetch back every address it just published and check that what is served is what was handed over",
       "leaves": true
     }
-  ]
+  ],
+  "can_use": []
 }

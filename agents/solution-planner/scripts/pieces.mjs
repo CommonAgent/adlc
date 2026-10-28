@@ -31,7 +31,7 @@ export function plan({ plan: doc } = {}) {
   }
   const entries = [{
     name: "plan", step: STEP_OF.plan, path: "out/plan.json",
-    media_type: "application/json", produced_from: ["the request"],
+    media_type: "application/vnd.agentmesh.build-plan+json", produced_from: ["the request"],
     about: aboutOf("plan", doc),
     text: `${JSON.stringify(doc, null, 2)}\n`,
   }];

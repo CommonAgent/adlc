@@ -23,8 +23,8 @@ An incident record and a strict timeline delivered as files, naming the exact so
 
 ## What it produces
 
-- incident record (application/json, per task)
-- timeline (application/json, per task)
+- incident record (application/vnd.agentmesh.incident-record+json, per task)
+- timeline (application/vnd.agentmesh.incident-timeline+json, per task)
 
 ## When it comes back empty
 
