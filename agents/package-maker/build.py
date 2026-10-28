@@ -1641,11 +1641,16 @@ def option_findings(spec, jobs):
             if not isinstance(i, dict):
                 continue
             n = words_of(i.get("name"))
-            if LIBRARY_WORDS.search(n):
+            kind = str(i.get("kind") or "")
+            # A name is read only on an input of a plain value kind: one
+            # declared with a media type or vendor kind of its own (a brand
+            # site's read, a PDF) already says it is material the job is about.
+            plain = kind in VALUE_INPUT_KINDS or kind == BARE_JSON
+            if LIBRARY_WORDS.search(n) and plain:
                 found.append(f"options-are-settings: job {j['slug']}: input {i.get('name')!r} is brand or library material; "
                              f"declare it as a can_use standing asset (a brand profile, a style guide, media templates) "
                              f"with what the agent does without it, not as an input")
-            elif OPTION_WORDS.search(n) and str(i.get("kind") or "") in VALUE_INPUT_KINDS:
+            elif OPTION_WORDS.search(n) and kind in VALUE_INPUT_KINDS:
                 found.append(f"options-are-settings: job {j['slug']}: input {i.get('name')!r} only shapes how the job runs; "
                              f"declare it as a run_config setting with a label, an about, a default and its allowed values, "
                              f"so a page draws a choice and not a free-text box. Inputs are the material the job is about")
