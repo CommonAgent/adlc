@@ -87,7 +87,7 @@ in it, not by its name or the media type it arrived under:
 |---|---|
 | the agent descriptor | `"format": "agent-descriptor-v1"` |
 | the runtime requirements | `"format": "agent-runtime-requirements-v1"` |
-| the AgentDoc | `"agentdoc": "v1"`, or the signed form holding one |
+| the AgentDoc | `"agentdoc": "v1"`, or `"format": "agentdoc-signed-v1"`, whose `doc` is then the source |
 | a verdict | `"record": "v1"` and `"act": "evaluate"` (agent-eval-record-v1) |
 | a record | anything else |
 

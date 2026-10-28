@@ -195,3 +195,17 @@ test("places resolve, and ranges are lines", () => {
   assert.deepEqual(rangeOf({ text: "a\nb\nc\n" }, "L2-L3").lines, ["b", "c"]);
   assert.equal(rangeOf({ text: "a\n" }, "L3"), null);
 });
+
+test("a line holds only at the kind of place it is about, and the signed AgentDoc is read through its doc", () => {
+  const { sources, leftOut, markdown } = three();
+  // A true rendering of a real place, but put where it means something else.
+  const moved = markdown.replace("## What it will not do\n", "## What it will not do\n\n- **names** (text, required). [S1: offerings[2].outputs[0]]\n");
+  assert.equal(checkDocs({ markdown: moved, sources, leftOut }).ok, false);
+  const doc = JSON.parse(readFileSync(join(FIX, "quiz-maker.agentdoc.json"), "utf8"));
+  const signed = { format: "agentdoc-signed-v1", subject: doc.subject.id, doc, read: [], by: "UKEY", at: doc.assembled_at, sig: "x" };
+  const s = sortGiven([file("agentdoc.signed.json", signed)]);
+  assert.equal(s.sources[0].kind, "agentdoc");
+  const w = writeDocs({ sources: s.sources, leftOut: s.leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown: w.markdown, sources: s.sources, leftOut: s.leftOut }).findings, []);
+  assert.match(w.markdown, /^# quiz-maker$/m);
+});

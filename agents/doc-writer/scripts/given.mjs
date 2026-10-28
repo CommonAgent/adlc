@@ -8,7 +8,7 @@
 //
 //   - the agent descriptor        {"format": "agent-descriptor-v1", ...}
 //   - the runtime requirements    {"format": "agent-runtime-requirements-v1", ...}
-//   - the AgentDoc                {"agentdoc": "v1", ...}
+//   - the AgentDoc                {"agentdoc": "v1", ...}, or signed, {"format": "agentdoc-signed-v1", "doc": {...}}
 //   - a verdict                   {"record": "v1", "act": "evaluate", ...}
 //                                 (the conformance checker's agent-eval-record-v1)
 //   - a record: anything else the package or the platform left, JSON or text
@@ -46,8 +46,9 @@ export function kindOf(text) {
     if (json.format === "agent-descriptor-v1") return { kind: "descriptor", json };
     if (json.format === "agent-runtime-requirements-v1") return { kind: "runtime", json };
     if (json.agentdoc === "v1") return { kind: "agentdoc", json };
-    // The signed AgentDoc wraps the document; the document inside is the source.
-    if (json.document && typeof json.document === "object" && json.document.agentdoc === "v1") return { kind: "agentdoc", json: json.document };
+    // The signed AgentDoc (agentdoc-signed-v1) wraps the document in `doc`; the
+    // document inside is the source, and the digest is the whole file's.
+    if (json.format === "agentdoc-signed-v1" && json.doc && typeof json.doc === "object" && json.doc.agentdoc === "v1") return { kind: "agentdoc", json: json.doc };
     if (json.record === "v1" && json.act === "evaluate") return { kind: "verdict", json };
   }
   return { kind: "record", json };

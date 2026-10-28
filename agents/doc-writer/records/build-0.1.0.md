@@ -40,11 +40,11 @@ half. The role is published at agentroles.ai/doc-writer.html (v0.1.0-draft).
 
 ## Tests
 
-18 pass: the role's own test (three jobs, records from two), six kinds of
+19 pass: the role's own test (three jobs, records from two), six kinds of
 doctored documentation each refused, quiz-maker's real descriptor, runtime
 requirements, AgentDoc and run record, the AgentDoc alone, silences against
 empty lists, a verdict, a record with a credential, a build record and a
-second descriptor, record matching, places and ranges, the run command from
+second descriptor, a line placed where it means something else, the signed AgentDoc, record matching, places and ranges, the run command from
 the builder's layout, and the parts.
 
 ## Who held each step
