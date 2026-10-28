@@ -29,7 +29,7 @@
         },
         {
           "env": "ANSWER_SECONDS",
-          "purpose": "how long each agent has to answer the status question, in seconds, from 5 to 600; 60 when it is not set"
+          "purpose": "how long each agent has to answer the status question, in seconds, from 5 to 240; 60 when it is not set"
         }
       ]
     }

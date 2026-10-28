@@ -59,20 +59,30 @@ round, kept in `{records}/rounds/`:
 
 - **A request, no round open.** The watcher reads the watch list, and leaves
   the status question for every agent (in one thread, so the answers are
-  worked on one at a time). The round opens. The reply says so.
-- **An answer.** It is recorded against the agent that sent it. When every
-  agent asked has answered, the round closes and its report goes, as a
-  message with the report and the record attached, to whoever asked for the
-  watch.
-- **A request while a round is open.** Before the wait (ANSWER_SECONDS) is
-  over, it says how many have answered and asks nobody again. After it, the
-  round closes: whoever has not answered did not answer within the wait. Its
-  report is this job's pieces, and a new round opens.
+  worked on one at a time) and one message for itself. The round opens. The
+  reply says so.
+- **An answer.** It is matched by what it replies to: the host writes the id
+  each question went out as in `out/outbox.sent.jsonl`, and an answer whose
+  `in_reply_to` is that id is that agent's. Until the ids can be read, only
+  the worker interface's own status answer from the agent asked counts. When
+  every agent asked has answered, the round closes and its report goes, as a
+  message with the report and the record attached, to whoever asked.
+- **The message to itself.** Its job waits out the wait (ANSWER_SECONDS, at
+  most 240 seconds, inside the job's 300) and then closes the round if the
+  answers have not: whoever has not answered did not answer within the wait,
+  and the report goes to whoever asked. Only the watcher's own message closes
+  a round this way.
+- **A request while a round is open.** Before the wait is over, it says how
+  many have answered and asks nobody again. After it (when the message to
+  itself could not be sent), the round closes, its report is this job's
+  pieces and goes to whoever asked as well, and a new round opens.
 
-A round's readings (presence, runs, ceilings and spend) are taken when it
-closes, so the report is current as of then. A schedule that sends the
-watcher a request every so often gets a report each time, covering the round
-the previous request opened.
+A question the host reports it could not send is a gap in the watch, not the
+agent's silence, and is not raised. A round's readings (presence, runs,
+ceilings and spend) are taken when it closes, so the report is current as of
+then. Every change to a round is made under a lock in `{records}/rounds/`,
+because a request, an answer and the message to itself can be worked on at
+the same time.
 
 [references/what-the-watcher-reads.md](references/what-the-watcher-reads.md)
 lists every reading, who may read it, and what it proves and does not.
@@ -166,7 +176,7 @@ credential and four settings:
 | `MESH_API_BASE` | the platform's origin, with no path |
 | `WATCH_AGENTS` | the agents to watch, by handle, separated by commas; the owner names them |
 | `INCIDENT_RECORDER` | the incident recorder's handle; without it alarms are handed back, not sent |
-| `ANSWER_SECONDS` | how long each agent has to answer, 5 to 600; 60 by default |
+| `ANSWER_SECONDS` | how long each agent has to answer, 5 to 240; 60 by default |
 
 Each watched agent must admit the watcher, and the incident recorder too;
 agents of the same owner admit each other.

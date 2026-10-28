@@ -68,7 +68,7 @@ test("the platform reads are GETs only, and the only key is the read key", () =>
     const text = readFileSync(join(AGENT, f), "utf8");
     assert.doesNotMatch(text, /credits\/purchase|\/budget|\/allowance\b/, f);
     for (const m of text.matchAll(/process\.env\.([A-Z_]+)|env\.([A-Z_]+)/g)) {
-      assert.ok(["WATCH_AGENTS", "MESH_API_BASE", "WATCH_TOKEN", "INCIDENT_RECORDER", "ANSWER_SECONDS", "MESH_JOB_OUT"].includes(m[1] ?? m[2]), `${f} reads ${m[1] ?? m[2]}`);
+      assert.ok(["WATCH_AGENTS", "MESH_API_BASE", "WATCH_TOKEN", "INCIDENT_RECORDER", "ANSWER_SECONDS", "MESH_JOB_OUT", "MESH_SELF_HANDLE", "MESH_SENDER"].includes(m[1] ?? m[2]), `${f} reads ${m[1] ?? m[2]}`);
     }
   }
 });

@@ -83,7 +83,7 @@ test("the role's check: the quiet one is not answering, the crossed ceiling is n
     assert.match(answered[0].doc.reply, /Recorded the answer from alpha.*2 agents have not answered yet/);
     // Asked again before the wait is over: nobody is asked twice.
     const early = await runJob(h, { from: OWNER, env });
-    assert.match(early.doc.reply, /has heard from 2\. Its report comes when every one has answered, or ask again after/);
+    assert.match(early.doc.reply, /has heard from 2\. Its report goes to whoever asked for it when every one has answered, or when the wait is over at/);
     assert.deepEqual(early.outbox, []);
     // After the wait: the round closes, its report is this job's pieces, and the next round asks.
     ageOpenRound(h, 120);
@@ -314,5 +314,81 @@ test("an alert stays open from one watch to the next and is raised once; a new r
     const [closed] = await answer(h, fourth.outbox, env, () => STATUS());
     assert.match(closed.doc.reply, /so it is closed/);
     assert.deepEqual(json(join(h.records, "open-alerts.json")).agents, {});
+  } finally { await p.close(); }
+});
+
+const SELF = "watcher.platform@agentmesh.ai";
+
+test("a round closes itself when the wait is over: it sends itself a message whose job waits out the wait", async () => {
+  const world = threeAgents();
+  world.cards[SELF] = storefront(SELF);
+  const p = await fakePlatform(world);
+  try {
+    const h = host();
+    const env = envOf(p, { WATCH_AGENTS: `${A},${B}`, MESH_SELF_HANDLE: SELF });
+    const ask = await runJob(h, { from: OWNER, env });
+    const close = ask.outbox.find((l) => l.to === keyFor(SELF));
+    assert.ok(close, JSON.stringify(ask.outbox));
+    assert.match(ask.doc.reply, /or when the wait is over in 60 seconds, whichever is first/);
+    await answer(h, ask.outbox, env, (who) => (who === A ? STATUS() : null));
+    // Somebody else cannot close it.
+    const forged = await runJob(h, { from: "someone.else@example.com", message: close.text, env });
+    assert.match(forged.doc.reply, /Only this watcher closes its own watches/);
+    ageOpenRound(h, 61);
+    const r = await runJob(h, { from: SELF, message: close.text, env });
+    assert.match(r.doc.reply, /The wait for watch .* is over, so it is closed\. Its report goes to owner\.platform@agentmesh\.ai as this job ends\./);
+    const toOwner = r.outbox.find((l) => l.to === keyFor(OWNER));
+    assert.match(readFileSync(toOwner.files[0].path, "utf8"), new RegExp(`^\| ${esc(B)} \| yes \| no \| `, "m"));
+    assert.equal(r.outbox.filter((l) => l.to === keyFor(RECORDER)).length, 1);
+    // Closed once: a second close does nothing.
+    const again = await runJob(h, { from: SELF, message: close.text, env });
+    assert.match(again.doc.reply, /had already closed/);
+  } finally { await p.close(); }
+});
+
+test("an answer is matched by what it replies to once the host has said what each question went out as", async () => {
+  const p = await fakePlatform(threeAgents());
+  try {
+    const h = host();
+    const env = envOf(p, { WATCH_AGENTS: `${A},${B}` });
+    const ask = await runJob(h, { from: OWNER, env });
+    // The host writes what each line went out as, beside the outbox.
+    writeFileSync(join(ask.jobDir, "out", "outbox.sent.jsonl"), ask.outbox.map((l) => JSON.stringify({ to: l.handle, message_id: `m-${l.handle}`, ref: l.ref })).join("\n") + "\n");
+    const stray = await runJob(h, { from: A, inReplyTo: "m-something-else", message: STATUS(), env });
+    assert.match(stray.doc.reply, /answers nothing an open watch asked/);
+    const right = await runJob(h, { from: "a-name-the-host-used", inReplyTo: `m-${A}`, message: "any words at all", env });
+    assert.match(right.doc.reply, /Recorded the answer from alpha/);
+  } finally { await p.close(); }
+});
+
+test("a question the host could not send is a gap in the watch, not the agent's silence, and is not raised", async () => {
+  const p = await fakePlatform(threeAgents());
+  try {
+    const h = host();
+    const env = envOf(p, { WATCH_AGENTS: B });
+    const ask = await runJob(h, { from: OWNER, env });
+    writeFileSync(join(ask.jobDir, "out", "outbox.sent.jsonl"), JSON.stringify({ to: B, message_id: null, error: "REFUSED: not admitted", ref: ask.outbox[0].ref }) + "\n");
+    ageOpenRound(h, 61);
+    const r = await runJob(h, { from: OWNER, env });
+    const rec = json(join(r.recordsDir, "watch-record.json"));
+    assert.equal(rec.agents[0].answering.state, "unknown");
+    assert.match(rec.agents[0].answering.why, /REFUSED: not admitted/);
+    assert.equal(r.outbox.filter((l) => l.to === keyFor(RECORDER)).length, 0);
+  } finally { await p.close(); }
+});
+
+test("a round another requester closes still reports to whoever asked for it", async () => {
+  const world = threeAgents();
+  const OTHER = "scheduler.platform@agentmesh.ai";
+  world.cards[OTHER] = storefront(OTHER);
+  const p = await fakePlatform(world);
+  try {
+    const h = host();
+    const env = envOf(p, { WATCH_AGENTS: B });
+    await runJob(h, { from: OWNER, env });
+    ageOpenRound(h, 61);
+    const r = await runJob(h, { from: OTHER, env });
+    assert.ok(r.outbox.some((l) => l.to === keyFor(OWNER) && l.files?.length === 2), JSON.stringify(r.outbox));
+    assert.ok(existsSync(join(r.jobDir, "pieces.json")));
   } finally { await p.close(); }
 });

@@ -50,13 +50,14 @@ import { checkAgent, spendEntryFor } from "./checks.mjs";
 import { moneyWords, readSpend } from "./spend.mjs";
 import { writeReport, WATCHER } from "./write-report.mjs";
 import { alarmFor } from "./alarms.mjs";
-import { leave, outboxDir, startOutbox } from "./outbox.mjs";
-import { allAnswered, askedAt, newRoundId, openRound, recordAnswer, saveRound } from "./rounds.mjs";
+import { AGENT_ID, leave, outboxDir, startOutbox } from "./outbox.mjs";
+import { allAnswered, askedAt, loadRound, newRoundId, openRound, recordAnswer, saveRound, sentLines, withLock, writeWhole } from "./rounds.mjs";
 import { fill, plan } from "./pieces.mjs";
 import { note, read as wentWithout, sentence } from "./went-without.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const many = (n, word, plural = `${word}s`) => `${n} ${n === 1 ? word : plural}`;
+const same = (a, b) => Boolean(a && b) && String(a).toLowerCase() === String(b).toLowerCase();
 const list = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 export const STANDING_FILE = "open-alerts.json";
@@ -71,7 +72,7 @@ export function readStanding(records) {
 }
 
 export function writeStanding(records, agents) {
-  writeFileSync(join(records, STANDING_FILE), JSON.stringify({ open_alerts: "v1", agents }, null, 2) + "\n");
+  writeWhole(join(records, STANDING_FILE), { open_alerts: "v1", agents });
 }
 
 export function fromArgv(args = []) {
@@ -94,7 +95,9 @@ export const MAX_AGENTS = 50;
 
 export const HOW_TO_NAME = "The agents to watch are named by the owner in the install's WATCH_AGENTS setting, by handle. A message may narrow a watch to some of them with lines of their own, `agent: <handle>`.";
 
-const waitOf = (env) => Math.max(5, Math.min(600, Number(env.ANSWER_SECONDS) || 60));
+/** How long each agent has to answer: 5 to 240 seconds, so the job that
+ *  closes a round can wait it out inside its own time (job_seconds 300). */
+const waitOf = (env) => Math.max(5, Math.min(240, Number(env.ANSWER_SECONDS) || 60));
 
 /** The spend report, read for the named agents. A name the platform says is
  *  not one of the account's agents (404), or fits more than one (409), is
@@ -123,7 +126,7 @@ async function readSpendFor(p, handles, window) {
 }
 
 /** Open a round: read what is read once, and leave the questions. */
-async function openNewRound({ env, text, records, dir, from, message, now, fetchImpl, notes }) {
+async function openNewRound({ env, text, records, dir, from, fromId, message, now, fetchImpl, notes }) {
   const wl = watchList({ setting: env.WATCH_AGENTS ?? "", text });
   const win = windowOf(text);
   for (const h of wl.malformed) notes.push({ wanted: `a handle in place of "${h}" on the watch list`, did: "left it out of the watch" });
@@ -138,35 +141,50 @@ async function openNewRound({ env, text, records, dir, from, message, now, fetch
   if (wl.agents.length > MAX_AGENTS) {
     return { stop: `${wl.agents.length} agents are named and one watch takes at most ${MAX_AGENTS}, the most the platform's spend report reads at once. Nothing was watched. Name at most ${MAX_AGENTS} in WATCH_AGENTS, or narrow this watch with \`agent:\` lines.` };
   }
-  const at = now().toISOString();
+  // Opening reads only what addressing needs: each agent's id from its
+  // storefront (read twice before it is given up on), the incident
+  // recorder's, and this agent's own. Everything the report says is read
+  // when the round closes.
   const p = platform({ base: env.MESH_API_BASE ?? "", token: env.WATCH_TOKEN ?? "", fetchImpl, now });
   if (!p.root) notes.push({ wanted: "the platform's address (MESH_API_BASE)", did: "read nothing from the platform: no presence, no run record, no ceilings, no spend, and no agent id to address a question to" });
-  const readsOf = async (h) => (p.root ? { card: await p.card(h), record: await p.record(h), agentdoc: await p.agentdoc(h) } : {});
+  const cardOf = async (h) => { if (!p.root || !h) return null; const c = await p.card(h); return c.ok || c.status === 404 ? c : p.card(h); };
   const recorder = trim(env.INCIDENT_RECORDER);
-  const [reads, spend, recorderCard] = await Promise.all([
-    Promise.all(wl.agents.map(readsOf)),
-    readSpendFor(p, wl.agents, { from: win.from, to: win.to }),
-    recorder && p.root ? p.card(recorder) : Promise.resolve(null),
-  ]);
+  const self = trim(env.MESH_SELF_HANDLE);
+  const [cards, recorderCard, selfCard] = await Promise.all([Promise.all(wl.agents.map(cardOf)), cardOf(recorder), cardOf(self)]);
   const agents = wl.agents.map((named, i) => {
-    const r = reads[i] ?? {};
-    const key = r.card?.ok ? presenceOf(r.card.body).key : null;
+    const c = cards[i];
+    const key = c?.ok ? presenceOf(c.body).key : null;
     return {
-      named, handle: r.card?.ok ? (r.card.body?.card?.card?.handle ?? named) : named, key,
-      ...(key ? {} : { no_key_why: r.card ? `its storefront could not be read (${r.card.error})` : "nothing was read from the platform" }),
-      reads: r,
+      named, handle: c?.ok ? (c.body?.card?.card?.handle ?? named) : named, key,
+      ...(key ? {} : { no_key_why: c ? `its storefront could not be read (${c.error}), so it had no agent id to address` : "nothing was read from the platform, so it had no agent id to address" }),
     };
   });
   const id = newRoundId(now());
+  const at = now().toISOString();
   const asked = askAll(agents, { dir, thread: id, at });
   agents.forEach((a, i) => { a.asked = asked[i]; delete a.no_key_why; });
+  const wait = waitOf(env);
   const round = {
-    round: "v1", id, status: "open", opened_at: at, wait_seconds: waitOf(env),
-    requested_by: trim(from) || null, request_message: trim(message) || null,
+    round: "v1", id, status: "open", opened_at: at, wait_seconds: wait,
+    requested_by: { handle: trim(from) || null, key: AGENT_ID.test(trim(fromId)) ? trim(fromId) : null },
+    request_message: trim(message) || null,
+    out_dir: dir,
     window: { from: win.from, to: win.to },
     recorder: recorder ? { handle: recorder, key: recorderCard?.ok ? presenceOf(recorderCard.body).key : null, why: recorderCard?.ok ? null : recorderCard ? `its storefront could not be read (${recorderCard.error})` : "nothing was read from the platform" } : null,
-    agents, spend,
+    agents,
   };
+  // The round closes itself: a message to this agent, which the host sends
+  // as this job ends, and whose job waits out the wait and then closes the
+  // round if the answers have not closed it already.
+  const selfKey = selfCard?.ok ? presenceOf(selfCard.body).key : null;
+  if (selfKey) {
+    const left = leave(dir, { to: selfKey, handle: self, text: `${CLOSE_MARK}\n${id}` });
+    round.closes_itself = left.left ? { key: selfKey, handle: self } : null;
+    if (!left.left) notes.push({ wanted: "a message to itself to close the round when the wait is over", did: "left the round to close on its last answer or at the next request", why: left.error });
+  } else {
+    round.closes_itself = null;
+    notes.push({ wanted: "its own agent id, to close the round when the wait is over", did: "left the round to close on its last answer or at the next request", why: self ? `its storefront could not be read` : "the host names no handle for it (MESH_SELF_HANDLE)" });
+  }
   saveRound(records, round);
   return { round };
 }
@@ -193,11 +211,12 @@ async function closeRound(round, { env, fetchImpl, records, jobRecords, jobDir, 
   if (spend.ok && spend.scopes?.some((s) => s !== "credits:read")) {
     notes.push({ wanted: "a read key that can only read", did: "read the spend with the key it was given", why: `the key placed also carries ${list(spend.scopes.filter((s) => s !== "credits:read"))}, which can do more than read` });
   }
+  const sent = sentLines(round);
   const agents = round.agents.map((a) => {
     const entry = spend.ok ? spendEntryFor(spend, { handle: a.handle, key: a.key }) : null;
     const left = spend.left_out?.[a.named];
     const why = spend.ok ? (left ? `the platform did not report its spend (${left})` : "") : spend.why;
-    return checkAgent({ named: a.named, card: a.reads?.card, record: a.reads?.record, agentdoc: a.reads?.agentdoc, asked: askedAt(a, round), spendAgent: entry, spendRead: spend.ok ? { url: spend.read_from, at: spend.at } : null, spendWhy: why, waitSeconds: round.wait_seconds });
+    return checkAgent({ named: a.named, card: a.reads?.card, record: a.reads?.record, agentdoc: a.reads?.agentdoc, asked: askedAt(a, round, sent), spendAgent: entry, spendRead: spend.ok ? { url: spend.read_from, at: spend.at } : null, spendWhy: why, waitSeconds: round.wait_seconds });
   });
 
   // Alarms. An alert stays open from one round to the next until a round finds
@@ -210,9 +229,9 @@ async function closeRound(round, { env, fetchImpl, records, jobRecords, jobDir, 
   const raised = [];
   const recorder = round.recorder;
   for (const a of agents) {
-    const was = standing[a.handle];
+    const was = standing[a.named];
     if (!a.alert?.raise) {
-      if (was && !a.alert) delete standing[a.handle];
+      if (was && !a.alert) delete standing[a.named];
       continue;
     }
     if (was && a.alert.keys.every((k) => was.keys.includes(k))) {
@@ -234,7 +253,7 @@ async function closeRound(round, { env, fetchImpl, records, jobRecords, jobDir, 
       r = left.left ? { sent: true, ref: left.ref } : { sent: false, why: left.error };
     }
     raised.push({ agent: al.agent, time: al.time, message: al.text, file: al.file, to: recorder?.handle ?? null, ...r });
-    if (r.sent) standing[a.handle] = { keys: [...new Set([...(was?.keys ?? []), ...a.alert.keys])], opened_at: was?.opened_at ?? a.alert.at, raised_to: recorder.handle, raised_at: closedAt };
+    if (r.sent) standing[a.named] = { keys: [...new Set([...(was?.keys ?? []), ...a.alert.keys])], opened_at: was?.opened_at ?? a.alert.at, raised_to: recorder.handle, raised_at: closedAt };
     else notes.push({ wanted: `the alarm for ${al.agent} reaching the incident recorder`, did: "handed it back with the report", why: r.why });
   }
   writeStanding(records, standing);
@@ -257,7 +276,7 @@ async function closeRound(round, { env, fetchImpl, records, jobRecords, jobDir, 
   for (const a of round.agents) {
     const r = a.reads ?? {};
     for (const [what, x] of [["storefront", r.card], ["run record", r.record], ["AgentDoc", r.agentdoc]]) if (x) sources.push({ what: `${a.named}, ${what}`, where: x.url, at: x.at, status: x.status });
-    const q = askedAt(a, round);
+    const q = askedAt(a, round, sent);
     sources.push({ what: `${a.named}, the worker interface's status`, where: "a message from this agent, left for its host to send", at: q.sent_at, status: q.outcome });
   }
   for (const r of spend.reads ?? []) sources.push({ what: r.url.includes("spend-report") ? "the spend report" : "the read key's account", where: r.url.replace(/\?.*$/, ""), at: r.at, status: r.status });
@@ -283,21 +302,41 @@ async function closeRound(round, { env, fetchImpl, records, jobRecords, jobDir, 
 
   const count = (pred) => agents.filter(pred).length;
   const open = agents.filter((a) => a.alert);
-  const sent = raised.filter((r) => r.sent);
+  const sentAlarms = raised.filter((r) => r.sent);
   const spendLine = spend.ok
     ? `Between ${spend.window.from} and ${spend.window.to} they spent ${spend.totals.length ? spend.totals.map((t) => moneyWords(t.spent_micro, t.currency)).join(", ") : "nothing"}; ${spend.every_spend_traced ? "every spend traces to a job" : "not every spend traces to a job, and each part that does not is named with why"}, and the totals ${spend.reconciles ? "reconcile" : "do not reconcile"}.`
     : `The spend was not read: ${spend.why}.`;
   const summary = [
     `Watch ${round.id}, asked at ${round.opened_at}: of ${many(agents.length, "agent")}, ${count((a) => a.alive.state === "yes")} alive, ${count((a) => a.answering.state === "yes")} answering, ${count((a) => a.limits.state === "inside")} inside every limit measured.`,
     open.length ? `${many(open.length, "alert is", "alerts are")} open: ${open.map((a) => `${a.handle} (${a.alert.reasons.join("; ")})`).join("; ")}.` : "No alert is open.",
-    raised.length ? (sent.length ? `${many(sent.length, "alarm goes", "alarms go")} to ${recorder.handle} as this job ends.` : "The alarms were not raised to an incident recorder; each is handed back with the report.") : "",
+    raised.length ? (sentAlarms.length ? `${many(sentAlarms.length, "alarm goes", "alarms go")} to ${recorder.handle} as this job ends.` : "The alarms were not raised to an incident recorder; each is handed back with the report.") : "",
     spendLine,
     "The report says where every line was read.",
   ].filter(Boolean).join(" ");
   return { agents, raised, reportPath, recordPath, summary, open: open.length, reconciles: spend.ok ? spend.reconciles : null };
 }
 
-export async function runWatch(argv = [], { env = process.env, fetchImpl, now = () => new Date() } = {}) {
+/** The first line of the message a round sends itself to close when the wait is over. */
+export const CLOSE_MARK = "agentmesh-watcher/v1 close";
+
+/** Hand a closed round's report, as a message with the report and the record
+ *  attached, to whoever asked for it. */
+function handReport(round, c, { jobDir, dir, jobRecords }) {
+  const to = round.requested_by ?? {};
+  if (!to.key) return ` Nobody could be addressed to send its report to${to.handle ? ` (${to.handle} gave no agent id)` : ""}; it is kept in this job's records.`;
+  mkdirSync(join(jobDir, "out"), { recursive: true });
+  const files = [];
+  for (const [from, name, media_type] of [[c.reportPath, "watch-report.md", "text/markdown"], [c.recordPath, "watch-record.json", "application/vnd.agentmesh.watch-record+json"]]) {
+    const path = join(jobDir, "out", name);
+    writeFileSync(path, readFileSync(from));
+    files.push({ path, name, media_type });
+  }
+  const went = sentence(wentWithout(jobRecords));
+  const r = leave(dir, { to: to.key, handle: to.handle, text: [went, c.summary].filter(Boolean).join(" "), files });
+  return r.left ? ` Its report goes to ${to.handle ?? to.key} as this job ends.` : ` Its report could not be sent to ${to.handle ?? to.key} (${r.error}); it is kept in this job's records.`;
+}
+
+export async function runWatch(argv = [], { env = process.env, fetchImpl, now = () => new Date(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const args = fromArgv(argv);
   if (!args.job || !args.records) return { ok: false, code: 2, reply: "This job needs --job <job folder> and --records <records folder>." };
   const id = basename(args.job);
@@ -312,92 +351,100 @@ export async function runWatch(argv = [], { env = process.env, fetchImpl, now = 
   startOutbox(dir);
 
   const text = args.textFile && existsSync(args.textFile) ? readFileSync(args.textFile, "utf8") : "";
+  const from = trim(args.from);
+  // The host names the sender's agent id beside the name it passes.
+  const fromId = trim(env.MESH_SENDER);
   const notes = [];
   const flush = () => { for (const n of notes) note(JOB_RECORDS, n); };
   const inReplyTo = trim(args.inReplyTo);
   const isAnswer = Boolean(inReplyTo) && inReplyTo !== "none";
-  const open = openRound(args.records);
+  const ctx = { env, fetchImpl, records: args.records, jobRecords: JOB_RECORDS, jobDir: args.job, dir, now, notes };
+
+  // THE ROUND CLOSING ITSELF: a message this agent sent itself when it opened
+  // the round. It waits out the wait, then closes the round if nothing has.
+  const lines = text.split(/\r?\n/);
+  if (lines[0]?.trim() === CLOSE_MARK && !isAnswer) {
+    const roundId = trim(lines[1]);
+    const r0 = loadRound(args.records, roundId);
+    const mine = r0?.closes_itself && (same(fromId, r0.closes_itself.key) || same(from, r0.closes_itself.handle) || same(from, r0.closes_itself.key));
+    if (!r0 || !mine) return { ok: true, code: 0, reply: "Only this watcher closes its own watches; nothing was done." };
+    const deadline = new Date(r0.opened_at).getTime() + r0.wait_seconds * 1000;
+    const left = deadline - now().getTime();
+    if (left > 0) await sleep(left);
+    return withLock(args.records, async () => {
+      const round = loadRound(args.records, roundId);
+      if (!round || round.status !== "open") return { ok: true, code: 0, reply: `Watch ${roundId} had already closed.` };
+      const c = await closeRound(round, ctx);
+      const handed = handReport(round, c, ctx);
+      flush();
+      return { ok: true, code: 0, reply: `The wait for watch ${roundId} is over, so it is closed.${handed}`, open_alerts: c.open, reconciles: c.reconciles };
+    });
+  }
 
   // AN ANSWER from an agent the open round asked.
   if (isAnswer) {
-    const agent = open ? recordAnswer(open, { from: args.from, at: now().toISOString(), inReplyTo, text }) : null;
-    if (!agent) return { ok: true, code: 0, reply: "This answers nothing an open watch asked, so it was not recorded." };
-    saveRound(args.records, open);
-    if (!allAnswered(open)) {
-      const left = open.agents.filter((x) => x.asked?.outcome === "asked" && !x.answer).length;
-      return { ok: true, code: 0, reply: `Recorded the answer from ${agent.handle} for watch ${open.id}; ${many(left, "agent has", "agents have")} not answered yet.` };
-    }
-    // Every agent asked has answered: the round closes, and its report goes
-    // to whoever asked for the watch, as a message of its own.
-    const c = await closeRound(open, { env, fetchImpl, records: args.records, jobRecords: JOB_RECORDS, jobDir: args.job, dir, now, notes });
-    flush();
-    const to = open.requested_by;
-    const toKey = await keyOf(to, { env, fetchImpl, now });
-    let handed = "";
-    if (toKey) {
-      for (const [from, name] of [[c.reportPath, "watch-report.md"], [c.recordPath, "watch-record.json"]]) {
-        mkdirSync(join(args.job, "out"), { recursive: true });
-        writeFileSync(join(args.job, "out", name), readFileSync(from));
+    return withLock(args.records, async () => {
+      const open = openRound(args.records);
+      const agent = open ? recordAnswer(open, { from, fromId, at: now().toISOString(), inReplyTo, text }) : null;
+      if (!agent) return { ok: true, code: 0, reply: "This answers nothing an open watch asked, so it was not recorded." };
+      saveRound(args.records, open);
+      if (!allAnswered(open)) {
+        const left = open.agents.filter((x) => x.asked?.outcome === "asked" && !x.answer).length;
+        return { ok: true, code: 0, reply: `Recorded the answer from ${agent.handle} for watch ${open.id}; ${many(left, "agent has", "agents have")} not answered yet.` };
       }
-      const files = [
-        { path: join(args.job, "out", "watch-report.md"), name: "watch-report.md", media_type: "text/markdown" },
-        { path: join(args.job, "out", "watch-record.json"), name: "watch-record.json", media_type: "application/vnd.agentmesh.watch-record+json" },
-      ];
-      const went = sentence(wentWithout(JOB_RECORDS));
-      const r = leave(dir, { to: toKey, handle: to, text: [went, c.summary].filter(Boolean).join(" "), files });
-      handed = r.left ? ` Its report goes to ${to} as this job ends.` : ` Its report could not be sent to ${to} (${r.error}); it is kept in this job's records.`;
-    } else {
-      handed = ` Nobody could be addressed to send its report to${to ? ` (${to})` : ""}; it is kept in this job's records.`;
-    }
-    return { ok: true, code: 0, reply: `Recorded the answer from ${agent.handle}; every agent asked in watch ${open.id} has answered, so it is closed.${handed}`, open_alerts: c.open, reconciles: c.reconciles };
+      // Every agent asked has answered: the round closes, and its report goes
+      // to whoever asked for the watch, as a message of its own.
+      const c = await closeRound(open, ctx);
+      const handed = handReport(open, c, ctx);
+      flush();
+      return { ok: true, code: 0, reply: `Recorded the answer from ${agent.handle}; every agent asked in watch ${open.id} has answered, so it is closed.${handed}`, open_alerts: c.open, reconciles: c.reconciles };
+    });
   }
 
   // A REQUEST for a watch.
-  if (open) {
-    const deadline = new Date(new Date(open.opened_at).getTime() + open.wait_seconds * 1000);
-    if (now() < deadline && !allAnswered(open)) {
-      const asked = open.agents.filter((x) => x.asked?.outcome === "asked");
-      const heard = asked.filter((x) => x.answer).length;
-      return { ok: true, code: 0, reply: `Watch ${open.id} asked ${many(asked.length, "agent")} at ${open.opened_at} and has heard from ${heard}. Its report comes when every one has answered, or ask again after ${deadline.toISOString()}, when the wait is over and whoever has not answered is reported as not answering. Nobody was asked again.` };
+  return withLock(args.records, async () => {
+    const open = openRound(args.records);
+    if (open) {
+      const deadline = new Date(new Date(open.opened_at).getTime() + open.wait_seconds * 1000);
+      if (now() < deadline && !allAnswered(open)) {
+        const asked = open.agents.filter((x) => x.asked?.outcome === "asked");
+        const heard = asked.filter((x) => x.answer).length;
+        return { ok: true, code: 0, reply: `Watch ${open.id} asked ${many(asked.length, "agent")} at ${open.opened_at} and has heard from ${heard}. Its report goes to whoever asked for it when every one has answered, or when the wait is over at ${deadline.toISOString()}. Nobody was asked again.` };
+      }
+      // The wait is over and nothing closed it: close it now, hand its report
+      // over as this job's pieces (and to whoever asked for it, when that was
+      // somebody else), and open the next.
+      const c = await closeRound(open, ctx);
+      const other = open.requested_by?.key && !same(open.requested_by.key, fromId);
+      const handed = other ? handReport(open, c, ctx) : "";
+      const next = await openNewRound({ env, text, records: args.records, dir, from, fromId, message: args.message, now, fetchImpl, notes });
+      flush();
+      const listed = fill(args.job, plan({ reportPath: c.reportPath, recordPath: c.recordPath, alarms: c.raised.map((r) => ({ agent: r.agent, file: r.file, path: join(args.job, "out", r.file) })) })).map((e) => e.name);
+      const went = sentence(wentWithout(JOB_RECORDS));
+      const after = next.round ? `Watch ${next.round.id} has asked again.` : `No new watch was opened: ${next.stop}`;
+      return { ok: true, code: 0, reply: [went, c.summary, handed.trim(), after].filter(Boolean).join(" "), open_alerts: c.open, reconciles: c.reconciles, listed };
     }
-    // The wait is over: close the round, hand its report over as this job's
-    // pieces, and open the next.
-    const c = await closeRound(open, { env, fetchImpl, records: args.records, jobRecords: JOB_RECORDS, jobDir: args.job, dir, now, notes });
-    const next = await openNewRound({ env, text, records: args.records, dir, from: args.from, message: args.message, now, fetchImpl, notes });
+
+    const opened = await openNewRound({ env, text, records: args.records, dir, from, fromId, message: args.message, now, fetchImpl, notes });
     flush();
-    const listed = fill(args.job, plan({ reportPath: c.reportPath, recordPath: c.recordPath, alarms: c.raised.map((r) => ({ agent: r.agent, file: r.file, path: join(args.job, "out", r.file) })) })).map((e) => e.name);
+    if (opened.stop) return { ok: false, code: 3, reply: opened.stop };
+    const r = opened.round;
+    const asked = r.agents.filter((x) => x.asked?.outcome === "asked");
+    const notAsked = r.agents.filter((x) => x.asked?.outcome !== "asked");
     const went = sentence(wentWithout(JOB_RECORDS));
-    const after = next.round ? ` Watch ${next.round.id} has asked again.` : ` No new watch was opened: ${next.stop}`;
-    return { ok: true, code: 0, reply: [went, c.summary, after.trim()].filter(Boolean).join(" "), open_alerts: c.open, reconciles: c.reconciles, listed };
-  }
-
-  const opened = await openNewRound({ env, text, records: args.records, dir, from: args.from, message: args.message, now, fetchImpl, notes });
-  flush();
-  if (opened.stop) return { ok: false, code: 3, reply: opened.stop };
-  const r = opened.round;
-  const asked = r.agents.filter((x) => x.asked?.outcome === "asked");
-  const notAsked = r.agents.filter((x) => x.asked?.outcome !== "asked");
-  const went = sentence(wentWithout(JOB_RECORDS));
-  return {
-    ok: true, code: 0,
-    reply: [
-      went,
-      `Watch ${r.id}: I asked ${many(asked.length, "agent")} the worker interface's status${notAsked.length ? ` and could not ask ${list(notAsked.map((x) => x.handle))}` : ""}, and read their presence, runs, ceilings and spend from the platform.`,
-      `The questions go out as this job ends. The report comes to you when every agent has answered, or ask again after ${r.wait_seconds} seconds, when whoever has not answered is reported as not answering.`,
-    ].filter(Boolean).join(" "),
-    round: r.id,
-  };
-}
-
-/** The agent id to address a report to: the sender as the host named it. */
-async function keyOf(who, { env, fetchImpl, now }) {
-  const w = trim(who);
-  if (!w) return null;
-  if (/^U[A-Z2-7]{55}$/.test(w)) return w;
-  const p = platform({ base: env.MESH_API_BASE ?? "", fetchImpl, now });
-  if (!p.root) return null;
-  const c = await p.card(w);
-  return c.ok ? presenceOf(c.body).key : null;
+    const when = r.closes_itself
+      ? `The report comes to you when every agent has answered, or when the wait is over in ${r.wait_seconds} seconds, whichever is first; whoever has not answered by then is reported as not answering.`
+      : `The report comes to you when every agent has answered. If one does not, ask again after ${r.wait_seconds} seconds, and whoever has not answered is reported as not answering.`;
+    return {
+      ok: true, code: 0,
+      reply: [
+        went,
+        `Watch ${r.id}: I asked ${many(asked.length, "agent")} the worker interface's status${notAsked.length ? ` and could not ask ${list(notAsked.map((x) => x.handle))}` : ""}. The questions go out as this job ends.`,
+        when,
+      ].filter(Boolean).join(" "),
+      round: r.id,
+    };
+  });
 }
 
 const startedAsCommand = () => {

@@ -37,7 +37,7 @@ and wait inside the job) could not have worked on the platform's own fleet.
 
 ## Tests
 
-35 pass, run as the host runs the command: a request, the questions it
+39 pass, run as the host runs the command: a request, the questions it
 leaves, the answers as messages of their own, and the request or answer that
 closes the round, with the role's own check, the alarm read by the incident
 recorder's own reader, the report sent to whoever asked when the last answer
@@ -48,3 +48,20 @@ closes a round, and an alert raised once across rounds.
 The harness (Claude Code) wrote the change and the tests; packaging, the
 deploy request and the install go through the package maker, the platform
 account's deploy queue and the deployment manager, on dev.
+
+## From the review of PR 29
+
+- A lock (a file made exclusively) around every change to a round, which is
+  read again inside it, because requests, answers and the closing can run at
+  once; a closed round can no longer be written open again.
+- Answers are matched by `in_reply_to` against the ids the host writes in
+  `out/outbox.sent.jsonl`; until those can be read, only the asked agent's
+  own worker-interface status answer counts.
+- A round closes itself: the request leaves a message for the watcher itself,
+  whose job waits out the wait and closes the round. ANSWER_SECONDS is now 5
+  to 240, inside the job's 300.
+- The report goes to whoever asked for the round (by the agent id the host
+  names as the sender), also when a later request closes it.
+- A question the host could not send is a gap, not silence, and is not
+  raised; one held in a mailbox is silence, said with that reason.
+- The open alerts are kept by the name the owner gave, written whole.

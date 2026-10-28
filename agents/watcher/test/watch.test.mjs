@@ -178,10 +178,12 @@ test("a round keeps who was asked and who answered, by handle or agent id, and d
   saveRound(records, round);
   assert.equal(openRound(records).id, round.id);
   assert.equal(recordAnswer(round, { from: "nobody@x.com", at: "t" }), null);
-  assert.equal(recordAnswer(round, { from: key, at: "2026-10-28T06:00:03.500Z", text: "{}" }).handle, A);
-  assert.equal(recordAnswer(round, { from: key, at: "later" }), null, "an agent answers a round once");
+  const STATUS_JSON = JSON.stringify({ interface: "interface-worker", exchange: "status", job: "j", state: "done" });
+  assert.equal(recordAnswer(round, { from: key, at: "2026-10-28T06:00:03.500Z", text: "not a status answer" }), null, "only the worker status counts when the ids are not known");
+  assert.equal(recordAnswer(round, { from: key, at: "2026-10-28T06:00:03.500Z", text: STATUS_JSON }).handle, A);
+  assert.equal(recordAnswer(round, { from: key, at: "later", text: STATUS_JSON }), null, "an agent answers a round once");
   assert.equal(allAnswered(round), false);
-  assert.deepEqual(askedAt(round.agents[0], round), { handle: A, sent_at: "2026-10-28T06:00:00.000Z", answered_at: "2026-10-28T06:00:03.500Z", seconds: 3.5, outcome: "answered", reply: "{}" });
+  assert.deepEqual(askedAt(round.agents[0], round), { handle: A, sent_at: "2026-10-28T06:00:00.000Z", answered_at: "2026-10-28T06:00:03.500Z", seconds: 3.5, outcome: "answered", reply: STATUS_JSON });
   assert.deepEqual(askedAt(round.agents[2], round), { handle: "c.x@y.com", sent_at: "2026-10-28T06:00:00.000Z", gave_up_at: "2026-10-28T06:01:00.000Z", outcome: "silent", why: "no answer within 60s" });
   assert.equal(askedAt(round.agents[1], round).outcome, "not-sent");
   round.status = "closed";

@@ -146,7 +146,7 @@ export function runJob(h, { message = "", from = "owner.platform@agentmesh.ai", 
   const [cmd, ...args] = argv;
   if (cmd !== "node") throw new Error("the run command is not node");
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, args, { env: { ...process.env, MESH_JOB_OUT: "", ...env }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, args, { env: { ...process.env, MESH_JOB_OUT: "", MESH_SENDER: keyFor(from), MESH_SELF_HANDLE: "", ...env }, stdio: ["ignore", "pipe", "pipe"] });
     let out = ""; let err = "";
     child.stdout.on("data", (d) => { out += d; });
     child.stderr.on("data", (d) => { err += d; });
