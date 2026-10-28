@@ -13,6 +13,7 @@ Every difference `scripts/compare.mjs` finds, and the answer it gives a dependen
 | `how.cost` higher, or no longer stated | breaking | its users |
 | `how.control`, `how.intelligence` or `how.contract` changed | change of behavior | its users |
 | Its steps changed | change of behavior | its users |
+| `how` stated as something other than an object, and changed | breaking, because it could not be told | its users |
 
 ## Inputs
 
@@ -21,13 +22,14 @@ Every difference `scripts/compare.mjs` finds, and the answer it gives a dependen
 | A required input added | breaking | every user of the offering |
 | An optional input added | compatible | every user of the offering |
 | An input removed | breaking | a dependent that sends it, or whose sending is not known |
-| Optional made required | breaking; compatible for a dependent whose canvas already sends it | senders |
+| Optional made required | breaking, for a dependent whose canvas does not send it as well; compatible for one whose canvas already sends it | every user of the offering |
 | Required made optional | compatible | senders |
 | Its kind now takes everything the old one took | compatible | senders |
 | Its kind changed any other way | breaking | senders |
 | `max_bytes` lower, or added | breaking | senders |
 | `max_bytes` higher, or taken off | compatible | senders |
-| `when` or `one_of` changed | breaking | senders |
+| `when` changed | breaking | senders |
+| `one_of` changed | breaking, for a dependent whose canvas does not send it as well | every user of the offering |
 | Only its `about`, `description`, `label`, `example`, `given_by`, `widget`, `parts` or `link` changed | words only | nobody |
 | Anything else about it changed | breaking, because it could not be told | senders |
 
@@ -39,9 +41,9 @@ Every difference `scripts/compare.mjs` finds, and the answer it gives a dependen
 | An output added | compatible | its users |
 | Its kind changed | answered for each reader, below | readers |
 | `when` changed | breaking | readers |
-| `max_bytes` higher, or taken off | change of behavior | readers |
+| `max_bytes` higher, or taken off | breaking, because a reader that takes less refuses one and that could not be told | readers |
 | `max_bytes` lower | compatible | readers |
-| `working` changed | change of behavior | readers |
+| `working` changed | breaking: what a reader gets back changed | readers |
 | Anything else about it changed | breaking, because it could not be told | readers |
 
 An output whose kind changed, for each reader, by the platform's rule for whether a line fits (`scripts/kinds.mjs`, from ports.ts):
@@ -75,9 +77,11 @@ An output whose kind changed, for each reader, by the platform's rule for whethe
 | The price changed any other way | breaking | every dependent that orders it |
 | `job_seconds` lower, or added | breaking | every dependent that orders it |
 | `job_seconds` higher, or taken off | compatible | every dependent that orders it |
-| A ceiling added or lowered | breaking | every dependent that orders it |
-| A ceiling raised or taken off | compatible | every dependent that orders it |
+| A ceiling added, lowered, or changed in any way other than a higher `suggested` | breaking | every dependent that orders it |
+| A ceiling's `suggested` raised, nothing else changed, or the ceiling taken off | compatible | every dependent that orders it |
 | A setting changed, the model's above all | change of behavior | every dependent |
 | What it is installed or started with changed (runtimes, binaries, dependencies, the run command) | change of behavior | every dependent |
+| The systems it is bound to, or the directories it keeps things in, changed | breaking: how it handles data changed | every dependent that orders it |
+| Any other member, or the format, changed | breaking, because it could not be told | every dependent that orders it |
 
 An agent given as one that may take what this one hands back orders nothing, so it is reached only by the outputs it reads and by a change of behavior.

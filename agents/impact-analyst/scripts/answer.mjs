@@ -61,6 +61,7 @@ function findPort(ports, id) {
 
 /** What a solution's canvas says the solution uses of the agent `key`. */
 export function useFromCanvas(solution, key) {
+  if (!trim(key)) return null;
   const nodes = list(solution?.nodes);
   const byId = new Map(nodes.map((n) => [trim(n?.id), n]));
   const mine = new Set(nodes.filter((n) => trim(n?.agent) === key).map((n) => trim(n.id)));
@@ -216,6 +217,10 @@ export function answerOne(diffs, use) {
       const sends = sendsKnown ? use.sends.has(`${x.offering}.in.${x.port}`) : null;
       if (x.change === "input-added-required") { effects.push({ effect: "breaking", words: x.words }); continue; }
       if (x.change === "input-now-required" && sends === true) { effects.push({ effect: "compatible", words: `${x.words.replace(/, so .*$/, "")}; this dependent already sends it.` }); continue; }
+      // A box on a canvas is sent only what its lines carry, so an input that
+      // is now required, or a group that now asks for something else, reaches
+      // a dependent that does not send it.
+      if ((x.change === "input-now-required" || x.change === "input-group-changed") && sends === false) { effects.push({ effect: "breaking", words: `${x.words} This dependent's canvas does not send it.` }); continue; }
       if (sends === false && x.effect !== "compatible") continue;
       effects.push({ effect: x.effect, words: sends === null && x.effect === "breaking" ? `${x.words} What this dependent sends is not known, so it is answered as if it sends it.` : x.words });
       continue;

@@ -142,14 +142,14 @@ export function writeReport({ subject, before, after, dependents, diffs, answere
     L.push("");
     L.push("| Agent | Reads into | Takes | Answer | Where |");
     L.push("|---|---|---|---|---|");
-    for (const r of [...readers.values()].sort((x, y) => x.label.localeCompare(y.label))) {
+    for (const r of [...readers.values()].sort((x, y) => (x.label < y.label ? -1 : x.label > y.label ? 1 : 0))) {
       const ports = [...new Set(r.seen.map((s) => s.port))].join(", ");
       const kinds = [...new Set(r.seen.map((s) => s.kind ?? "not stated"))].join(", ");
       const where = [...new Set(r.seen.map((s) => s.where))];
       L.push(`| ${r.label} | ${ports} | ${kinds} | ${VERDICT_WORDS[r.verdict]} | ${where.length > 3 ? `${where.slice(0, 3).join("; ")} and ${where.length - 3} more` : where.join("; ")} |`);
     }
     L.push("");
-    for (const r of [...readers.values()].sort((x, y) => x.label.localeCompare(y.label))) {
+    for (const r of [...readers.values()].sort((x, y) => (x.label < y.label ? -1 : x.label > y.label ? 1 : 0))) {
       const w = [...new Set(r.seen.filter((s) => s.effect === r.verdict).map((s) => s.words))];
       L.push(`- ${r.label}: ${w.join(" ")}`);
     }

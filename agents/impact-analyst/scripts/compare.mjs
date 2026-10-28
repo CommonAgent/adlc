@@ -106,10 +106,10 @@ function outputDiffs(off, name, a, b) {
   const ma = maxOf(a);
   const mb = maxOf(b);
   if (ma !== mb) {
-    if (ma !== null && (mb === null || mb > ma)) out.push(d("output", "output-limit-wider", "behaviour", `The output ${name} of ${off} may now be larger (${ma} bytes before, ${mb ?? "no limit"} after), so a reader with a smaller limit may refuse one.`, at));
+    if (ma !== null && (mb === null || mb > ma)) out.push(d("output", "output-limit-wider", "breaking", `The output ${name} of ${off} may now be larger (${ma} bytes before, ${mb ?? "no limit"} after), so a reader that takes less refuses one; whether a reader's limit is that small could not be told.`, at));
     else out.push(d("output", "output-limit-narrower", "compatible", `The output ${name} of ${off} is now at most ${mb} bytes${ma ? ` (it was ${ma})` : ""}.`, at));
   }
-  if ((a.working === true) !== (b.working === true)) out.push(d("output", "output-working-changed", "behaviour", `The output ${name} of ${off} ${b.working === true ? "is now marked the agent's working, not the deliverable" : "is now the deliverable, not the agent's working"}.`, at));
+  if ((a.working === true) !== (b.working === true)) out.push(d("output", "output-working-changed", "breaking", `The output ${name} of ${off} ${b.working === true ? "is now marked the agent's working, not the deliverable" : "is now the deliverable, not the agent's working"}, which changes what a reader gets back.`, at));
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !RULED.has(k) && !WORDS_ONLY.has(k) && !same(a[k], b[k]));
   if (other.length) out.push(d("output", "output-other", "breaking", `The output ${name} of ${off} changed its ${other.sort().join(", ")}, which these rules do not name, so it could not be told whether a reader would notice; it is answered breaking.`, at));
   return out;
@@ -117,6 +117,10 @@ function outputDiffs(off, name, a, b) {
 
 function howDiffs(off, a, b, where) {
   const out = [];
+  if ((a != null && !isObject(a)) || (b != null && !isObject(b))) {
+    if (!same(a ?? null, b ?? null)) out.push(d("offering", "how-unreadable", "breaking", `${where} states how it is done in a form these rules do not read, and it changed, so it could not be told whether a dependent would notice.`, { offering: off }));
+    return out;
+  }
   const ha = isObject(a) ? a : {};
   const hb = isObject(b) ? b : {};
   if (same(ha, hb)) return out;
@@ -259,8 +263,15 @@ export function compareRuntimes(before, after) {
     const o = cab.get(k);
     const [sys, per] = k.split("|");
     if (!o) out.push(d("runtime", "ceiling-added", "breaking", `There is a new ceiling on ${sys} per ${per || "job"}, so work it did before may now be stopped.`));
-    else if (typeof c.suggested === "number" && typeof o.suggested === "number" && c.suggested < o.suggested) out.push(d("runtime", "ceiling-lower", "breaking", `The ceiling on ${sys} per ${per || "job"} is lower (${o.suggested} before, ${c.suggested} after).`));
-    else if (!same(o, c)) out.push(d("runtime", "ceiling-wider", "compatible", `The ceiling on ${sys} per ${per || "job"} changed and is no lower.`));
+    else if (same(o, c)) continue;
+    else {
+      const { suggested: os, ...orest } = o;
+      const { suggested: cs, ...crest } = c;
+      const num = typeof os === "number" && typeof cs === "number";
+      if (same(orest, crest) && num && cs > os) out.push(d("runtime", "ceiling-wider", "compatible", `The ceiling on ${sys} per ${per || "job"} is higher (${os} before, ${cs} after).`));
+      else if (same(orest, crest) && num && cs < os) out.push(d("runtime", "ceiling-lower", "breaking", `The ceiling on ${sys} per ${per || "job"} is lower (${os} before, ${cs} after).`));
+      else out.push(d("runtime", "ceiling-changed", "breaking", `The ceiling on ${sys} per ${per || "job"} changed in a way these rules do not read as higher, so it could not be told whether work it did before is now stopped.`));
+    }
   }
   for (const [k] of cab) if (!cbb.has(k)) out.push(d("runtime", "ceiling-removed", "compatible", `The ceiling on ${k.split("|")[0]} was taken off.`));
   const settings = (rt) => list(rt.systems).flatMap((s) => list(s?.settings).map((x) => `${trim(s?.name ?? s?.role)}:${trim(x?.env)}:${trim(x?.purpose)}`)).sort();
@@ -273,6 +284,13 @@ export function compareRuntimes(before, after) {
   for (const k of ["runtimes", "binaries", "dependencies", "run", "wants_replies"]) {
     if (!same(before[k] ?? null, after[k] ?? null)) out.push(d("runtime", `${k}-changed`, "behaviour", `What it is installed or started with (${k}) changed, so it may act differently under the same declaration.`));
   }
+  const bound = (rt) => list(rt.systems).map((s) => JSON.stringify(canonical({ name: trim(s?.name ?? s?.role), kind: trim(s?.kind), credential: trim(s?.credential), env: trim(s?.env), spends: s?.spends ?? null }))).sort();
+  if (!same(bound(before), bound(after))) out.push(d("runtime", "bound-systems-changed", "breaking", "The systems it is bound to when installed changed, which is a change to how it handles data."));
+  if (!same(before.directories ?? null, after.directories ?? null)) out.push(d("runtime", "directories-changed", "breaking", "Where it keeps what it keeps changed, which is a change to how it handles data."));
+  const known = new Set(["format", "runtimes", "binaries", "dependencies", "systems", "ceilings", "directories", "job_seconds", "price", "run", "wants_replies"]);
+  const other = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((k) => !known.has(k) && !same(before[k] ?? null, after[k] ?? null));
+  if (other.length) out.push(d("runtime", "runtime-other-changed", "breaking", `The runtime requirements' ${other.sort().join(", ")} changed, which these rules do not name, so it could not be told whether a dependent would notice; it is answered breaking.`));
+  if (trim(before.format) !== trim(after.format)) out.push(d("runtime", "runtime-format-changed", "breaking", `The runtime requirements' format was ${trim(before.format) || "unstated"} and is now ${trim(after.format) || "unstated"}.`));
   return out;
 }
 

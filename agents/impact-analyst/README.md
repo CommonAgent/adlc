@@ -73,7 +73,7 @@ was filed, and its numbers, are in the reply and in `records/<job>/filed.json`.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 37 tests, and one skipped that reads kept examples
+node --test test/*.test.mjs                                   # 43 tests, and one skipped that reads kept examples
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

@@ -61,6 +61,7 @@ export function whatIsMissing(got) {
   if (got.descriptors.length > 2) parts.push(`${got.descriptors.length} agent declarations came (${got.descriptors.map((f) => f.name).join(", ")}), and I compare exactly two: the one that runs today and the one after the change`);
   if (!got.dependents.length) parts.push("no list of what depends on the agent came, so I could not name a single dependent");
   if (got.dependents.length > 1) parts.push(`${got.dependents.length} dependents lists came, and I read one`);
+  if (got.dependents.length && !String(got.dependents[0].doc?.subject?.id ?? "").trim()) parts.push("the list of what depends on the agent does not say which agent it is about (its subject has no id), so no canvas could be read against it");
   return parts.length ? `I cannot report on this change yet: ${parts.join("; ")}. ${HOW_TO_ASK}` : "";
 }
 

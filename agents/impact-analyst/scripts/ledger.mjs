@@ -28,6 +28,9 @@ import { VERDICT_WORDS } from "./answer.mjs";
 const trim = (s) => String(s ?? "").trim();
 export const BLOCKS = ["promote", "decommission"];
 export const FILED_BY = "impact-analyst";
+/** The ledger answers at most 500 items a page; this reads up to 20 pages. */
+const PAGE = 500;
+const PAGES = 20;
 
 /** The digest of a declaration, read the same whatever order its keys are in. */
 export function digestOf(doc) {
@@ -51,7 +54,20 @@ export function owedTo(a) {
 /** The items owed, one per dependent answered breaking or change of behavior. Pure. */
 export function owedItems({ answered, subject, before, after }) {
   const cause = causeOf({ subject, before, after });
-  return answered.filter((a) => a.verdict !== "compatible").map((a) => ({
+  const owing = answered.filter((a) => a.verdict !== "compatible");
+  // Two dependents the list cannot tell apart (another organization's two
+  // solutions of one name, shown without their ids) are still two debts:
+  // each one's mark carries its place among them.
+  const total = new Map();
+  for (const a of owing) total.set(markOf(a), (total.get(markOf(a)) ?? 0) + 1);
+  const seen = new Map();
+  const markFor = (a) => {
+    const m = markOf(a);
+    if (total.get(m) === 1) return m;
+    seen.set(m, (seen.get(m) ?? 0) + 1);
+    return `${m} (${seen.get(m)} of ${total.get(m)})`;
+  };
+  return owing.map((a) => ({
     kind: "dependency",
     against: subject,
     owed_to: owedTo(a),
@@ -61,7 +77,7 @@ export function owedItems({ answered, subject, before, after }) {
       `**${subject} ${trim(before?.agent_version)} -> ${trim(after?.agent_version)}: ${a.display ?? a.name ?? a.id ?? "a dependent"} (${a.kind}) is answered ${VERDICT_WORDS[a.verdict]}.**`,
       a.reasons.join(" "),
       `Owed to ${a.owner_words}. Closed when the dependent is shown to work with the new version (its own check passing on it), is changed to fit it, or its owner accepts the change in writing.`,
-      markOf(a),
+      markFor(a),
     ].join("\n\n"),
     dependent: { kind: a.kind, id: a.id, name: a.name, display: a.display ?? a.name ?? a.id },
   }));
@@ -98,15 +114,21 @@ export async function fileOwed(items, { base, token, fetchImpl = globalThis.fetc
       return { ok: res.ok, status: res.status, json, text };
     } finally { clearTimeout(t); }
   };
-  let existing = [];
+  const existing = [];
   try {
     const against = encodeURIComponent(items[0].against);
-    const r = await call("GET", `/operator/debt?against=${against}&kind=dependency&state=all&limit=500`);
-    if (!r.ok) {
-      const why = `the ledger would not list what is already filed (${r.status}${r.json?.error ? `: ${trim(r.json.error).slice(0, 200)}` : ""}), so nothing was filed, rather than risk filing it twice`;
-      return items.map(() => ({ state: "not filed", why }));
+    // Every page, so an item past the first page is still found.
+    for (let offset = 0; offset < PAGES * PAGE; offset += PAGE) {
+      const r = await call("GET", `/operator/debt?against=${against}&kind=dependency&state=all&limit=${PAGE}&offset=${offset}`);
+      if (!r.ok) {
+        const why = `the ledger would not list what is already filed (${r.status}${r.json?.error ? `: ${trim(r.json.error).slice(0, 200)}` : ""}), so nothing was filed, rather than risk filing it twice`;
+        return items.map(() => ({ state: "not filed", why }));
+      }
+      const page = Array.isArray(r.json?.items) ? r.json.items : [];
+      existing.push(...page);
+      const total = typeof r.json?.total === "number" ? r.json.total : null;
+      if (page.length < PAGE || (total !== null && existing.length >= total)) break;
     }
-    existing = Array.isArray(r.json?.items) ? r.json.items : [];
   } catch (e) {
     const why = `the ledger did not answer (${trim(e?.name === "AbortError" ? "it took too long" : e?.message ?? e)})`;
     return items.map(() => ({ state: "not filed", why }));
@@ -114,11 +136,14 @@ export async function fileOwed(items, { base, token, fetchImpl = globalThis.fetc
   const out = [];
   for (const it of items) {
     const mark = it.what.split("\n").pop();
-    const same = existing.find((x) => trim(x?.caused_by) === it.caused_by && trim(x?.owed_to) === it.owed_to && String(x?.what ?? "").includes(mark));
+    const same = existing.find((x) => trim(x?.caused_by) === it.caused_by && trim(x?.owed_to) === it.owed_to && trim(String(x?.what ?? "").split("\n").pop()) === mark);
     if (same) { out.push({ state: "already filed", number: same.number, ledger_state: same.state }); continue; }
     try {
       const r = await call("POST", "/operator/debt/items", { kind: it.kind, against: it.against, owed_to: it.owed_to, caused_by: it.caused_by, what: it.what, blocks: it.blocks, who });
-      if (r.ok && r.json?.item?.number) out.push({ state: "filed", number: r.json.item.number, ledger_state: r.json.item.state });
+      if (r.ok && r.json?.item?.number) {
+        out.push({ state: "filed", number: r.json.item.number, ledger_state: r.json.item.state });
+        existing.push({ caused_by: it.caused_by, owed_to: it.owed_to, what: it.what, number: r.json.item.number, state: r.json.item.state });
+      }
       else out.push({ state: "not filed", why: `the ledger refused it (${r.status}${r.json?.error ? `: ${trim(r.json.error).slice(0, 200)}` : ""})` });
     } catch (e) {
       out.push({ state: "not filed", why: `the ledger did not answer (${trim(e?.name === "AbortError" ? "it took too long" : e?.message ?? e)})` });
