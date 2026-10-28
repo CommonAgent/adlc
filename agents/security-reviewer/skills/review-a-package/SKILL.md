@@ -1,21 +1,21 @@
 ---
 name: review-a-package
-description: when an Agent Package must be reviewed before it is installed and before any credential is bound to it, to say what it may reach, spend and never do, and why
+description: before an Agent Package is installed and before any credential is bound to it, to say what it may reach, spend and never do, and why; after Review and before Package and Deploy, for any package from any builder. It reads a package, not a running agent
 ---
 
 # Review a package
 
-Part of security-reviewer. When an Agent Package must be reviewed before it is installed and before any credential is bound to it, to say what it may reach, spend and never do, and why.
+Part of security-reviewer. before an Agent Package is installed and before any credential is bound to it, to say what it may reach, spend and never do, and why; after Review and before Package and Deploy, for any package from any builder. It reads a package, not a running agent
 
 ## When to use this
 
-Before a package is installed: after Review (the code critic's findings) and before Package and Deploy. Use it for any package, from any builder. It reads a package, not a running agent; watching a running agent is the watcher's job.
+before an Agent Package is installed and before any credential is bound to it, to say what it may reach, spend and never do, and why; after Review and before Package and Deploy, for any package from any builder. It reads a package, not a running agent
 
 ## What this needs
 
-- the package (application/gzip, required): the .tar.gz the package maker built, or the package's own files one by one
-- the architecture record (text/markdown, optional): the solution architect's record, attached beside the package
-- the owner's spending limit (text, optional): a line `spending limit: <amount> per <day|month|job>` in the message, or the architecture record's limits
+- the package (application/gzip, required)
+- the architecture record (text/markdown, optional)
+- the owner's spending limit (text, optional)
 
 ## What a good result looks like
 
@@ -23,7 +23,7 @@ A security review a person can read in a minute and a program can read whole: a 
 
 ## What it produces
 
-- security review (text/markdown, per task): YAML front matter `review, package, version, digest, verdict, reviewed_at, architecture_record, spending_limit, reaches, spends, never_does, no_reason_recorded, refused_for`, then `## Verdict`, `## Reaches`, `## Spends`, `## Never does`, `## No reason recorded`, `## Programs`, `## Parts`, `## Accepted knowingly`, `## Reasons weighed` and `## Not reviewed`.
+- security review (text/markdown, per task)
 
 ## When it comes back empty
 
@@ -51,3 +51,9 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/write-review.mjs
 - scripts/went-without.mjs
 - scripts/pieces.mjs
+
+## References
+
+- references/rules.md
+- references/what-a-review-holds.md
+- references/what-the-platform-holds-it-to.md
