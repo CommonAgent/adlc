@@ -1326,9 +1326,13 @@ class AModelNamedAnyWay(Harness):
         self.assertIn("skills/list-the-points/SKILL.md names the model 'claude-opus-4'", res["error"])
 
     def test_what_an_agent_folders_own_skill_carries_is_read(self):
-        # The spec-writer's own folder carries scripts that name its default
-        # models; built as a new agent, they are found where they ship.
-        src = os.path.join(HERE, "..", "spec-writer")
+        # An agent folder whose script names a model, built as a new agent:
+        # the name is found where it ships. A copy of the watcher, which
+        # names none, with one line added.
+        src = os.path.join(self.tmp, "watcher")
+        shutil.copytree(os.path.join(HERE, "..", "watcher"), src)
+        with open(os.path.join(src, "scripts", "watch.mjs"), "a", encoding="utf-8", newline="\n") as f:
+            f.write('export const MODEL = "claude-sonnet-5-5";\n')
         os.environ["FORMAT_EXISTING"] = "0"
         try:
             p = subprocess.run([sys.executable, BUILD, src, os.path.join(self.tmp, "out")], capture_output=True, text=True)

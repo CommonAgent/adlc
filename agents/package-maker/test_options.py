@@ -73,6 +73,51 @@ class SettingsDeclaredFully(Harness):
         self.assertEqual((settings[1]["min"], settings[1]["max"], settings[1]["step"]), (1.5, 3.5, 0.5))
         self.assertEqual(settings[0]["label"], "Tone")
 
+    def test_a_range_and_a_multiple_setting_build_and_are_carried_as_written(self):
+        pace = {"name": "pace", "kind": "preference", "label": "Pace", "about": "Words a second.", "default": 2.5,
+                "range": {"min": 1.5, "max": 3.5, "step": 0.5}, "job_may_set": True}
+        topics = {"name": "topics", "kind": "preference", "label": "Topics", "about": "What it covers.",
+                  "default": ["news"], "allowed": ["news", "sport"], "multiple": True,
+                  "value_labels": {"news": "News", "sport": "Sport"}, "job_may_set": True}
+        res, err = self.build(with_inputs(settings=[pace, topics]))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["option_rules"]["findings"], [])
+        self.assertNotIn("older spelling", err)
+        with open(os.path.join(res["path"], "agent-descriptor.json"), encoding="utf-8") as f:
+            settings = json.load(f)["run_config"]["settings"]
+        self.assertEqual(settings[0]["range"], {"min": 1.5, "max": 3.5, "step": 0.5})
+        self.assertNotIn("min", settings[0])
+        self.assertEqual((settings[1]["multiple"], settings[1]["default"]), (True, ["news"]))
+
+    def test_the_older_spelling_of_a_range_is_warned_and_a_range_said_twice_refused(self):
+        res, err = self.build(with_inputs(settings=[PACE]))
+        self.assertTrue(res["ok"], res)
+        self.assertIn("older spelling", err)
+        twice = dict(PACE, range={"min": 1.5})
+        res, _ = self.build(with_inputs(settings=[twice]), out="twice")
+        self.assertFalse(res["ok"], res)
+        self.assertIn("says its range twice", res["error"])
+
+    def test_a_range_that_does_not_hold_its_default_or_a_multiple_default_outside_allowed_is_refused(self):
+        bad = {"name": "pace", "kind": "preference", "label": "Pace", "about": "Words a second.", "default": 5,
+               "range": {"min": 1, "max": 3, "step": 1}, "job_may_set": True}
+        res, _ = self.build(with_inputs(settings=[bad]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("outside its own range", res["error"])
+        many = {"name": "topics", "kind": "preference", "label": "Topics", "about": "What it covers.",
+                "default": ["weather"], "allowed": ["news"], "multiple": True, "value_labels": {"news": "News"},
+                "job_may_set": True}
+        res, _ = self.build(with_inputs(settings=[many]), out="many")
+        self.assertFalse(res["ok"], res)
+        self.assertIn("the default is a list of its allowed values", res["error"])
+
+    def test_a_number_with_no_range_is_not_declared_fully(self):
+        bare = {"name": "pace", "kind": "preference", "label": "Pace", "about": "Words a second.", "default": 2,
+                "job_may_set": True}
+        res, _ = self.build(with_inputs(settings=[bare]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("does not declare range.min, range.max, range.step", res["error"])
+
     def test_a_new_agent_whose_setting_leaves_its_choices_open_is_refused(self):
         bare = {"name": "tone", "kind": "preference", "default": "warm", "job_may_set": True}
         res, _ = self.build(with_inputs(settings=[bare]))
@@ -85,7 +130,7 @@ class SettingsDeclaredFully(Harness):
         res, _ = self.build(with_inputs(settings=[half, number]), env={"FORMAT_EXISTING": "1"})
         found = " ".join(res["option_rules"]["findings"])
         self.assertIn("value_labels for 'plain'", found)
-        self.assertIn("min, max, step", found)
+        self.assertIn("range.min, range.max, range.step", found)
 
     def test_a_value_label_for_a_value_that_is_not_allowed_is_refused(self):
         res, _ = self.build(with_inputs(settings=[dict(FULL, value_labels={"warm": "Warm", "plain": "Plain", "loud": "Loud"})]))
