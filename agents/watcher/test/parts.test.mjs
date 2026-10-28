@@ -89,3 +89,8 @@ test("the pieces it files are declared outputs, by name or as <output> (<file>)"
   const { entries } = plan({ reportPath: "r", recordPath: "w", alarms: [{ agent: "a", file: "watch-platform-a.jsonl", path: "p" }] });
   for (const e of entries) assert.ok(declared.has(e.name.replace(/ \(.*\)$/, "")), e.name);
 });
+
+test("the install file carries no address, account identifier or credential, as the image emitter requires", async () => {
+  const { forbiddenIn } = await import("../../image/emit-image.mjs");
+  assert.deepEqual(forbiddenIn(JSON.stringify(R), "the install file"), []);
+});

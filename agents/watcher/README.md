@@ -101,6 +101,13 @@ clear closes it. An alarm that did not reach the recorder is not kept, so the
 next watch tries again. One watch covers at most 50 agents, the most the
 spend report reads at once.
 
+## What changed in 0.1.1
+
+The install file names no handle. The INCIDENT_RECORDER setting's purpose
+gave the incident recorder's handle as an example, and the deployment manager
+refuses an install file that carries an account identifier, so 0.1.0 was
+never installed. The handle is the setting's value, placed at install.
+
 ## What this folder is
 
 This folder is the agent's source, laid out the way the

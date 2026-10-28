@@ -30,7 +30,7 @@
         },
         {
           "env": "INCIDENT_RECORDER",
-          "purpose": "the incident recorder's handle, such as incident-recorder.platform@agentmesh.ai, which each open alert is raised to. Without it the alarms are handed back with the report and not sent"
+          "purpose": "the incident recorder's handle, which each open alert is raised to. Without it the alarms are handed back with the report and not sent"
         },
         {
           "env": "ANSWER_SECONDS",
