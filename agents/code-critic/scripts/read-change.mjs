@@ -112,6 +112,35 @@ export function parseDiff(text) {
   return files;
 }
 
+// What a credential value looks like on disk: the shapes the publisher
+// refuses to publish. A value is left out of everything this job writes or
+// sends, and where it was is said, because a credential in a package is
+// itself something wrong with the change.
+const CREDENTIAL_VALUES = [
+  /AIza[0-9A-Za-z_-]{35}/g,
+  /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/g,
+  /\bgh[pousr]_[A-Za-z0-9]{36,}/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+];
+const CREDENTIAL_FILE = /(^|\/)(\.env(\..*)?|[^/]*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)[^/]*|credentials[^/]*\.json|service-account[^/]*\.json)$/i;
+export const LEFT_OUT = "[a credential value, left out]";
+
+/** The text with every credential value left out, and the lines they were on. */
+export function redact(text) {
+  let out = String(text ?? "");
+  const lines = new Set();
+  for (const re of CREDENTIAL_VALUES) {
+    out = out.replace(re, (m, ...rest) => {
+      const at = rest[rest.length - 2];
+      lines.add(out.slice(0, at).split("\n").length);
+      return LEFT_OUT;
+    });
+  }
+  return { text: out, lines: [...lines].sort((a, b) => a - b) };
+}
+
 const DECLARATIONS = new Set(["agent-descriptor.json", "agent-runtime-requirements.json", "plugin.json", "descriptor.json", "install.json", "rules.md"]);
 const SCRIPT_EXT = /\.(mjs|cjs|js|ts|mts|py|sh)$/;
 
@@ -155,8 +184,11 @@ export function readChange(given = [], { read = (p) => readFileSync(p), asked = 
 
   let diff = null, earlier = null, account = null;
   const pkg = [];
+  const withheld = [];
   for (const f of loose) {
-    const text = f.bytes.includes(0) ? null : f.bytes.toString("utf8");
+    if (CREDENTIAL_FILE.test(f.path)) { withheld.push(f.path); notes.push(`${f.path} looks like a credential file and was not read`); continue; }
+    let text = f.bytes.includes(0) ? null : f.bytes.toString("utf8");
+    if (text !== null) { const r = redact(text); text = r.text; if (r.lines.length) f.credential_lines = r.lines; }
     if (text !== null && !f.fromArchive && looksLikeDiff(text)) { diff = { name: f.path, text }; continue; }
     if (text !== null && /\.md$/i.test(f.path) && looksLikeReview(text)) { earlier = { name: f.path, text }; continue; }
     if (text !== null && /\.md$/i.test(f.path) && !DECLARATIONS.has(f.path) && !/SKILL\.md$/i.test(f.path)
@@ -195,6 +227,7 @@ export function readChange(given = [], { read = (p) => readFileSync(p), asked = 
   const files = [...laid.values()].sort((a, b) => a.path.localeCompare(b.path)).map((f) => ({
     path: f.path, role: roleOf(f.path), bytes: f.bytes.length, sha256: sha(f.bytes),
     lines: f.text === null ? null : f.text.split("\n").length, text: f.text,
+    ...(f.credential_lines ? { credential_lines: f.credential_lines } : {}),
   }));
 
   // The diff's paths are the repository's; the package's are the folder's.
@@ -219,12 +252,13 @@ export function readChange(given = [], { read = (p) => readFileSync(p), asked = 
     change,
     account: account ? { name: account.name } : null,
     earlier: earlier ? { name: earlier.name } : null,
-    asked: trim(asked).slice(0, 4000),
+    asked: redact(trim(asked).slice(0, 4000)).text,
     notes,
+    withheld,
     texts: Object.fromEntries(files.filter((f) => f.text !== null).map((f) => [f.path, f.text])),
-    account_text: account?.text ?? "",
-    earlier_text: earlier?.text ?? "",
-    diff_text: diff?.text ?? "",
+    account_text: redact(account?.text ?? "").text,
+    earlier_text: redact(earlier?.text ?? "").text,
+    diff_text: redact(diff?.text ?? "").text,
   };
 }
 

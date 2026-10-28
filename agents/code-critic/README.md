@@ -31,7 +31,9 @@ First, with a program and no model, the house architecture rules
   are written, written records are declared, credentials are bound, and
   each step's `how` is what its scripts do.
 
-With a diff, an access a declaration adds is a finding too.
+With a diff, an access a declaration adds is a finding too. A credential
+value carried in the package is a finding, and is left out of the records,
+the model's prompt and the reply.
 
 Then one call to the configured model, with every file line-numbered and
 the house-rule findings already made, for what a program cannot see. Every

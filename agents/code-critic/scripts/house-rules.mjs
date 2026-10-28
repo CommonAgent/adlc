@@ -36,6 +36,7 @@ export const RULES = {
   "undeclared-output": "no undeclared outputs",
   "claims-match-code": "refusals and records match what the code really does",
   "declaration-change": "a package's declarations are part of the change",
+  "credential-in-package": "a credential is named, never carried",
 };
 
 // The families of models agents here have named, with a version or size
@@ -399,6 +400,22 @@ export function declarationChangeFindings(read, texts) {
   return out;
 }
 
+/** Credential values found in the files, and files that look like
+ *  credentials; read-change.mjs left both out of everything it wrote. */
+export function credentialFindings(read) {
+  const out = [];
+  const consequence = "Everyone who receives the package, and every record and log that copies it, holds the credential, and it cannot be rotated without a new version. A package names a credential and the install places it; this review left the value out of its records.";
+  for (const f of read.files ?? []) {
+    for (const n of f.credential_lines ?? []) {
+      out.push(finding("credential-in-package", f.path, n, `${f.path} carries what looks like a credential value on line ${n}.`, consequence));
+    }
+  }
+  for (const p of read.withheld ?? []) {
+    out.push(finding("credential-in-package", p, 1, `${p} looks like a credential file, and it came with the package.`, consequence));
+  }
+  return out;
+}
+
 /** Whether a finding falls inside the change. Without a diff the whole
  *  package is the change. A declaration that changed at all is in it. */
 export function inChange(f, read) {
@@ -418,6 +435,7 @@ export function checkHouseRules(read, texts) {
   const manifest = parse("plugin.json");
   const files = read.files;
   const all = [
+    ...credentialFindings(read),
     ...modelFindings(files, texts),
     ...addressFindings(files, texts),
     ...pieceFindings(files, texts, descriptor),

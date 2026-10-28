@@ -89,6 +89,15 @@ a finding, said more strongly when no script in the change uses it. Whether
 the package may have that access is the security reviewer's call; the
 finding is so the change is not missed.
 
+## A credential is named, never carried (`credential-in-package`)
+
+A value that looks like a credential (the shapes the publisher refuses to
+publish: a Google API key, a private key block, a GitHub or Slack token, an
+access key) is left out of the review's records, the model's prompt and the
+reply, and where it was is a finding. A file that looks like a credential
+(`.env`, a `.pem` or `.key`, a service account's JSON) is not read at all, and
+is a finding too.
+
 ## Everything else (`general`)
 
 Ordinary code quality, held to the same shape: a place, a claim, a

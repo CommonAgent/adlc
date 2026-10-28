@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseDiff, plainName, readChange, roleOf, tarEntries, writeRead } from "../scripts/read-change.mjs";
+import { LEFT_OUT, parseDiff, plainName, readChange, redact, roleOf, tarEntries, writeRead } from "../scripts/read-change.mjs";
 import { badPackage, tarOf } from "./helpers.mjs";
 
 const given = (dir, files) => Object.entries(files).map(([name, body], i) => {
@@ -124,4 +124,27 @@ test("a pax header's long path, and git archive's global header, are read the wa
     "plugin.json": "{}\n",
   }, { gzip: false }));
   assert.deepEqual(entries.map((e) => e.path), [long, "plugin.json"]);
+});
+
+test("a credential in the package is left out of what is written and sent, and is a finding", async () => {
+  const { checkHouseRules } = await import("../scripts/house-rules.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "cc-read-"));
+  try {
+    const key = "AIza" + "B".repeat(35);
+    const pkg = { ...badPackage(), "scripts/think.mjs": `// thinks\nconst K = "${key}";\n`, ".env": `KEY=${key}\n` };
+    const at = join(dir, "bad.tgz");
+    writeFileSync(at, tarOf(pkg));
+    const r = readChange([{ path: at }], { asked: `use ${key} please` });
+    assert.doesNotMatch(JSON.stringify(r), new RegExp(key));
+    assert.equal(r.texts["scripts/think.mjs"].includes(LEFT_OUT), true);
+    assert.deepEqual(r.withheld, [".env"]);
+    const rec = mkdtempSync(join(tmpdir(), "cc-rec-"));
+    writeRead(rec, r);
+    assert.equal(existsSync(join(rec, "package", ".env")), false);
+    const out = checkHouseRules(JSON.parse(readFileSync(join(rec, "read.json"), "utf8")), r.texts);
+    const found = out.findings.filter((f) => f.rule === "credential-in-package").map((f) => `${f.place.file}:${f.place.line}`);
+    assert.deepEqual(found, ["scripts/think.mjs:2", ".env:1"]);
+    rmSync(rec, { recursive: true, force: true });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  assert.deepEqual(redact("a\n-----BEGIN RSA PRIVATE KEY-----\nxyz\n-----END RSA PRIVATE KEY-----\n").lines, [2]);
 });

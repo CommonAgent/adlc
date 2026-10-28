@@ -41,7 +41,7 @@ package maker's format rules for a new agent.
 
 ## Tests
 
-49 tests across the house rules, reading the change, the caller, the review
+50 tests across the house rules, reading the change, the caller, the review
 and its check, the document and its answers, the whole job with the model
 handed in, and the agent's own files.
 

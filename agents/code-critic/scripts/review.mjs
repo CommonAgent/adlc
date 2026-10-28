@@ -78,7 +78,7 @@ The package is ${read.package?.name ?? "unnamed"}${read.package?.version ? ` ${r
 
 <<<FINDING>>>
 place: <path as shown above>:<line>
-rule: <one of model-in-code, hard-coded-address, kind-mismatch, undeclared-output, claims-match-code, declaration-change, or general>
+rule: <one of model-in-code, hard-coded-address, kind-mismatch, undeclared-output, claims-match-code, declaration-change, credential-in-package, or general>
 claim: <one or two sentences: what is wrong, stated so it can be checked>
 consequence: <one or two sentences: what happens because of it, and to whom>
 <<<END>>>
