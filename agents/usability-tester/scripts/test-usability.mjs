@@ -10,7 +10,7 @@
 //                         files; platform.mjs: the agent's Descriptor
 //   check-the-descriptor  descriptor-checks.mjs: what a page can draw from it
 //   run-the-examples      form.mjs, trial.mjs, readable.mjs: each offering a
-//                         person starts, filled from its example and run as
+//                         declares, filled from its example and run as
 //                         the page runs it, and what came back read
 //   ask-for-a-change      trial.mjs: one change, and the new version
 //   write-the-report      report.mjs, pieces.mjs: the usability report
@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSyn
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fromText, readFiles } from "./read-request.mjs";
-import { descriptorChecks, personOfferings } from "./descriptor-checks.mjs";
+import { descriptorChecks, offeringsOf } from "./descriptor-checks.mjs";
 import { fillForm } from "./form.mjs";
 import { platform, fetchPublic } from "./platform.mjs";
 import { askForChange, runOffering } from "./trial.mjs";
@@ -87,10 +87,12 @@ export async function test({ asked, attached, p, signIn, settings, fetchFile, no
   const door = trim(dr.header?.("x-descriptor-digest"));
   const descriptorDigest = door ? (door.startsWith("sha256:") ? door : `sha256:${door}`) : sha(dr.bytes);
   const checks = descriptorChecks(doc);
-  const persons = personOfferings(doc);
-  for (const o of (doc.offerings ?? []).filter((x) => !persons.includes(x))) notChecked.push(`${o.name || o.id} (\`${o.id}\`): it is started by other agents only (started_by), so it was not run as a person runs it.`);
+  // Every offering: one other agents usually start is still one a person can
+  // run by giving its inputs themselves, as pieces of their declared kinds
+  // (Common Agent 6.13.2), so it is run from its example like any other.
+  const persons = offeringsOf(doc);
   const chosen = asked.offering ? persons.filter((o) => o.id === asked.offering) : persons;
-  if (asked.offering && !chosen.length) return { stop: `${asked.handle} has no offering "${asked.offering}" that a person starts; it has ${persons.map((o) => o.id).join(", ") || "none"}.` };
+  if (asked.offering && !chosen.length) return { stop: `${asked.handle} has no offering "${asked.offering}"; it has ${persons.map((o) => o.id).join(", ") || "none"}.` };
   if (asked.offering) for (const o of persons.filter((x) => !chosen.includes(x))) notChecked.push(`${o.name || o.id} (\`${o.id}\`): the request named another offering.`);
 
   const needRuns = chosen.some((o) => o.example || attached.examples[o.id]);
@@ -103,7 +105,7 @@ export async function test({ asked, attached, p, signIn, settings, fetchFile, no
   let packageDigest = null;
   let ranVersion = null;
   for (const o of chosen) {
-    const t = { id: o.id, name: trim(o.name) || o.id, example: null, example_from: null, form: null, run: null, change: null };
+    const t = { id: o.id, name: trim(o.name) || o.id, started_by: Array.isArray(o.started_by) ? o.started_by : null, example: null, example_from: null, form: null, run: null, change: null };
     if (o.example) { t.example = o.example; t.example_from = "the Descriptor's"; }
     else if (attached.examples[o.id]) { t.example = attached.examples[o.id]; t.example_from = "given with the request (the Descriptor declares none)"; }
     if (t.example) {
@@ -149,7 +151,7 @@ export async function test({ asked, attached, p, signIn, settings, fetchFile, no
 export function replyText({ handle, report, trials, account, settings, went, unread = [] }) {
   const L = [];
   L.push(`I tested ${handle} as a person would: ${report.verdict.replace(/_/g, " ")}.`);
-  if (trials.length) L.push(`Offerings a person starts: ${trials.map((t) => `${t.id} (form ${t.answers.form}, delivers ${t.answers.delivers}, readable ${t.answers.readable}, change ${t.answers.change})`).join("; ")}.`);
+  if (trials.length) L.push(`Offerings: ${trials.map((t) => `${t.id} (form ${t.answers.form}, delivers ${t.answers.delivers}, readable ${t.answers.readable}, change ${t.answers.change})`).join("; ")}.`);
   const d = report.findings.filter((f) => f.label === "descriptor").length;
   const a = report.findings.filter((f) => f.label === "agent").length;
   if (report.findings.length) L.push(`${report.findings.length} finding${report.findings.length === 1 ? "" : "s"}: ${d} in the Descriptor (fixed by design), ${a} in the agent (fixed by code).`);

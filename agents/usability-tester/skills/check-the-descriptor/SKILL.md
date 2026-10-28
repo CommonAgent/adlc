@@ -17,7 +17,7 @@ Each of the five checks (summary, example, inputs-to-controls, options-settings,
 
 ## When it comes back empty
 
-An agent no person starts has nothing to check beyond its summary, and the report says so.
+An agent with no offering has nothing to check beyond its summary, and the report says so.
 
 ## How to do it
 

@@ -22,7 +22,7 @@ The message a page sends is built the same way: the one input of words is the me
 | Check | Passes when | A finding means |
 |---|---|---|
 | summary | `summary` is one sentence of at most 200 characters | the page shows `does`, written for programs, first |
-| example | every offering a person starts has an `example` that gives every required input and one of each `one_of` group, with a `good_result` | a person sees an empty form, and nobody outside the builders can run it as a person would |
+| example | every offering has an `example` that gives every required input and one of each `one_of` group, with a `good_result` | a person sees an empty form, and nobody outside the builders can run it as a person would |
 | inputs-to-controls | each input a person gives is words, an address, a name or a file, has an `about`, and is not an option | a person is asked to type structured data, or to guess |
 | options-settings | each setting has a `label` and a `default`, its `allowed` values and their `value_labels` where it has choices, and a `range` for a number | a person types into a box where they should pick |
 | presentation | each output a person meets declares a `presentation` from its list | a page shows structured data as it is |

@@ -48,7 +48,7 @@ test("an agent a person can use is usable, and the runs are the page's own calls
   assert.match(rev.body.text, /shorter/);
   const pieces = JSON.parse(readFileSync(join(f.job, "pieces.json"), "utf8"));
   assert.deepEqual(pieces.map((x) => [x.name, x.path, x.media_type, x.step]), [["usability report", "out/usability-report.md", "text/markdown", "write-the-report"]]);
-  assert.match(report, /## Offerings a person starts/);
+  assert.match(report, /## Offerings\n\n\| Offering \| Started by \|/);
   assert.match(report, /## Not checked/);
   const rec = JSON.parse(readFileSync(join(f.records, "job-1", "test.json"), "utf8"));
   assert.equal(rec.account, "a fresh test account made for this job");
@@ -98,7 +98,7 @@ test("a known-bad agent: the descriptor findings, an example from the request, a
   const checks = new Set(out.findings.filter((x) => x.label === "descriptor").map((x) => x.check));
   for (const c of ["summary", "example", "inputs-to-controls", "options-settings", "presentation", "readable"]) assert.ok(checks.has(c), `${c} in ${[...checks]}`);
   assert.ok(out.findings.filter((x) => x.label === "descriptor").every((x) => x.fixed_by === "design"));
-  assert.match(report, /\| Write facts \| given with the request \(the Descriptor declares none\) \|/);
+  assert.match(report, /\| Write facts \| not said \| given with the request \(the Descriptor declares none\) \|/);
   const tryCall = p.calls.find((c) => c.path === "/v1/accounts/acct1/try");
   assert.equal(tryCall.body.files[0].name, "site-read.json");
   assert.equal(tryCall.body.files[0].media_type, "application/json");
@@ -133,7 +133,7 @@ test("without an agent named, or with one nobody answers to, nothing is tested",
   const c = await run("agent: note-writer.platform@example.com", p, { env: { TEST_ACCOUNT_KEY: "k" } });
   assert.match(c.out.reply, /MESH_API_BASE/);
   const d = await run("agent: note-writer.platform@example.com\noffering: nope", p);
-  assert.match(d.out.reply, /has no offering "nope" that a person starts/);
+  assert.match(d.out.reply, /has no offering "nope"; it has write-a-note/);
 });
 
 test("without an account to run as, the job stops and says so", async () => {
@@ -215,7 +215,7 @@ test("the descriptor's own example is preferred to one given with the request", 
   const p = fakePlatform({ descriptor: goodDescriptor() });
   const { out, report } = await run("agent: note-writer.platform@example.com", p, { files: { "examples.json": { "write-a-note": { inputs: { page: "https://other.example/b.html" }, good_result: "x" } } } });
   assert.equal(out.verdict, "usable");
-  assert.match(report, /\| Write a note \| the Descriptor's \|/);
+  assert.match(report, /\| Write a note \| person and agent \| the Descriptor's \|/);
   assert.match(p.calls.find((c) => c.path === "/v1/accounts/acct1/try").body.text, /example\.com\/a\.html/);
 });
 
@@ -234,4 +234,24 @@ test("an answer in words that asks nothing is where the job stands", async () =>
   const { out } = await run("agent: note-writer.platform@example.com", p);
   assert.equal(out.offerings[0].delivers, "no");
   assert.equal(p.calls.filter((c) => c.path === "/v1/accounts/acct1/try" && c.body.job).length, 0);
+});
+
+test("an offering other agents usually start is run too, its inputs given as files of their kinds; without an example it is a descriptor finding", async () => {
+  const d = goodDescriptor();
+  const o = d.offerings[0];
+  o.started_by = ["agent"];
+  o.inputs = [{ name: "site-read", kind: "application/vnd.x.site-read+json", required: true, given_by: "agent", about: "Another agent's read of a site." }];
+  o.example = { inputs: { "site-read": "{\"pages\":[]}" }, good_result: "A note about the site." };
+  const p = fakePlatform({ descriptor: d });
+  const { out, report } = await run("agent: note-writer.platform@example.com", p);
+  assert.equal(out.offerings[0].delivers, "yes", report);
+  const sent = p.calls.find((c) => c.path === "/v1/accounts/acct1/try" && !c.body.job).body;
+  assert.deepEqual([sent.files[0].name, sent.files[0].media_type], ["site-read.json", "application/vnd.x.site-read+json"]);
+  assert.match(report, /| Write a note | agent |/);
+  delete o.example;
+  const p2 = fakePlatform({ descriptor: d });
+  const none = await run("agent: note-writer.platform@example.com", p2);
+  assert.equal(none.out.verdict, "not_usable");
+  const f = none.out.findings.find((x) => x.check === "example");
+  assert.equal(f.label, "descriptor");
 });

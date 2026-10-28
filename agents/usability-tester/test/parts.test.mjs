@@ -39,7 +39,7 @@ test("a Descriptor a person cannot use fails each check, every finding labelled 
   assert.match(what, /presentation: it declares no presentation \(its kind is application\/json\)/);
 });
 
-test("only offerings a person starts are checked and run; an absent started_by counts as a person's", () => {
+test("personOfferings: an absent started_by counts as a person's", () => {
   const d = goodDescriptor();
   d.offerings.push({ ...d.offerings[0], id: "for-agents", started_by: ["agent"] }, { ...d.offerings[0], id: "unsaid", started_by: undefined });
   assert.deepEqual(personOfferings(d).map((o) => o.id), ["write-a-note", "unsaid"]);
@@ -89,10 +89,14 @@ test("a file in the package comes from what the job was given, and only when its
   assert.match(wrong.problems[0], /hashes to sha256:[0-9a-f]{64}, not the sha256:/);
 });
 
-test("an input only agents give is not asked of the example, and a page has no field for it", async () => {
+test("a person who gives the inputs themselves gives every required one, those agents usually hand over included", async () => {
   const o = { id: "x", name: "X", inputs: [{ name: "page", kind: "url", required: true, given_by: "person" }, { name: "plan", kind: "application/vnd.x.plan+json", required: true, given_by: "agent" }] };
   const f = await fillForm(o, { inputs: { page: "https://e.com/a" }, good_result: "x" }, {});
-  assert.equal(f.ok, true, f.problems.join("; "));
+  assert.equal(f.ok, false);
+  assert.match(f.problems[0], /required input "plan"/);
+  const g = await fillForm(o, { inputs: { page: "https://e.com/a", plan: "{}" }, good_result: "x" }, {});
+  assert.equal(g.ok, true, g.problems.join("; "));
+  assert.deepEqual([g.message.files[0].name, g.message.files[0].media_type], ["plan.json", "application/vnd.x.plan+json"]);
 });
 
 test("which files an input takes", () => {

@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.0",
+  "agent_version": "0.2.0",
   "name": "Usability tester",
   "summary": "Runs an agent the way a person would, from the examples it declares, and reports whether a person can fill its form, get a result, read it and get a change.",
   "will_not": [
@@ -9,12 +9,12 @@
     "It will not invent inputs: an offering with no example is reported, not guessed at.",
     "It will not judge whether the words are good; that is a person's judgment, which you can add to the report."
   ],
-  "does": "Tests whether a person can use an agent, without a page: it reads the agent's Descriptor the way a page does, checks that each input a person gives maps to a control, that options are settings with choices and defaults, that outputs say how a person views them, that the agent has a summary and that every offering a person starts declares an example. It then runs each example through the same calls the platform's agent page makes, as a signed-in account, checks that a real result arrives in its declared form and can be read, asks for one change and checks that a new version comes back. It hands back a Markdown usability report with a header an auditor reads, each finding labelled descriptor or agent with the stage that fixes it, and room for a person's judgment. It calls no model. It holds the usability tester role for the Usability stage of the Prove phase of the Agent Development Lifecycle.",
+  "does": "Tests whether a person can use an agent, without a page: it reads the agent's Descriptor the way a page does, checks that each input a person gives maps to a control, that options are settings with choices and defaults, that outputs say how a person views them, that the agent has a summary and that every offering declares an example. It then runs each example through the same calls the platform's agent page makes, as a signed-in account, checks that a real result arrives in its declared form and can be read, asks for one change and checks that a new version comes back. It hands back a Markdown usability report with a header an auditor reads, each finding labelled descriptor or agent with the stage that fixes it, and room for a person's judgment. It calls no model. It holds the usability tester role for the Usability stage of the Prove phase of the Agent Development Lifecycle.",
   "offerings": [
     {
       "id": "test-usability",
       "name": "Test an agent's usability",
-      "does": "Reads the named agent's Descriptor, runs each offering a person starts from its example as the platform's agent page would, asks for one change, and hands back the usability report: for each offering whether its form can be filled, whether it delivers in its declared form, whether the result can be read and whether a change returns a new version, with every finding labelled descriptor or agent.",
+      "does": "Reads the named agent's Descriptor, runs each offering from its example as the platform's agent page would, asks for one change, and hands back the usability report: for each offering whether its form can be filled, whether it delivers in its declared form, whether the result can be read and whether a change returns a new version, with every finding labelled descriptor or agent.",
       "inputs": [
         {
           "name": "agent",
@@ -58,7 +58,7 @@
           "kind": "text/markdown",
           "when": "per_task",
           "presentation": "document",
-          "about": "The usability report: a YAML header (usability_report, agent, version, package_digest, descriptor_digest, verdict, tested_at, tested_by, the counts of offerings and findings, person_judgment), then for each offering a person starts whether its form could be filled from the Descriptor, whether a real run delivered in its declared form, whether the result can be read and whether a change came back as a new version; the descriptor checks; each finding labelled descriptor or agent with the stage that fixes it; a person's judgment where one was added; and what was not checked. The verdict is usable, usable_with_findings or not_usable."
+          "about": "The usability report: a YAML header (usability_report, agent, version, package_digest, descriptor_digest, verdict, tested_at, tested_by, the counts of offerings and findings, person_judgment), then for each offering (one other agents usually start included, run with its inputs given as files) whether its form could be filled from the Descriptor, whether a real run delivered in its declared form, whether the result can be read and whether a change came back as a new version; the descriptor checks; each finding labelled descriptor or agent with the stage that fixes it; a person's judgment where one was added; and what was not checked. The verdict is usable, usable_with_findings or not_usable."
         }
       ],
       "how": {
@@ -82,7 +82,7 @@
         {
           "id": "check-the-descriptor",
           "name": "Check the Descriptor",
-          "does": "Checks what a page can draw for a person from the Descriptor alone: the summary, an example for every offering a person starts, a control for every input a person gives, options as settings with choices and defaults, and a presentation for every output.",
+          "does": "Checks what a page can draw for a person from the Descriptor alone: the summary, an example for every offering, a control for every input a person gives, options as settings with choices and defaults, and a presentation for every output.",
           "how": {
             "control": "script",
             "intelligence": "none",
@@ -144,7 +144,7 @@
         "inputs": {
           "agent": "quiz-maker.platform@agentmesh.ai"
         },
-        "good_result": "A usability report for Quiz maker with a verdict, saying for each offering a person starts whether its form could be filled, its run delivered, its result could be read and a change came back."
+        "good_result": "A usability report for Quiz maker with a verdict, saying for each offering whether its form could be filled, its run delivered, its result could be read and a change came back."
       }
     }
   ],

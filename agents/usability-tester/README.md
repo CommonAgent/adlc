@@ -41,7 +41,7 @@ Two settings shape a run: `wait_minutes` (2 to 30, 15 by default) and
 1. **Reads the Descriptor** from the platform (`GET /a/<handle>`, then
    `GET /v1/agents/<key>/descriptor`).
 2. **Checks it** for what a page draws for a person: a `summary`, an
-   `example` for every offering a person starts (Common Agent 6.13.8,
+   `example` for every offering (Common Agent 6.13.8,
    proposed), a control for every input a person gives, options as settings
    with choices and defaults, and a `presentation` for every output.
 3. **Runs each example** as a signed-in account: a fresh test account made for
@@ -64,7 +64,7 @@ usability_report: v1
 agent, version, package_digest, descriptor_digest
 verdict: usable | usable_with_findings | not_usable
 tested_at, tested_by
-offerings_a_person_starts, offerings_run, findings, descriptor_findings, agent_findings
+offerings, offerings_run, findings, descriptor_findings, agent_findings
 person_judgment: none | added
 ```
 
@@ -73,7 +73,7 @@ names. The report comes back under the tester's signed job manifest, which
 lists its digest, so the Agent Auditor can read it as the Usability stage's
 record (check `usability-report`, level `info` in the default checklist).
 
-The body gives, for each offering a person starts, four answers: whether the
+The body gives, for each offering, four answers: whether the
 form can be filled from the Descriptor, whether a real run delivers in its
 declared form, whether the result can be read, and whether a change returns a
 new version. Each finding is labelled `descriptor` (fixed by design) or
