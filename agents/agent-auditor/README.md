@@ -10,12 +10,14 @@ refuses a prod deploy, and the Catalog refuses a listing, without a current
 pass for that exact package digest.
 
 - **Stage records.** For each lifecycle stage it finds the record and checks
-  that it is present, signed by the stage's holder and bound to the package
+  that it is present, signed by whoever made it and bound to the package
   digest.
 - **Rule checks.** It runs every checklist entry through its registered test.
   A check with no registered test is reported as not checked.
 - **Findings.** It files each finding as a debt in the platform's ledger, and
   each debt names the stage that fixes it.
+- **Info checks.** A check at `level: info` is shown in the report as evidence
+  on file. It never counts toward the verdict and is never filed as a debt.
 
 It calls no model, changes nothing it audits and approves nothing.
 
@@ -99,7 +101,7 @@ the signing key, the report is unsigned and is not filed.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                  # 25 tests
+node --test test/*.test.mjs                  # 26 tests
 python3 ../package-maker/build.py . ./out    # an Agent Package
 ```
 

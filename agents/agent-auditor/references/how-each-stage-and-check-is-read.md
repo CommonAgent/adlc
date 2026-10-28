@@ -1,7 +1,7 @@
 # How each stage record and each check is read
 
 The rules are in `rules.md`. This file says where each record is found, what
-counts as signed by its holder and bound to the package digest, and what each
+counts as signed and bound to the package digest, and what each
 registered test runs.
 
 ## Which package is audited
@@ -19,24 +19,25 @@ not filed, because the platform keeps reports by package digest.
 ## Stage records
 
 Holders are `references/stage-holders.json`, resolved to keys through each
-handle's storefront (`GET /a/<handle>`) on dev and prod. Signed by its holder
-means a signature verifies, by the family's rule (Ed25519 over the record's
+handle's storefront (`GET /a/<handle>`) on dev and prod. They name who
+usually signs; they are not required. Signed means a signature verifies, by
+whoever made the record, by the family's rule (Ed25519 over the record's
 tag, a newline, and the canonical JSON without `signatures`), under one of
 those keys.
 
 | Stage | Record | Found in | Bound when |
 |---|---|---|---|
-| Requirements, Architecture, Design, Impact, Test, Review, Security review | the signed delivery manifest (`job-manifest-v1`) the stage's holder left | attached to the audit | the manifest names the package digest, or the package's signed build record names the manifest, or one of its pieces is a file in the package |
+| Requirements, Architecture, Design, Impact, Test, Review, Security review | a signed delivery manifest (`job-manifest-v1`): one the stage's usual holder signed, or one the message names for the stage (`<stage>: <file name>`) | attached to the audit | the manifest names the package digest, or the package's signed build record names the manifest, or one of its pieces is a file in the package |
 | Code | the code writer's delivery manifests | attached | every script in the package is a piece of a verified manifest signed by a code writer, by its bytes (the package maker's `provenance.mjs` rule) |
-| Release | `agent-build-record-v1`, signed by the package maker | the deploy queue (`GET /v1/operator/audit/stage-records`) or attached | its `package.sha256` is the digest |
+| Release | `agent-build-record-v1`, signed (usually by the package maker) | the deploy queue (`GET /v1/operator/audit/stage-records`) or attached | its `package.sha256` is the digest |
 | Deploy | the registry's stored Descriptor, signed by the agent's own key (`descriptor-statement-v1`), and its registration | `GET /v1/agents/<key>/descriptor` | the deployment record for this package names its digest; failing that, it states the audited version |
-| Deploy | `agent-deployment-record-v1` (act deploy, update or alongside), signed by the deployment manager | the deploy queue or attached | its `package.sha256` is the digest |
-| Conformance | `agent-eval-record-v1`, signed by the conformance checker | `GET /v1/agents/<key>/eval-record` or attached | it names the package digest, or the image the deployment record started |
+| Deploy | `agent-deployment-record-v1` (act deploy, update or alongside), signed (usually by the deployment manager) | the deploy queue or attached | its `package.sha256` is the digest |
+| Conformance | `agent-eval-record-v1`, signed (usually by the conformance checker) | `GET /v1/agents/<key>/eval-record` or attached | it names the package digest, or the image the deployment record started |
 | Docs | the AgentDoc | `GET /a/<handle>/agentdoc.json` | the Descriptor it was read from states the audited version |
 
-A record bound to another digest is **stale**. A record whose signature does
-not verify, or verifies under a key that is not its holder's, is
-**unsigned**. A records-folder note (`records/build-<version>.md`) is a
+A record bound to another digest is **stale**. A record with no signature, or one whose
+signature does not verify, is **unsigned**. A record that verifies under any
+key counts as signed. A records-folder note (`records/build-<version>.md`) is a
 person's account and carries no signature; it is never a stage's record.
 
 ## Registered checks
@@ -55,6 +56,6 @@ person's account and carries no signature; it is never a stage's record.
 | `can-use-declared` | the package maker's `standing_rules` when its build.py runs here; otherwise, the same three rules over the Descriptor: each `can_use` schema on `standards/standing-asset-schemas.json`, each with `without`, and person-facing output with a `can_use` |
 | `standing-assets-cited` | an agent with no `can_use` passes; otherwise the attached run records must cite `{schema, version_digest, layer}` for each declared kind |
 | `versions-dev-prod` | dev serves the audited version; prod, where it serves the agent, runs no newer version |
-| `stage-record:<stage>` | the stage's line above: present, signed by its holder and bound (for `docs`, present and naming the version) |
+| `stage-record:<stage>` | the stage's line above: present, signed and bound (for `docs`, present and naming the version). At `level: info` the result is shown as on file or not on file, and never counted |
 
 Any other `check` name is reported as not checked.

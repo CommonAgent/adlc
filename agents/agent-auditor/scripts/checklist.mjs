@@ -95,7 +95,8 @@ export function appliesDates(applies) {
 }
 
 /**
- * The level a finding has for this agent, by the check's `applies`.
+ * The level a finding has for this agent, by the check's `applies`. An
+ * `info` check stays info whatever the dates.
  * A new agent is one first released on or after the first date; its
  * findings have the check's level. An existing agent's findings are warnings
  * until the second date, and then have the check's level. A check that does
@@ -105,6 +106,10 @@ export function appliesDates(applies) {
  *   (read as existing, the reading that never refuses on a date nobody saw).
  */
 export function levelFor(check, { firstReleased = null, now = new Date() } = {}) {
+  // An info check is shown in the report and never counts: it is evidence on
+  // file, not a requirement, unless an organization raises it in its own
+  // checklist.
+  if (check.level === "info") return { level: "info", why: "an info check: shown as evidence, not counted toward the verdict and never filed" };
   if (check.level !== "refuse") return { level: "warn", why: "" };
   const { newFrom, existingFrom } = appliesDates(check.applies);
   const day = (iso) => String(iso).slice(0, 10);

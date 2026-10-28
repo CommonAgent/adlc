@@ -84,6 +84,8 @@ export async function audit({ asked, attached, checklist, dev, prod, files = new
     const lv = levelFor(entry, { firstReleased: facts.firstReleased, now });
     const row = { ...entry, ...r, level_applied: lv.level };
     results.push(row);
+    // Info checks are shown in the report and never counted or filed.
+    if (lv.level === "info") continue;
     if (r.result === "fail") findings.push({ ...entry, evidence: r.evidence, place: r.place, level: lv.level, level_why: lv.why });
     if (r.result === "not checked") notChecked.push({ id: entry.id, check: entry.check, why: r.why });
   }

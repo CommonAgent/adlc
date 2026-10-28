@@ -1,12 +1,13 @@
-// One line per lifecycle stage: is the stage's record present, signed by the
-// stage's holder, and bound to the audited package digest?
+// One line per lifecycle stage: is the stage's record present, signed, and
+// bound to the audited package digest?
 //
 // The stages and their assets are the lifecycle's (https://agenticdevelopment.ai/assets.html).
 // Where each record is found:
 //   requirements, architecture, design, impact, test, code, review, security
-//       the signed delivery manifest (job-manifest-v1) the stage's holder left
-//       when it delivered, attached to the audit. The platform keeps no store
-//       of these by package, so a record not attached is missing.
+//       a signed delivery manifest (job-manifest-v1), attached to the audit:
+//       one the stage's usual holder signed, or one the message names for the
+//       stage (`<stage>: <file name>`), whoever signed it. The platform keeps
+//       no store of these by package, so a record not attached is missing.
 //   build-record        the deploy queue (the request that filed the package)
 //                       or attached: agent-build-record-v1
 //   descriptor          the registry's stored Descriptor, signed by the agent's
@@ -17,9 +18,11 @@
 //
 // Bound means the record names this package's digest, or holds bytes that are
 // in this package, or is named by this package's signed build record. A record
-// bound to another digest is stale. Signed by its holder means the signature
-// verifies and the key is one of the stage holder's keys
-// (references/stage-holders.json, resolved on the platform).
+// bound to another digest is stale. Signed means a signature verifies, by
+// whoever made the record: no check requires a particular holder's key
+// (lifecycle plan TERMS, 2026-10-28). Where the signer is the stage's usual
+// holder (references/stage-holders.json, resolved on the platform), the line
+// says so.
 //
 //   needs: node >= 22
 //   import { stageLines, STAGE_ORDER } from "./stages.mjs"
@@ -66,8 +69,7 @@ function signedWords(s, facts, stage) {
   if (!s.signatures) return "carries no signature";
   if (!s.verifies) return "its signature does not verify";
   if (s.holder) return `signed by ${holderWords(facts, stage)} (${s.by})`;
-  if (!s.holdersKnown) return `signed by ${s.by}, and no key for ${holderWords(facts, stage)} could be read to compare`;
-  return `signed by ${s.by}, which is not ${holderWords(facts, stage)}`;
+  return `signed by ${s.by}, whose signature verifies (it is not ${holderWords(facts, stage)}, and any signer counts)`;
 }
 
 function stateOf({ present, signed, bound }) {
@@ -98,8 +100,8 @@ function buildRecordLine(facts) {
       ? { present: true, signed: false, bound: false, state: "stale", evidence: `no build record names ${short(facts.target.digest)}; the ones on record name ${other.join(", ")}` }
       : { present: false, signed: false, bound: false, state: "missing", evidence: `no build record names ${short(facts.target.digest)}, in the deploy queue${facts.queue.read ? "" : " (not read)"} or attached` });
   }
-  const best = mine.map((x) => ({ ...x, s: signedBy(facts, x.doc, "agent-build-record-v1", "build-record") })).sort((a, b) => Number(b.s.holder) - Number(a.s.holder) || Number(b.s.verifies) - Number(a.s.verifies))[0];
-  const signed = best.s.holder;
+  const best = mine.map((x) => ({ ...x, s: signedBy(facts, x.doc, "agent-build-record-v1", "build-record") })).sort((a, b) => Number(b.s.verifies) - Number(a.s.verifies) || Number(b.s.holder) - Number(a.s.holder))[0];
+  const signed = best.s.verifies;
   const parts = { present: true, signed, bound: true, source: best.source, by: best.s.by, record_digest: sha256(Buffer.from(canonical(best.doc), "utf8")) };
   const fr = best.doc?.format_rules;
   const sr = best.doc?.standing_rules;
@@ -120,8 +122,8 @@ function deploymentRecordLine(facts) {
       ? { present: true, signed: false, bound: false, state: "stale", evidence: `no deployment record names ${short(facts.target.digest)}; the ones on record name ${other.join(", ")}` }
       : { present: false, signed: false, bound: false, state: "missing", evidence: `no deployment record ${want ? `names ${short(facts.target.digest)}` : "can name a package nobody has a digest for"}, in the deploy queue${facts.queue.read ? "" : " (not read)"} or attached` });
   }
-  const best = mine.map((x) => ({ ...x, s: signedBy(facts, x.doc, "agent-deployment-record-v1", "deployment-record") })).sort((a, b) => Number(b.s.holder) - Number(a.s.holder) || String(b.doc?.produced_at).localeCompare(String(a.doc?.produced_at)))[0];
-  const parts = { present: true, signed: best.s.holder, bound: true, source: best.source, by: best.s.by, record_digest: sha256(Buffer.from(canonical(best.doc), "utf8")) };
+  const best = mine.map((x) => ({ ...x, s: signedBy(facts, x.doc, "agent-deployment-record-v1", "deployment-record") })).sort((a, b) => Number(b.s.verifies) - Number(a.s.verifies) || Number(b.s.holder) - Number(a.s.holder) || String(b.doc?.produced_at).localeCompare(String(a.doc?.produced_at)))[0];
+  const parts = { present: true, signed: best.s.verifies, bound: true, source: best.source, by: best.s.by, record_digest: sha256(Buffer.from(canonical(best.doc), "utf8")) };
   return line("deployment-record", facts, {
     ...parts, state: stateOf(parts),
     evidence: `${best.source}: ${trim(best.doc?.act)} of ${short(facts.target.digest)} on ${facts.dev.origin}${best.doc?.environment ? ` (environment ${best.doc.environment})` : ""}, ${signedWords(best.s, facts, "deployment-record")}, produced ${trim(best.doc?.produced_at) || "at an unstated time"}`,
@@ -159,7 +161,7 @@ function conformanceLine(facts, deployLine) {
   const text = canonical(doc);
   const img = trim(deployLine.record?.image_digest);
   const bound = Boolean((facts.target.digest && text.includes(hexOf(facts.target.digest))) || (img && text.includes(hexOf(img))));
-  const parts = { present: true, signed: s.holder, bound, source: e?.ok ? e.url : "attached", by: s.by, record_digest: sha256(Buffer.from(text, "utf8")) };
+  const parts = { present: true, signed: s.verifies, bound, source: e?.ok ? e.url : "attached", by: s.by, record_digest: sha256(Buffer.from(text, "utf8")) };
   return line("conformance", facts, {
     ...parts, state: stateOf(parts),
     evidence: `verdict ${trim(doc.verdict) || "?"}, ${signedWords(s, facts, "conformance")}; ${bound ? "names this package's digest or the image its deployment record started" : "names neither this package's digest nor the image its deployment record started"}`,
@@ -190,12 +192,14 @@ function manifestLine(facts, stage) {
   const buildText = facts.buildRecordText ?? "";
   const ms = facts.attached.manifests.map((m) => ({ ...m, verifies: verifyManifest(m.doc), mdigest: sha256(Buffer.from(canonical(m.doc), "utf8")) }));
   const holderKeys = (facts.holderKeys[stage] ?? []).map((k) => k.key);
-  const mine = ms.filter((m) => holderKeys.includes(trim(m.doc.agent)));
+  const named = namedFor(facts, stage);
+  const mine = ms.filter((m) => holderKeys.includes(trim(m.doc.agent)) || named.includes(m.name));
   const notes = facts.attached.notes.map((n) => n.name);
   if (!mine.length) {
     const hint = notes.length ? `; the records-folder notes attached (${notes.join(", ")}) are unsigned and are not a stage's record` : "";
-    return line(stage, facts, { present: false, signed: false, bound: false, state: "missing", evidence: `no delivery manifest signed by ${holderWords(facts, stage)} was given to the audit${hint}` });
+    return line(stage, facts, { present: false, signed: false, bound: false, state: "missing", evidence: `no delivery manifest was given to the audit for this stage, signed by ${holderWords(facts, stage)} or named for it in the message (${stage}: <file name>)${hint}` });
   }
+  const whose = (m) => (holderKeys.includes(trim(m.doc.agent)) ? holderWords(facts, stage) : "named for this stage in the message");
   const judged = mine.map((m) => {
     const pieces = Array.isArray(m.doc.pieces) ? m.doc.pieces : [];
     const inPkg = pkg ? pieces.filter((p) => p && pkg.digests.has(trim(p.digest))) : [];
@@ -214,14 +218,14 @@ function manifestLine(facts, stage) {
     return line(stage, facts, {
       ...parts, state: stateOf(parts),
       evidence: !pkg ? "the package's bytes were not read, so no script could be traced"
-        : `${scripts.length - untraced.length} of ${scripts.length} scripts traced to a delivery manifest signed by ${holderWords(facts, stage)}${untraced.length ? `; not traced: ${untraced.join(", ")}` : ""}`,
+        : `${scripts.length - untraced.length} of ${scripts.length} scripts traced to a verified delivery manifest given for the code stage (${[...new Set(judged.map((j) => whose(j.m)))].join("; ")})${untraced.length ? `; not traced: ${untraced.join(", ")}` : ""}`,
     });
   }
   const best = judged.sort((a, b) => Number(b.m.verifies) - Number(a.m.verifies) || Number(b.bound) - Number(a.bound))[0];
   const parts = { present: true, signed: best.m.verifies, bound: best.bound, source: best.m.name, by: trim(best.m.doc.agent), record_digest: best.m.mdigest };
   return line(stage, facts, {
     ...parts, state: stateOf(parts),
-    evidence: `${best.m.name}: a delivery by ${trim(best.m.doc.agent)} (${holderWords(facts, stage)}), ${best.m.verifies ? "its signature verifies" : "its signature does not verify"}; it ${best.how}`,
+    evidence: `${best.m.name}: a delivery by ${trim(best.m.doc.agent)} (${whose(best.m)}), ${best.m.verifies ? "its signature verifies" : "its signature does not verify"}; it ${best.how}`,
   });
 }
 
@@ -238,7 +242,13 @@ export function stageLines(facts) {
   return STAGE_ORDER.map((s) => lines[s]);
 }
 
-/** Delivery manifests attached that no stage's holder signed. */
+/** The attached files the message names for a stage (`<stage>: <file name>`). */
+function namedFor(facts, stage) {
+  return (facts.asked?.stages?.[stage] ?? []).map((n) => trim(n));
+}
+
+/** Delivery manifests attached that no stage's holder signed and the message names for no stage. */
 export function strayManifests(facts) {
-  return facts.attached.manifests.filter((m) => !holderOf(facts, trim(m.doc?.agent))).map((m) => ({ name: m.name, agent: trim(m.doc?.agent) }));
+  const named = new Set(MANIFEST_STAGES.flatMap((s) => namedFor(facts, s)));
+  return facts.attached.manifests.filter((m) => !holderOf(facts, trim(m.doc?.agent)) && !named.has(m.name)).map((m) => ({ name: m.name, agent: trim(m.doc?.agent) }));
 }
