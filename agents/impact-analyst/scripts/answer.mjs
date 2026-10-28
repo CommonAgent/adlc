@@ -289,9 +289,9 @@ export function answerAll({ diffs, dependents, solutions = [], ports = [], key, 
     const id = trim(s.doc?.id);
     if (!id || used.has(id)) continue;
     const use = useFromCanvas(s.doc, key);
-    if (!use) { notes.push(`${trim(s.doc?.name) || id} (${s.name}) was given, but its canvas does not place the agent, so it is not a dependent.`); continue; }
+    if (!use) { notes.push(`${trim(s.doc?.name) || id} (${id}) was given, but its canvas does not place the agent, so it is not a dependent.`); continue; }
     const a = answerOne(diffs, use);
-    answered.push({ kind: "solution", id, name: trim(s.doc?.name) || id, display: trim(s.doc?.name) || id, owner: { org: trim(s.doc?.org) }, owner_words: ownerWords({ org: s.doc?.org }), found_by: [{ source: "canvas", observed: false, words: `Its canvas, given with the job (${s.name}), places the agent; the platform's list did not name it.` }], declared: true, observed: false, how: "its canvas was read", use: describeUse(use), ...a });
+    answered.push({ kind: "solution", id, name: trim(s.doc?.name) || id, display: trim(s.doc?.name) || id, owner: { org: trim(s.doc?.org) }, owner_words: ownerWords({ org: s.doc?.org }), found_by: [{ source: "canvas", observed: false, words: `Its canvas, given with the job, places the agent; the platform's list did not name it.` }], declared: true, observed: false, how: "its canvas was read", use: describeUse(use), ...a });
   }
   const outputs = outputsOf(before, after);
   for (const p of ports) {
