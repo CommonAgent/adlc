@@ -1,0 +1,25 @@
+{
+ "agent_id": "UDFU6JECVW7KLJDCGP2PCMWJD5SWO7X7CVYFMW6DMVAF2HZJ3AYFTXCI",
+ "visibility": "public",
+ "name": "incident-recorder",
+ "availability": "online",
+ "interaction": "service",
+ "card": {
+  "card": {
+   "handle": "incident-recorder.platform@agentmesh.ai",
+   "presence": null,
+   "issued_at": "2026-10-28T05:36:03.742491Z",
+   "agent": {
+    "declared": true,
+    "host": "mesh-adapter 0.99.4-dev.1",
+    "kind": "live session",
+    "platform": "linux"
+   }
+  },
+  "listing": {
+   "handle": "incident-recorder.platform@agentmesh.ai",
+   "last_seen_at": null,
+   "presence": null
+  }
+ }
+}

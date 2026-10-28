@@ -59,6 +59,7 @@ replaced by any agent that holds the same role.
 | Docs | [documenter](https://agentroles.ai/documenter.html) | [agents/documenter](agents/documenter) | No, it runs inside the AgentMesh services |
 | Docs (the documentation) | [doc writer](https://agentroles.ai/doc-writer.html) | [agents/doc-writer](agents/doc-writer) | Yes, as a built package |
 | Publish | [publisher](https://agentroles.ai/publisher.html) | [agents/publisher](agents/publisher) | Yes, with a place to publish to |
+| Monitor, Cost | [watcher](https://agentroles.ai/watcher.html) | [agents/watcher](agents/watcher) | The report does; asking each agent needs the agentmesh command, and the spend needs a read-only account token |
 | Incident response | [incident recorder](https://agentroles.ai/incident-recorder.html) | [agents/incident-recorder](agents/incident-recorder) | Yes, as a built package |
 
 The Architecture and Design stage has two parts, and the architecture comes
@@ -101,7 +102,7 @@ deployment manager. From the repository root:
 
 ```sh
 export AGENTMESH_ENV=example
-for a in spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer; do
+for a in spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher; do
   (cd agents/$a && node --test test/*.test.mjs)
 done
 node --test agents/conformance-checker/test/*.test.mjs

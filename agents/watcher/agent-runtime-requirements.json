@@ -1,0 +1,79 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "agentmesh",
+      "purpose": "sends each watched agent the worker interface's status question and waits for its answer, and sends each alarm to the incident recorder, as this agent"
+    }
+  ],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "the-platform",
+      "kind": "service",
+      "credential": "watch-read-key",
+      "env": "WATCH_TOKEN",
+      "settings": [
+        {
+          "env": "MESH_API_BASE",
+          "purpose": "the platform's origin, with no path (the address its API answers at); the storefronts, run records, AgentDocs and the spend report are read there. Without it nothing is read from the platform and the report says so"
+        },
+        {
+          "env": "WATCH_AGENTS",
+          "purpose": "the agents to watch, by handle, separated by commas: the owner names them, and the watcher watches no other"
+        },
+        {
+          "env": "INCIDENT_RECORDER",
+          "purpose": "the incident recorder's handle, such as incident-recorder.platform@agentmesh.ai, which each open alert is raised to. Without it the alarms are handed back with the report and not sent"
+        },
+        {
+          "env": "ANSWER_SECONDS",
+          "purpose": "how long each agent has to answer the status question, in seconds, from 5 to 600; 60 when it is not set"
+        }
+      ]
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the watch record, the watch report, the alarms, what became of each alarm and the went-without notes, and beside them the standing list of alerts raised and still open"
+    }
+  ],
+  "job_seconds": 300,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "watch-the-fleet"
+      ]
+    },
+    "price": {
+      "model": "free"
+    }
+  },
+  "run": {
+    "watch-the-fleet": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/watch-the-fleet/scripts/watch.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}

@@ -1,0 +1,283 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "does": "Watches the agents its owner names and reports, for each, whether it is alive, whether it answers a question sent to it, and whether it is inside the limits it declared, and what each spent, job by job, per agent, per owner and in total, against what its owner allowed, with whether every spend traces to a job and whether the totals reconcile. It reads the platform's own records and asks each agent one light question, the worker interface's status; it spends nothing, changes nothing it watches and calls no model. Each open alert goes to the incident recorder in the shape it takes.",
+  "offerings": [
+    {
+      "id": "watch-the-fleet",
+      "name": "Watch the fleet",
+      "does": "Asks each agent the owner named whether it is working, reads its presence, its runs and its spend from the platform, and hands back a watch report: alive, answering and inside its limits, or an open alert with its reason, and the spend against what was allowed, reconciled or not.",
+      "inputs": [
+        {
+          "name": "what to watch",
+          "kind": "text",
+          "required": false,
+          "given_by": "either",
+          "about": "Optional lines of their own: `agent: <handle>` to narrow the watch to some of the agents the owner named (an agent not on the owner's list is not watched), and `from: YYYY-MM-DD` and `to: YYYY-MM-DD` for the days the spend is read over. With none, every agent on the list is watched over the platform's own window."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "watch report",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: a header of `name: value` lines (`watched_by`, `watched_at`, `account`, `agents`, `alive`, `answering`, `inside_limits`, `outside_limits`, `open_alerts`, `spend_window`, `spend_total`, `every_spend_traced`, `reconciles`), then `## Agents` with a table and a `### <agent>` per agent saying whether it is alive, answering and inside its limits, each with where that was read, `## Open alerts` with each alert's reason and where its alarm went, `## Spend` (`### In total`, `### By owner`, `### By agent`, `### By job`, `### Untraced`, `### Against what was allowed`, `### Reconciliation`), `## Not known` and `## Sources`."
+        },
+        {
+          "name": "watch record",
+          "kind": "application/vnd.agentmesh.watch-record+json",
+          "when": "per_task",
+          "about": "`{watch, watched_at, watched_by, account, agents, spend, alerts, not_known, sources}`: each agent as `{named, handle, key, alive, answering, limits, alert, observations}`, the spend as the platform's report carried it with the watcher's own check of its arithmetic, and each alert's message for the incident recorder (`agent: <handle>`, `time: <ISO time>`) beside its file.",
+          "working": true
+        },
+        {
+          "name": "alarms",
+          "kind": "application/x-ndjson",
+          "when": "per_task",
+          "about": "Only when an alert is open, one file per agent with one: one JSON object per line, `{time, agent, event, source, seen_by}`, named `watch-platform-<agent>.jsonl` so the incident recorder reads it as the platform's activity record. It is the file the alarm's message to the incident recorder carries."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-watch-list",
+          "name": "Read the watch list",
+          "does": "Takes the agents to watch from the owner's setting, narrows them to the ones a message names when it names some, and refuses any a message adds.",
+          "inputs": [
+            {
+              "name": "what to watch",
+              "kind": "text",
+              "required": false,
+              "given_by": "either"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "watch list",
+              "kind": "application/vnd.agentmesh.watch-list+json",
+              "when": "per_task",
+              "about": "`{agents, refused, malformed, narrowed, window}`: the handles watched in the owner's order, and the spend window.",
+              "working": true
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "ask-each-agent",
+          "name": "Ask each agent",
+          "does": "Sends each agent the worker interface's status question, all at once, and records whether and when each answered and what it said.",
+          "inputs": [
+            {
+              "name": "watch list",
+              "kind": "application/vnd.agentmesh.watch-list+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "answers",
+              "kind": "application/vnd.agentmesh.watch-answers+json",
+              "when": "per_task",
+              "about": "One per agent, `{handle, sent_at, outcome, answered_at, seconds, reply, why}`; `outcome` is answered, silent, held, refused or not-sent.",
+              "working": true
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-limits",
+          "name": "Check the limits",
+          "does": "Reads each agent's presence, run record and declared ceilings from the platform and holds each ceiling against what the platform recorded, saying alive, answering and inside its limits, or the reason it is not.",
+          "inputs": [
+            {
+              "name": "watch list",
+              "kind": "application/vnd.agentmesh.watch-list+json",
+              "required": true,
+              "given_by": "agent"
+            },
+            {
+              "name": "answers",
+              "kind": "application/vnd.agentmesh.watch-answers+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "agent checks",
+              "kind": "application/vnd.agentmesh.watch-checks+json",
+              "when": "per_task",
+              "about": "One per agent, `{named, handle, key, alive, answering, limits, alert, observations}`.",
+              "working": true
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "read-the-spend",
+          "name": "Read the spend",
+          "does": "Reads the platform's spend report for the agents watched with a key that can only read, and adds its job lines up again to check that every total reconciles.",
+          "inputs": [
+            {
+              "name": "watch list",
+              "kind": "application/vnd.agentmesh.watch-list+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "spend",
+              "kind": "application/vnd.agentmesh.spend-report+json",
+              "when": "per_task",
+              "about": "The platform's spend-report-v1 as read, with `reconciles` the watcher's own answer and `discrepancies` naming whatever did not add up.",
+              "working": true
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-report",
+          "name": "Write the report",
+          "does": "Writes the watch report a person reads and the watch record it was written from, every line saying where its reading came from.",
+          "inputs": [
+            {
+              "name": "agent checks",
+              "kind": "application/vnd.agentmesh.watch-checks+json",
+              "required": true,
+              "given_by": "agent"
+            },
+            {
+              "name": "spend",
+              "kind": "application/vnd.agentmesh.spend-report+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "watch report",
+              "kind": "text/markdown",
+              "when": "per_task",
+              "about": "The watch report, as the offering hands it back."
+            },
+            {
+              "name": "watch record",
+              "kind": "application/vnd.agentmesh.watch-record+json",
+              "when": "per_task",
+              "about": "The watch record, as the offering hands it back.",
+              "working": true
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "raise-the-alarms",
+          "name": "Raise the alarms",
+          "does": "Writes one alarm for each agent with an open alert, in the incident recorder's shape, sends each to the incident recorder the install names, and files the report, the record and the alarms as the job's pieces.",
+          "inputs": [
+            {
+              "name": "agent checks",
+              "kind": "application/vnd.agentmesh.watch-checks+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "alarms",
+              "kind": "application/x-ndjson",
+              "when": "per_task",
+              "about": "The alarms, as the offering hands them back."
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Watching an agent its owner did not name. The agents watched are the install's list; a message may narrow a watch to some of them and never adds one, and the watcher never lists an account's agents on its own.\nReading silence as no news. An agent that does not answer within the wait is reported as not answering and keeps an open alert, and an agent it could not ask is said to have no current answer.\nCalling a process being up an answer. Presence is reported as presence; an agent is answering only when it answered the question sent to it.\nStating a figure the platform's records do not carry. Every amount is the spend report's own, every count is a count of readings, and a limit nothing measures is said to be not measured.\nSpending, buying credits or changing a budget. It reads with a key that can only read, and says so in the reply when the key it was given can do more.\nChanging anything it watches. It sends each agent one status question and nothing else: it never pauses, restarts, stops or fixes an agent, and never answers for one.\nGuessing a cause. An alert says what was seen and where; what happened is the incident recorder's record and what to do about it is a person's decision.\nRaising an alarm to anyone but the incident recorder the install names.\nRaising the same failure twice. An alert raised and still open is reported as still open, with where it was raised, and only a new reason raises it again.\nCalling a model.",
+  "escalates": [
+    "No agent named to watch. Nothing is watched, and the reply says how the owner names the agents in the install's WATCH_AGENTS setting.",
+    "More than 50 agents named for one watch, the most the platform's spend report reads at once. Nothing is watched, and the reply asks for at most 50."
+  ],
+  "records": [
+    {
+      "name": "the watch record, per job: each agent's readings and verdicts, the spend as read and checked, the alerts and their messages, and every source read",
+      "when": "per_task",
+      "file": "*/watch-record.json"
+    },
+    {
+      "name": "the watch report as it was written, per job",
+      "when": "per_task",
+      "file": "*/watch-report.md"
+    },
+    {
+      "name": "the alarm for each agent with an open alert, per job, in the incident recorder's shape",
+      "when": "per_task",
+      "file": "*/alarms/*.jsonl"
+    },
+    {
+      "name": "what became of each alarm, per job: sent to the incident recorder, with its message id, or why not",
+      "when": "per_task",
+      "file": "*/raised.json"
+    },
+    {
+      "name": "the alerts raised and still open, across watches: per agent, the reasons that opened it, when, and the incident recorder and message it was raised as, so a later watch reports it as still open rather than raising it again, and forgets it when a watch finds the agent clear",
+      "when": "standing",
+      "file": "open-alerts.json"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "the-platform",
+      "access": "read",
+      "needs": "to read each watched agent's presence, run record and declared ceilings, and the spend report for the watched agents, with an account API token that carries only the credits:read scope, which can read the account's money and cannot buy or spend"
+    }
+  ]
+}
