@@ -2972,6 +2972,15 @@ def update(argfile):
 
     # 8. The same subject, re-bound to the new draft.
     ident = json.load(open(f"{home}/.agentmesh/adapter/identity.json"))
+    # A row with no handle (one written before its name was bound) takes the
+    # name the naming service answers for the key, so the bound Descriptor,
+    # the deployment record and the conformance check after this update all
+    # name the agent. No answer leaves it as it was.
+    if not entry.get("handle"):
+        named = naming_handle(ident["public_key"])
+        if named:
+            entry["handle"] = named
+            entry["handle_changed_at"] = now_iso()
     descriptor = bind_descriptor(home, pkg_name, name, ident["public_key"], entry.get("handle"),
                                  pkg_version, entry["interaction"], harness, model, sha256=sha256)
 
