@@ -28,13 +28,13 @@ Not in this version: the role's second request, a change to a solution.
 
 ## Tests
 
-33 pass: the role's own check (role-check.test.mjs), each rule of the
+37 pass (and one skipped that reads kept examples, of which there are none): the role's own check (role-check.test.mjs), each rule of the
 comparison (compare.test.mjs), the answers per reader (answer.test.mjs),
 filing once (ledger.test.mjs), the run command from a laid-out package against
-a ledger served on the machine (run.test.mjs), and a real change, Site reader
+a ledger served on the machine, with the test writer's delivered-formats check (run.test.mjs, delivered-formats.test.mjs), and a real change, Site reader
 2.4.1 to 2.5.0, on the platform's own answers from dev with identifiers
 replaced (site-reader.test.mjs). The package builds with the package maker on
-main, and with the format rules of adlc PR #17 it has no findings.
+main with its format rules (adlc PR #17) and has no findings.
 
 ## Who held each step
 

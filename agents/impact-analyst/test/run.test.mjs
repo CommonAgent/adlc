@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { changeFiles, descriptor } from "./helpers.mjs";
+import { checkDelivered } from "./delivered-formats.test.mjs";
 
 const AGENT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const json = (p) => JSON.parse(readFileSync(p, "utf8"));
@@ -117,6 +118,7 @@ test("the report is what its declared kind and convention say: Markdown with the
   for (const f of fields) assert.match(fm[1], new RegExp(`^${f}:`, "m"), `the header has ${f}`);
   for (const hd of ticks.filter((t) => t.startsWith("## "))) assert.match(text, new RegExp(`^${hd}$`, "m"), `the report has ${hd}`);
   assert.doesNotThrow(() => { try { JSON.parse(text); assert.fail("it is JSON"); } catch (e) { if (e.code === "ERR_ASSERTION") throw e; } });
+  assert.deepEqual(checkDelivered(r.jobDir, { declaration: DESCRIPTOR, undeclared: true }), [], "the test writer's delivered-formats check passes");
 });
 
 test("without a ledger the report still comes, what is owed is listed, and the reply says it was not filed and why", async () => {
