@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.4.0",
+  "agent_version": "0.4.1",
   "name": "Agent auditor",
   "summary": "Audits one built agent version against an audit checklist and hands back a signed report, with each finding routed to the stage that fixes it.",
   "will_not": [
