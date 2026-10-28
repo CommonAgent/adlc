@@ -30,6 +30,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, wr
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fromFiles, gather, readFolder } from "./read-package.mjs";
+import { isGzip } from "./tar.mjs";
 import { matchReaches, tracePrograms } from "./trace-programs.mjs";
 import { readArchitecture, spendingLimit } from "./architecture.mjs";
 import { assess } from "./assess.mjs";
@@ -84,13 +85,18 @@ export { scrub };
 export function sortGiven(files = []) {
   const package_ = [];
   let architecture = null;
-  for (const f of files) {
-    let bytes = null;
-    try { bytes = readFileSync(f.path); } catch { /* gather says it could not be read */ }
+  const read = files.map((f) => { try { return readFileSync(f.path); } catch { return null; } });
+  // The record is taken only beside a package that came as an archive: when
+  // the package's own files are handed over one by one, none of them can be
+  // told from a record the architect wrote, and a package must not bring its
+  // own egress or spending limit. The record then goes by --architecture.
+  const archived = read.some((b) => b && (isGzip(b) || (b.length >= 512 && b.subarray(257, 262).toString() === "ustar")));
+  files.forEach((f, i) => {
+    const bytes = read[i];
     const name = basename(f.path);
-    if (bytes && !architecture && isArchitectureRecord(name, bytes.toString("utf8"))) { architecture = { path: f.path, name, text: bytes.toString("utf8") }; continue; }
+    if (archived && bytes && !architecture && isArchitectureRecord(name, bytes.toString("utf8"))) { architecture = { path: f.path, name, text: bytes.toString("utf8") }; return; }
     package_.push(f);
-  }
+  });
   return { package: package_, architecture };
 }
 

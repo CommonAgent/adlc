@@ -128,8 +128,8 @@ export function assess({ declared: d, traced, arch, limit, found = {} }) {
 
   // ── what the programs reach that nothing names ──
   for (const u of traced.unmatched) {
-    refusals.push(`a program reaches ${u.host} (${u.files.join(", ")}), and no system the declaration names covers it`);
-    unreasoned.push({ said: true, permission: `reaching ${u.host}`, asked_in: u.files.join(", "), why_flagged: "the programs reach it and the declaration does not name it" });
+    refusals.push(u.written ? `a program writes down ${u.host} (${u.files.join(", ")}), and no system the declaration names covers it; a program may go to any address it holds, so a system whose reason names it, or the architecture record's egress, must` : `a program reaches ${u.host} (${u.files.join(", ")}), and no system the declaration names covers it`);
+    unreasoned.push({ said: true, permission: `${u.written ? "holding the address" : "reaching"} ${u.host}`, asked_in: u.files.join(", "), why_flagged: "the programs reach it and the declaration does not name it" });
   }
   for (const v of traced.credentialVars) {
     refusals.push(`a program reads ${v.name} (${v.files.join(", ")}), a credential no system declares, so it holds access nobody agreed to`);

@@ -159,7 +159,7 @@ export function fromFiles(files) {
   const refusals = Array.isArray(d.refusals) ? d.refusals.map(trim).filter(Boolean)
     : trim(d.refusals).split("\n").map(trim).filter(Boolean);
 
-  const programs = [...files.keys()].filter((p) => !p.includes("node_modules/") && isCode(p, files.get(p))).sort();
+  const programs = [...files.keys()].filter((p) => !/(?:^|\/)node_modules\//.test(p) && isCode(p, files.get(p))).sort();
   // A package that ships its own dependencies is a package whose
   // dependencies nobody verified: the installer refuses one, and so does this.
   const bundled = [...new Set([...files.keys()].filter((p) => /(?:^|\/)node_modules\//.test(p)).map((p) => p.slice(0, p.indexOf("node_modules/") + "node_modules".length)))];

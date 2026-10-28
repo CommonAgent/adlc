@@ -193,20 +193,25 @@ export function traceOne(path, text) {
   const open = [];
   const vars = new Set();
   const commands = [];
-  lines.forEach((line, at) => {
-    const onLine = [];
-    for (const m of line.matchAll(URL_RE)) {
+  // Addresses are read off the RAW text, never off the stripped text, so no
+  // trick of quotes and slashes can make stripping drop one. An address is
+  // left out only where its raw line is plainly a comment there: the line
+  // opens with a comment mark, or a // or # with a space before it comes
+  // ahead of the address. Every other address counts, whether or not a call
+  // is seen beside it: a list of call shapes always misses one.
+  const hashy = /\.(?:py|sh|bash|zsh|rb|ps1|pl)$/i.test(path) || (!CODE.test(path) && text.startsWith("#!"));
+  text.split("\n").forEach((raw, at) => {
+    for (const m of raw.matchAll(URL_RE)) {
+      const before = raw.slice(0, m.index);
+      const commented = /^\s*(?:\/\/|\/\*|\*|<!--)/.test(raw) || /(?:^|\s)\/\/(?!\/)/.test(before) || (hashy && /^\s*#|\s#/.test(before));
+      if (commented) continue;
       const host = hostOf(m[2]);
-      if (!host) { onLine.push(""); continue; } // built whole from a value: a call on this line is open
-      onLine.push(host);
-      if (NOT_REACHED.some((r) => r.test(host))) continue;
-      // Gone to: the line calls something that fetches, or names the address
-      // as a door (const API_BASE = "https://..."). Written: anything else, a
-      // link put into what the agent writes, say.
-      const reached = CALLS.test(line) || DOOR.test(line);
-      const list = reached ? hosts : written;
+      if (!host || NOT_REACHED.some((r) => r.test(host))) continue;
+      const list = CALLS.test(raw) || DOOR.test(raw) ? hosts : written;
       if (!list.some((h) => h.host === host)) list.push({ host, line: at + 1, scheme: m[1] });
     }
+  });
+  lines.forEach((line, at) => {
     for (const m of [...line.matchAll(FETCH_CALL), ...(shell ? line.matchAll(SHELL_FETCH) : [])]) {
       const arg = trim(m[1]).replace(/^(?:-\S+\s+)*/, "");
       // A call whose argument is a written address, with its host seen, is that address.
@@ -225,29 +230,51 @@ export function traceOne(path, text) {
   return { path, hosts, written, open, vars: [...vars].sort(), commands, browser, routes: browser && ROUTES.test(code) };
 }
 
-/** The files a program imports, by their package paths. */
+/** The relative specifiers a program imports, re-exports or requires. */
 export function importsOf(path, text) {
   const out = [];
-  const re = /(?:\bimport\s*(?:[\w${}\s,*]+\s*from\s*)?|\bimport\s*\(\s*|\brequire\s*\(\s*)["'`](\.{1,2}\/[^"'`]+)["'`]/g;
+  const re = /(?:\b(?:import|export)\s*(?:[\w${}\s,*]+\s*from\s*)?|\bimport\s*\(\s*|\brequire\s*\(\s*)["'`](\.{1,2}\/[^"'`]+)["'`]/g;
   for (const m of String(text).matchAll(re)) out.push(normalize(join(dirname(path), m[1])).replace(/\\/g, "/"));
   return out;
 }
 
+/** The package file a specifier loads, resolved the way node does: as
+ *  written, with an extension added, or a folder's index. */
+export function resolveIn(files, spec) {
+  const exts = ["", ".mjs", ".js", ".cjs", ".ts", ".mts", ".cts", ".jsx", ".tsx", ".json"];
+  for (const e of exts) if (files.has(spec + e)) return spec + e;
+  for (const e of exts.slice(1)) if (files.has(`${spec}/index${e}`)) return `${spec}/index${e}`;
+  return "";
+}
+
 /** Every code file the package carries, traced. A test is left out, and
- *  counted, unless a program imports it. */
+ *  counted, only when nothing traced imports it, followed through every
+ *  import, re-export and require, test to test included. */
 export function tracePrograms(files, programs = null) {
-  const code = [...files.keys()].filter((p) => !p.includes("node_modules/") && isCode(p, files.get(p))).sort();
+  const NM = /(?:^|\/)node_modules\//;
+  const code = [...files.keys()].filter((p) => !NM.test(p) && isCode(p, files.get(p))).sort();
   const list = programs ? [...new Set([...programs, ...code])].filter((p) => files.has(p)).sort() : code;
-  const nonTest = list.filter((p) => !isTest(p));
-  const imported = new Set(nonTest.flatMap((p) => importsOf(p, files.get(p).toString("utf8"))));
+  const keep = new Set(list.filter((p) => !isTest(p)));
+  const queue = [...keep];
+  while (queue.length) {
+    const p = queue.shift();
+    for (const spec of importsOf(p, files.get(p).toString("utf8"))) {
+      const hit = resolveIn(files, spec);
+      if (hit && !keep.has(hit) && !NM.test(hit) && list.includes(hit)) { keep.add(hit); queue.push(hit); }
+    }
+  }
   const traced = [];
   const tests = [];
   for (const p of list) {
-    if (isTest(p) && !imported.has(p)) { tests.push(p); continue; }
+    if (!keep.has(p)) { tests.push(p); continue; }
     traced.push(traceOne(p, files.get(p).toString("utf8")));
   }
   return { traced, tests };
 }
+
+/** Domains many unrelated sites share: a reason must name the host itself
+ *  under one, since naming the domain would cover everybody's site. */
+export const SHARED = ["github.io", "githubusercontent.com", "netlify.app", "vercel.app", "herokuapp.com", "appspot.com", "web.app", "firebaseapp.com", "firebaseio.com", "cloudfront.net", "amazonaws.com", "azurewebsites.net", "blob.core.windows.net", "pages.dev", "workers.dev", "run.app", "googleapis.com", "storage.googleapis.com", "ngrok.io", "ngrok-free.app", "glitch.me", "repl.co", "onrender.com", "fly.dev"];
 
 /** A host's registrable domain: its last two labels, or three where the
  *  second to last is a short public suffix part (example.co.uk). */
@@ -279,7 +306,7 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
     if (egress) return { system: "(further destination)", by: "the architecture record's egress names it" };
     // A reason names a host by the host itself or its whole domain, never by
     // one word of it: "forecast" in a reason does not cover forecast.evil.net.
-    const domain = domainOf(host);
+    const domain = SHARED.some((d) => domainOf(host) === d || host.endsWith(`.${d}`)) ? host : domainOf(host);
     const named = systems.find((s) => {
       const said = ` ${String(s.needs ?? "").toLowerCase()} `;
       return [host, domain].some((h) => new RegExp(`[^a-z0-9.-]${h.replace(/[.-]/g, "\\$&")}[^a-z0-9-]`).test(said));
@@ -306,10 +333,15 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
   // Matched like the rest; one that nothing matches is listed, and refuses
   // the package when the same program also calls an address it is handed,
   // since that call may be the one that goes to it.
+  // An address written where no call is seen beside it is matched the same
+  // way, and one nothing covers refuses the package like any other: whether
+  // a program goes to it cannot be told from the text, and a call can take
+  // any shape. `written` keeps the uncovered ones the review names that way.
   const written = [];
   for (const r of collect("written")) {
     const m = match(r.host);
-    if (m) reaches.push({ ...r, ...m }); else written.push(r);
+    if (m) reaches.push({ ...r, ...m });
+    else if (!unmatched.some((u) => u.host === r.host)) { written.push(r); unmatched.push({ ...r, written: true }); }
   }
 
   // A call to an address the program is handed. It is the call of an address
