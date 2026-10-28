@@ -18,13 +18,15 @@ forbids.
 - A file sent under another kind is noted by its kinds alone, and the notes
   are counted.
 - The runtime requirements are paired in words that name no file.
+- A solution given with the job is named by its id: in the note when its
+  canvas does not place the agent, and in where a dependent was found.
 - Files that could not be read are still named, in the reply and in
   went-without.json, where the person needs the name to send it again.
 
 ## Tests
 
-45 pass, and run.test.mjs now checks that no attached file's name is in the
-report.
+46 pass, and run.test.mjs now checks that no attached file's name is in the
+report, a solution attached under a host-style name included.
 
 ## Who held each step
 
