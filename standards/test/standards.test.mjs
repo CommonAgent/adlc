@@ -67,7 +67,7 @@ test("the checklist covers the checks the lifecycle plan names", () => {
 const REGISTERED = new Set(["package-maker-format-rules", "no-model-literals", "can-use-declared", "descriptor-floor",
   "descriptor-signed", "descriptor-matches-package", "versions-dev-prod", "registered", "package-maker-option-rules",
   ...["requirements", "architecture", "design", "impact", "source", "test", "code", "review", "security", "package",
-    "build-record", "descriptor", "deployment-record", "conformance"].map((a) => `stage-record:${a}`)]);
+    "build-record", "descriptor", "deployment-record", "conformance", "usability"].map((a) => `stage-record:${a}`), "app-walk"]);
 const NEW_CHECKS = new Set(["descriptor-person-members", "delivered-formats", "revisions-declared", "standing-assets-cited",
   "stage-record:docs"]);
 
@@ -107,4 +107,10 @@ test("the optional artifacts before the package are info, and the required ones 
   for (const a of ["build-record", "deployment-record"]) assert.equal(level[`stage-record:${a}`], "refuse", a);
   assert.equal(level["descriptor-signed"], "refuse");
   assert.doesNotMatch(read("audit-checklist.md"), /signed by (its|their) holder|signed by the (reviewer|package maker|deployment manager)/);
+});
+
+test("the usability checks: the App walk refuses at run time, and the usability report is evidence only", () => {
+  const byId = Object.fromEntries(checksOf(read("audit-checklist.md")).map((p) => Object.fromEntries(p)).map((c) => [c.id, c]));
+  assert.deepEqual([byId["usable-in-app"].kind, byId["usable-in-app"].check, byId["usable-in-app"].level], ["run-time", "app-walk", "refuse"]);
+  assert.deepEqual([byId["usability-report"].kind, byId["usability-report"].check, byId["usability-report"].level], ["stage-record", "stage-record:usability", "info"]);
 });

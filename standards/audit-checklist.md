@@ -331,6 +331,29 @@ applies: new agents from 2026-10-28; existing agents from not set
 evidence: the version and package digest the agent serves on dev and on prod
 ```
 
+## Usability
+
+```yaml
+id: usable-in-app
+says: A person can run the agent from its page in the App, given its sample, and the page shows the result it delivers.
+why: An agent can keep every declared promise and still stop a person at its page; Quiz maker answered in words and delivered nothing, and Fact writer's page drew boxes of JSON for a person to fill.
+kind: run-time
+check: app-walk
+fixed-by: design
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the App walk's recorded verdict for this version (ready, rough or broken), its reason, the job it ran, and when
+```
+
+The App walk is our own add-on to the Usability stage: a robot that opens
+the agent's page in the AgentMesh App, gives it its sample, presses Run and
+waits for the result, the way a person does. It records one verdict per
+agent, bound to the version and the Descriptor digest it walked. `ready`
+passes; `rough` or `broken` is a finding. A walk record for another version
+is stale, and the check is then reported under "Not checked", as it is when
+no walk record was given to the audit. The reference agent's own check,
+which needs no App, is the usability report below.
+
 ## Stage records
 
 The audit requires artifacts and checks, not a particular lifecycle. The
@@ -478,6 +501,26 @@ evidence: the verdict, its signer, and the package digest or image it names
 The conformance checker writes the verdict after a deploy, and the registry
 keeps the newest one for the agent (`agent-eval-record-v1`). A verdict for an
 earlier package or image is stale.
+
+```yaml
+id: usability-report
+says: A usability report for this package digest is present, delivered under a signed manifest that is not the tested agent's own.
+why: Conformance proves the agent keeps its declared promises, not that a person can use it; the report is the record that someone ran each offering a person starts from its example and read what came back.
+kind: stage-record
+check: stage-record:usability
+fixed-by: test
+level: info
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the report's verdict, its tester, when it was made, the signer of the manifest it came under, and the package digest it names
+```
+
+The Usability stage is optional in the lifecycle, so this check is `info`:
+the report is shown as evidence and does not count toward the verdict. An
+organization that wants every agent tested this way raises it to `warn` or
+`refuse` in its own checklist. The usability tester
+(agents/usability-tester) writes the report; any tester's counts, a person's
+included, when it is delivered under a signed manifest that lists its
+digest and its header names this package digest.
 
 ```yaml
 id: stage-record-docs

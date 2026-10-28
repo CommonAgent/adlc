@@ -1,0 +1,212 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "name": "Usability tester",
+  "summary": "Runs an agent the way a person would, from the examples it declares, and reports whether a person can fill its form, get a result, read it and get a change.",
+  "will_not": [
+    "It will not change, fix or redeploy the agent it tests.",
+    "It will not pay for anything: a change that has a price is not asked for.",
+    "It will not invent inputs: an offering with no example is reported, not guessed at.",
+    "It will not judge whether the words are good; that is a person's judgment, which you can add to the report."
+  ],
+  "does": "Tests whether a person can use an agent, without a page: it reads the agent's Descriptor the way a page does, checks that each input a person gives maps to a control, that options are settings with choices and defaults, that outputs say how a person views them, that the agent has a summary and that every offering a person starts declares an example. It then runs each example through the same calls the platform's agent page makes, as a signed-in account, checks that a real result arrives in its declared form and can be read, asks for one change and checks that a new version comes back. It hands back a Markdown usability report with a header an auditor reads, each finding labelled descriptor or agent with the stage that fixes it, and room for a person's judgment. It calls no model. It holds the usability tester role for the Usability stage of the Prove phase of the Agent Development Lifecycle.",
+  "offerings": [
+    {
+      "id": "test-usability",
+      "name": "Test an agent's usability",
+      "does": "Reads the named agent's Descriptor, runs each offering a person starts from its example as the platform's agent page would, asks for one change, and hands back the usability report: for each offering whether its form can be filled, whether it delivers in its declared form, whether the result can be read and whether a change returns a new version, with every finding labelled descriptor or agent.",
+      "inputs": [
+        {
+          "name": "agent",
+          "kind": "text",
+          "required": true,
+          "given_by": "either",
+          "about": "The agent to test, by its handle: `agent: <handle>` on a line of its own, or the handle alone. A line `offering: <id>` tests one offering only, and `change: <words>` says the change to ask for."
+        },
+        {
+          "name": "judgment",
+          "kind": "text",
+          "required": false,
+          "given_by": "person",
+          "about": "A person's own judgment, after they ran the agent, on lines of their own: `understood: yes|no`, `could use: yes|no`, `did the job: yes|no` and `note: <words>`. It is written into the report as theirs."
+        },
+        {
+          "name": "examples",
+          "kind": "application/vnd.agentmesh.usability-examples+json",
+          "required": false,
+          "given_by": "either",
+          "about": "Examples for offerings whose Descriptor declares none: a JSON object from an offering's id to `{inputs, good_result}`, the shape of Common Agent 6.13.8. The report says which example came from where, and still reports the missing one."
+        },
+        {
+          "name": "example files",
+          "kind": "document",
+          "required": false,
+          "given_by": "either",
+          "about": "The agent's package (.tar.gz), or the files themselves, when an example names a file in the package by its path and digest."
+        },
+        {
+          "name": "run-context",
+          "kind": "application/vnd.agentmesh.run-context+json",
+          "required": false,
+          "given_by": "agent",
+          "about": "The run context the platform hands a job started under a run config, with this job's settings."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "usability report",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "presentation": "document",
+          "about": "The usability report: a YAML header (usability_report, agent, version, package_digest, descriptor_digest, verdict, tested_at, tested_by, the counts of offerings and findings, person_judgment), then for each offering a person starts whether its form could be filled from the Descriptor, whether a real run delivered in its declared form, whether the result can be read and whether a change came back as a new version; the descriptor checks; each finding labelled descriptor or agent with the stage that fixes it; a person's judgment where one was added; and what was not checked. The verdict is usable, usable_with_findings or not_usable."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-request",
+          "name": "Read the request",
+          "does": "Reads which agent to test, the offering and the change when they are named, a person's judgment, and any examples and files attached, then reads the agent's Descriptor from the platform.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-descriptor",
+          "name": "Check the Descriptor",
+          "does": "Checks what a page can draw for a person from the Descriptor alone: the summary, an example for every offering a person starts, a control for every input a person gives, options as settings with choices and defaults, and a presentation for every output.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "run-the-examples",
+          "name": "Run the examples",
+          "does": "Fills each offering's form from its example the way a page fills it, runs it through the platform's Run call as a signed-in account, answers once if the agent stops to ask, and reads each piece that comes back against its declared kind and presentation.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "ask-for-a-change",
+          "name": "Ask for a change",
+          "does": "Asks for one change to each delivered job through the platform's Ask for a change call, unless the change has a price, and checks that a new version comes back with the deliverable.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-report",
+          "name": "Write the report",
+          "does": "Writes the usability report with its header, the four answers for each offering, the descriptor checks, the findings labelled descriptor or agent, a person's judgment and what was not checked, and writes the reply.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ],
+      "revisions": {
+        "included": {
+          "count": 2,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "works_as": "job",
+      "example": {
+        "inputs": {
+          "agent": "quiz-maker.platform@agentmesh.ai"
+        },
+        "good_result": "A usability report for Quiz maker with a verdict, saying for each offering a person starts whether its form could be filled, its run delivered, its result could be read and a change came back."
+      }
+    }
+  ],
+  "refusals": "Changing the agent it tests. It runs the agent as a person would, through the platform's own calls, and changes nothing else.\nPaying. A change that has a price waits for a person's approval on the platform, and the tester never gives it; the report says the change was not asked.\nGuessing an example. An offering with no example in its Descriptor, and none given with the request, is reported as not run, never run with inputs the tester made up.\nJudging the words. It reads each result's form by rules and calls no model; whether the words are clear and useful is a person's judgment, written in only when a person gives it.\nCalling a run a success on the agent's word. A result counts only when it arrives in the job record with the pieces the offering declares, and a change only when a new version does.\nReading anything a message names other than the agent, and the public addresses its example names.",
+  "escalates": [
+    "Whether the agent did the job a person had. The report holds the runs and their results; a person adds their judgment, and the decision to use the agent is theirs."
+  ],
+  "records": [
+    {
+      "name": "the test, per job: the agent and the Descriptor's digest, the settings, the account it ran as, each offering's example, form, run, pieces and change, and the findings",
+      "when": "per_task",
+      "file": "*/test.json"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "the-platform",
+      "access": "read",
+      "needs": "to read the tested agent's storefront and Descriptor, and to run it as a person does from its page: as a test account made for each job with the platform's test-account key, which can make test accounts and nothing else, it sends the run, follows the job record, answers a question, asks for a change and reads the delivered pieces"
+    }
+  ],
+  "can_use": [],
+  "run_config": {
+    "settings": [
+      {
+        "name": "wait_minutes",
+        "kind": "preference",
+        "default": 15,
+        "label": "Minutes to wait for each result",
+        "about": "How long the tester waits for each run, and again for each change, before it reports that nothing came back.",
+        "range": {
+          "min": 2,
+          "max": 30,
+          "step": 1
+        },
+        "job_may_set": true
+      },
+      {
+        "name": "ask_for_a_change",
+        "kind": "preference",
+        "default": "yes",
+        "allowed": [
+          "yes",
+          "no"
+        ],
+        "label": "Ask for a change",
+        "about": "Whether the tester asks each delivered job for one change and checks that a new version comes back.",
+        "value_labels": {
+          "yes": "Ask for one change",
+          "no": "Do not ask for a change"
+        },
+        "job_may_set": true
+      }
+    ]
+  }
+}

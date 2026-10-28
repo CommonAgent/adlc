@@ -167,7 +167,7 @@ export async function runJob(argv = [], env = process.env, { fetchImpl, now = ne
     schemas = { digest: sha256(raw), schemas: (JSON.parse(raw.toString("utf8")).schemas ?? []).map((s) => trim(s.schema)) };
   } catch { schemas = null; }
 
-  const files = new Map(args.files.filter((f) => existsSync(f.path)).map((f) => [basename(f.path).replace(/^\d+-[A-Za-z0-9_-]{8}-/, ""), readFileSync(f.path)]));
+  const files = new Map(args.files.filter((f) => existsSync(f.path)).map((f) => [basename(f.path).replace(/^(?:\d+-[A-Za-z0-9_-]{8}-)+/, ""), readFileSync(f.path)]));
   const dev = platform({ base: env.MESH_API_BASE, token: env.AUDIT_TOKEN, fetchImpl, sleep });
   const prod = trim(env.PROD_API_BASE) ? platform({ base: env.PROD_API_BASE, fetchImpl, sleep }) : null;
   const work = args.work ? (mkdirSync(args.work, { recursive: true }), args.work) : RECORDS;

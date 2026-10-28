@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.5.4",
+  "agent_version": "0.5.5",
   "name": "Spec writer",
   "summary": "Turns what you want an agent to do into the agent's own files a builder takes, and says plainly what it could not settle without you.",
   "will_not": [

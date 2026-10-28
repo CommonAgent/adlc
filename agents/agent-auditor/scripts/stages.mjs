@@ -16,6 +16,10 @@
 //                       after its result) or attached: agent-deployment-record-v1,
 //                       for a deploy, update, alongside, reconfigure or attest
 //   conformance         the registry's newest verdict (agent-eval-record-v1)
+//   usability           a usability report attached (its header names the
+//                       package digest), delivered under a verified job
+//                       manifest, attached too, that lists the report's bytes
+//                       and is not the tested agent's own
 //   docs                the AgentDoc the platform assembles for the agent
 //
 // Bound means the record names this package's digest, or holds bytes that are
@@ -34,7 +38,7 @@ const trim = (s) => String(s ?? "").trim();
 const hexOf = (d) => trim(d).toLowerCase().replace(/^sha256:/, "");
 const short = (d) => (d ? `sha256:${hexOf(d).slice(0, 12)}` : "none"); // cut-ok: a digest's prefix for reading; the whole digest is in the evidence
 
-export const STAGE_ORDER = ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "docs"];
+export const STAGE_ORDER = ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "usability", "docs"];
 /** The acts whose signed record says a package runs: a deploy, an update, a
  *  version kept alongside, a reconfigure (model, jobs at once, a Descriptor
  *  bound again from the package; the package named from the inventory), and
@@ -181,6 +185,38 @@ function conformanceLine(facts, deployLine) {
   });
 }
 
+/** The Usability stage's line: a usability report for this agent, attached,
+ *  whose header names this package digest, delivered under a verified job
+ *  manifest that lists the report's bytes and is not the tested agent's own. */
+function usabilityLine(facts) {
+  const want = hexOf(facts.target.digest);
+  const mine = (facts.attached.usabilityReports ?? []).filter((r) => trim(r.header?.agent).toLowerCase() === facts.handle);
+  if (!mine.length) return line("usability", facts, { present: false, signed: false, bound: false, state: "missing", evidence: `no usability report for ${facts.handle} was given to the audit; the usability tester (agents/usability-tester) writes one, and the platform keeps no store of them` });
+  const judged = mine.map((r) => {
+    const digest = sha256(r.bytes);
+    const under = (facts.attached.manifests ?? []).filter((m) => (Array.isArray(m.doc?.pieces) ? m.doc.pieces : []).some((p) => trim(p?.digest) === digest));
+    const verified = under.filter((m) => verifyManifest(m.doc) && trim(m.doc.agent) !== trim(facts.dev.key));
+    const named = hexOf(r.header.package_digest);
+    // Bound by the package that made its runs; a report whose runs named no
+    // package (none delivered) is bound by the audited version and the
+    // Descriptor dev serves, which is what it read.
+    const served = hexOf(facts.dev.descriptor?.door_digest || facts.dev.descriptor?.bytes_digest);
+    const byDescriptor = !named && Boolean(facts.target.version) && trim(r.header.version) === facts.target.version && Boolean(served) && hexOf(r.header.descriptor_digest) === served;
+    return { r, digest, under, m: verified[0] ?? null, own: under.some((m) => trim(m.doc.agent) === trim(facts.dev.key)), bound: Boolean(want && named && named === want) || byDescriptor, byDescriptor, named };
+  }).sort((a, b) => Number(b.bound) - Number(a.bound) || Number(Boolean(b.m)) - Number(Boolean(a.m)) || String(b.r.header.tested_at).localeCompare(String(a.r.header.tested_at)));
+  const best = judged[0];
+  const holderKeys = (facts.holderKeys.usability ?? []).map((k) => k.key);
+  const by = best.m ? trim(best.m.doc.agent) : null;
+  const parts = { present: true, signed: Boolean(best.m), bound: best.bound, source: best.r.name, by, record_digest: best.digest };
+  const signedHow = best.m ? `delivered under ${best.m.name}, a manifest signed by ${by}${holderKeys.includes(by) ? ` (${holderWords(facts, "usability")})` : ", whose signature verifies (any tester counts)"}` : best.own ? "the only manifest listing it is the tested agent's own, and an agent does not test itself" : best.under.length ? "the manifest listing it does not verify" : "no signed delivery manifest given to the audit lists its digest";
+  const boundHow = best.byDescriptor ? `names no package (no run delivered), and it tested version ${facts.target.version} through the Descriptor dev serves` : best.bound ? `names this package, ${short(facts.target.digest)}` : best.named ? `names package ${short(best.r.header.package_digest)}, not the audited ${short(facts.target.digest)}` : "names no package digest";
+  return line("usability", facts, {
+    ...parts, state: stateOf(parts),
+    evidence: `${best.r.name}: verdict ${trim(best.r.header.verdict) || "?"} for version ${trim(best.r.header.version) || "?"}, tested ${trim(best.r.header.tested_at) || "at an unstated time"} by ${trim(best.r.header.tested_by) || "an unnamed tester"}; ${signedHow}; it ${boundHow}`,
+    extra: { report: best.r.header },
+  });
+}
+
 function docsLine(facts) {
   const a = facts.dev.agentdoc;
   if (!a?.ok || !a.doc) return line("docs", facts, { present: false, signed: false, bound: false, state: "missing", evidence: `no AgentDoc is served at ${facts.dev.origin}/a/${facts.handle}/agentdoc.json (${a?.error ?? "not read"})` });
@@ -250,6 +286,7 @@ export function stageLines(facts) {
   lines["deployment-record"] = deploymentRecordLine(facts);
   lines.descriptor = descriptorLine(facts, lines["deployment-record"]);
   lines.conformance = conformanceLine(facts, lines["deployment-record"]);
+  lines.usability = usabilityLine(facts);
   lines.docs = docsLine(facts);
   for (const s of MANIFEST_STAGES) lines[s] = manifestLine(facts, s);
   return STAGE_ORDER.map((s) => lines[s]);
@@ -263,5 +300,8 @@ function namedFor(facts, stage) {
 /** Delivery manifests attached that no stage's holder signed and the message names for no stage. */
 export function strayManifests(facts) {
   const named = new Set(MANIFEST_STAGES.flatMap((s) => namedFor(facts, s)));
-  return facts.attached.manifests.filter((m) => !holderOf(facts, trim(m.doc?.agent)) && !named.has(m.name)).map((m) => ({ name: m.name, agent: trim(m.doc?.agent) }));
+  // A manifest that lists an attached usability report is the Usability line's.
+  const reports = new Set((facts.attached.usabilityReports ?? []).map((r) => sha256(r.bytes)));
+  const usability = (m) => (Array.isArray(m.doc?.pieces) ? m.doc.pieces : []).some((p) => reports.has(trim(p?.digest)));
+  return facts.attached.manifests.filter((m) => !holderOf(facts, trim(m.doc?.agent)) && !named.has(m.name) && !usability(m)).map((m) => ({ name: m.name, agent: trim(m.doc?.agent) }));
 }

@@ -76,6 +76,9 @@ function runConfig(rc) {
     if ("allowed" in s) e.allowed = s.allowed;
     for (const k of ["label", "about"]) if (k in s) e[k] = str(s[k]).trim();
     if ("value_labels" in s) e.value_labels = Object.fromEntries(Object.entries(s.value_labels).map(([k, v]) => [k, str(v).trim()]));
+    // A number's range (Common Agent 6.13.4), as build.py carries it: its
+    // members in the order written; or the older spelling on the setting itself.
+    if (isObj(s.range)) e.range = Object.fromEntries(Object.entries(s.range));
     for (const k of ["min", "max", "step"]) if (k in s) e[k] = s[k];
     e.job_may_set = s.job_may_set;
     if ("does" in s) e.does = str(s.does).trim();
@@ -127,6 +130,8 @@ export function descriptorOf(spec, jobs, systems, records) {
     if ("revisions" in j) o.revisions = j.revisions;
     if ("started_by" in j) o.started_by = [...j.started_by];
     if ("works_as" in j) o.works_as = j.works_as;
+    // The offering's example (Common Agent 6.13.8, proposed), as build.py's example_declaration writes it.
+    if ("example" in j) o.example = { inputs: j.example.inputs, good_result: str(j.example.good_result).trim() };
     if ("trial" in j) o.trial = j.trial;
     if ("scopes" in j) o.scopes = (j.scopes ?? []).map((s) => ({ id: s.id, description: str(s.description).trim() }));
     offerings.push(o);
