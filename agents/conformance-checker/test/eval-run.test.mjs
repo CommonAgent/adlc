@@ -67,3 +67,14 @@ test("a reply the adapter prints as words after its reply line is the agent's an
   const p = spawnSync(PY, ["-c", code, RUN], { encoding: "utf8", env: { ...process.env, AGENTMESH_ENV: "example" } });
   assert.deepEqual(JSON.parse(p.stdout.trim().split("\n").pop()), ["I will not do that.\nIt is outside my job.", ""]);
 });
+
+test("the verdict: does-not-conform only when a case failed or records are missing after every case was judged; inconclusive whenever nothing failed and something could not be judged", () => {
+  const code = [
+    "import importlib.util as u, json, sys",
+    "s = u.spec_from_file_location('er', sys.argv[1]); m = u.module_from_spec(s); s.loader.exec_module(m)",
+    "v = m.verdict_of",
+    "print(json.dumps([v(1,0,{}), v(0,2,{'missing':['r']}), v(0,0,{'unobserved':['r']}), v(0,0,{'missing':['r']}), v(0,0,{})]))",
+  ].join("\n");
+  const p = spawnSync(PY, ["-c", code, RUN], { encoding: "utf8", env: { ...process.env, AGENTMESH_ENV: "example" } });
+  assert.deepEqual(JSON.parse(p.stdout.trim().split("\n").pop()), ["does-not-conform", "inconclusive", "inconclusive", "does-not-conform", "conforms"]);
+});

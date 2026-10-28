@@ -294,9 +294,15 @@ def no_reply():
 
 
 def verdict_of(nfail, ninc, audit):
-    if nfail or audit.get("missing"):
+    """does-not-conform only on a case that failed, or on a promised record
+    missing after every case was judged; inconclusive whenever no case failed
+    and something could not be judged (a case unanswered, or records not
+    observed), since an agent that never got to work leaves no records."""
+    if nfail:
         return "does-not-conform"
-    return "inconclusive" if ninc or audit.get("unobserved") else "conforms"
+    if ninc or audit.get("unobserved"):
+        return "inconclusive"
+    return "does-not-conform" if audit.get("missing") else "conforms"
 
 
 def main():

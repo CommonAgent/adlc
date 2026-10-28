@@ -326,3 +326,42 @@ class TheBackfillRedeploysNothing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(sys.platform == "win32", "fcntl locks are POSIX")
+class AStartedCheckAlwaysEndsWithALine(unittest.TestCase):
+
+    def test_a_check_that_gets_no_slot_says_it_waits_and_then_that_it_gave_up(self):
+        import fcntl
+        d = tempfile.mkdtemp(prefix="dm-slots-")
+        self.addCleanup(shutil.rmtree, d, True)
+        held = []
+        with mock.patch.object(ex, "EVAL_HOME", d), mock.patch.object(ex, "EVAL_LOCK", os.path.join(d, "lock")), \
+                mock.patch.object(ex, "EVAL_SLOTS", 2):
+            os.makedirs(os.path.join(d, "tmp"), exist_ok=True)
+            for i in range(2):
+                f = open(os.path.join(d, f"lock.deploy.{i}"), "a")
+                fcntl.flock(f, fcntl.LOCK_EX)
+                held.append(f)
+            clock = iter([0, 1, 100])
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                out = ex.conform({"request": "dr_x", "handle": "a.p@e.com"}, wait_seconds=50,
+                                 now=lambda: next(clock), sleep=lambda s: None)
+        for f in held:
+            f.close()
+        lines = [json.loads(x) for x in buf.getvalue().splitlines()]
+        self.assertIn("waiting", lines[0])
+        self.assertFalse(out["ok"])
+        self.assertIn("did not run", lines[-1]["why"])
+
+    def test_the_backfill_does_not_take_a_deploys_slots(self):
+        import fcntl
+        d = tempfile.mkdtemp(prefix="dm-slots2-")
+        self.addCleanup(shutil.rmtree, d, True)
+        with mock.patch.object(ex, "EVAL_HOME", d), mock.patch.object(ex, "EVAL_LOCK", os.path.join(d, "lock")), \
+                mock.patch.object(ex, "EVAL_SLOTS", 1), mock.patch.object(ex, "conform_now", return_value={"ok": True}):
+            f = open(os.path.join(d, "lock.backfill.0"), "a")
+            fcntl.flock(f, fcntl.LOCK_EX)
+            self.assertEqual(ex.conform({"request": "dr_x"}, pool="deploy"), {"ok": True})
+            f.close()
