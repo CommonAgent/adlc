@@ -1,7 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.0",
-  "does": "Audits one built agent version, named by its handle and its version or package digest, against an audit checklist: the standards/audit-checklist.md it carries, or one it is given. For each lifecycle stage it finds the stage's record and checks it is present, signed by the stage's holder and bound to the package digest. It runs every checklist entry through the test registered for it, reusing the package maker's own checks, the platform's rule against model names in code, the test writer's delivered-formats check and the registry's signed Descriptor, and reads the agent as it runs on dev and prod. A check with no registered test is reported as not checked, never skipped. It files each finding as a debt in the platform's ledger, routed to the stage that fixes it, and hands back one signed audit report, which it files where the Deployment Manager and the Catalog read it by package digest. It calls no model and approves nothing. It holds the audit role for the Prove phase of the Agent Development Lifecycle.",
+  "agent_version": "0.3.1",
+  "name": "Agent auditor",
+  "summary": "Audits one built agent version against an audit checklist and hands back a signed report, with each finding routed to the stage that fixes it.",
+  "will_not": [
+    "It will not fix, rebuild, redeploy or approve the agent it audits.",
+    "It will not pass a check it could not run; it reports it as not checked.",
+    "It will not change the checklist it audits against.",
+    "It will not take a stage's record on trust: each one must be signed and bound to the audited package."
+  ],
+  "does": "Audits one built agent version, named by its handle and its version or package digest, against an audit checklist: the standards/audit-checklist.md it carries, or one it is given. For each lifecycle stage it finds the stage's record and checks it is present, signed by whoever made it and bound to the package digest. It runs every checklist entry through the test registered for it, reusing the package maker's own checks, the platform's rule against model names in code, the test writer's delivered-formats check and the registry's signed Descriptor, and reads the agent as it runs on dev and prod. A check with no registered test is reported as not checked, never skipped. It files each finding as a debt in the platform's ledger, routed to the stage that fixes it, and hands back one signed audit report, which it files where the Deployment Manager and the Catalog read it by package digest. It calls no model and approves nothing. It holds the audit role for the Prove phase of the Agent Development Lifecycle.",
   "offerings": [
     {
       "id": "audit-an-agent",
@@ -139,7 +147,11 @@
           "amount_micro": 0,
           "currency": "USD"
         }
-      }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
     }
   ],
   "refusals": "Approving, deploying or listing an agent. The gates read the report; asked to approve, the reply says no and the audit is delivered as it stands.\nChanging the agent it audits, its records or its deploys. It reads them, files debts and its report, and nothing else.\nSkipping a check. A checklist entry whose test is not registered, or could not run, is reported under Not checked with the reason.\nCalling a record present that is not signed by its stage's holder and bound to the package digest. Such a record is reported missing, unsigned or stale.\nFiling the same debt twice. A finding already in the ledger for the same package is reported by its number.\nReading anything a message names other than the agent and its version. It reads the attached files and the platform's own doors.\nCalling a model. The same agent, records and checklist give the same findings.",
