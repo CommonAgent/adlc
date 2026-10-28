@@ -1,0 +1,97 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "kind": "service",
+      "credential": "text-reasoning-key",
+      "env": "TEXT_API_KEY",
+      "spends": {
+        "unit": "calls"
+      },
+      "settings": [
+        {
+          "env": "TEXT_MODEL",
+          "purpose": "which model makes the two judgments in this job, naming the concepts and writing the questions. Left unset it is gemini-3.8-flash. Which model wrote somebody's questions is most of what they are worth and most of what they cost, so it is said here rather than held as a constant inside a script where nobody reading this package could find it"
+        },
+        {
+          "env": "QUIZ_CREDIT",
+          "purpose": "set to on to carry a Built by AgentMesh footer at the foot of the quiz page. Absent, or any of off, no, false, 0 and none, and the page carries none, which is what it does by default; anything else the host writes puts the footer on, because a typo must never quietly strip a credit"
+        }
+      ]
+    },
+    {
+      "name": "source-host",
+      "kind": "service"
+    },
+    {
+      "name": "draft-host",
+      "kind": "service"
+    }
+  ],
+  "ceilings": [
+    {
+      "system": "text-reasoning",
+      "per": "task",
+      "enforced_by": "runtime",
+      "suggested": 40
+    }
+  ],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the source as received, the reading, the concept list, the quiz and the coverage check"
+    }
+  ],
+  "job_seconds": 900,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "make-a-quiz"
+      ]
+    },
+    "price": {
+      "model": "flat",
+      "amount_micro": 2000000,
+      "currency": "USD"
+    }
+  },
+  "run": {
+    "make-a-quiz": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/make-a-quiz/scripts/make-quiz.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  },
+  "samples_ref": true,
+  "trial_ceiling": {
+    "amount_micro": 2000000,
+    "currency": "USD",
+    "per": "day",
+    "per_1k_tokens_micro": 1000
+  }
+}

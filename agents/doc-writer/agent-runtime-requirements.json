@@ -1,0 +1,53 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding what was given, the documentation as written, the check of every line and the went-without notes"
+    }
+  ],
+  "job_seconds": 120,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "document-a-package"
+      ]
+    },
+    "price": {
+      "model": "free"
+    }
+  },
+  "run": {
+    "document-a-package": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/document-a-package/scripts/document.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}
