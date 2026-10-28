@@ -395,6 +395,37 @@ def lay_out_folder(found, files):
                   "manifest": manifest_path, "skills": sorted(found["skills"])}
 
 
+def input_name(spec_path):
+    """The name of the agent an input describes, read before it is built: the
+    folder's plugin.json, or the spec's own name. None when neither says."""
+    try:
+        at = os.path.join(spec_path, "plugin.json") if os.path.isdir(spec_path) else spec_path
+        name = json.load(open(at, encoding="utf-8")).get("name")
+        return name if isinstance(name, str) and name.strip() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def released_before_format_rules(name, records=None):
+    """Whether this package maker released `name` before the format rules came
+    in (build.py, FORMAT_CUTOVER), and so the build warns on its formats rather
+    than refusing. The evidence is this builder's own last build record of the
+    name: one written before the rules carries no format_rules member, and one
+    written since says whether the agent was existing then. No record is no
+    earlier release here, and build.py's own list decides."""
+    if not name:
+        return False
+    at = os.path.join(records or RECORDS, f"{name}-build.json")
+    try:
+        rec = json.load(open(at, encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return False
+    rules = rec.get("format_rules")
+    if not isinstance(rules, dict):
+        return True
+    return rules.get("existing") is True
+
+
 def file_pieces(job_dir, name, version, tgz, rec_path, sha256):
     """The package and its build record, under the job folder's out/ and
     listed in pieces.json, the way every packaged agent hands its result on.
@@ -740,8 +771,14 @@ def main():
     os.makedirs(RECORDS, exist_ok=True)
 
     # 1. Build. build.py fails closed on a spec missing refuses/records.
+    # An agent this builder released before the format rules is told so, so
+    # its format findings are warnings and not refusals (build.py's cut-over);
+    # an operator's own FORMAT_EXISTING is left as it is.
+    env = dict(os.environ)
+    if not env.get("FORMAT_EXISTING", "").strip() and released_before_format_rules(input_name(spec_path)):
+        env["FORMAT_EXISTING"] = "1"
     p = subprocess.run(["python3", BUILD, spec_path, BUILT],
-                       capture_output=True, text=True, timeout=60)
+                       capture_output=True, text=True, timeout=60, env=env)
     try:
         built = json.loads(p.stdout.strip().splitlines()[-1])
     except Exception:
@@ -835,6 +872,10 @@ def main():
                    {"kind": "image-unchecked",
                     "what": "nothing here could say whether this package can be turned into a container image: "
                             f"{image['why']}"}],
+        # What the format rules found and did (build.py): whether this agent
+        # counts as released before them, warn or refuse, and the findings. A
+        # later build of the same name reads `existing` back from here.
+        **({"format_rules": built["format_rules"]} if isinstance(built.get("format_rules"), dict) else {}),
         "draft": True, "produced_at": now, "by": by, "signatures": [],
     }
     message = TAG + "\n" + canonical({k: v for k, v in doc.items() if k != "signatures"})
@@ -881,6 +922,7 @@ def main():
          "signed": bool(sig), "image": printed, "note": note,
          **({"laid_out": laid} if laid else {}),
          **({"warnings": built["warnings"]} if built.get("warnings") else {}),
+         **({"format_rules": built["format_rules"]} if isinstance(built.get("format_rules"), dict) else {}),
          **({"repository": repository} if repository else {}),
          **({"pieces": pieces} if pieces else {})})
 

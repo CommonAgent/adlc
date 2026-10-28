@@ -1009,3 +1009,172 @@ class Trials(Harness):
             self.assertFalse(res["ok"], bad)
             self.assertIn("trial_ceiling", res["error"])
         self.refused(trial_spec(trial=None), "no job offers a trial")
+
+
+def format_spec(name="key-points", output_kind="text/markdown", input_extra=None, outputs=None, scripts=None):
+    """One offered job that takes a page and hands back key points: the
+    shape the format rules are about."""
+    inp = {"name": "page", "kind": "url", "required": True, "given_by": "person"}
+    inp.update(input_extra or {})
+    job = {"slug": "list-the-points", "title": "List the points", "offered": True,
+           "when": "when asked", "good": "done", "empty": "say so",
+           "inputs": [inp],
+           "outputs": outputs if outputs is not None else [
+               {"name": "key points", "kind": output_kind, "when": "per_task",
+                "about": "Markdown: a header `source, read_at`, then `## Key points` with one bullet per point."}]}
+    if scripts is not None:
+        job["scripts"] = scripts
+    return {"name": name, "version": "0.1.0", "description": "Lists a page's key points.",
+            "jobs": [job], "refuses": ["inventing a point the page does not make"],
+            "records": ["the points as delivered"]}
+
+
+class TheFormatRules(Harness):
+    """What an agent takes and hands on is declared with a specific kind
+    (owner, 2026-10-27). Two findings: a bare application/json input or output,
+    and a delivered piece no job declares, where the build can see one. A new
+    agent's findings refuse it; an agent released before the cut-over is
+    warned and built as before; and given_by, who gives an input, is carried
+    when it is one of its three words and refused when it is not."""
+
+    def setUp(self):
+        super().setUp()
+        self._env = os.environ.pop("FORMAT_EXISTING", None)
+
+    def tearDown(self):
+        if self._env is not None:
+            os.environ["FORMAT_EXISTING"] = self._env
+        os.environ.pop("PIECES", None)
+        super().tearDown()
+
+    def build_env(self, doc, **env):
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            return self.build(doc)
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_a_new_agent_with_specific_kinds_builds_with_no_findings(self):
+        res, _ = self.build(format_spec())
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"], {"existing": False, "mode": "refuse", "since": build.FORMAT_CUTOVER, "findings": []})
+        self.assertFalse([w for w in res.get("warnings", []) if w.startswith("format:")], res.get("warnings"))
+
+    def test_given_by_and_about_reach_the_descriptor_unchanged(self):
+        res, _ = self.build(format_spec())
+        o = self.descriptor(res)["offerings"][0]
+        self.assertEqual(o["inputs"][0]["given_by"], "person")
+        self.assertIn("## Key points", o["outputs"][0]["about"])
+
+    def test_given_by_is_one_of_three_words(self):
+        for good in build.GIVEN_BY:
+            res, _ = self.build(format_spec(input_extra={"given_by": good}))
+            self.assertTrue(res["ok"], res)
+        res, out = self.build(format_spec(input_extra={"given_by": "somebody"}))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("given_by is who gives it, one of person, agent, either", res["error"])
+        res, _ = self.build(format_spec(outputs=[{"name": "key points", "kind": "text/markdown", "given_by": "agent"}]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("carries given_by", res["error"])
+
+    def test_a_new_agent_with_a_bare_json_output_is_refused_and_nothing_is_written(self):
+        res, out = self.build(format_spec(output_kind="application/json"))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("key-points is refused on its formats", res["error"])
+        self.assertIn("it is a new agent", res["error"])
+        self.assertIn("output 'key points' is declared bare application/json", res["error"])
+        self.assertFalse(os.path.exists(os.path.join(out, "key-points")), "a package was written for a refused spec")
+
+    def test_a_bare_json_input_is_a_finding_too_and_parameters_do_not_hide_it(self):
+        res, _ = self.build(format_spec(input_extra={"kind": "application/json; charset=utf-8"}))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("input 'page' is declared bare application/json", res["error"])
+
+    def test_a_vendor_json_kind_is_specific_and_builds(self):
+        res, _ = self.build(format_spec(output_kind="application/vnd.agentmesh.key-points+json"))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"]["findings"], [])
+
+    def test_an_agent_released_before_the_cut_over_is_warned_and_built(self):
+        self.assertIn("fact-writer", build.FORMAT_EXISTING_NAMES)
+        res, out = self.build(format_spec(name="fact-writer", output_kind="application/json"))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"]["existing"], True)
+        self.assertEqual(res["format_rules"]["mode"], "warn")
+        self.assertEqual(len(res["format_rules"]["findings"]), 1)
+        self.assertTrue(any(w.startswith("format: job list-the-points: output 'key points'") for w in res["warnings"]), res["warnings"])
+        self.assertTrue(os.path.isfile(os.path.join(out, "fact-writer", "agent-descriptor.json")))
+
+    def test_the_caller_says_which_side_of_the_cut_over_an_agent_is_on(self):
+        res, _ = self.build_env(format_spec(output_kind="application/json"), FORMAT_EXISTING="1")
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"]["mode"], "warn")
+        res, _ = self.build_env(format_spec(name="fact-writer", output_kind="application/json"), FORMAT_EXISTING="0")
+        self.assertFalse(res["ok"], res)
+        self.assertIn("it is a new agent", res["error"])
+
+    def test_the_cut_over_is_one_switch_from_warning_to_refusing(self):
+        self.assertEqual(build.FORMAT_EXISTING_MODE, "warn")
+        self.assertEqual(build.format_mode(True), "warn")
+        self.assertEqual(build.format_mode(False), "refuse")
+        saved = build.FORMAT_EXISTING_MODE
+        try:
+            build.FORMAT_EXISTING_MODE = "refuse"
+            self.assertEqual(build.format_mode(True), "refuse")
+        finally:
+            build.FORMAT_EXISTING_MODE = saved
+
+    def test_a_piece_the_pieces_script_delivers_and_no_job_declares_is_a_finding(self):
+        src = os.path.join(self.tmp, "scripts")
+        os.makedirs(src)
+        with open(os.path.join(src, "pieces.mjs"), "w", encoding="utf-8") as f:
+            f.write('export const plan = () => [\n'
+                    '  { name: "key points", path: "out/points.md", media_type: "text/markdown" },\n'
+                    '  { name: "key points (page-2.md)", path: "out/page-2.md", media_type: "text/markdown" },\n'
+                    '  { media_type: "application/json", name: "replay report", path: "out/replay.json" },\n'
+                    '  { name: `clip ${id}`, media_type: "audio/wav" },\n'
+                    '];\n')
+        doc = format_spec(scripts=["scripts/pieces.mjs"])
+        res, _ = self.build(doc)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("scripts/pieces.mjs delivers a piece 'replay report' that no job declares", res["error"])
+        self.assertEqual(res["error"].count("delivers a piece"), 1, res["error"])
+        self.assertNotIn("clip", res["error"])
+        res, _ = self.build(dict(doc, name="fact-writer"))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(len(res["format_rules"]["findings"]), 1)
+
+    def test_a_pieces_json_in_the_folder_or_named_by_pieces_is_read(self):
+        sample = os.path.join(self.tmp, "fixtures", "a-job")
+        os.makedirs(sample)
+        with open(os.path.join(sample, "pieces.json"), "w", encoding="utf-8") as f:
+            json.dump([{"name": "key points", "path": "out/points.md"}, {"name": "notes", "path": "out/notes.md"}], f)
+        res, _ = self.build(format_spec(name="fact-writer"))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"]["findings"],
+                         ["fixtures/a-job/pieces.json delivers a piece 'notes' that no job declares as an output; declare it, with its kind, or stop delivering it"])
+        elsewhere = os.path.join(tempfile.mkdtemp(prefix="pieces-"), "pieces.json")
+        try:
+            with open(elsewhere, "w", encoding="utf-8") as f:
+                json.dump([{"name": "extra", "path": "out/extra.txt"}], f)
+            res, _ = self.build_env(format_spec(name="fact-writer"), PIECES=elsewhere)
+            self.assertTrue(any("'extra'" in x for x in res["format_rules"]["findings"]), res["format_rules"])
+        finally:
+            shutil.rmtree(os.path.dirname(elsewhere), ignore_errors=True)
+
+    def test_a_container_agent_is_held_to_the_same_rules(self):
+        doc = container_spec()
+        doc["name"] = "ring-thing"
+        doc["jobs"][0]["outputs"] = [{"name": "answer", "kind": "application/json", "when": "per_task"}]
+        res, _ = self.build(doc)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("declared bare application/json", res["error"])
+        doc["jobs"][0]["outputs"][0]["kind"] = "application/vnd.agentmesh.ring-answer+json"
+        res, _ = self.build(doc)
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"]["findings"], [])

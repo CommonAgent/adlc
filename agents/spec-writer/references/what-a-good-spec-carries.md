@@ -179,11 +179,43 @@ three cases, and each has its own place:
 
 Each input and output has one `kind`, and there are only two forms of it: one
 of the four words `text`, `identifier`, `url` and `document`, or one media
-type written as `type/subtype` (`application/json`, `image/png`,
-`application/octet-stream`). Nothing else builds. "array of
+type written as `type/subtype` (`text/markdown`, `image/png`,
+`application/vnd.agentmesh.site-read+json`). Nothing else builds. "array of
 application/octet-stream", "list of urls", "json" and "file" are not kinds.
 Several files of the same kind are one input, declared once; the job reads
 every file that arrives under it.
+
+## Which kind, for who reads it
+
+Since 2026-10-27 this is a rule, and not only a habit. An inventory of 73
+agents that day found 77 pieces sent as JSON that people should have read as
+Markdown, about 180 declared as nothing more than `application/json`, and 59
+whose declared kind was not what the code sent. Hand-offs broke on them, and
+people were given raw JSON to review. The eight packages this reference was
+measured on are among them, so do not copy their kinds.
+
+- **Between agents, or for a person: Markdown.** `text/markdown`, with a
+  light convention: a short header for the few structured fields, then fixed
+  headings. Sketch it in the piece's `about`, the header's fields and each
+  heading in backticks:
+
+      "about": "Markdown: a header `source, read_at`, then `## Key points` with one bullet per point, then `## Not read` with one line per page that could not be read."
+
+  brief-writer's brief, quiz-maker's concept list and explainer-critic's
+  review already work this way, and the code that reads them parses the
+  headings.
+- **Exact typed data only code reads: a specific JSON kind.** IDs,
+  coordinates, timings, numeric series. `application/vnd.agentmesh.<name>+json`,
+  with the top-level shape sketched in the `about`, such as
+  `` `{cues, font}` ``.
+- **Never bare `application/json`.** The package maker refuses a new agent
+  that declares it, and warns on an agent released before the rule. A
+  revision of a released agent keeps a piece it already sends that way and
+  says so in the notes; converting it is its own decision.
+- **Who gives each input.** `given_by`: `person`, `agent` or `either`
+  (Common Agent 6.13, proposed; optional, so it is safe to write).
+
+      { "name": "page", "kind": "url", "required": true, "given_by": "person" }
 
 A job's `references` and `assets` are files the package ships beside its
 scripts. Nobody downstream writes them: the test-writer writes tests and the

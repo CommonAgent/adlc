@@ -1043,6 +1043,192 @@ def run_config_declaration(spec):
     return out
 
 
+
+# ---- The format rules (owner, 2026-10-27) ----
+#
+# What an agent takes and hands on is declared with a kind, and two things
+# went wrong with kinds across the platform's agents: about 180 pieces were
+# declared as bare application/json, which says nothing about what is inside,
+# and 59 pieces were declared as one thing and sent as another, or sent and
+# never declared at all (the JSON inventory of 2026-10-27). The spec writer
+# now writes specific kinds; these are the checks that hold a package to
+# them, here where every package is made.
+#
+#   1. An input or output whose kind is bare application/json. A JSON piece is
+#      declared by what it is, application/vnd.agentmesh.<name>+json or another
+#      registered +json type; content a person reads, or one agent hands to
+#      another, is text/markdown with a convention.
+#   2. A piece the scripts deliver that the spec does not declare, where the
+#      build can see one: a literal piece entry ({name, ..., media_type}) in a
+#      job's pieces script, and the entries of any pieces.json in the agent's
+#      folder or named by PIECES (paths separated by the path separator or a
+#      comma).
+#
+# THE CUT-OVER. These are findings, and what a finding does depends on whether
+# the agent is new. An agent released before FORMAT_CUTOVER is EXISTING: its
+# findings are warnings, said on stderr and carried in the result, and the
+# package is built as before. Any other agent is NEW and its findings refuse
+# the package. Existing means the spec's name is in FORMAT_EXISTING_NAMES (the
+# agents released when the rule came in; the list is never added to), or the
+# caller says so with FORMAT_EXISTING=1, which the pack procedure sets when
+# this builder released the name before the rule existed (an earlier build
+# record that carries no format_rules member). FORMAT_EXISTING=0 treats a
+# listed name as new. To turn the warnings into refusals once the existing
+# agents are fixed, remove each fixed name from the list, or set
+# FORMAT_EXISTING_MODE to "refuse" to do it for all of them at once.
+FORMAT_CUTOVER = "2026-10-27"
+FORMAT_EXISTING_MODE = "warn"
+FORMAT_EXISTING_NAMES = frozenset("""
+    agentbuilder agentevaluator animation-renderer animation-writer announcer
+    audio-video-transcriber brand-reader brief-writer catalog channel-maker code-writer
+    conformance-checker converter copywriter deck-importer deployment-manager deploymgr
+    digest-writer document-reader documenter evaluator explainer-critic explainer-maker
+    facilitator fact-checker fact-writer help hn-reader incident-recorder lens-writer
+    linkedin-skills meme-writer menu-reader models narration open-calls package-maker
+    pitch-writer planner ponder-planner posting-reader practice presence-publisher
+    presentation-reader prettier process-runner publisher quiz-maker rank-checker
+    repo-architect repo-converter repo-reader repo-scanner ride-maker room-manager
+    scene-writer script-writer self-check-writer shop-desk site-auditor site-reader
+    slot-mapper solstice solution-planner source-reader spec-writer store-reader
+    story-editor story-ranker test-writer timeline-researcher tone-teller transform
+    video-watcher web-analytics web-searcher x-reader yt-dlp
+""".split())
+FORMAT_MODES = ("warn", "refuse")
+# Who gives an input (Common Agent 6.13, proposed in common-agent-standards
+# #113, optional): a person, another agent, or either.
+GIVEN_BY = ("person", "agent", "either")
+BARE_JSON = "application/json"
+
+
+def is_bare_json(kind):
+    return isinstance(kind, str) and kind.split(";")[0].strip().lower() == BARE_JSON
+
+
+def format_existing(name):
+    """Whether this agent was released before the format rules, and so is
+    warned rather than refused. The caller's word wins when it gives one."""
+    said = os.environ.get("FORMAT_EXISTING", "").strip().lower()
+    if said in ("1", "true", "yes"):
+        return True
+    if said in ("0", "false", "no"):
+        return False
+    return name in FORMAT_EXISTING_NAMES
+
+
+def format_mode(existing):
+    return FORMAT_EXISTING_MODE if existing else "refuse"
+
+
+# A literal piece entry in a pieces script: an object carrying a quoted name
+# and a media_type, in either order, with no braces inside it. A name built at
+# run time (a template string) is not seen, which is what "where the checks
+# can see that" means.
+PIECE_ENTRY_RES = (
+    re.compile(r"\{[^{}]*?\bname\s*:\s*([\"'])([^\"'`$\\\n]+?)\1[^{}]*?\bmedia_type\s*:[^{}]*\}"),
+    re.compile(r"\{[^{}]*?\bmedia_type\s*:[^{}]*?\bname\s*:\s*([\"'])([^\"'`$\\\n]+?)\1[^{}]*\}"),
+)
+
+
+def piece_list_names(jobs, src_base):
+    """(piece name, where it was seen) for every literal piece entry in a job's
+    pieces script (scripts/pieces*.mjs or .js)."""
+    seen = []
+    for j in jobs:
+        for rel in j.get("scripts") or []:
+            base = os.path.basename(str(rel))
+            if not (base.startswith("pieces") and base.endswith((".mjs", ".js"))):
+                continue
+            p = os.path.normpath(os.path.join(src_base, rel))
+            try:
+                text = open(p, encoding="utf-8").read()
+            except OSError:
+                continue
+            for rx in PIECE_ENTRY_RES:
+                for m in rx.finditer(text):
+                    seen.append((m.group(2).strip(), str(rel).replace(os.sep, "/")))
+    return seen
+
+
+def pieces_json_names(src_base):
+    """(piece name, where) for every entry of a pieces.json in the agent's
+    folder, and of each file PIECES names."""
+    paths = [p.strip() for p in re.split("[" + re.escape(os.pathsep) + ",]", os.environ.get("PIECES", "")) if p.strip()]
+    if src_base and os.path.isdir(src_base):
+        for root, dirs, files in os.walk(src_base):
+            dirs[:] = [d for d in dirs if d not in ("node_modules", ".git")]
+            if "pieces.json" in files:
+                paths.append(os.path.join(root, "pieces.json"))
+    seen = []
+    for p in paths:
+        try:
+            entries = json.load(open(p, encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(entries, dict):
+            entries = entries.get("pieces") or []
+        try:
+            where = os.path.relpath(p, src_base) if src_base else p
+        except ValueError:
+            where = p
+        for e in entries if isinstance(entries, list) else []:
+            if isinstance(e, dict) and isinstance(e.get("name"), str) and e["name"].strip():
+                seen.append((e["name"].strip(), where.replace(os.sep, "/")))
+    return seen
+
+
+def is_declared_piece(piece, declared):
+    """A delivered piece is declared when an output has its name, or when it
+    is one of several files filed under one output as "<output> (<file>)"."""
+    p = piece.strip().lower()
+    for d in declared:
+        d = d.strip().lower()
+        if p == d or p.startswith(d + " ("):
+            return True
+    return False
+
+
+def format_findings(jobs, src_base):
+    """Every finding of the two format rules, as sentences."""
+    found = []
+    for j in jobs:
+        for side, word in (("inputs", "input"), ("outputs", "output")):
+            for e in j.get(side) or []:
+                if isinstance(e, dict) and is_bare_json(e.get("kind")):
+                    found.append(
+                        f"job {j['slug']}: {word} {e.get('name')!r} is declared bare application/json. Say what it is: "
+                        f"text/markdown with a convention when a person reads it or one agent hands it to another, "
+                        f"or a specific JSON kind such as application/vnd.agentmesh.<name>+json for exact typed data "
+                        f"only code reads")
+    declared = [e["name"] for j in jobs for e in (j.get("outputs") or [])
+                if isinstance(e, dict) and isinstance(e.get("name"), str)]
+    told = set()
+    for piece, where in piece_list_names(jobs, src_base) + pieces_json_names(src_base):
+        if is_declared_piece(piece, declared) or (piece.lower(), where) in told:
+            continue
+        told.add((piece.lower(), where))
+        found.append(f"{where} delivers a piece {piece!r} that no job declares as an output; declare it, with its kind, "
+                     f"or stop delivering it")
+    return found
+
+
+def apply_format_rules(name, jobs, src_base):
+    """Warn or refuse on the format findings, by the cut-over, and return what
+    the result and the build record carry about it."""
+    existing = format_existing(name)
+    mode = format_mode(existing)
+    if mode not in FORMAT_MODES:
+        fail(f"FORMAT_EXISTING_MODE is warn or refuse; bad: {mode!r}")
+    found = format_findings(jobs, src_base)
+    if found and mode == "refuse":
+        why = (f"it is a new agent, and the format rules refuse a new agent's findings since {FORMAT_CUTOVER}"
+               if not existing else "the format rules now refuse an existing agent's findings too")
+        fail(f"{name} is refused on its formats, because {why}: " + "; ".join(found)
+             + ". An agent released before the cut-over is warned instead; FORMAT_EXISTING=1 says so for one this builder does not list")
+    for f in found:
+        warn(f"format: {f}")
+    return {"existing": existing, "mode": mode, "since": FORMAT_CUTOVER, "findings": found}
+
+
 def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
     """The draft Agent Descriptor (descriptor-spec §3.1): the builder's
     statement of what it built, with no subject, because the agent does not
@@ -1075,6 +1261,10 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
                     fail(f"job {j['slug']}: {side} kind {e['kind']!r} is neither a media type nor one of {VALUE_KINDS}")
                 if side == "outputs" and e.get("when") not in (None, *WHEN):
                     fail(f"job {j['slug']}: output when must be one of {WHEN}")
+                if side == "inputs" and "given_by" in e and e["given_by"] not in GIVEN_BY:
+                    fail(f"job {j['slug']}: input {e['name']!r} given_by is who gives it, one of {', '.join(GIVEN_BY)}; bad: {e['given_by']!r}")
+                if side == "outputs" and "given_by" in e:
+                    fail(f"job {j['slug']}: output {e['name']!r} carries given_by, which says who gives an input")
             o[side] = v
         # How this one is actually done, when the spec says (12.3). A caller
         # is entitled to know whether the step it is buying is a fixed program
@@ -2215,9 +2405,13 @@ def build(spec, src_base, out_dir, authored):
 
     agent_kind(spec)           # what the inside is made of, when it is said
     where_it_is_read(spec)     # the license, the page and the repository
+    # The format rules: warned for an agent released before them, refused for
+    # a new one, before any file is written.
+    formats = apply_format_rules(name, jobs, src_base)
     if spec.get("kind") in CONTAINER_KINDS:
         # Checked, and nothing written: its code is in its own repository.
-        out(container_spec(spec, name, version, jobs))
+        out({**container_spec(spec, name, version, jobs), "format_rules": formats,
+             **({"warnings": list(WARNINGS)} if WARNINGS else {})})
     lin = lineage(spec)        # what this package was copied from, if anything
     verify_script(spec, jobs)  # refuse a bad verify before anything is written
     pkg = os.path.join(out_dir, name)
@@ -2361,6 +2555,7 @@ def build(spec, src_base, out_dir, authored):
          "systems_note": systems_note(systems),
          "lockfiles": lockfiles,
          "refuses_count": len(refuses), "records_count": len(records),
+         "format_rules": formats,
          "draft": True,
          **({"warnings": list(WARNINGS)} if WARNINGS else {}),
          "note": "Draft package. Nobody has run this agent; review before deploying."})

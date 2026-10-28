@@ -132,11 +132,83 @@ export function kindProblems(job) {
   for (const side of ["inputs", "outputs"]) {
     for (const e of Array.isArray(job?.[side]) ? job[side] : []) {
       if (isKind(e?.kind)) continue;
-      out.push(`job ${slug}: ${side === "inputs" ? "input" : "output"} ${JSON.stringify(e?.name ?? null)} has kind ${JSON.stringify(e?.kind ?? null)}, which is not a kind; a kind is one of ${VALUE_KINDS.join(", ")} or one media type such as application/json, and several files of one kind are one input`);
+      out.push(`job ${slug}: ${side === "inputs" ? "input" : "output"} ${JSON.stringify(e?.name ?? null)} has kind ${JSON.stringify(e?.kind ?? null)}, which is not a kind; a kind is one of ${VALUE_KINDS.join(", ")} or one media type such as text/markdown or application/vnd.agentmesh.<name>+json, and several files of one kind are one input`);
     }
   }
   return out;
 }
+
+/** The format rules (owner, 2026-10-27). What one agent hands another, or a
+ *  person reviews, is Markdown with a light convention; JSON is only for
+ *  exact typed data code consumes and no person reads, and then under a kind
+ *  that says what it is. The package maker refuses a new agent that declares
+ *  bare application/json, so it is said here while the model still has the
+ *  draft in hand. Each input also says who gives it (given_by, Common Agent
+ *  6.13, proposed and optional), and a Markdown piece sketches its convention
+ *  in its about: a short header for the structured fields, then the fixed
+ *  headings, each written in backticks as `## Heading`. */
+export const BARE_JSON = "application/json";
+export const GIVEN_BY = ["person", "agent", "either"];
+export const isBareJson = (k) => typeof k === "string" && k.split(";")[0].trim().toLowerCase() === BARE_JSON;
+const isMarkdown = (k) => typeof k === "string" && k.split(";")[0].trim().toLowerCase() === "text/markdown";
+
+/** The headings a piece's about sketches as its convention: each `# ...`
+ *  written in backticks. */
+export const conventionHeadings = (about) => [...String(about ?? "").matchAll(/`(#{1,6} [^`]+)`/g)].map((m) => m[1].trim());
+
+/** The pieces an earlier spec already declared as bare application/json, as
+ *  "inputs:<name>" and "outputs:<name>". A revision of a released agent keeps
+ *  what that agent sends: converting an existing piece is its own decision,
+ *  so those are left as they were and only new pieces are held to the rule.
+ *  Read from what came with the request: a spec.json, or the agent's own
+ *  agent-descriptor.json. */
+export function earlierBareJson(asked = null) {
+  const out = new Set();
+  const add = (job) => {
+    for (const side of ["inputs", "outputs"]) {
+      for (const e of Array.isArray(job?.[side]) ? job[side] : []) if (isBareJson(e?.kind) && trim(e?.name)) out.add(`${side}:${trim(e.name)}`);
+    }
+  };
+  for (const a of asked?.attached ?? []) {
+    if (typeof a?.text !== "string") continue;
+    let doc;
+    try { doc = JSON.parse(a.text); } catch { continue; }
+    for (const j of Array.isArray(doc?.jobs) ? doc.jobs : []) add(j);
+    for (const o of Array.isArray(doc?.offerings) ? doc.offerings : []) {
+      add(o);
+      for (const st of Array.isArray(o?.steps) ? o.steps : []) add(st);
+    }
+  }
+  return out;
+}
+
+export function formatProblems(spec, { earlier = new Set() } = {}) {
+  const out = [];
+  for (const job of Array.isArray(spec?.jobs) ? spec.jobs : []) {
+    const slug = trim(job?.slug) || "a job with no slug";
+    for (const side of ["inputs", "outputs"]) {
+      const word = side === "inputs" ? "input" : "output";
+      for (const e of Array.isArray(job?.[side]) ? job[side] : []) {
+        const name = JSON.stringify(e?.name ?? null);
+        if (isBareJson(e?.kind) && !earlier.has(`${side}:${trim(e?.name)}`)) {
+          out.push(`job ${slug}: ${word} ${name} is bare application/json. Content one agent hands another, or a person reviews, is text/markdown with a convention sketched in its about; JSON is only for exact typed data code consumes and no person reads, and then a kind that says what it is, such as application/vnd.agentmesh.<name>+json`);
+        }
+        if (isMarkdown(e?.kind) && !conventionHeadings(e?.about).length) {
+          out.push(`job ${slug}: ${word} ${name} is text/markdown and its about sketches no convention; say the short header's fields, then the fixed headings, each in backticks as \`## Heading\`, so the next reader and the test of it know what to find`);
+        }
+        if (side === "inputs" && !GIVEN_BY.includes(e?.given_by)) {
+          out.push(`job ${slug}: input ${name} does not say who gives it; given_by is ${GIVEN_BY.join(", ")}`);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** What the drafting step holds a draft to: what a good spec carries, and
+ *  the format rules. checkSpec alone is the first, which is what the specs
+ *  that shipped before the format rules are measured by. */
+export const checkDraft = (spec, opts = {}) => [...checkSpec(spec), ...formatProblems(spec, opts)];
 
 /** The systems the platform brokers: the agent asks the mesh for a short-lived
  *  grant each time, so the spec names no credential, variable or setting. */
@@ -237,7 +309,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const { DRAFT } = process.env;
   if (!DRAFT) { console.error("DRAFT is required"); process.exit(2); }
   try {
-    const problems = checkSpec(JSON.parse(readFileSync(DRAFT, "utf8")));
+    const problems = checkDraft(JSON.parse(readFileSync(DRAFT, "utf8")));
     console.log(JSON.stringify({ ok: !problems.length, problems }, null, 2));
     process.exitCode = problems.length ? 1 : 0;
   } catch (e) {

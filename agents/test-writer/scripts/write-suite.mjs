@@ -18,6 +18,14 @@
 // Never a third time: two goes and then the suite stands as it is, with every
 // finding that survives said out loud.
 //
+// One file in every suite is not the model's: test/delivered-formats.test.mjs,
+// the standard check that each delivered piece is what its declared kind says
+// (Markdown with its convention's headings, a JSON kind with its shape, HTML,
+// an address, a signed binary). It is copied whole from the references into
+// every suite this writes, the model's tests call its checkDelivered on each
+// job folder they fill, and a suite whose declaration has outputs and whose
+// tests never call it goes back with that finding (owner, 2026-10-27).
+//
 // Two things change the ask. EXISTING names a folder holding the suite the
 // package already has (test/*.test.mjs): it goes to the model whole, the
 // answer may only add new files, and the kept files are never rewritten. And
@@ -86,6 +94,15 @@ job succeeded or not; the "good" sentence, clause by clause, as assertions
 on the artifact; the process contract once per script, the exit-2 line when a
 required variable is missing; and the spec itself, that the offering's steps
 are jobs and each job's "how" is what it claims.
+
+Every delivered piece must be in its declared format, and one file in every
+suite checks that: test/delivered-formats.test.mjs, which the test writer adds
+itself. Do not write it and do not answer with it. In each test that fills a
+job folder (one that runs a job's main, or calls its pieces script's fill),
+import { checkDelivered } from "./delivered-formats.test.mjs" and assert
+checkDelivered(jobDir) deep-equals []. It reads ../agent-descriptor.json and
+holds each piece pieces.json lists to its declared kind: Markdown with the
+headings its "about" sketches, a JSON kind with its sketched shape, and so on.
 
 Never write a test that would pass with the scripts absent. Never touch a
 network or a model from a test. Never write the scripts.
@@ -301,6 +318,33 @@ export function answerFrom(text) {
   return { files, could_not: couldNot, notes: notes ? trim(notes[1]) : "" };
 }
 
+/** The standard format check every suite carries, and where its master copy
+ *  is kept: references/ beside this script's folder in a built package, and
+ *  the same folder in the package's source. */
+export const FORMAT_TEST = "test/delivered-formats.test.mjs";
+export function formatTestAt(env = {}, here = HERE) {
+  return firstOf(trim(env.FORMAT_TEST) ? [trim(env.FORMAT_TEST)] : [
+    join(here, "..", "references", "delivered-formats.test.mjs"),
+    join(here, "..", "..", "test-writer", "references", "delivered-formats.test.mjs"),
+  ]);
+}
+
+/** The suite with the format check in it: the files as they are, and the
+ *  check added unless one of them is it already. */
+export function withFormatTest(files = [], text = "") {
+  if (!trim(text) || files.some((f) => f.path === FORMAT_TEST)) return files;
+  return [...files, { path: FORMAT_TEST, text }];
+}
+
+/** Whether a declaration has any output for the format check to hold. */
+export const declaresOutputs = (declared) => (declared?.jobs ?? []).some((j) => (j.outputs ?? []).length);
+
+/** Whether some file of a suite calls the format check on a job folder. */
+export const callsFormatCheck = (files = []) => files.some((f) => f.path !== FORMAT_TEST
+  && /from\s+["']\.\/delivered-formats\.test\.mjs["']/.test(f.text) && /checkDelivered\s*\(/.test(f.text));
+
+export const NO_FORMAT_CHECK = "no test calls checkDelivered(jobDir) from ./delivered-formats.test.mjs on a job folder it filled, so nothing checks that each delivered piece is in its declared format; call it in each test that fills a job folder and assert it returns []";
+
 /** The names of the tests in a file, as written. */
 export function testNamesOf(text) {
   return [...String(text ?? "").matchAll(/^\s*test(?:\.skip|\.only)?\(\s*(["'`])((?:(?!\1).)+)\1/gm)].map((m) => m[2]);
@@ -308,9 +352,15 @@ export function testNamesOf(text) {
 
 /** What is wrong with a suite before it is run. Each finding is a sentence
  *  the model can act on. */
-export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null } = {}) {
+export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false } = {}) {
   const out = [];
   if (!files.length) return ["no test file came back"];
+  // The format check is the test writer's own file, added after the answer.
+  if (files.some((f) => f.path === FORMAT_TEST)) {
+    out.push(`${FORMAT_TEST} is written by the test writer itself and added to every suite; do not answer with it`);
+    files = files.filter((f) => f.path !== FORMAT_TEST);
+    if (!files.length) return out;
+  }
   // A file under a name the suite already has is a rewrite, and a rewrite of
   // a released agent's suite is what this guards against.
   const kept = new Set([...existing.map((f) => f.path), ...taken]);
@@ -340,6 +390,7 @@ export function staticFindings(files = [], declared = null, { existing = [], tak
     const name = String(s).split("/").pop();
     if (!all.includes(name)) out.push(`nothing reaches ${s}: no file imports it or spawns it`);
   }
+  if (formatCheck && !callsFormatCheck(whole)) out.push(NO_FORMAT_CHECK);
   const k = named.length;
   if (k && total < 2 * k) out.push(`${total} test${total === 1 ? "" : "s"} for ${k} script${k === 1 ? "" : "s"}; the nine existing suites carry about eight per script, and fewer than two each is not a suite`);
   return out;
@@ -369,10 +420,13 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
     last = answerFrom(await call(request));
     findings = staticFindings(last.files, opts.declared, {
       existing: opts.existing ?? [], taken: opts.part?.taken ?? [], scripts: opts.part?.scripts ?? null,
+      // Over the whole suite when it is one ask; a suite in parts is held to
+      // it once all its parts are in (askInParts).
+      formatCheck: !opts.part && declaresOutputs(opts.declared),
     });
     standIns = null;
     if (!findings.length && run) {
-      standIns = await run(last.files);
+      standIns = await run(withFormatTest(last.files, opts.formatTest));
       findings = standInFindings(standIns);
     }
     if (!findings.length) break;
@@ -428,7 +482,8 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
     if (got.notes) notes.push(got.notes);
     findings.push(...got.findings.map((f) => `in the part for ${p.scripts.join(", ")}: ${f}`));
   }
-  const standIns = run ? await run(files) : null;
+  if (declaresOutputs(opts.declared) && !callsFormatCheck(files)) findings.push(`the whole suite: ${NO_FORMAT_CHECK}`);
+  const standIns = run ? await run(withFormatTest(files, opts.formatTest)) : null;
   if (standIns) for (const f of standInFindings(standIns)) findings.push(`the whole suite: ${f}`);
   return { files, could_not: couldNot, notes: notes.join("\n"), findings, stand_ins: standIns, calls, tried_again: triedAgain, parts };
 }
@@ -479,6 +534,10 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       ["a whole suite that holds a working package", workedAt(env)],
       ["the spec that worked suite tests", workedSpecAt(env)],
     ];
+    // The format check is not optional: every suite carries it, so a package
+    // whose master copy is missing writes no suite rather than one without it.
+    const formatTest = read(formatTestAt(env));
+    if (!trim(formatTest)) throw new Error(`the standard format check ${FORMAT_TEST} is not among this package's references, so no suite is written without it`);
     for (const [what, at] of wanted) {
       if (!at) note(RECORDS, { wanted: what, did: "asked for the suite without it, from the spec and the instruction alone" });
     }
@@ -505,8 +564,13 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       reference: read(referenceAt(env)),
       worked: read(workedAt(env)),
       workedSpec: read(workedSpecAt(env)),
+      formatTest,
       env,
     });
+    // The format check goes in beside what the model wrote, unless the suite
+    // being added to has it already.
+    const generated = existing.some((f) => f.path === FORMAT_TEST) ? [] : [{ path: FORMAT_TEST, text: formatTest }];
+    out.files = [...out.files.filter((f) => f.path !== FORMAT_TEST), ...generated];
     // The kept files go into the work folder beside the new ones, so the
     // check runs the suite as it will stand; only the new ones are delivered.
     for (const f of [...existing, ...out.files]) {
@@ -519,6 +583,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     writeFileSync(join(RECORDS, "suite.json"), JSON.stringify({
       suite: "v1", at: new Date().toISOString(), work: WORK, files,
       ...(existing.length ? { kept: existing.map((f) => f.path) } : {}),
+      ...(generated.length ? { generated: generated.map((f) => f.path) } : {}),
       ...(out.parts ? { parts: out.parts } : {}),
       could_not: out.could_not, notes: out.notes, findings: out.findings, stand_ins: out.stand_ins,
     }, null, 2) + "\n");

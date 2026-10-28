@@ -34,6 +34,20 @@ Default every job to a program. Thirty two of the forty three jobs that work are
 
 A refusal is an act, written as a gerund, then why, then what happens instead. "Be careful with credentials" is not a refusal. "Accepting a credential value pasted into a message" is. A reader has to be able to tell whether a given request falls under it.
 
+## What each piece is, in a format somebody can read
+
+Every input and output is declared with a kind, and the kind is chosen for whoever reads the piece. This is where a hand-off between agents is made to work, and where a person is spared a page of raw JSON, because everything after the spec takes the kind as given.
+
+Content passed between agents, or reviewed by a person, is Markdown by default: `text/markdown`, with a light convention. A short header carries the few structured fields, then fixed headings carry the rest. The convention is sketched in the piece's `about`, with the header's fields and each heading in backticks, so the agent that reads it next and the test that checks it both know what to find: "Markdown: a header `source, read_at`, then `## Key points` with one bullet per point, then `## Not read`."
+
+JSON is only for exact typed data that code consumes and a person never reads, such as IDs, coordinates, timings or numeric series. Then the kind says what the data is, `application/vnd.agentmesh.<name>+json` or another real `+json` type, and the `about` sketches its top-level shape. A bare `application/json` says nothing about what is inside, and the package maker refuses a new agent that declares one.
+
+Every kind is specific: a real media type, a vendor kind, or one of the four value kinds where nothing more is known (`text`, `identifier`, `url`, `document`).
+
+Every input says who gives it, with `given_by`: `person`, `agent` or `either`. A person and an agent need different things from the same input, a box to type in or a file to hand over, and the descriptor is the only place that can say which.
+
+These are drafted, not asked: the format is not one of the three that are never invented, so the default goes in and the reply points at it. Where a person might reasonably want something other than the default, the draft carries the default and the reply offers the choice; it is never settled on their behalf. A revision of a released agent keeps a piece it already sends as bare `application/json` exactly as it is, because changing what an agent sends is its own decision, and the reply names that piece as one to make specific.
+
 ## What was missing
 
 A job that went ahead without something it takes says so in the reply, near the top, before the detail of what it produced. This is not a failure and not an apology. It is the one thing a reader cannot work out from what they were sent, because work done on half the material looks exactly like work done on all of it.

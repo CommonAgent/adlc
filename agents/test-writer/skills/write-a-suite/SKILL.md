@@ -74,4 +74,5 @@ Run these from this skill's folder; each one says what it needs at the top.
 - references/what-a-good-suite-carries.md
 - references/a-suite-that-works.test.mjs
 - references/the-spec-it-tests.json
+- references/delivered-formats.test.mjs
 - references/rules.md

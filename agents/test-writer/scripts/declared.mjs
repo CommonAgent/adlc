@@ -59,7 +59,7 @@ export function declaredOf(spec) {
     when: j.when ?? null, good: j.good ?? null, empty: j.empty ?? null, does: j.does ?? null,
     how: j.how ?? null,
     inputs: (j.inputs ?? []).map((i) => ({ name: i.name, kind: i.kind ?? null, required: !!i.required })),
-    outputs: (j.outputs ?? []).map((o) => ({ name: o.name, kind: o.kind ?? null, when: o.when ?? null })),
+    outputs: (j.outputs ?? []).map((o) => ({ name: o.name, kind: o.kind ?? null, when: o.when ?? null, ...(o.about ? { about: o.about } : {}) })),
     scripts: j.scripts ?? [],
     commands: commandsOf(j.instructions),
   }));

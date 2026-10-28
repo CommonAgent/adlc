@@ -74,6 +74,29 @@ export function filesLine(files = [], { container = false } = {}) {
     + ` and ${many(skills, "SKILL.md", "SKILL.md files")}.`;
 }
 
+/** One sentence on the formats the draft chose for what the offered jobs
+ *  take and hand back, because a format is drafted rather than asked and a
+ *  reader is owed the part they did not choose (rules.md, "What each piece
+ *  is"). Empty when the offered jobs declare no inputs or outputs. */
+export function formatsLine(spec) {
+  const jobs = Array.isArray(spec?.jobs) ? spec.jobs : [];
+  const offered = jobs.some((j) => j?.offered) ? jobs.filter((j) => j?.offered) : jobs;
+  const outs = []; const ins = [];
+  for (const j of offered) {
+    for (const o of Array.isArray(j?.outputs) ? j.outputs : []) if (trim(o?.name) && trim(o?.kind)) outs.push(`${trim(o.name)} as ${trim(o.kind)}`);
+    for (const i of Array.isArray(j?.inputs) ? j.inputs : []) {
+      if (!trim(i?.name)) continue;
+      const by = { person: "a person", agent: "another agent", either: "a person or an agent" }[i?.given_by];
+      ins.push(by ? `${trim(i.name)} from ${by}` : `${trim(i.name)}, with nobody said to give it`);
+    }
+  }
+  if (!outs.length && !ins.length) return "";
+  const parts = [];
+  if (outs.length) parts.push(`it hands back ${outs.join(", ")}`);
+  if (ins.length) parts.push(`it takes ${ins.join(", ")}`);
+  return `The formats are drafted, so say if one should be different: ${parts.join("; ")}.`;
+}
+
 /** The whole reply.
  *
  *  Order is deliberate: what it is, then what somebody has to do about it,
@@ -113,6 +136,8 @@ export function replyText({
   // delivered as though it were one. Null when this round never got as far
   // as the builder, which says nothing either way.
   if (Array.isArray(files)) lines.push(filesLine(files, { container }));
+  const formats = formatsLine(spec);
+  if (formats) lines.push(formats);
   if (findings.length) {
     lines.push(`The draft was written twice and ${findings.length === 1 ? "this still stands" : "these still stand"}: ${findings.join("; ")}. `
       + "It is delivered as it is, so you can see it and say what to fix.");

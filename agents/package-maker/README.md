@@ -60,6 +60,52 @@ it writes is always the current names.
 - `host/` holds the agent's descriptor and listing, and the brain and pack
   script templates for a fleet host.
 
+## The format rules, and the cut-over for existing agents
+
+Since 2026-10-27 `build.py` holds every package to two format rules, so
+that what an agent declares it takes and hands on is what it really sends:
+
+1. **No bare `application/json`.** Every input and output kind is specific:
+   `text/markdown` (with a light convention sketched in the piece's `about`)
+   for content a person reviews or one agent hands to another, a vendor
+   kind such as `application/vnd.agentmesh.<name>+json` for exact typed data
+   only code reads, or another real media type. The four value kinds
+   (`text`, `identifier`, `url`, `document`) are still read.
+2. **No undeclared delivered piece, where the build can see one.** A literal
+   piece entry (`{ name: "...", ..., media_type: "..." }`) in a job's
+   `scripts/pieces*.mjs`, and every entry of a `pieces.json` in the agent's
+   folder or in a file `PIECES` names, must be a declared output, by its
+   name or as `<output> (<file>)`. A name built at run time is not seen.
+
+An input may also say who gives it, `given_by`: `person`, `agent` or
+`either` (Common Agent 6.13, proposed and optional). Any other value is
+refused.
+
+What a finding does depends on the cut-over:
+
+- **A new agent** (no release before 2026-10-27): its findings **refuse** the
+  package, with each finding named.
+- **An existing agent** (released before then): its findings are
+  **warnings**, said on stderr and in the result's `warnings`, and the
+  package is built as before.
+
+The result, and the signed build record `pack.py` writes, carry
+`format_rules`: `existing`, `mode` (`warn` or `refuse`), `since` and
+`findings`. An agent is existing when its name is in
+`FORMAT_EXISTING_NAMES` in `build.py`, the agents released when the rules
+came in, or when the caller says `FORMAT_EXISTING=1`. `pack.py` says so
+for a name this builder released before the rules: its last build record
+of that name carries no `format_rules`. A name first built under the rules
+stays new, because its record says `existing: false`. `FORMAT_EXISTING=0`
+treats a listed name as new.
+
+To tighten the cut-over once the existing agents are fixed: remove each
+fixed agent's name from `FORMAT_EXISTING_NAMES` as it is fixed (the list is
+only ever shortened), or set `FORMAT_EXISTING_MODE = "refuse"` in
+`build.py` to turn every existing agent's warnings into refusals at once.
+The tests in `test_build.py` (`TheFormatRules`) and `test_pack.py`
+(`TheFormatCutOver`) pin both sides.
+
 ## What it needs
 
 - Python 3.11 or later for `build.py`. Nothing else to build a package.
@@ -81,7 +127,7 @@ AGENTMESH_ENV=example python3 -m unittest test_build test_pack
 - `test_build.py` builds AgentMesh's product packages (the explainer chain and
   others) as its fixtures. Set `ADLC_PACKAGES` to a folder of packages laid out
   as `<family>/<name>/` (each an agent's own files), such as the AgentMesh repository's
-  `packages/`, and all 97 tests run; without it the module is skipped.
+  `packages/`, and all 109 tests run; without it the module is skipped.
 - The tests in `test_pack.py` that lay a run's work out as the agent's own
   repository need AgentMesh's `tools/agent-repo.mjs`; name it with
   `AGENT_REPO_TOOL`. The image tools they also read are in
