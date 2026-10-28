@@ -3,6 +3,13 @@
   "agent_version": "0.1.1",
   "name": "Security reviewer",
   "summary": "Reviews an agent package before it is installed and writes down what it may reach, what it may spend and what it must never do, with a reason for each.",
+  "will_not": [
+    "It will not bind a credential, grant an access or install the agent.",
+    "It will not change the package it reviews.",
+    "It will not pass an access that has no recorded reason.",
+    "It will not pass a package whose owner set no spending limit.",
+    "It will not repeat a credential it finds in the package."
+  ],
   "does": "Reviews an Agent Package before it is installed and before any credential is bound to it, and writes down what the agent may reach, what it may spend and what it must never do, with the reason for each. It flags every permission the package asks for that has no recorded reason, refuses a package whose programs reach a system its declaration does not name or whose owner set no spending limit, and lists what it lets through knowingly. It grants nothing and changes nothing.",
   "offerings": [
     {
@@ -92,10 +99,6 @@
           }
         }
       ],
-      "started_by": [
-        "person",
-        "agent"
-      ],
       "revisions": {
         "included": {
           "count": 1,
@@ -106,17 +109,14 @@
           "amount_micro": 0,
           "currency": "USD"
         }
-      }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
     }
   ],
   "refusals": "Binding a credential, granting an access or installing the agent. The review is made before any of them and grants nothing, so a message asking for one is declined in the reply and the review goes ahead without it.\nChanging the package. A review that edited what it reviewed would be reviewing its own work, so a finding is written down and what to do about it is the owner's decision.\nPassing an access that has no recorded reason. The stage is done when every permission asked for has one, so an access without one is flagged and the package is refused until somebody records why or takes it out.\nPassing a package whose programs reach a system its declaration does not name. That reach is access nobody agreed to, so the package is refused and the refusal names the address or the credential.\nPassing a package whose owner set no spending limit. What an agent may spend is somebody's money, and a number this reviewer invented would be a number they never agreed to.\nRepeating a credential. Something in the package that looks like one is reported by file and line, and its bytes go into no review, record or reply.\nCalling a bound enforced that the platform does not enforce. Each bound says what holds it, and where only the package's own code does, the review says so.\nLetting the model decide. The verdict comes from the role's rules applied the same way every time; the model's one call says which reasons to read hardest and never passes or refuses anything.",
-  "will_not": [
-    "It will not bind a credential, grant an access or install the agent.",
-    "It will not change the package it reviews.",
-    "It will not pass an access that has no recorded reason.",
-    "It will not pass a package whose owner set no spending limit.",
-    "It will not repeat a credential it finds in the package."
-  ],
   "escalates": [
     "A refused package. The review names what stopped it, and whether to change the package, record a reason or accept the risk is the owner's decision.",
     "What is accepted knowingly. Each risk the review lets through is listed for a person to read before the credentials are bound."

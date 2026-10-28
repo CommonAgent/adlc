@@ -3,6 +3,13 @@
   "agent_version": "0.1.6",
   "name": "Solution architect",
   "summary": "Writes the architecture record for a new agent: the systems it reaches, the product bound to each, and every decision with its reason.",
+  "will_not": [
+    "It will not write the statement of the job for you; it asks for yours.",
+    "It will not design the steps or write the spec; the spec writer does that within its record.",
+    "It will not choose a product your organization has not chosen without marking it as the platform's default.",
+    "It will not fill in a spending limit, an access or an address on your behalf; it asks.",
+    "It will not put a model name, an address or a credential into a record."
+  ],
   "does": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks what only a person can commit to, and designs nothing.",
   "offerings": [
     {
@@ -109,10 +116,6 @@
           }
         }
       ],
-      "started_by": [
-        "person",
-        "agent"
-      ],
       "revisions": {
         "included": {
           "count": 1,
@@ -123,7 +126,11 @@
           "amount_micro": 0,
           "currency": "USD"
         }
-      }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
     },
     {
       "id": "revise-the-architecture",
@@ -249,10 +256,6 @@
           }
         }
       ],
-      "started_by": [
-        "person",
-        "agent"
-      ],
       "revisions": {
         "included": {
           "count": 1,
@@ -263,17 +266,14 @@
           "amount_micro": 0,
           "currency": "USD"
         }
-      }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
     }
   ],
   "refusals": "Writing the statement of the job. The statement is the Requirements stage's and the person's own words; an architecture written from a statement this agent invented answers a job nobody asked for. It is declined, and the reply asks for the statement.\nDesigning the steps or writing the spec. The Design is held by the spec writer for an agent and the solution planner for a solution, and it designs within the record; a record that also designed would be checked by nobody. It is declined, and the reply says who holds it.\nChoosing the agent that does a step. That is the Source stage's, held by the catalog. It is declined, and the reply says so.\nNaming a system by its product, an address or an account. A system is named in plain system words and the product is the binding, so a package that works for one organization's stack works for another's; a system named by its product is renamed in code to its system.\nBinding a platform default where the organization chose a product. The organization's choice is the binding wherever it made one; a default fills only what it left open, and is marked as a default.\nFilling in a commitment. A spending limit, a product neither the organization chose nor the platform offers, access to a system the statement does not call for and a network destination beyond the derived set are commitments somebody would be held to, so each is asked, and any the model filled in is taken back out in code.\nAdding a system on a designer's word. A design step that needs a system the record does not name comes back as a question for the person, and the record is revised only with their answer.\nPutting a model's name, an address or a credential into a record. A model is the text-reasoning binding's, placed at install; an address and a credential are what the owner's instruction supplies at Deploy. Each is taken out of the answer in code, and a record that still carries one is not delivered.\nDelivering a record as finished while a question is open. The record goes, so the person can read it and answer, and its header says done: no.\nAsking a third time. The architecture is asked for, checked and asked once more with the findings, and then it stands with the findings named.",
-  "will_not": [
-    "It will not write the statement of the job for you; it asks for yours.",
-    "It will not design the steps or write the spec; the spec writer does that within its record.",
-    "It will not choose a product your organization has not chosen without marking it as the platform's default.",
-    "It will not fill in a spending limit, an access or an address on your behalf; it asks.",
-    "It will not put a model name, an address or a credential into a record."
-  ],
   "escalates": [
     "A binding that cannot be made, a spending limit, a destination beyond the derived set, or a system the statement does not call for. None of them can be read off a statement, and each is a commitment somebody would be held to.",
     "An architecture that still carries findings after two goes. It is delivered with the findings named, and what to do about it is the person's decision."

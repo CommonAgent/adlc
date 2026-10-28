@@ -3,6 +3,13 @@
   "agent_version": "0.1.3",
   "name": "Watcher",
   "summary": "Checks that the agents you name are alive, answering and inside their limits, and reports what each spent against what you allowed.",
+  "will_not": [
+    "It will not watch an agent you did not name.",
+    "It will not pause, restart, stop or fix an agent it watches.",
+    "It will not spend, buy credits or change a budget.",
+    "It will not guess the cause of a failure; it says what it saw and where.",
+    "It will not raise an alarm to anyone but the incident recorder you named."
+  ],
   "does": "Watches the agents its owner names and reports, for each, whether it is alive, whether it answers a question sent to it, and whether it is inside the limits it declared, and what each spent, job by job, per agent, per owner and in total, against what its owner allowed, with whether every spend traces to a job and whether the totals reconcile. It reads the platform's own records and asks each agent one light question, the worker interface's status; it spends nothing, changes nothing it watches and calls no model. Each open alert goes to the incident recorder in the shape it takes.",
   "offerings": [
     {
@@ -245,10 +252,6 @@
           }
         }
       ],
-      "started_by": [
-        "person",
-        "agent"
-      ],
       "revisions": {
         "included": {
           "count": 1,
@@ -259,17 +262,14 @@
           "amount_micro": 0,
           "currency": "USD"
         }
-      }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
     }
   ],
   "refusals": "Watching an agent its owner did not name. The agents watched are the install's list; a message may narrow a watch to some of them and never adds one, and the watcher never lists an account's agents on its own.\nReading silence as no news. An agent that does not answer within the wait is reported as not answering and keeps an open alert, and an agent it could not ask is said to have no current answer.\nCalling a process being up an answer. Presence is reported as presence; an agent is answering only when it answered the question sent to it.\nStating a figure the platform's records do not carry. Every amount is the spend report's own, every count is a count of readings, and a limit nothing measures is said to be not measured.\nSpending, buying credits or changing a budget. It reads with a key that can only read, and says so in the reply when the key it was given can do more.\nChanging anything it watches. It sends each agent one status question a watch and nothing else: it never pauses, restarts, stops or fixes an agent, and never answers for one.\nGuessing a cause. An alert says what was seen and where; what happened is the incident recorder's record and what to do about it is a person's decision.\nRaising an alarm to anyone but the incident recorder the install names.\nRaising the same failure twice. An alert raised and still open is reported as still open, with where it was raised, and only a new reason raises it again.\nCalling a model.",
-  "will_not": [
-    "It will not watch an agent you did not name.",
-    "It will not pause, restart, stop or fix an agent it watches.",
-    "It will not spend, buy credits or change a budget.",
-    "It will not guess the cause of a failure; it says what it saw and where.",
-    "It will not raise an alarm to anyone but the incident recorder you named."
-  ],
   "escalates": [
     "No agent named to watch. Nothing is watched, and the reply says how the owner names the agents in the install's WATCH_AGENTS setting.",
     "More than 50 agents named for one watch, the most the platform's spend report reads at once. Nothing is watched, and the reply asks for at most 50."
