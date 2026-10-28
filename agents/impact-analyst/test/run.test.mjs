@@ -155,7 +155,8 @@ test("files are known by what they hold: a declaration sent as plain JSON is rea
   const r = await run(h, { files });
   assert.equal(r.status, 0, r.stderr);
   const text = readFileSync(join(r.jobDir, "out", "impact-report.md"), "utf8");
-  assert.match(text, /running\.json was sent as application\/json and read as application\/vnd\.agentmesh\.agent-descriptor\+json/);
+  assert.match(text, /A file sent as application\/json was read as application\/vnd\.agentmesh\.agent-descriptor\+json, by what it holds\. \(2 of them\)/);
+  assert.doesNotMatch(text, /running\.json|changed\.json/);
   assert.match(r.doc.reply, /notes\.txt/);
 });
 

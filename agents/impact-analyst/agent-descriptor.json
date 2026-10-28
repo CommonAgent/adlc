@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.0",
+  "agent_version": "0.1.1",
   "does": "Works out what a change to an agent touches before anything is built. Given the agent's declaration as it runs today and as it would be after the change, and the platform's list of what depends on it, it names every dependent with where it was learned of, and answers each one compatible, breaking or a change of behavior, with the reason. It reads the dependent solutions' canvases and the agents that take what it hands back when they are given, and compares kinds by the platform's own rule for whether a line fits. It files a dependency debt in the ledger, owed to the dependent's owner, for each one that is not compatible, and writes the impact report the person who asked for the change approves or refuses it from. It calls no model, changes nothing it reports on and approves nothing. It holds the impact analyst role (agentroles.ai) for the Impact stage of the Agent Development Lifecycle.",
   "offerings": [
     {

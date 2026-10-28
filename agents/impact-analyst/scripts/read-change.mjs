@@ -21,6 +21,9 @@
 // file whose `format` is agent-descriptor-v1 is a descriptor whatever it was
 // called. Where the kind it was sent under says something else, that is noted.
 //
+// The report names no attached file: a host names the files it downloads its
+// own way, and a report that carried those names would differ between two runs.
+//
 // Which descriptor is the running version: the one with the lower
 // agent_version. When the versions are equal or cannot be read, the first one
 // attached, and the reading says so. The runtime requirements are paired the
@@ -83,7 +86,7 @@ export function sortFiles(files = []) {
     }
     const declared = bareKind(f.declared);
     if (declared && declared !== KINDS[what]) {
-      got.notes.push(`${f.name} was sent as ${declared} and read as ${KINDS[what]}, by what it holds.`);
+      got.notes.push(`A file sent as ${declared} was read as ${KINDS[what]}, by what it holds.`);
     }
     if (what === "descriptor") got.descriptors.push(f);
     else if (what === "runtime") got.runtimes.push(f);
@@ -101,10 +104,10 @@ export function pairDescriptors(descriptors) {
   const va = trim(a.doc.agent_version);
   const vb = trim(b.doc.agent_version);
   const c = compareVersions(va, vb);
-  if (c === 1) return { running: b, changed: a, how: `${b.name} is the running version, because its agent_version ${vb} is lower than ${va}` };
-  if (c === -1) return { running: a, changed: b, how: `${a.name} is the running version, because its agent_version ${va} is lower than ${vb}` };
+  if (c === 1) return { running: b, changed: a, how: `The declaration with agent_version ${vb} is the running version, because ${vb} is lower than ${va}` };
+  if (c === -1) return { running: a, changed: b, how: `The declaration with agent_version ${va} is the running version, because ${va} is lower than ${vb}` };
   const why = c === 0 ? `both say agent_version ${va}` : "their agent_version could not be compared";
-  return { running: a, changed: b, how: `${a.name} is taken as the running version because it was attached first; ${why}` };
+  return { running: a, changed: b, how: `The declaration attached first is taken as the running version, because ${why}` };
 }
 
 /** The runtime requirements for each side: by a version in the file's name,
@@ -117,8 +120,8 @@ export function pairRuntimes(runtimes, running, changed) {
   if (rv && cv && rv !== cv && named(rv) && named(cv) && named(rv) !== named(cv)) {
     return { running: named(rv), changed: named(cv), how: "paired with the descriptors by the version in each file's name" };
   }
-  if (runtimes.length === 1) return { running: null, changed: null, how: `only one runtime requirements file (${runtimes[0].name}) came, so the price and the limits before and after could not be compared` };
-  return { running: runtimes[0], changed: runtimes[1], how: `${runtimes[0].name} is taken as the running version's and ${runtimes[1].name} as the change's, in the order they were attached` };
+  if (runtimes.length === 1) return { running: null, changed: null, how: "only one runtime requirements file came, so the price and the limits before and after could not be compared" };
+  return { running: runtimes[0], changed: runtimes[1], how: "the runtime requirements attached first are taken as the running version's and the next as the change's" };
 }
 
 /** Read the attached files from disk and sort them. */
