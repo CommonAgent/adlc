@@ -12,6 +12,7 @@
 // per skill, in the build entry's order, with the members a test of a package
 // reads about a job: slug, title, does, inputs, outputs, how, examples,
 // offered, steps (the ids), revisions, trial, scopes, started_by, works_as,
+// example,
 // run, lockfile, scripts,
 // references, assets, and skill (the SKILL.md text, which holds what a
 // spec called a job's when, good, empty and instructions); and `systems`,
@@ -77,7 +78,7 @@ export function readAgentFolder(dir) {
     j.offered = byOffering.has(slug);
     const o = byOffering.get(slug);
     if (o?.steps?.length) j.steps = o.steps.map((s) => s.id);
-    for (const k of ["revisions", "trial", "scopes", "started_by", "works_as"]) if (o && k in o) j[k] = o[k];
+    for (const k of ["revisions", "trial", "scopes", "started_by", "works_as", "example"]) if (o && k in o) j[k] = o[k];
     if (runtime.run?.[slug]) j.run = runtime.run[slug];
     if (deps.has(slug)) j.lockfile = deps.get(slug).lockfile.slice(`skills/${slug}/`.length);
     for (const k of ["scripts", "references", "assets"]) if (build.skills?.[slug]?.[k]?.length) j[k] = [...build.skills[slug][k]];
