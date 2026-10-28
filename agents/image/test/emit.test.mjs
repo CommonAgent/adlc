@@ -199,9 +199,11 @@ test("the emitted record names the package, its digests, and every variable the 
   assert.deepEqual(record.binaries, ["chromium", "ffmpeg", "ffprobe"].map((name) => ({ name, checked_at_build: true, installed_here: false })));
   const vars = requiredVariables(readPackage(builtPackage("explainer-maker")).install);
   // draft-host is brokered since explainer-maker 0.12.0: no key of its own;
-  // since 0.14.1 text-reasoning carries one setting, the story model.
+  // since 0.14.1 text-reasoning carries one setting, the story model; since
+  // 0.16.0 text-to-speech carries one too, the speech model, because no model
+  // is named in the package's code any more.
   assert.deepEqual(vars.credentials.map((c) => c.env), ["TEXT_API_KEY", "TTS_API_KEY"]);
-  assert.deepEqual(vars.settings.map((s) => s.env), ["STORY_MODEL"]);
+  assert.deepEqual(vars.settings.map((s) => s.env), ["STORY_MODEL", "TTS_MODEL"]);
   assert.deepEqual(vars.ceilings, [
     { name: "text-reasoning", per: "task", env: "CEILING_TEXT_REASONING", unit: "calls" },
     { name: "text-to-speech", per: "task", env: "CEILING_TEXT_TO_SPEECH", unit: "characters" },

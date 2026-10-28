@@ -439,7 +439,7 @@ test("a write that still fails is labelled storage, an infrastructure failure th
 // and the copies did not follow.
 const FILLED = {
   TEXT_API_KEY: "x", TTS_API_KEY: "x",
-  EXPLAINER_CREDIT: "on", STORY_MODEL: "gemini-2.5-flash",
+  EXPLAINER_CREDIT: "on", STORY_MODEL: "a-story-model", TTS_MODEL: "a-speech-model",
 };
 const CEILINGS = { "text-reasoning": { limit: 40 }, "text-to-speech": { limit: 20000 } };
 
