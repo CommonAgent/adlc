@@ -1,11 +1,11 @@
 ---
 name: agent-change
-description: when somebody proposes a change to an agent and needs to know, before anything is built, what depends on the agent and what the change does to each
+description: When a change to an agent is proposed and nothing has been built yet: the person who asked for it needs every dependent named and answered before deciding. This is the Impact stage of the Agent Development Lifecycle.
 ---
 
 # Report on a change to an agent
 
-Part of impact-analyst. when somebody proposes a change to an agent and needs to know, before anything is built, what depends on the agent and what the change does to each
+Part of impact-analyst. When a change to an agent is proposed and nothing has been built yet: the person who asked for it needs every dependent named and answered before deciding. This is the Impact stage of the Agent Development Lifecycle.
 
 ## When to use this
 
@@ -16,9 +16,9 @@ When a change to an agent is proposed and nothing has been built yet: the person
 - running version (application/vnd.agentmesh.agent-descriptor+json, required)
 - changed version (application/vnd.agentmesh.agent-descriptor+json, required)
 - what depends on it (application/vnd.agentmesh.dependents+json, required)
-- dependent solutions (application/vnd.agentmesh.solution+json, optional, one file each)
+- dependent solutions (application/vnd.agentmesh.solution+json, optional)
 - agents that may take its outputs (application/vnd.agentmesh.agent-ports+json, optional)
-- runtime requirements (application/vnd.agentmesh.agent-runtime-requirements+json, optional, before and after)
+- runtime requirements (application/vnd.agentmesh.agent-runtime-requirements+json, optional)
 - what changed (text, optional)
 
 ## What a good result looks like
@@ -50,3 +50,8 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/report.mjs
 - scripts/pieces.mjs
 - scripts/went-without.mjs
+
+## References
+
+- references/how-each-change-is-answered.md
+- references/rules.md

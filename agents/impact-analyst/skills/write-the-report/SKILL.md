@@ -1,27 +1,19 @@
 ---
 name: write-the-report
-description: last, to write the impact report, the pieces list and the reply
+description: At the end of every job that had what it needs.
 ---
 
 # Write the report
 
-Part of impact-analyst. last, to write the impact report, the pieces list and the reply
+Part of impact-analyst. At the end of every job that had what it needs.
 
 ## When to use this
 
 At the end of every job that had what it needs.
 
-## What this needs
-
-- the differences, each dependent answered, and what is owed
-
 ## What a good result looks like
 
 out/impact-report.md: a front matter header (report, subject, running, changed, read_at, verdict, counts, dependents with each one's name, kind, owner, found_by, verdict and reason, approved), then What changed, Each dependent, The agents that read what it hands back, What is owed, What to redo and what to reuse, Cost, Not read and Your decision. The same inputs give the same bytes. pieces.json lists it as the impact report, text/markdown. The reply gives the counts, the first dependents, what was filed under which numbers, what the job went without, and declines any request to approve.
-
-## What it produces
-
-- impact report (text/markdown, per task)
 
 ## When it comes back empty
 

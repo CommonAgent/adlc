@@ -1,28 +1,19 @@
 ---
 name: file-what-is-owed
-description: after every dependent is answered, to file a dependency debt for each one that is not compatible
+description: Once every dependent is answered, before the reply is written.
 ---
 
 # File what is owed
 
-Part of impact-analyst. after every dependent is answered, to file a dependency debt for each one that is not compatible
+Part of impact-analyst. Once every dependent is answered, before the reply is written.
 
 ## When to use this
 
 Once every dependent is answered, before the reply is written.
 
-## What this needs
-
-- each dependent, answered
-- the ledger, bound by the host as the-ledger: `LEDGER_TOKEN` and `MESH_API_BASE`
-
 ## What a good result looks like
 
 One dependency debt for each dependent answered breaking or change of behavior: against the changed agent, owed to the dependent's owner, caused by the change (both versions and the digest of the changed declaration), holding back promote and decommission. Items already in the ledger for the same change, owner and dependent are reported by number and not filed again. What happened to each is in filed.json and the reply.
-
-## What it produces
-
-- filed.json in the job's records: each item and its number, or why it was not filed
 
 ## When it comes back empty
 
