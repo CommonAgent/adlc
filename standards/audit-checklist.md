@@ -35,7 +35,7 @@ why: <reason>
 kind: design-time | run-time | stage-record
 check: <name of the registered test that runs it>
 fixed-by: requirements | architecture | design | test | code | package | deploy | docs
-level: warn | refuse
+level: info | warn | refuse
 applies: <new agents from DATE; existing agents from DATE>
 evidence: <what the report shows>
 ```
@@ -47,15 +47,18 @@ evidence: <what the report shows>
 - **check.** The name of the test the auditor registers to run the check.
   Where an existing test already holds the rule (the package maker's format,
   model and standing-asset rules, AgentMesh's `check-no-model-literals`
-  gate, the registry's descriptor validation, the code writer's signed
-  delivery manifests), the explanation under the check names it, and the
+  gate, the registry's descriptor validation, signed delivery
+  manifests), the explanation under the check names it, and the
   auditor's registered test runs it. A check whose test is not registered
   with the auditor is reported under "Not checked", with the reason, and is
   never skipped silently.
 - **fixed-by.** The stage that fixes a finding. The report files each
   finding as a debt routed to that stage.
 - **level.** What a finding does to a new agent's verdict: `refuse` makes it
-  `fail`, `warn` makes it at most `pass_with_findings`.
+  `fail`, `warn` makes it at most `pass_with_findings`, and `info` is shown in
+  the report and does not count toward the verdict. An organization may raise
+  any `info` check to `warn` or `refuse` in its own checklist, which is a
+  standing asset (see [README.md](README.md)).
 - **applies.** A new agent is one first released on or after the first
   date. An existing agent is one released before it: its findings are
   warnings until the second date, which the owner sets when the warnings
@@ -330,103 +333,116 @@ evidence: the version and package digest the agent serves on dev and on prod
 
 ## Stage records
 
-Each lifecycle stage leaves a record for the version. The report gives one
-line per stage: present, signed by its holder, and bound to the package
+The audit requires artifacts and checks, not a particular lifecycle. The
+roles are open, and the artifacts before the package (the statement, the
+architecture record, the design, the tests, the review findings and the
+security statement) are optional: each is accepted as evidence when it is
+present, signed by whoever made it and bound to the package digest, and its
+check is `info`, shown in the report and not counted toward the verdict. No
+check requires a signature from a particular holder: any signed artifact
+bound to the digest counts.
+
+What is required, for an agent the platform runs, is the package itself, its
+signed build record and its deployment record, with a signed Descriptor and
+registration for every agent (above). (The conformance verdict is required
+too; its check is added with the auditor's support for it.) The report
+gives one line per artifact: present, signed and bound to the package
 digest; or missing, unsigned, or stale (bound to another digest). A
-hand-made package has none of these, which is why it fails the audit and so
-both gates.
+hand-made package has no build record bound to its digest, which is why it
+fails the audit and so both gates.
 
 ```yaml
 id: stage-record-requirements
-says: The requirements for this version (what the person asked the agent to do, in their words) are present, signed by their holder, and bound to the package digest.
+says: The statement for this version (what the person asked the agent to do, in their words) is present, signed by whoever made it, and bound to the package digest.
 why: Every later stage answers the requirements; without them nothing says what the agent was built to do.
 kind: stage-record
 check: stage-record:requirements
 fixed-by: requirements
-level: refuse
+level: info
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: the requirements' digest, their signer, and the package digest they name
 ```
 
 ```yaml
 id: stage-record-architecture
-says: The architecture record for this version is present, signed by its holder, and bound to the package digest.
+says: The architecture record for this version is present, signed by whoever made it, and bound to the package digest.
 why: The record decides the systems, the bindings and the standing assets; without it nothing says those were decided rather than guessed.
 kind: stage-record
 check: stage-record:architecture
 fixed-by: architecture
-level: refuse
+level: info
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: the record's digest, its signer, and the package digest it names
 ```
 
 ```yaml
 id: stage-record-design
-says: The Design (the agent's own files as the spec writer delivered them) for this version is present, signed by its holder, and bound to the package digest.
-why: The package must be built from a Design that was written within the architecture record, not from files made by hand.
+says: The design (the agent's own files as they were delivered) for this version is present, signed by whoever made it, and bound to the package digest.
+why: A design bound to the digest is evidence of what the package was built to be, and of the record it was written within.
 kind: stage-record
 check: stage-record:design
 fixed-by: design
-level: refuse
+level: info
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: the delivery's digest, its signer, and the package digest it names
 ```
 
 ```yaml
 id: stage-record-test
-says: The test suite for this version is present, signed by its holder, and bound to the package digest.
-why: Untested code reaching prod is what the lifecycle exists to stop.
+says: The test suite for this version is present, signed by whoever made it, and bound to the package digest.
+why: A suite bound to the digest, with its last result, is evidence the package was tested.
 kind: stage-record
 check: stage-record:test
 fixed-by: test
-level: refuse
+level: info
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: the suite's digest, its signer, the package digest it names, and its last result
 ```
 
 ```yaml
 id: stage-record-code
-says: Every script in the package was delivered by a code writer, traced through its signed delivery manifest.
-why: A script written or changed by hand after the code stage has passed no review and no test.
+says: Every script in the package is listed, with exactly its bytes, in a signed delivery manifest.
+why: A script that no signed delivery lists has no record of where it came from.
 kind: stage-record
 check: stage-record:code
 fixed-by: code
-level: refuse
+level: info
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: each script with the manifest that traces it, or that none does
 ```
 
 The trace is the package maker's `provenance.mjs`: a script is traced when a
-delivery manifest signed by a code writer lists a piece with exactly its
-bytes.
+signed delivery manifest lists a piece with exactly its bytes. Any signer
+counts; an operator who wants one particular code writer's scripts only sets
+that in its own builder (`REQUIRED_CODER`), not in this checklist.
 
 ```yaml
 id: stage-record-review
-says: The code review for this version is present, signed by the reviewer, and bound to the package digest.
-why: Code that no reviewer read reaches prod on its author's word alone.
+says: The review findings for this version are present, signed by whoever made them, and bound to the package digest.
+why: Findings bound to the digest are evidence that somebody other than the author read the code.
 kind: stage-record
 check: stage-record:review
 fixed-by: code
-level: refuse
+level: info
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: the review's digest, its signer, the package digest it names, and its open findings
 ```
 
 ```yaml
 id: stage-record-security
-says: The security review for this version is present, signed by the reviewer, and bound to the package digest.
-why: What an agent may reach, hold and spend is checked before it runs where the money and the data are.
+says: The security statement for this version is present, signed by whoever made it, and bound to the package digest.
+why: A security statement bound to the digest is evidence of what the agent may reach, hold and spend, and why; an outcome check may cite it.
 kind: stage-record
 check: stage-record:security
 fixed-by: code
-level: refuse
+level: info
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: the review's digest, its signer, the package digest it names, and its open findings
 ```
 
 ```yaml
 id: stage-record-package
-says: The build record for this version is present, signed by the package maker, and names this package digest.
+says: The build record for this version is present, signed by whoever built the package, and names this package digest.
 why: The build record is what binds every other record to the bytes being deployed.
 kind: stage-record
 check: stage-record:build-record
@@ -438,7 +454,7 @@ evidence: the build record's signer, its package digest, and its format_rules an
 
 ```yaml
 id: stage-record-deploy
-says: A deployment record on dev for this package digest is present and signed by the deployment manager.
+says: A deployment record on dev for this package digest is present and signed by whoever deployed it.
 why: A version goes to prod only after it ran on dev.
 kind: stage-record
 check: stage-record:deployment-record

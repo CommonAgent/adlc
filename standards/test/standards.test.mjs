@@ -16,7 +16,7 @@ const read = (name) => readFileSync(join(STANDARDS, name), "utf8");
 const MEMBERS = ["id", "says", "why", "kind", "check", "fixed-by", "level", "applies", "evidence"];
 const KINDS = ["design-time", "run-time", "stage-record"];
 const FIXED_BY = ["requirements", "architecture", "design", "test", "code", "package", "deploy", "docs"];
-const LEVELS = ["warn", "refuse"];
+const LEVELS = ["info", "warn", "refuse"];
 
 /** Each check's YAML block as an ordered list of [member, value]. The blocks
  *  are flat, one member a line, so a line is split at its first ": ". The
@@ -99,4 +99,12 @@ test("the list of standing-asset kinds names each schema once, versioned in its 
   for (const k of ["brand", "style-guide", "glossary", "media-templates"]) {
     assert.ok(seen.has(`https://schemas.agentmesh.ai/${k}/v1`), k);
   }
+});
+
+test("the optional artifacts before the package are info, and the required ones refuse", () => {
+  const level = Object.fromEntries(checksOf(read("audit-checklist.md")).map((p) => Object.fromEntries(p)).map((c) => [c.check, c.level]));
+  for (const a of ["requirements", "architecture", "design", "test", "code", "review", "security"]) assert.equal(level[`stage-record:${a}`], "info", a);
+  for (const a of ["build-record", "deployment-record"]) assert.equal(level[`stage-record:${a}`], "refuse", a);
+  assert.equal(level["descriptor-signed"], "refuse");
+  assert.doesNotMatch(read("audit-checklist.md"), /signed by (its|their) holder|signed by the (reviewer|package maker|deployment manager)/);
 });

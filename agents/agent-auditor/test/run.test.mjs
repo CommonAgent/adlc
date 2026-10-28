@@ -69,13 +69,18 @@ function lifecycleRecords(w) {
 
 const env = (w, extra = {}) => ({ MESH_API_BASE: DEV, PROD_API_BASE: PROD, AUDIT_TOKEN: "audit-token", LEDGER_TOKEN: "ledger-token", AUDIT_SIGNING_SEED: w.keys.auditor.seed, PACKAGE_MAKER: "/nowhere/build.py", ...extra });
 
-test("a hand-made agent, new since the checklist's date: fails on its missing stage records, and each finding is filed once", async () => {
+// Since 2026-10-28 the artifacts before the package are optional evidence
+// (level info): a hand-made agent with a build record and a deployment record
+// bound to its digest is no longer failed for its missing pre-package
+// records. Item 5 reworks the auditor's handling of info; this pins only the
+// verdict the checklist now gives.
+test("a hand-made agent, new since the checklist's date: its missing pre-package records are info, and each finding is filed once", async () => {
   const w = world();
   const p = fakePlatform(w.routes);
   const j = jobWith(`agent: ${HANDLE}\nversion: 1.0.0\n`);
   const out = await runJob(j.argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
   assert.equal(out.code, 0, out.reply);
-  assert.equal(out.verdict, "fail");
+  assert.equal(out.verdict, "pass_with_findings");
   assert.equal(out.package_digest, w.digest);
   const st = Object.fromEntries(out.stages.map((s) => [s.stage, s.state]));
   for (const s of ["requirements", "architecture", "design", "test", "code", "review", "security"]) assert.equal(st[s], "missing", s);
@@ -85,14 +90,14 @@ test("a hand-made agent, new since the checklist's date: fails on its missing st
   const text = readFileSync(join(j.job, "out", "audit-report.md"), "utf8");
   for (const h of ["## Stage records", "## Rule checks", "## Findings", "## Not checked"]) assert.ok(text.includes(h), h);
   const fm = frontMatterOf(text);
-  assert.equal(fm.verdict, "fail");
+  assert.equal(fm.verdict, "pass_with_findings");
   assert.equal(fm.package_digest, w.digest);
   assert.equal(fm.signed_by, w.keys.auditor.key);
   assert.ok(verifyReport(text, fm.signed_by, fm.signature), "the report's signature verifies");
   assert.ok(!verifyReport(text.replace("## Findings", "## Findings (edited)"), fm.signed_by, fm.signature), "an edited report does not");
   // Every finding filed, refusals holding back promote, each naming its stage.
   const refusing = p.ledger.filter((x) => x.blocks.includes("promote"));
-  assert.ok(refusing.length >= 7, `${refusing.length} refusing debts`);
+  assert.equal(refusing.length, 0, `${refusing.length} refusing debts`);
   assert.ok(p.ledger.every((x) => x.kind === "dependency" && x.against === HANDLE && x.owed_to === "platform@agentmesh.ai"));
   assert.ok(p.ledger.some((x) => /Fixed at the requirements stage/.test(x.what)));
   assert.equal(p.audits.length, 1, "the report is filed where the gates read it");

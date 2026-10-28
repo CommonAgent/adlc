@@ -18,7 +18,7 @@ import { sha256 } from "./keys.mjs";
 const trim = (s) => String(s ?? "").trim();
 export const KINDS = ["design-time", "run-time", "stage-record"];
 export const STAGES = ["requirements", "architecture", "design", "test", "code", "package", "deploy", "docs"];
-export const LEVELS = ["warn", "refuse"];
+export const LEVELS = ["info", "warn", "refuse"];
 
 const unquote = (v) => {
   const t = trim(v);
