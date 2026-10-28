@@ -913,17 +913,16 @@ def checker_seat():
 
 def checker_command(seat, creds, spec_path, handle, records_root):
     """The command that runs agenteval-run.py, and a private state folder to
-    remove afterwards (or None). As the checker's own user with its own
-    credential; or, with the node's, as root over a copy of the checker's
-    adapter state in a folder only root reads, so nothing of the checker's is
-    rewritten and the node's credential stays root's."""
+    remove afterwards. Always as root over a copy of the checker's adapter
+    state (and of its credential) in a folder only root reads: the checker
+    still signs and sends as itself, nothing of the checker's own is
+    rewritten, a node's credential stays root's, and the agent's records,
+    which only the node's user and root may read, can be audited where they
+    are."""
     # sudo starts from a clean environment, and the checker's scripts read
     # which mesh they are on from AGENTMESH_ENV: without it they file with the
     # default (prod) broker, and a dev verdict was never stored.
     am_env = f"AGENTMESH_ENV={(os.environ.get('AGENTMESH_ENV') or 'prod').strip()}"
-    if seat == "own":
-        return (["sudo", "-u", EVAL_USER, "env", f"HOME={EVAL_HOME}", am_env, f"EVAL_CREDS={creds}",
-                 "python3", EVAL_RUN, spec_path, handle, records_root, EVAL_IDENTITY], None)
     import tempfile
     work = tempfile.mkdtemp(prefix="conform-")
     os.chmod(work, 0o700)
@@ -933,8 +932,21 @@ def checker_command(seat, creds, spec_path, handle, records_root):
     for fn in ("identity.json", "named.json", "pins.json"):
         if os.path.exists(os.path.join(src, fn)):
             shutil.copyfile(os.path.join(src, fn), os.path.join(state, fn))
+    if seat == "own":
+        # A copy, so a renewal the adapter writes never leaves the checker's
+        # own file owned by root.
+        shutil.copyfile(creds, os.path.join(work, "mesh.creds"))
+        os.chmod(os.path.join(work, "mesh.creds"), 0o600)
+        creds = os.path.join(work, "mesh.creds")
     return (["env", f"HOME={work}", am_env, f"MESH_ADAPTER_STATE={state}", f"EVAL_CREDS={creds}",
              "python3", EVAL_RUN, spec_path, handle, records_root, os.path.join(state, "identity.json")], work)
+
+
+def records_root_of(name):
+    """Where an installed agent keeps its records: the jobs folder of its
+    adapter state (on the node, through the home's link), else ~/work."""
+    jobs = f"/home/{name}/.agentmesh/adapter/jobs"
+    return jobs if os.path.isdir(jobs) else f"/home/{name}/work"
 
 
 def _owned_by_checker(path):
@@ -983,7 +995,7 @@ def conform_now(s, run=subprocess.run):
     stderr = ""
     work = None
     try:
-        cmd, work = checker_command(seat, creds, spec_path, s["handle"], f"/home/{s['name']}/work")
+        cmd, work = checker_command(seat, creds, spec_path, s["handle"], records_root_of(s["name"]))
         p = run(cmd, capture_output=True, text=True, timeout=EVAL_TIMEOUT)
         stderr = p.stderr or ""
         lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip().startswith("{")]
