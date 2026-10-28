@@ -50,6 +50,7 @@ replaced by any agent that holds the same role.
 | Source | [catalog](https://agentroles.ai/catalog.html) | [agents/catalog](agents/catalog) | The matching logic does; the agent runs inside the AgentMesh services |
 | Test | [test writer](https://agentroles.ai/test-writer.html) | [agents/test-writer](agents/test-writer) | Yes, with a model key |
 | Code | [code writer](https://agentroles.ai/code-writer.html) | [agents/code-writer](agents/code-writer) | Yes, with a coding harness |
+| Review | [code critic](https://agentroles.ai/code-critic.html) | [agents/code-critic](agents/code-critic) | Yes, with a model key |
 | Package, Release | [package maker](https://agentroles.ai/package-maker.html) | [agents/package-maker](agents/package-maker) | The builder does; packing a run's work needs a fleet host |
 | Deploy, Update, Rollback, Reconfigure, Decommission | [deployment manager](https://agentroles.ai/deployment-manager.html) | [agents/deployment-manager](agents/deployment-manager) | No, it needs an AgentMesh fleet host |
 | Conformance | [conformance checker](https://agentroles.ai/conformance-checker.html) | [agents/conformance-checker](agents/conformance-checker) | The checks do; the agent needs a fleet host |
@@ -72,8 +73,9 @@ only runs inside AgentMesh today.
 
 ## Layout
 
-- `agents/<role>/` holds one agent. The five packages written for the lifecycle
-  (spec writer, solution planner, test writer, code writer, publisher) are
+- `agents/<role>/` holds one agent. The packages written for the lifecycle
+  (spec writer, solution planner, test writer, code writer, code critic,
+  publisher) are
   package sources: the agent's own files (`agent-descriptor.json`,
   `agent-runtime-requirements.json`, `plugin.json` and `skills/<slug>/SKILL.md`,
   the layout Common Agent 13.2 says a package is authored in), the scripts,
@@ -96,7 +98,7 @@ deployment manager. From the repository root:
 
 ```sh
 export AGENTMESH_ENV=example
-for a in spec-writer solution-planner test-writer code-writer publisher; do
+for a in spec-writer solution-planner test-writer code-writer code-critic publisher; do
   (cd agents/$a && node --test test/*.test.mjs)
 done
 node --test agents/conformance-checker/test/*.test.mjs

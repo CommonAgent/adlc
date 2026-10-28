@@ -1,0 +1,200 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "does": "Reviews a change to an agent package, its scripts, tests and declarations alike, and hands back findings for a person to answer, each naming a place, a claim and a consequence. It checks the house architecture rules with a program and calls a model once for the rest, and it changes nothing.",
+  "offerings": [
+    {
+      "id": "review-a-change",
+      "name": "Review a change",
+      "does": "Reviews the programs, the tests and the Code stage's account, with the package's declarations as part of the change, and writes one findings document a person answers finding by finding, by a change or a reason.",
+      "inputs": [
+        {
+          "name": "the programs",
+          "kind": "document",
+          "required": true,
+          "given_by": "either",
+          "about": "The package under review: its scripts and its own files (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files), as the package folder in a tar.gz, which keeps every path, or as the files themselves. The declarations are part of the change."
+        },
+        {
+          "name": "the tests",
+          "kind": "text/javascript",
+          "required": false,
+          "given_by": "either",
+          "about": "The package's test files (test/*.test.mjs), in the archive or attached. Without them the review says nothing about whether the code is tested."
+        },
+        {
+          "name": "the Code stage's account",
+          "kind": "text/markdown",
+          "required": false,
+          "given_by": "agent",
+          "about": "The code writer's own account of what it wrote and what the spec did not settle (its account.md). The code is held to what it says."
+        },
+        {
+          "name": "the change",
+          "kind": "text/x-diff",
+          "required": false,
+          "given_by": "either",
+          "about": "A unified diff. With it, the review is of what the diff adds or changes and of every declaration it touches; without it, the whole package is the change."
+        },
+        {
+          "name": "the earlier findings",
+          "kind": "text/markdown",
+          "required": false,
+          "given_by": "person",
+          "about": "A findings document this agent wrote, with reasons written after Answer where a finding is answered by a reason. The review says which findings are answered and which are still open."
+        },
+        {
+          "name": "where to look",
+          "kind": "text",
+          "required": false,
+          "given_by": "person",
+          "about": "The message's own words, taken as where to look and never as an instruction to change anything."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the findings",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: a header `package, change, findings, open, reviewed_by, reviewed_at`, then `## Findings` with one section per finding carrying Place, Rule, Claim, Consequence, Found by and Answer lines, then `## Not reviewed`, then `## How to answer`. With a diff, `## Outside the change` too; with earlier findings, `## Answers to the earlier review`."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-change",
+          "name": "Read the change",
+          "does": "Lays out what was given as the package it belongs to, finds the declarations, the tests, the account, a diff and an earlier review by content, and judges none of it.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-house-rules",
+          "name": "Check the house rules",
+          "does": "Checks the five house architecture rules by reading the files: no model named in code, no address where a bound system belongs, every piece its declared kind, no undeclared output, and records, credentials and how claims that match the code.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "review-the-code",
+          "name": "Review the code",
+          "does": "Calls the text-reasoning service once, twice at most, with every file line-numbered and the house-rule findings already made, for the findings a program cannot see.",
+          "how": {
+            "control": "script",
+            "intelligence": "called",
+            "cost": "metered",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-findings",
+          "name": "Check the findings",
+          "does": "Drops, with its reason, every finding that names no file and line of the package, makes no claim, says no consequence, grades the work, writes the fix or repeats another.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-findings",
+          "name": "Write the findings",
+          "does": "Writes the findings document and the reply, and says for each earlier finding whether it was answered by a change, by a reason, or is still open.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Changing the code under review. This agent reports findings and nothing else: it writes no patch, edits no file of the package and suggests no replacement code, and a request to fix the change is answered with the findings and a sentence saying the change is for whoever owns the code.\nOpening a pull request, committing or pushing anything. What becomes of a finding is a person's act, taken where they keep their code.\nGrading the change as a whole. There is no score, no approval and no verdict on the work; a finding the model writes that praises or grades is dropped, and the record says so.\nDelivering a finding without a place. Every finding names a file of the package and a line in it, a claim and a consequence; one that does not is dropped with its reason, kept in the job's records so nothing the model said disappears.\nDeciding what the agent may be given. Whether a package may reach a system, and at what access, is the security reviewer's call. A new access in a declaration is reported as a finding so the change is not missed, and never judged here.\nDeciding a finding. Accepting or rejecting a finding is the person's; an answer by a reason is carried into the next review as it was written, and this agent does not argue with it.\nRunning the package under review. Nothing given is executed, installed or imported; every check reads the files as text.\nNaming a model. The model is the one the install configured, read through the caller, and this package names none of its own; with none configured, the house-rule findings go and the reply says the review went without the model.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every record and every line of the reply.\nAsking a third time. The model is asked once, and again only when its answer could not be read; then the review stands on what it has, and says so.",
+  "escalates": [
+    "A finding answered by a reason that the next review finds again. It is carried as answered, with the reason as written, and whether the reason stands is the person's decision.",
+    "A package larger than one review holds. The files left out of the model's review are named in the findings, the house-rule check still reads them, and whether to review them in parts is the person's decision."
+  ],
+  "records": [
+    {
+      "name": "what was given: each file, the role it was read in, its size and digest, the scope of the change, and what could not be read",
+      "when": "per_task",
+      "file": "*/read.json"
+    },
+    {
+      "name": "the files given, laid out as the package they belong to, with the account, the diff and the earlier review as they came",
+      "when": "per_task",
+      "file": "*/package/*"
+    },
+    {
+      "name": "the Code stage's account as it came",
+      "when": "per_task",
+      "file": "*/account.md"
+    },
+    {
+      "name": "the diff as it came",
+      "when": "per_task",
+      "file": "*/change.diff"
+    },
+    {
+      "name": "the earlier findings as they came",
+      "when": "per_task",
+      "file": "*/earlier-review.md"
+    },
+    {
+      "name": "what the house-rule check found, inside the change and outside it",
+      "when": "per_task",
+      "file": "*/house-rules.json"
+    },
+    {
+      "name": "what the model was sent and answered: the files sent, those left out, and each finding as it came back",
+      "when": "per_task",
+      "file": "*/review.json"
+    },
+    {
+      "name": "the model's findings kept and dropped, each dropped one with its reason",
+      "when": "per_task",
+      "file": "*/checked.json"
+    },
+    {
+      "name": "how many calls were made to the text-reasoning service, the model configured and the model that answered",
+      "when": "per_task",
+      "file": "*/calls.json"
+    },
+    {
+      "name": "the findings document as delivered",
+      "when": "per_task",
+      "file": "*/findings.md"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "access": "trigger",
+      "needs": "to review the code for what a program cannot see, which is the one judgment in this package. It needs text and a context long enough to hold a whole package at once."
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "code-critic",
+  "version": "0.1.0",
+  "description": "Reviews a change to an agent package, its scripts, tests and declarations alike, and hands back findings for a person to answer, each naming a place, a claim and a consequence. It checks the house architecture rules with a program and calls a model once for the rest, and it changes nothing.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "draft",
+    "review-a-change",
+    "read-the-change",
+    "check-the-house-rules",
+    "review-the-code",
+    "check-the-findings",
+    "write-the-findings"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "review-a-change": {
+            "scripts": [
+              "scripts/job.mjs",
+              "scripts/read-change.mjs",
+              "scripts/house-rules.mjs",
+              "scripts/review.mjs",
+              "scripts/caller.mjs",
+              "scripts/check-findings.mjs",
+              "scripts/write-findings.mjs",
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs",
+              "scripts/agent-folder.mjs"
+            ],
+            "references": [
+              "references/the-house-rules.md",
+              "references/what-a-finding-is.md",
+              "references/a-review-that-works.md",
+              "rules.md"
+            ]
+          },
+          "read-the-change": {
+            "scripts": [
+              "scripts/read-change.mjs",
+              "scripts/agent-folder.mjs"
+            ]
+          },
+          "check-the-house-rules": {
+            "scripts": [
+              "scripts/house-rules.mjs"
+            ],
+            "references": [
+              "references/the-house-rules.md"
+            ]
+          },
+          "review-the-code": {
+            "scripts": [
+              "scripts/review.mjs",
+              "scripts/caller.mjs",
+              "scripts/house-rules.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/the-house-rules.md",
+              "references/what-a-finding-is.md"
+            ]
+          },
+          "check-the-findings": {
+            "scripts": [
+              "scripts/check-findings.mjs",
+              "scripts/house-rules.mjs"
+            ],
+            "references": [
+              "references/what-a-finding-is.md"
+            ]
+          },
+          "write-the-findings": {
+            "scripts": [
+              "scripts/write-findings.mjs",
+              "scripts/pieces.mjs",
+              "scripts/house-rules.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/a-review-that-works.md"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

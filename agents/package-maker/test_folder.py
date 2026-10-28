@@ -342,7 +342,7 @@ class TheReaderOfAnAgentsFilesReadsWhatTheBuilderReads(Harness):
     def test_every_copy_of_it_is_this_one(self):
         with open(os.path.join(HERE, "agent-folder.mjs"), "rb") as f:
             canonical = f.read()
-        for agent in ("test-writer", "code-writer", "spec-writer"):
+        for agent in ("test-writer", "code-writer", "spec-writer", "code-critic"):
             with open(os.path.join(HERE, os.pardir, agent, "scripts", "agent-folder.mjs"), "rb") as f:
                 self.assertEqual(f.read(), canonical, f"{agent}/scripts/agent-folder.mjs is not package-maker/agent-folder.mjs")
 
