@@ -71,7 +71,7 @@ test("the checklist this package pins is the one in standards/, and reads as 30 
 
 test("a finding's level: the check's for a new agent, a warning for an existing one until its date", () => {
   const check = { level: "refuse", applies: "new agents from 2026-10-28; existing agents from not set" };
-  assert.deepEqual(appliesDates(check.applies), { newFrom: "2026-10-28", existingFrom: null });
+  assert.deepEqual(appliesDates(check.applies), { every: false, newFrom: "2026-10-28", existingFrom: null });
   const now = new Date("2026-11-02T00:00:00Z");
   assert.equal(levelFor(check, { firstReleased: "2026-10-29T00:00:00Z", now }).level, "refuse");
   assert.equal(levelFor(check, { firstReleased: "2026-10-05T00:00:00Z", now }).level, "warn");
@@ -82,6 +82,22 @@ test("a finding's level: the check's for a new agent, a warning for an existing 
   // An info check stays info whatever the dates: shown, never counted.
   assert.equal(levelFor({ level: "info", applies: set.applies }, { firstReleased: "2026-10-29T00:00:00Z", now }).level, "info");
   assert.equal(levelFor({ level: "info", applies: set.applies }, { firstReleased: "2026-10-05T00:00:00Z", now }).level, "info");
+});
+
+test("a check that applies to every agent refuses an existing agent as it refuses a new one", () => {
+  const every = { level: "refuse", applies: "every agent" };
+  assert.deepEqual(appliesDates(every.applies), { every: true, newFrom: null, existingFrom: null });
+  const now = new Date("2026-11-02T00:00:00Z");
+  for (const firstReleased of ["2026-10-29T00:00:00Z", "2026-09-01T00:00:00Z", null]) {
+    assert.equal(levelFor(every, { firstReleased, now }).level, "refuse");
+  }
+  assert.equal(levelFor({ level: "warn", applies: "every agent" }, { firstReleased: null, now }).level, "warn");
+  assert.equal(levelFor({ level: "info", applies: "every agent" }, { firstReleased: null, now }).level, "info");
+});
+
+test("the pinned checklist holds every agent alike: no check gives an existing agent a later date", () => {
+  const c = readChecklist(readFileSync(join(HERE, "..", "..", "..", "standards", "audit-checklist.md"), "utf8"));
+  for (const x of c.checks) assert.equal(x.applies, "every agent", x.id);
 });
 
 test("a package tarball is read file by file, under the package's own paths", () => {

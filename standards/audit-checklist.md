@@ -36,7 +36,7 @@ kind: design-time | run-time | stage-record
 check: <name of the registered test that runs it>
 fixed-by: requirements | architecture | design | test | code | package | deploy | docs
 level: info | warn | refuse
-applies: <new agents from DATE; existing agents from DATE>
+applies: every agent
 evidence: <what the report shows>
 ```
 
@@ -59,10 +59,9 @@ evidence: <what the report shows>
   the report and does not count toward the verdict. An organization may raise
   any `info` check to `warn` or `refuse` in its own checklist, which is a
   standing asset (see [README.md](README.md)).
-- **applies.** A new agent is one first released on or after the first
-  date. An existing agent is one released before it: its findings are
-  warnings until the second date, which the owner sets when the warnings
-  become refusals for everyone. Until then the second date reads "not set".
+- **applies.** `every agent`: a finding has the check's level for each
+  agent, whenever it was first released. No agent is held to a lighter
+  level for having been released earlier.
 
 ## The Descriptor
 
@@ -74,7 +73,7 @@ kind: run-time
 check: descriptor-signed
 fixed-by: deploy
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the digest of the Descriptor served at the agent's address, the registry's stored digest, and whether the signature verifies under the subject key
 ```
 
@@ -94,7 +93,7 @@ kind: run-time
 check: registered
 fixed-by: deploy
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the handle, the address it resolves to, and the address given
 ```
 
@@ -106,7 +105,7 @@ kind: run-time
 check: descriptor-floor
 fixed-by: package
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each floor member, present or missing
 ```
 
@@ -122,7 +121,7 @@ kind: run-time
 check: descriptor-matches-package
 fixed-by: deploy
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the package's Descriptor digest and the served one's, and each member that differs other than those a deploy binds
 ```
 
@@ -134,7 +133,7 @@ kind: design-time
 check: descriptor-person-members
 fixed-by: design
 level: warn
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each of the four members, present or absent, and each input without given_by by its offering and name
 ```
 
@@ -153,13 +152,14 @@ kind: design-time
 check: package-maker-format-rules
 fixed-by: design
 level: refuse
-applies: new agents from 2026-10-27; existing agents from not set
+applies: every agent
 evidence: each input or output declared application/json, by its job and name
 ```
 
 The package maker's format rule 1 (`format_findings` in
 agents/package-maker/build.py; agents/package-maker/README.md). It already
-refuses a new agent's package and warns for an existing one.
+refuses a new agent's package and warns for an existing one; the audit holds
+every agent to this check's level.
 
 ```yaml
 id: people-read-markdown
@@ -169,7 +169,7 @@ kind: run-time
 check: delivered-formats
 fixed-by: design
 level: warn
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each person-facing output with its declared kind, and for each delivered piece whether its bytes are what that kind says
 ```
 
@@ -190,7 +190,7 @@ kind: design-time
 check: no-model-literals
 fixed-by: code
 level: refuse
-applies: new agents from 2026-10-27; existing agents from not set
+applies: every agent
 evidence: each model name found, with its file and line
 ```
 
@@ -210,7 +210,7 @@ kind: design-time
 check: revisions-declared
 fixed-by: design
 level: warn
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each offered job with its revisions policy, or that it has none
 ```
 
@@ -228,7 +228,7 @@ kind: design-time
 check: package-maker-option-rules
 fixed-by: design
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each offered job's input that names an option or library material, by its job and name
 ```
 
@@ -248,7 +248,7 @@ kind: design-time
 check: package-maker-option-rules
 fixed-by: design
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each setting and the members it does not declare
 ```
 
@@ -267,7 +267,7 @@ kind: design-time
 check: can-use-declared
 fixed-by: design
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each can_use schema and whether it is on the list, with the list's digest
 ```
 
@@ -284,7 +284,7 @@ kind: design-time
 check: can-use-declared
 fixed-by: design
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each can_use entry without a without member
 ```
 
@@ -296,7 +296,7 @@ kind: design-time
 check: can-use-declared
 fixed-by: architecture
 level: warn
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the person-facing outputs, and either the can_use entries or the record's stated reason
 ```
 
@@ -313,7 +313,7 @@ kind: run-time
 check: standing-assets-cited
 fixed-by: code
 level: warn
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: a run given each declared asset, the fields of its reads that changed the output, and the run record's citations
 ```
 
@@ -327,7 +327,7 @@ kind: run-time
 check: versions-dev-prod
 fixed-by: deploy
 level: warn
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the version and package digest the agent serves on dev and on prod
 ```
 
@@ -341,7 +341,7 @@ kind: run-time
 check: app-walk
 fixed-by: design
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the App walk's recorded verdict for this version (ready, rough or broken), its reason, the job it ran, and when
 ```
 
@@ -381,7 +381,7 @@ kind: stage-record
 check: stage-record:requirements
 fixed-by: requirements
 level: info
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the requirements' digest, their signer, and the package digest they name
 ```
 
@@ -393,7 +393,7 @@ kind: stage-record
 check: stage-record:architecture
 fixed-by: architecture
 level: info
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the record's digest, its signer, and the package digest it names
 ```
 
@@ -405,7 +405,7 @@ kind: stage-record
 check: stage-record:design
 fixed-by: design
 level: info
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the delivery's digest, its signer, and the package digest it names
 ```
 
@@ -417,7 +417,7 @@ kind: stage-record
 check: stage-record:test
 fixed-by: test
 level: info
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the suite's digest, its signer, the package digest it names, and its last result
 ```
 
@@ -429,7 +429,7 @@ kind: stage-record
 check: stage-record:code
 fixed-by: code
 level: info
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: each script with the manifest that traces it, or that none does
 ```
 
@@ -446,7 +446,7 @@ kind: stage-record
 check: stage-record:review
 fixed-by: code
 level: info
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the review's digest, its signer, the package digest it names, and its open findings
 ```
 
@@ -458,7 +458,7 @@ kind: stage-record
 check: stage-record:security
 fixed-by: code
 level: info
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the review's digest, its signer, the package digest it names, and its open findings
 ```
 
@@ -470,7 +470,7 @@ kind: stage-record
 check: stage-record:build-record
 fixed-by: package
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the build record's signer, its package digest, and its format_rules and standing_rules
 ```
 
@@ -482,7 +482,7 @@ kind: stage-record
 check: stage-record:deployment-record
 fixed-by: deploy
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the dev deployment record's signer, its package digest and when it was made
 ```
 
@@ -494,7 +494,7 @@ kind: stage-record
 check: stage-record:conformance
 fixed-by: deploy
 level: refuse
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the verdict, its signer, and the package digest or image it names
 ```
 
@@ -509,8 +509,8 @@ why: A verdict on record proves the agent was checked, not that it passed; an ag
 kind: run-time
 check: conformance-result
 fixed-by: code
-level: warn
-applies: new agents from 2026-10-28; existing agents from not set
+level: refuse
+applies: every agent
 evidence: the verdict, and each case that failed or could not be judged, with the declaration it came from and what the agent did
 ```
 
@@ -530,7 +530,7 @@ kind: stage-record
 check: stage-record:usability
 fixed-by: test
 level: info
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: the report's verdict, its tester, when it was made, the signer of the manifest it came under, and the package digest it names
 ```
 
@@ -550,6 +550,6 @@ kind: stage-record
 check: stage-record:docs
 fixed-by: docs
 level: warn
-applies: new agents from 2026-10-28; existing agents from not set
+applies: every agent
 evidence: where the documentation is and the version it names
 ```

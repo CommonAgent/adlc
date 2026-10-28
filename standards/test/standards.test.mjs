@@ -48,7 +48,7 @@ test("every check carries the members of the form, in order, with values from th
     assert.ok(FIXED_BY.includes(c["fixed-by"]), `${c.id}: fixed-by ${c["fixed-by"]}`);
     assert.ok(LEVELS.includes(c.level), `${c.id}: level ${c.level}`);
     assert.match(c.check, /^(stage-record:[a-z-]+|[a-z][a-z0-9]*(-[a-z0-9]+)*)$/, `${c.id}: check ${c.check}`);
-    assert.match(c.applies, /^new agents from \d{4}-\d{2}-\d{2}; existing agents from (\d{4}-\d{2}-\d{2}|not set)$/, `${c.id}: applies`);
+    assert.equal(c.applies, "every agent", `${c.id}: applies`);
   }
 });
 
