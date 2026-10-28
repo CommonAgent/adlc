@@ -1187,6 +1187,8 @@ def person_members(spec):
             fail("will_not is a non-empty list of sentences, each one thing the agent will not do")
         out["will_not"] = [w.strip() for w in wn]
     return out
+
+
 BARE_JSON = "application/json"
 
 
