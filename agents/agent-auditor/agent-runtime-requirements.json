@@ -1,0 +1,86 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "the-platform",
+      "kind": "service",
+      "credential": "agent-audit-key",
+      "env": "AUDIT_TOKEN",
+      "settings": [
+        {
+          "env": "MESH_API_BASE",
+          "purpose": "the platform's origin on the environment the audit runs in (dev), with no path; the agent, the deploy queue's records and the package are read there, and the report is filed there. Without it nothing can be audited"
+        },
+        {
+          "env": "PROD_API_BASE",
+          "purpose": "prod's origin, with no path, read for the version prod runs. Without it the agent is read on one environment and the report says so"
+        },
+        {
+          "env": "PACKAGE_MAKER",
+          "purpose": "the path to the package maker's build.py on a host that has it and python3, so its own format and standing-asset rules run over the package. Without it those checks read the rules from the signed build record or the Descriptor, as the report says"
+        }
+      ]
+    },
+    {
+      "name": "the-ledger",
+      "kind": "service",
+      "credential": "ledger-key",
+      "env": "LEDGER_TOKEN"
+    },
+    {
+      "name": "the-signing-key",
+      "kind": "service",
+      "credential": "agent-auditor-signing-seed",
+      "env": "AUDIT_SIGNING_SEED"
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the findings and what the ledger said, where the report was filed, and what the job went without"
+    }
+  ],
+  "job_seconds": 300,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "audit-an-agent"
+      ]
+    },
+    "price": {
+      "model": "free"
+    }
+  },
+  "run": {
+    "audit-an-agent": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/audit-an-agent/scripts/audit.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}

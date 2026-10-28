@@ -1,0 +1,19 @@
+{
+  "stage_holders": "v1",
+  "about": "Who holds each lifecycle stage whose record the auditor checks, by handle. A record is signed by its holder when it verifies under the key one of these handles resolves to on the platform the audit reads (its storefront, GET /a/<handle>). Several handles are listed where a role's agent was renamed and both still sign. The lifecycle and its holders: https://agenticdevelopment.ai/stages.html and https://agentroles.ai.",
+  "stages": {
+    "requirements": { "asset": "Statement of the job", "made_at": "Requirements", "holders": ["solution-planner.platform@agentmesh.ai", "planner.platform@agentmesh.ai", "spec-writer.platform@agentmesh.ai"] },
+    "architecture": { "asset": "Architecture record", "made_at": "Architecture and Design", "holders": ["solution-architect.platform@agentmesh.ai"] },
+    "design": { "asset": "Design", "made_at": "Architecture and Design", "holders": ["spec-writer.platform@agentmesh.ai"] },
+    "impact": { "asset": "Impact report", "made_at": "Impact", "holders": ["impact-analyst.platform@agentmesh.ai"] },
+    "test": { "asset": "Test suite", "made_at": "Test", "holders": ["test-writer.platform@agentmesh.ai"] },
+    "code": { "asset": "Code", "made_at": "Code", "holders": ["code-writer.platform@agentmesh.ai"] },
+    "review": { "asset": "Review findings", "made_at": "Review", "holders": ["code-critic.platform@agentmesh.ai"] },
+    "security": { "asset": "Security statement", "made_at": "Security review", "holders": ["security-reviewer.platform@agentmesh.ai"] },
+    "build-record": { "asset": "Signed build record", "made_at": "Release", "holders": ["package-maker.platform@agentmesh.ai", "agentbuilder.platform@agentmesh.ai"] },
+    "descriptor": { "asset": "Signed Descriptor and registration", "made_at": "Deploy", "holders": [] },
+    "deployment-record": { "asset": "Signed deployment record", "made_at": "Deploy", "holders": ["deployment-manager.platform@agentmesh.ai", "deploymgr.platform@agentmesh.ai"] },
+    "conformance": { "asset": "Conformance verdict", "made_at": "Conformance", "holders": ["conformance-checker.platform@agentmesh.ai", "agentevaluator.platform@agentmesh.ai", "evaluator.system@agentmesh.ai"] },
+    "docs": { "asset": "AgentDoc", "made_at": "Docs", "holders": ["documenter.system@agentmesh.ai"] }
+  }
+}

@@ -56,6 +56,7 @@ replaced by any agent that holds the same role.
 | Package, Release | [package maker](https://agentroles.ai/package-maker.html) | [agents/package-maker](agents/package-maker) | The builder does; packing a run's work needs a fleet host |
 | Deploy, Update, Rollback, Reconfigure, Decommission | [deployment manager](https://agentroles.ai/deployment-manager.html) | [agents/deployment-manager](agents/deployment-manager) | No, it needs an AgentMesh fleet host |
 | Conformance | [conformance checker](https://agentroles.ai/conformance-checker.html) | [agents/conformance-checker](agents/conformance-checker) | The checks do; the agent needs a fleet host |
+| Audit (Prove) | auditor | [agents/agent-auditor](agents/agent-auditor) | Yes; reading the deploy queue's records, filing debts and filing the signed report need the platform's audit key, ledger key and the auditor's signing key |
 | Docs | [documenter](https://agentroles.ai/documenter.html) | [agents/documenter](agents/documenter) | No, it runs inside the AgentMesh services |
 | Docs (the documentation) | [doc writer](https://agentroles.ai/doc-writer.html) | [agents/doc-writer](agents/doc-writer) | Yes, as a built package |
 | Publish | [publisher](https://agentroles.ai/publisher.html) | [agents/publisher](agents/publisher) | Yes, with a place to publish to |
@@ -107,7 +108,7 @@ deployment manager. From the repository root:
 
 ```sh
 export AGENTMESH_ENV=example
-for a in solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher; do
+for a in solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher agent-auditor; do
   (cd agents/$a && node --test test/*.test.mjs)
 done
 node --test agents/conformance-checker/test/*.test.mjs

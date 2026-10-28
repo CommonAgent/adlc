@@ -1,0 +1,244 @@
+// One line per lifecycle stage: is the stage's record present, signed by the
+// stage's holder, and bound to the audited package digest?
+//
+// The stages and their assets are the lifecycle's (https://agenticdevelopment.ai/assets.html).
+// Where each record is found:
+//   requirements, architecture, design, impact, test, code, review, security
+//       the signed delivery manifest (job-manifest-v1) the stage's holder left
+//       when it delivered, attached to the audit. The platform keeps no store
+//       of these by package, so a record not attached is missing.
+//   build-record        the deploy queue (the request that filed the package)
+//                       or attached: agent-build-record-v1
+//   descriptor          the registry's stored Descriptor, signed by the agent's
+//                       own key (descriptor-statement-v1), and its registration
+//   deployment-record   the deploy queue or attached: agent-deployment-record-v1
+//   conformance         the registry's newest verdict (agent-eval-record-v1)
+//   docs                the AgentDoc the platform assembles for the agent
+//
+// Bound means the record names this package's digest, or holds bytes that are
+// in this package, or is named by this package's signed build record. A record
+// bound to another digest is stale. Signed by its holder means the signature
+// verifies and the key is one of the stage holder's keys
+// (references/stage-holders.json, resolved on the platform).
+//
+//   needs: node >= 22
+//   import { stageLines, STAGE_ORDER } from "./stages.mjs"
+import { canonical, sha256, verifyDoc, verifyManifest } from "./keys.mjs";
+
+const trim = (s) => String(s ?? "").trim();
+const hexOf = (d) => trim(d).toLowerCase().replace(/^sha256:/, "");
+const short = (d) => (d ? `sha256:${hexOf(d).slice(0, 12)}` : "none"); // cut-ok: a digest's prefix for reading; the whole digest is in the evidence
+
+export const STAGE_ORDER = ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "docs"];
+export const MANIFEST_STAGES = ["requirements", "architecture", "design", "impact", "test", "code", "review", "security"];
+
+/** Whose key is this, among the stage holders: [stage, handle] or null. */
+function holderOf(facts, key) {
+  for (const [stage, keys] of Object.entries(facts.holderKeys)) {
+    const k = keys.find((x) => x.key === key);
+    if (k) return { stage, handle: k.handle };
+  }
+  return null;
+}
+
+const holderWords = (facts, stage) => {
+  const keys = facts.holderKeys[stage] ?? [];
+  const handles = facts.holders[stage]?.holders ?? [];
+  return keys.length ? keys.map((k) => k.handle).filter((h, i, a) => a.indexOf(h) === i).join(" or ") : handles.length ? `${handles.join(" or ")} (no key found for it on the platform)` : "its holder";
+};
+
+/** A signed record judged: {verifies, by, holder}. */
+function signedBy(facts, doc, tag, stage) {
+  const sigs = verifyDoc(doc).filter((s) => !tag || s.tag === tag);
+  const good = sigs.find((s) => s.verifies);
+  const by = good?.by ?? sigs[0]?.by ?? trim(doc?.by) ?? null;
+  const holderKeys = (facts.holderKeys[stage] ?? []).map((k) => k.key);
+  return { signatures: sigs.length, verifies: Boolean(good), by, holder: Boolean(good && holderKeys.includes(good.by)), holdersKnown: holderKeys.length > 0 };
+}
+
+function line(stage, facts, parts) {
+  const h = facts.holders[stage] ?? {};
+  const { present, signed, bound, state, source = null, record_digest = null, by = null, evidence } = parts;
+  return { stage, asset: h.asset ?? stage, made_at: h.made_at ?? stage, present, signed, bound, state, source, record_digest, by, evidence, ...(parts.extra ?? {}) };
+}
+
+function signedWords(s, facts, stage) {
+  if (!s.signatures) return "carries no signature";
+  if (!s.verifies) return "its signature does not verify";
+  if (s.holder) return `signed by ${holderWords(facts, stage)} (${s.by})`;
+  if (!s.holdersKnown) return `signed by ${s.by}, and no key for ${holderWords(facts, stage)} could be read to compare`;
+  return `signed by ${s.by}, which is not ${holderWords(facts, stage)}`;
+}
+
+function stateOf({ present, signed, bound }) {
+  if (!present) return "missing";
+  if (bound === false) return "stale";
+  if (!signed) return "unsigned";
+  return "present";
+}
+
+/** Records of a kind from the queue and the attachments, each with where it came from. */
+function recordsFrom(facts, member, attachedList) {
+  const out = [];
+  for (const r of facts.queue.requests) {
+    if (r[member] && typeof r[member] === "object") out.push({ doc: r[member], source: `deploy request ${r.id} (${r.status}${r.decided_at ? `, ${r.decided_at}` : ""})`, request: r });
+  }
+  for (const a of attachedList) out.push({ doc: a.doc, source: `attached (${a.name})`, request: null });
+  return out;
+}
+
+function buildRecordLine(facts) {
+  const want = hexOf(facts.target.digest);
+  const all = recordsFrom(facts, "build_record", facts.attached.buildRecords);
+  const mine = all.filter((x) => want && hexOf(x.doc?.package?.sha256) === want);
+  if (!want) return line("build-record", facts, { present: false, signed: false, bound: false, state: "missing", evidence: `no package digest is on record for this version, so no build record can name it${all.length ? `; ${all.length} build record(s) name other packages` : ""}` });
+  if (!mine.length) {
+    const other = all.map((x) => `${trim(x.doc?.package?.version) || "?"} ${short(x.doc?.package?.sha256)}`);
+    return line("build-record", facts, other.length
+      ? { present: true, signed: false, bound: false, state: "stale", evidence: `no build record names ${short(facts.target.digest)}; the ones on record name ${other.join(", ")}` }
+      : { present: false, signed: false, bound: false, state: "missing", evidence: `no build record names ${short(facts.target.digest)}, in the deploy queue${facts.queue.read ? "" : " (not read)"} or attached` });
+  }
+  const best = mine.map((x) => ({ ...x, s: signedBy(facts, x.doc, "agent-build-record-v1", "build-record") })).sort((a, b) => Number(b.s.holder) - Number(a.s.holder) || Number(b.s.verifies) - Number(a.s.verifies))[0];
+  const signed = best.s.holder;
+  const parts = { present: true, signed, bound: true, source: best.source, by: best.s.by, record_digest: sha256(Buffer.from(canonical(best.doc), "utf8")) };
+  const fr = best.doc?.format_rules;
+  const sr = best.doc?.standing_rules;
+  return line("build-record", facts, {
+    ...parts, state: stateOf(parts),
+    evidence: `${best.source}: names ${short(facts.target.digest)}, ${signedWords(best.s, facts, "build-record")}, produced ${trim(best.doc?.produced_at) || "at an unstated time"}${fr ? `; format_rules ${fr.mode ?? "?"} with ${(fr.findings ?? []).length} finding(s)` : "; no format_rules"}${sr ? `; standing_rules ${sr.mode ?? "?"} with ${(sr.findings ?? []).length} finding(s)` : "; no standing_rules"}`,
+    extra: { record: best.doc },
+  });
+}
+
+function deploymentRecordLine(facts) {
+  const want = hexOf(facts.target.digest);
+  const all = recordsFrom(facts, "deploy_record", facts.attached.deployRecords).filter((x) => ["deploy", "update", "alongside"].includes(trim(x.doc?.act)));
+  const mine = all.filter((x) => want && hexOf(x.doc?.package?.sha256) === want);
+  if (!mine.length) {
+    const other = all.map((x) => `${trim(x.doc?.package?.version) || "?"} ${short(x.doc?.package?.sha256)}`);
+    return line("deployment-record", facts, other.length && want
+      ? { present: true, signed: false, bound: false, state: "stale", evidence: `no deployment record names ${short(facts.target.digest)}; the ones on record name ${other.join(", ")}` }
+      : { present: false, signed: false, bound: false, state: "missing", evidence: `no deployment record ${want ? `names ${short(facts.target.digest)}` : "can name a package nobody has a digest for"}, in the deploy queue${facts.queue.read ? "" : " (not read)"} or attached` });
+  }
+  const best = mine.map((x) => ({ ...x, s: signedBy(facts, x.doc, "agent-deployment-record-v1", "deployment-record") })).sort((a, b) => Number(b.s.holder) - Number(a.s.holder) || String(b.doc?.produced_at).localeCompare(String(a.doc?.produced_at)))[0];
+  const parts = { present: true, signed: best.s.holder, bound: true, source: best.source, by: best.s.by, record_digest: sha256(Buffer.from(canonical(best.doc), "utf8")) };
+  return line("deployment-record", facts, {
+    ...parts, state: stateOf(parts),
+    evidence: `${best.source}: ${trim(best.doc?.act)} of ${short(facts.target.digest)} on ${facts.dev.origin}${best.doc?.environment ? ` (environment ${best.doc.environment})` : ""}, ${signedWords(best.s, facts, "deployment-record")}, produced ${trim(best.doc?.produced_at) || "at an unstated time"}`,
+    extra: { record: best.doc },
+  });
+}
+
+function descriptorLine(facts, deployLine) {
+  const d = facts.dev.descriptor;
+  if (!facts.dev.storefront?.ok) return line("descriptor", facts, { present: false, signed: false, bound: false, state: "missing", evidence: `the agent is not registered on ${facts.dev.origin} under ${facts.handle} (${facts.dev.storefront?.error ?? "no answer"})` });
+  if (!d?.ok) return line("descriptor", facts, { present: false, signed: false, bound: false, state: "missing", evidence: `the registry stores no Descriptor for ${facts.dev.key} (${d?.error ?? "not read"})` });
+  const sigs = verifyDoc(d.doc).filter((s) => s.tag === "descriptor-statement-v1");
+  const subject = trim(d.doc?.subject?.id);
+  const signed = sigs.some((s) => s.verifies && s.by === subject) && subject === facts.dev.key;
+  const named = trim(deployLine.record?.descriptor?.sha256);
+  const served = hexOf(d.door_digest || d.bytes_digest);
+  let bound;
+  let how;
+  if (named) { bound = hexOf(named) === served; how = bound ? `the deployment record for this package names its digest, ${short(served)}` : `the deployment record for this package names Descriptor ${short(named)}, and the registry serves ${short(served)}`; }
+  else if (facts.target.version) { bound = trim(d.doc?.agent_version) === facts.target.version; how = bound ? `it states version ${facts.target.version}; no deployment record names a Descriptor digest, so the version alone binds it` : `it states version ${trim(d.doc?.agent_version)}, not the audited ${facts.target.version}`; }
+  else { bound = false; how = "nothing names the audited package's Descriptor"; }
+  const parts = { present: true, signed, bound, source: d.url, by: subject || null, record_digest: `sha256:${served}` };
+  return line("descriptor", facts, {
+    ...parts, state: stateOf(parts),
+    evidence: `the registry's Descriptor ${short(served)}, version ${trim(d.doc?.agent_version)}: ${!sigs.length ? "carries no descriptor-statement-v1 signature" : signed ? `signed by the agent's own key ${subject}` : `its signature does not verify under the subject key, or the subject (${subject}) is not the registered key (${facts.dev.key})`}; registered as ${facts.dev.key}; ${how}`,
+    extra: { doc: d.doc },
+  });
+}
+
+function conformanceLine(facts, deployLine) {
+  const e = facts.dev.evalRecord;
+  const doc = e?.ok ? e.doc : facts.attached.evalRecords.find((x) => trim(x.doc?.subject?.agent_key) === facts.dev.key)?.doc ?? null;
+  if (!doc) return line("conformance", facts, { present: false, signed: false, bound: false, state: "missing", evidence: `the registry holds no conformance verdict for ${facts.dev.key ?? facts.handle} (${e?.error ?? "not read"})` });
+  const s = signedBy(facts, doc, "agent-eval-record-v1", "conformance");
+  const text = canonical(doc);
+  const img = trim(deployLine.record?.image_digest);
+  const bound = Boolean((facts.target.digest && text.includes(hexOf(facts.target.digest))) || (img && text.includes(hexOf(img))));
+  const parts = { present: true, signed: s.holder, bound, source: e?.ok ? e.url : "attached", by: s.by, record_digest: sha256(Buffer.from(text, "utf8")) };
+  return line("conformance", facts, {
+    ...parts, state: stateOf(parts),
+    evidence: `verdict ${trim(doc.verdict) || "?"}, ${signedWords(s, facts, "conformance")}; ${bound ? "names this package's digest or the image its deployment record started" : "names neither this package's digest nor the image its deployment record started"}`,
+  });
+}
+
+function docsLine(facts) {
+  const a = facts.dev.agentdoc;
+  if (!a?.ok || !a.doc) return line("docs", facts, { present: false, signed: false, bound: false, state: "missing", evidence: `no AgentDoc is served at ${facts.dev.origin}/a/${facts.handle}/agentdoc.json (${a?.error ?? "not read"})` });
+  const src = (a.doc.sources ?? []).find((s) => s?.kind === "agent-descriptor" || s?.id === "descriptor");
+  const named = trim(src?.agent_version);
+  const bound = Boolean(facts.target.version && named === facts.target.version);
+  const sigs = verifyDoc(a.doc);
+  const signed = sigs.some((s) => s.verifies);
+  const parts = { present: true, signed, bound, source: a.url, by: sigs.find((s) => s.verifies)?.by ?? null };
+  return line("docs", facts, {
+    ...parts, state: !bound ? "stale" : "present",
+    evidence: `the AgentDoc at ${a.url}, assembled ${trim(a.doc.assembled_at) || "?"}${trim(a.doc.assembled_by) ? ` by ${trim(a.doc.assembled_by)}` : ""}, read from Descriptor version ${named || "(none stated)"}${facts.target.version ? `; the audited version is ${facts.target.version}` : ""}${signed ? "; its signature verifies" : sigs.length ? "; its signature does not verify" : "; it is unsigned"}`,
+  });
+}
+
+/** The scripts in a package, by path. */
+export const scriptsOf = (pkg) => (pkg ? [...pkg.files.keys()].filter((p) => /(^|\/)scripts\/[^/]+\.(mjs|js|cjs|ts|py|sh)$/.test(p)) : []);
+
+function manifestLine(facts, stage) {
+  const pkg = facts.pkg;
+  const want = hexOf(facts.target.digest);
+  const buildText = facts.buildRecordText ?? "";
+  const ms = facts.attached.manifests.map((m) => ({ ...m, verifies: verifyManifest(m.doc), mdigest: sha256(Buffer.from(canonical(m.doc), "utf8")) }));
+  const holderKeys = (facts.holderKeys[stage] ?? []).map((k) => k.key);
+  const mine = ms.filter((m) => holderKeys.includes(trim(m.doc.agent)));
+  const notes = facts.attached.notes.map((n) => n.name);
+  if (!mine.length) {
+    const hint = notes.length ? `; the records-folder notes attached (${notes.join(", ")}) are unsigned and are not a stage's record` : "";
+    return line(stage, facts, { present: false, signed: false, bound: false, state: "missing", evidence: `no delivery manifest signed by ${holderWords(facts, stage)} was given to the audit${hint}` });
+  }
+  const judged = mine.map((m) => {
+    const pieces = Array.isArray(m.doc.pieces) ? m.doc.pieces : [];
+    const inPkg = pkg ? pieces.filter((p) => p && pkg.digests.has(trim(p.digest))) : [];
+    const names = want && canonical(m.doc).includes(want);
+    const cited = buildText.includes(hexOf(m.mdigest)) || (trim(m.doc.sig) && buildText.includes(trim(m.doc.sig)));
+    return { m, inPkg, bound: inPkg.length > 0 || names || cited, how: names ? "names this package's digest" : cited ? "is named by this package's build record" : inPkg.length ? `${inPkg.length} of its pieces are files in this package` : "names neither this package's digest nor any file in it" };
+  });
+  if (stage === "code") {
+    const scripts = scriptsOf(pkg);
+    const traced = new Map();
+    for (const j of judged.filter((x) => x.m.verifies)) for (const p of j.m.doc.pieces ?? []) if (pkg?.digests.has(trim(p?.digest))) traced.set(pkg.digests.get(trim(p.digest)), j.m.name);
+    const untraced = scripts.filter((s) => !traced.has(s));
+    const signed = judged.some((j) => j.m.verifies);
+    const bound = Boolean(pkg) && scripts.length > 0 && untraced.length === 0;
+    const parts = { present: true, signed, bound: pkg ? bound : false, source: judged.map((j) => j.m.name).join(", "), by: trim(judged[0].m.doc.agent) };
+    return line(stage, facts, {
+      ...parts, state: stateOf(parts),
+      evidence: !pkg ? "the package's bytes were not read, so no script could be traced"
+        : `${scripts.length - untraced.length} of ${scripts.length} scripts traced to a delivery manifest signed by ${holderWords(facts, stage)}${untraced.length ? `; not traced: ${untraced.join(", ")}` : ""}`,
+    });
+  }
+  const best = judged.sort((a, b) => Number(b.m.verifies) - Number(a.m.verifies) || Number(b.bound) - Number(a.bound))[0];
+  const parts = { present: true, signed: best.m.verifies, bound: best.bound, source: best.m.name, by: trim(best.m.doc.agent), record_digest: best.m.mdigest };
+  return line(stage, facts, {
+    ...parts, state: stateOf(parts),
+    evidence: `${best.m.name}: a delivery by ${trim(best.m.doc.agent)} (${holderWords(facts, stage)}), ${best.m.verifies ? "its signature verifies" : "its signature does not verify"}; it ${best.how}`,
+  });
+}
+
+/** Every stage's line, in the lifecycle's order. */
+export function stageLines(facts) {
+  const lines = {};
+  lines["build-record"] = buildRecordLine(facts);
+  facts.buildRecordText = lines["build-record"].record ? canonical(lines["build-record"].record) : "";
+  lines["deployment-record"] = deploymentRecordLine(facts);
+  lines.descriptor = descriptorLine(facts, lines["deployment-record"]);
+  lines.conformance = conformanceLine(facts, lines["deployment-record"]);
+  lines.docs = docsLine(facts);
+  for (const s of MANIFEST_STAGES) lines[s] = manifestLine(facts, s);
+  return STAGE_ORDER.map((s) => lines[s]);
+}
+
+/** Delivery manifests attached that no stage's holder signed. */
+export function strayManifests(facts) {
+  return facts.attached.manifests.filter((m) => !holderOf(facts, trim(m.doc?.agent))).map((m) => ({ name: m.name, agent: trim(m.doc?.agent) }));
+}
