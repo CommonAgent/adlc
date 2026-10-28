@@ -39,6 +39,9 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
   "name": "invoice-reader",              # lowercase, digits, hyphens
   "version": "1.0.0",
   "description": "One sentence: what it does.",
+  "display_name": "Invoice reader",      # ? the Descriptor's `name`: what a person calls it (6.13.1)
+  "summary": "Reads an invoice and hands back its fields.",  # ? one sentence for a person, at most 200 characters
+  "will_not": ["It will not pay an invoice."],  # ? what it will not do, in words a person acts on (6.13.3)
   "source": "<dir>",                     # ? base for relative file paths below;
                                          #   defaults to the spec file's directory
   "jobs": [                              # each becomes a skill; the offered ones become offerings
@@ -48,6 +51,8 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
       "good": "what a good result looks like",
       "empty": "what to do when it comes back empty",
       "offered": true,                     # ? what a caller orders; until one job says so, every job is offered
+      "started_by": ["person", "agent"],   # ? offered jobs only: who starts it (6.13.2)
+      "works_as": "job",                   # ? offered jobs only: conversation or job (6.13.2)
       "steps": ["find-the-total"],         # ? the jobs this one runs, in order, to deliver (one level deep)
       "revisions": {                       # ? what a change to delivered work costs (offered jobs only):
         "included": { "count": 1, "window_days": 14 },     #   this many free within the window, then
@@ -1148,6 +1153,39 @@ FORMAT_MODES = ("warn", "refuse")
 # Who gives an input (Common Agent 6.13, proposed in common-agent-standards
 # #113, optional): a person, another agent, or either.
 GIVEN_BY = ("person", "agent", "either")
+#: Who starts an offering (Common Agent 6.13.2, proposed): a person from a
+#: page, other agents as a step of a larger job, or both.
+STARTED_BY = ("person", "agent")
+#: How an offering is used once started (6.13.2): a turn-by-turn exchange or a job.
+WORKS_AS = ("conversation", "job")
+#: How a person views or gives an input or output (6.13.5).
+PRESENTATIONS = ("quiz", "document", "facts", "table", "media", "audio", "package")
+
+
+def person_members(spec):
+    """The members a person reads (Common Agent 6.13.1 and 6.13.3, proposed):
+    the agent's display `name`, a one-sentence `summary` of at most 200
+    characters, and `will_not`, the things it will not do in words a person
+    deciding whether to use it can act on. Carried as authored, after their
+    shape is checked; none is derived, because each is the operator's own
+    statement and a guessed one would be a claim nobody made."""
+    out = {}
+    if "display_name" in spec:
+        n = spec["display_name"]
+        if not (isinstance(n, str) and n.strip() and len(n.strip()) <= 60 and "\n" not in n):
+            fail("name is the agent's display name for a person, a few words on one line (at most 60 characters)")
+        out["name"] = n.strip()
+    if "summary" in spec:
+        sm = spec["summary"]
+        if not (isinstance(sm, str) and sm.strip() and len(sm.strip()) <= 200 and "\n" not in sm):
+            fail("summary is one plain sentence for a person, at most 200 characters")
+        out["summary"] = sm.strip()
+    if "will_not" in spec:
+        wn = spec["will_not"]
+        if not (isinstance(wn, list) and wn and all(isinstance(w, str) and w.strip() for w in wn)):
+            fail("will_not is a non-empty list of sentences, each one thing the agent will not do")
+        out["will_not"] = [w.strip() for w in wn]
+    return out
 BARE_JSON = "application/json"
 
 
@@ -1683,6 +1721,14 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
                     fail(f"job {j['slug']}: input {e['name']!r} given_by is who gives it, one of {', '.join(GIVEN_BY)}; bad: {e['given_by']!r}")
                 if side == "outputs" and "given_by" in e:
                     fail(f"job {j['slug']}: output {e['name']!r} carries given_by, which says who gives an input")
+                if "presentation" in e and e["presentation"] not in PRESENTATIONS:
+                    fail(f"job {j['slug']}: {side[:-1]} {e['name']!r} presentation is how a person meets it, one of {', '.join(PRESENTATIONS)}; bad: {e['presentation']!r}")
+                if "accepts" in e:
+                    acc = e["accepts"]
+                    if side != "inputs" or e["kind"] != "document":
+                        fail(f"job {j['slug']}: {side[:-1]} {e['name']!r} carries accepts, which only an input of kind document has")
+                    if not (isinstance(acc, list) and acc and all(isinstance(m, str) and MEDIA_RE.match(m) for m in acc)):
+                        fail(f"job {j['slug']}: input {e['name']!r} accepts is a non-empty list of media types")
             o[side] = v
         # How this one is actually done, when the spec says (12.3). A caller
         # is entitled to know whether the step it is buying is a fixed program
@@ -1712,6 +1758,9 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
         offered = j["slug"] in can_order
         if "revisions" in j and not offered:
             fail(f"job {j['slug']}: revisions belong to an offered job; a step is not revised on its own")
+        for k in ("started_by", "works_as"):
+            if k in j and not offered:
+                fail(f"job {j['slug']}: {k} belongs to an offered job; a step is started by the offering it is part of")
         if "scopes" in j and not offered:
             fail(f"job {j['slug']}: scopes belong to an offered job; a person grants them to what a caller orders")
         if not offered:
@@ -1721,6 +1770,16 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
             o["steps"] = [dict(projected[s]) for s in j["steps"]]
         if "revisions" in j:
             o["revisions"] = revisions_policy(j)
+        # Who starts it and how it is used (Common Agent 6.13.2, proposed).
+        if "started_by" in j:
+            sb = j["started_by"]
+            if not (isinstance(sb, list) and sb and all(x in STARTED_BY for x in sb) and len(set(sb)) == len(sb)):
+                fail(f"job {j['slug']}: started_by lists who starts it, from {', '.join(STARTED_BY)}; bad: {sb!r}")
+            o["started_by"] = list(sb)
+        if "works_as" in j:
+            if j["works_as"] not in WORKS_AS:
+                fail(f"job {j['slug']}: works_as is one of {', '.join(WORKS_AS)}; bad: {j['works_as']!r}")
+            o["works_as"] = j["works_as"]
         # The trial as declared (7.7), checked in trial_declarations before
         # any file was written; the counts travel, the money does not.
         if "trial" in j:
@@ -1735,6 +1794,7 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
     doc = {
         "format": "agent-descriptor-v1",
         "agent_version": str(spec.get("version", "1.0.0")),
+        **person_members(spec),
         "does": spec["description"].strip(),
         "offerings": offerings,
         # Prose, one sentence per line: the descriptor asks for the operator's
@@ -2516,7 +2576,7 @@ def read_folder(folder):
             o = by_offering[slug]
             if o.get("steps"):
                 j["steps"] = [s.get("id") for s in o["steps"] if isinstance(s, dict)]
-            for k in ("revisions", "trial", "scopes"):
+            for k in ("revisions", "trial", "scopes", "started_by", "works_as"):
                 if k in o:
                     j[k] = o[k]
         if isinstance(runs, dict) and slug in runs:
@@ -2555,6 +2615,11 @@ def read_folder(folder):
         if k in b:
             spec[k] = b[k]
     spec["jobs"] = jobs
+    if "name" in desc:
+        spec["display_name"] = desc["name"]
+    for k in ("summary", "will_not"):
+        if k in desc:
+            spec[k] = desc[k]
     spec["refuses"] = [ln for ln in refusals.split("\n") if ln.strip()]
     if desc.get("escalates"):
         spec["escalates"] = desc["escalates"]
