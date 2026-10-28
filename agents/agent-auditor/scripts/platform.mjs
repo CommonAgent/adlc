@@ -19,21 +19,23 @@
 //
 // The same public reads go to the prod origin (PROD_API_BASE) for the version
 // prod runs. Each answer is kept with its address and time. A read that fails
-// is said, never filled in.
+// is said, never filled in. A 429, 502 or 503 is waited out and asked again
+// (retry.mjs), so a busy minute is never read as something missing.
 //
 //   needs: node >= 22
 //   import { platform } from "./platform.mjs"
 
+import { fetchRetrying } from "./retry.mjs";
+
 const trim = (s) => String(s ?? "").trim();
 
-async function get(url, { token = "", fetchImpl = globalThis.fetch, timeoutMs = 30_000, now = () => new Date(), binary = false } = {}) {
+async function get(url, { token = "", fetchImpl = globalThis.fetch, timeoutMs = 30_000, now = () => new Date(), binary = false, sleep } = {}) {
   const at = now().toISOString();
   try {
-    const r = await fetchImpl(url, {
+    const r = await fetchRetrying(url, {
       method: "GET",
       headers: { accept: binary ? "*/*" : "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    }, { fetchImpl, timeoutMs, ...(sleep ? { sleep } : {}) });
     const bytes = Buffer.from(await r.arrayBuffer());
     let body = null;
     if (!binary) { try { body = bytes.length ? JSON.parse(bytes.toString("utf8")) : null; } catch { body = null; } }
@@ -46,9 +48,9 @@ async function get(url, { token = "", fetchImpl = globalThis.fetch, timeoutMs = 
 }
 
 /** The platform at one origin. */
-export function platform({ base = "", token = "", fetchImpl, now } = {}) {
+export function platform({ base = "", token = "", fetchImpl, now, sleep } = {}) {
   const root = trim(base).replace(/\/+$/, "");
-  const opts = { fetchImpl, now };
+  const opts = { fetchImpl, now, sleep };
   const enc = encodeURIComponent;
   return {
     root,

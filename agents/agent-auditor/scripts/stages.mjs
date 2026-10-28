@@ -12,7 +12,9 @@
 //                       or attached: agent-build-record-v1
 //   descriptor          the registry's stored Descriptor, signed by the agent's
 //                       own key (descriptor-statement-v1), and its registration
-//   deployment-record   the deploy queue or attached: agent-deployment-record-v1
+//   deployment-record   the deploy queue (a request's record, or one filed
+//                       after its result) or attached: agent-deployment-record-v1,
+//                       for a deploy, update, alongside, reconfigure or attest
 //   conformance         the registry's newest verdict (agent-eval-record-v1)
 //   docs                the AgentDoc the platform assembles for the agent
 //
@@ -33,6 +35,12 @@ const hexOf = (d) => trim(d).toLowerCase().replace(/^sha256:/, "");
 const short = (d) => (d ? `sha256:${hexOf(d).slice(0, 12)}` : "none"); // cut-ok: a digest's prefix for reading; the whole digest is in the evidence
 
 export const STAGE_ORDER = ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "docs"];
+/** The acts whose signed record says a package runs: a deploy, an update, a
+ *  version kept alongside, a reconfigure (model, jobs at once, a Descriptor
+ *  bound again from the package; the package named from the inventory), and
+ *  an attest (the deployment manager re-hashed the running install against
+ *  its ledger and attests the package runs, without redeploying it). */
+export const DEPLOYMENT_ACTS = ["deploy", "update", "alongside", "reconfigure", "attest"];
 export const MANIFEST_STAGES = ["requirements", "architecture", "design", "impact", "test", "code", "review", "security"];
 
 /** Whose key is this, among the stage holders: [stage, handle] or null. */
@@ -79,11 +87,16 @@ function stateOf({ present, signed, bound }) {
   return "present";
 }
 
-/** Records of a kind from the queue and the attachments, each with where it came from. */
+/** Records of a kind from the queue and the attachments, each with where it came from.
+ *  A request's records filed after its result (`later_records`: a backfilled
+ *  attest record, a reconfigure) are read as deployment records too. */
 function recordsFrom(facts, member, attachedList) {
   const out = [];
   for (const r of facts.queue.requests) {
     if (r[member] && typeof r[member] === "object") out.push({ doc: r[member], source: `deploy request ${r.id} (${r.status}${r.decided_at ? `, ${r.decided_at}` : ""})`, request: r });
+    if (member === "deploy_record" && Array.isArray(r.later_records)) {
+      for (const doc of r.later_records) if (doc && typeof doc === "object") out.push({ doc, source: `deploy request ${r.id} (later record)`, request: r });
+    }
   }
   for (const a of attachedList) out.push({ doc: a.doc, source: `attached (${a.name})`, request: null });
   return out;
@@ -114,7 +127,7 @@ function buildRecordLine(facts) {
 
 function deploymentRecordLine(facts) {
   const want = hexOf(facts.target.digest);
-  const all = recordsFrom(facts, "deploy_record", facts.attached.deployRecords).filter((x) => ["deploy", "update", "alongside"].includes(trim(x.doc?.act)));
+  const all = recordsFrom(facts, "deploy_record", facts.attached.deployRecords).filter((x) => DEPLOYMENT_ACTS.includes(trim(x.doc?.act)));
   const mine = all.filter((x) => want && hexOf(x.doc?.package?.sha256) === want);
   if (!mine.length) {
     const other = all.map((x) => `${trim(x.doc?.package?.version) || "?"} ${short(x.doc?.package?.sha256)}`);
@@ -164,7 +177,7 @@ function conformanceLine(facts, deployLine) {
   const parts = { present: true, signed: s.verifies, bound, source: e?.ok ? e.url : "attached", by: s.by, record_digest: sha256(Buffer.from(text, "utf8")) };
   return line("conformance", facts, {
     ...parts, state: stateOf(parts),
-    evidence: `verdict ${trim(doc.verdict) || "?"}, ${signedWords(s, facts, "conformance")}; ${bound ? "names this package's digest or the image its deployment record started" : "names neither this package's digest nor the image its deployment record started"}`,
+    evidence: `verdict ${trim(doc.verdict) || (typeof doc.conforms === "boolean" ? (doc.conforms ? "conforms" : "does not conform") : "?")}${doc.summary && typeof doc.summary === "object" ? ` (${["pass", "fail", "inconclusive", "flagged_for_review"].filter((k) => typeof doc.summary[k] === "number").map((k) => `${doc.summary[k]} ${k.replace(/_/g, " ")}`).join(", ")})` : ""}, ${signedWords(s, facts, "conformance")}; ${bound ? "names this package's digest or the image its deployment record started" : "names neither this package's digest nor the image its deployment record started"}`,
   });
 }
 

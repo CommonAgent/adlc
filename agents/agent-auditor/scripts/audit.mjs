@@ -11,7 +11,8 @@
 //   check-the-stage-records   stages.mjs: one line per stage
 //   run-the-checks        checks.mjs: every checklist entry through its
 //                         registered test, or "not checked" with the reason
-//   file-the-findings     ledger.mjs: each finding as a debt, once
+//   file-the-findings     ledger.mjs: each finding as a debt, once, and a
+//                         replaced package's still-owed items closed
 //   write-the-report      report.mjs, keys.mjs, store.mjs, pieces.mjs: the
 //                         signed report, filed where the gates read it
 //
@@ -30,7 +31,7 @@ import { platform } from "./platform.mjs";
 import { stageLines, strayManifests } from "./stages.mjs";
 import { runCheck } from "./checks.mjs";
 import { runPackageMaker } from "./package-maker.mjs";
-import { fileOwed, owedItems } from "./ledger.mjs";
+import { closeReplaced, fileOwed, owedItems } from "./ledger.mjs";
 import { writeReport } from "./report.mjs";
 import { fileReport } from "./store.mjs";
 import { fill, plan as piecesPlan } from "./pieces.mjs";
@@ -95,9 +96,20 @@ export async function audit({ asked, attached, checklist, dev, prod, files = new
   const owed = owedItems({ findings, handle: facts.handle, version: facts.target.version, digest: facts.target.digest, checklistDigest: checklist.digest });
   const filed = await fileOwed(owed, ledger);
   const audited_at = now.toISOString().replace(/\.\d{3}Z$/, "Z");
+  // A replaced package's items are closed when the package that replaced it
+  // is audited: only when the audited package is the one dev serves now, so
+  // auditing an older version never closes what its successor owes.
+  const current = Boolean(facts.target.digest) && Boolean(facts.devVersion) && facts.devVersion === facts.target.version;
+  const closed = current
+    ? await closeReplaced({
+      handle: facts.handle, digest: facts.target.digest, version: facts.target.version, auditedAt: audited_at,
+      results: new Map(results.map((r) => [r.id, { result: r.result, counted: r.level_applied !== "info" }])),
+      filed: new Map(owed.map((o, i) => [o.finding, filed[i]?.number]).filter(([, n]) => n)),
+    }, ledger)
+    : [];
   const report = writeReport({ facts, checklist, lines, results, findings, notChecked, filed, audited_at, seed });
   const kept = await fileReport(report.text, { ...store, digest: facts.target.digest, signed: report.signed });
-  return { facts, lines, results, findings, notChecked, owed, filed, report, kept, packageMaker };
+  return { facts, lines, results, findings, notChecked, owed, filed, closed, report, kept, packageMaker };
 }
 
 const many = (n, w, ws = `${w}s`) => `${n} ${n === 1 ? w : ws}`;
@@ -120,13 +132,17 @@ export function replyText({ result, asked, went }) {
   if (f.length) L.push(`I filed ${many(f.length, "debt")} in the ledger: ${f.join(", ")}.`);
   if (a.length) L.push(`${many(a.length, "finding was", "findings were")} already in the ledger and not filed twice: ${a.join(", ")}.`);
   if (n.length) L.push(`${many(n.length, "finding is", "findings are")} not filed, because ${[...new Set(n.map((x) => x.why))].join("; ")}; the report lists each one.`);
+  const closed = (result.closed ?? []).filter((x) => x.state === "closed");
+  const notClosed = (result.closed ?? []).filter((x) => x.state === "not closed");
+  if (closed.length) L.push(`I closed ${many(closed.length, "debt")} a replaced package left: ${closed.map((x) => `#${x.number} (${x.finding}, ${x.to})`).join(", ")}.`);
+  if (notClosed.length) L.push(`${many(notClosed.length, "debt")} a replaced package left could not be closed, because ${[...new Set(notClosed.map((x) => x.why))].join("; ")}.`);
   if (kept.state === "not filed") L.push(`The report is not filed where the gates read it, because ${kept.why}.`);
   else L.push(`The report is ${kept.state === "filed" ? "filed" : "already filed"} where the gates read it: ${kept.read_at}.`);
   return L.join(" ");
 }
 
 /** The job, as the runtime requirements start it. */
-export async function runJob(argv = [], env = process.env, { fetchImpl, now = new Date() } = {}) {
+export async function runJob(argv = [], env = process.env, { fetchImpl, now = new Date(), sleep } = {}) {
   const args = fromArgv(argv);
   if (!args.job || !args.records) return { ok: false, code: 2, reply: "This job needs --job <job folder> and --records <records folder>." };
   const text = args.textFile && existsSync(args.textFile) ? readFileSync(args.textFile, "utf8") : "";
@@ -152,14 +168,14 @@ export async function runJob(argv = [], env = process.env, { fetchImpl, now = ne
   } catch { schemas = null; }
 
   const files = new Map(args.files.filter((f) => existsSync(f.path)).map((f) => [basename(f.path).replace(/^\d+-[A-Za-z0-9_-]{8}-/, ""), readFileSync(f.path)]));
-  const dev = platform({ base: env.MESH_API_BASE, token: env.AUDIT_TOKEN, fetchImpl });
-  const prod = trim(env.PROD_API_BASE) ? platform({ base: env.PROD_API_BASE, fetchImpl }) : null;
+  const dev = platform({ base: env.MESH_API_BASE, token: env.AUDIT_TOKEN, fetchImpl, sleep });
+  const prod = trim(env.PROD_API_BASE) ? platform({ base: env.PROD_API_BASE, fetchImpl, sleep }) : null;
   const work = args.work ? (mkdirSync(args.work, { recursive: true }), args.work) : RECORDS;
   const result = await audit({
     asked, attached, checklist, dev, prod, files, now, work, env, schemas,
     seed: trim(env.AUDIT_SIGNING_SEED),
-    ledger: { base: env.MESH_API_BASE, token: env.LEDGER_TOKEN, ...(fetchImpl ? { fetchImpl } : {}) },
-    store: { base: env.MESH_API_BASE, token: env.AUDIT_TOKEN, ...(fetchImpl ? { fetchImpl } : {}) },
+    ledger: { base: env.MESH_API_BASE, token: env.LEDGER_TOKEN, ...(fetchImpl ? { fetchImpl } : {}), ...(sleep ? { sleep } : {}) },
+    store: { base: env.MESH_API_BASE, token: env.AUDIT_TOKEN, ...(fetchImpl ? { fetchImpl } : {}), ...(sleep ? { sleep } : {}) },
   });
   for (const n of result.facts.notes) note(RECORDS, n);
   if (!result.report.signed) note(RECORDS, { wanted: "the auditor's signing key (AUDIT_SIGNING_SEED)", did: "wrote the report unsigned, which the gates do not accept" });
@@ -168,7 +184,7 @@ export async function runJob(argv = [], env = process.env, { fetchImpl, now = ne
   if (notFiled.length) note(RECORDS, { wanted: "a ledger that would take the findings", did: "listed each finding in the report without filing it", why: notFiled[0].why });
 
   const listed = fill(args.job, piecesPlan({ report: result.report.text })).map((e) => e.name);
-  writeFileSync(join(RECORDS, "filed.json"), `${JSON.stringify({ filed: "v1", report: result.kept, items: result.owed.map((o, i) => ({ finding: o.finding, owed_to: o.owed_to, against: o.against, blocks: o.blocks, ...result.filed[i] })) }, null, 2)}\n`);
+  writeFileSync(join(RECORDS, "filed.json"), `${JSON.stringify({ filed: "v1", report: result.kept, items: result.owed.map((o, i) => ({ finding: o.finding, owed_to: o.owed_to, against: o.against, blocks: o.blocks, ...result.filed[i] })), closed: result.closed }, null, 2)}\n`);
   const went = sentence(wentWithout(RECORDS));
   return {
     ok: true, code: 0,
@@ -184,6 +200,7 @@ export async function runJob(argv = [], env = process.env, { fetchImpl, now = ne
     stages: result.lines.map((l) => ({ stage: l.stage, state: l.state })),
     checks: result.results.map((r) => ({ id: r.id, result: r.result, level: r.level_applied })),
     filed: result.filed,
+    closed: result.closed,
     report_filed: result.kept,
     went_without: wentWithout(RECORDS),
     listed,

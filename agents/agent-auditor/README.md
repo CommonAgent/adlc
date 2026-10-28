@@ -78,8 +78,22 @@ The signature is Ed25519 by `signed_by`, over `agent-audit-report-v1`, a
 newline, and the report without its `signature:` line. The auditor files the
 report with `POST /v1/operator/audits`. A gate reads it with
 `GET /v1/audits/<package digest>`, which answers `current_pass`. Each finding is
-filed with `POST /v1/operator/debt/items`. What was filed, and where the report
-went, are in `records/<job>/filed.json`.
+filed with `POST /v1/operator/debt/items`. When the audited package is the
+one dev serves now, the auditor's still-owed debts that name a package it
+replaced are closed with `POST /v1/operator/debt/<n>/transition`: resolved
+where the new package passes the check, dropped as superseded where it does not
+(the finding is then owed on the new package, as its own debt). What was filed
+and closed, and where the report went, are in `records/<job>/filed.json`.
+
+Every call to the platform that is answered 429, 502 or 503 is waited out and
+asked again (`scripts/retry.mjs`): for as long as the platform asks, else 2,
+4, 8 seconds and on, at most a minute at a time and eight times in all. A busy
+minute is never read as something missing; a read that still fails after that
+is said as failed.
+
+The package's draft Descriptor is the file its `plugin.json` points at, else
+`agent-descriptor.json`, else `descriptor.json` (a package built before
+Common Agent 0.30.0-draft), as the deployment manager reads it.
 
 ## What it needs
 
@@ -101,7 +115,7 @@ the signing key, the report is unsigned and is not filed.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                  # 26 tests
+node --test test/*.test.mjs                  # 33 tests
 python3 ../package-maker/build.py . ./out    # an Agent Package
 ```
 

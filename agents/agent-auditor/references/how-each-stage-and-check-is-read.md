@@ -31,7 +31,7 @@ those keys.
 | Code | the code writer's delivery manifests | attached | every script in the package is a piece of a verified manifest signed by a code writer, by its bytes (the package maker's `provenance.mjs` rule) |
 | Release | `agent-build-record-v1`, signed (usually by the package maker) | the deploy queue (`GET /v1/operator/audit/stage-records`) or attached | its `package.sha256` is the digest |
 | Deploy | the registry's stored Descriptor, signed by the agent's own key (`descriptor-statement-v1`), and its registration | `GET /v1/agents/<key>/descriptor` | the deployment record for this package names its digest; failing that, it states the audited version |
-| Deploy | `agent-deployment-record-v1` (act deploy, update or alongside), signed (usually by the deployment manager) | the deploy queue or attached | its `package.sha256` is the digest |
+| Deploy | `agent-deployment-record-v1` (act deploy, update, alongside, reconfigure or attest), signed (usually by the deployment manager) | the deploy queue (a request's `deploy_record`, or one of its `later_records`, filed after its result) or attached | its `package.sha256` is the digest |
 | Conformance | `agent-eval-record-v1`, signed (usually by the conformance checker) | `GET /v1/agents/<key>/eval-record` or attached | it names the package digest, or the image the deployment record started |
 | Docs | the AgentDoc | `GET /a/<handle>/agentdoc.json` | the Descriptor it was read from states the audited version |
 
@@ -47,7 +47,7 @@ person's account and carries no signature; it is never a stage's record.
 | `registered` | the storefront: the handle resolves, and the card's handle is the one audited |
 | `descriptor-signed` | the registry's bytes: their digest is the door's, the agent's page read the same digest, and the signature verifies under the subject, which is the registered key |
 | `descriptor-floor` | the minimal Descriptor's members (Common Agent 4.9, 6.2), as the platform's frozen verifier holds them |
-| `descriptor-matches-package` | the package's `agent-descriptor.json` against the served one, member by member, setting aside the members the deployment record says the deploy bound |
+| `descriptor-matches-package` | the package's draft Descriptor (the file `plugin.json` points at, else `agent-descriptor.json`, else `descriptor.json`) against the served one, member by member, setting aside `shape` and the members the deployment record says the deploy bound |
 | `descriptor-person-members` | `name`, `summary`, `will_not`, and `given_by` on every input |
 | `package-maker-format-rules` | the package maker's own `build.py` over the package (`format_rules`); failing that, the `format_rules` in the signed build record for this digest; failing that, its rule 1 read off the Descriptor |
 | `no-model-literals` | AgentMesh's `check-no-model-literals` rule (`scripts/models.mjs`, a copy) over the package's code, skills, runtime requirements and Descriptor |

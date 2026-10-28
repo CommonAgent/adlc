@@ -18,10 +18,16 @@ const HOLDERS = holderHandles();
 const NOW = new Date("2026-11-02T12:00:00Z");
 
 /** A platform holding one agent, and the keys of everyone who signs. */
-function world({ firstReleased = "2026-10-30T00:00:00Z", deployed = true, conformance = true, prodVersion = null, agentdocVersion = null, prodListedAt = null } = {}) {
+function world({ firstReleased = "2026-10-30T00:00:00Z", deployed = true, conformance = true, prodVersion = null, agentdocVersion = null, prodListedAt = null, legacy = false } = {}) {
   const handles = [...new Set(Object.values(HOLDERS).flatMap((s) => s.holders))];
   const keys = keyring([...handles, "agent", "auditor", "stranger"]);
   const pkg = agentFiles({ version: "1.0.0" });
+  if (legacy) {
+    // A package built before Common Agent 0.30.0-draft: descriptor.json, which plugin.json points at.
+    pkg.files["descriptor.json"] = pkg.files["agent-descriptor.json"];
+    delete pkg.files["agent-descriptor.json"];
+    pkg.files["plugin.json"] = JSON.stringify({ name: "summarizer", version: "1.0.0", extensions: { "net.agentdoc.package": { descriptor: { path: "descriptor.json" } } } });
+  }
   const tar = makeTar("summarizer", pkg.files);
   const digest = sha256(tar);
   const hexd = digest.slice(7);
@@ -242,4 +248,132 @@ test("the same records give the same findings: nothing in the body depends on wh
   const b = await runJob(jobWith(`agent: ${HANDLE}\n`).argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
   assert.equal(canonical(a.checks), canonical(b.checks));
   assert.equal(canonical(a.stages), canonical(b.stages));
+});
+
+// ── Agent auditor 0.3.0 (fix pass, 2026-10-28) ─────────────────────────────
+
+const stageReq = (w) => w.routes[Object.keys(w.routes).find((k) => k.includes("stage-records"))].body.requests[0];
+const reportOf = (j) => readFileSync(join(j.job, "out", "audit-report.md"), "utf8");
+
+test("a 429 is waited out and asked again, so a busy minute never reads as a missing Descriptor", async () => {
+  const w = world();
+  const p = fakePlatform(w.routes);
+  const busy = new Map();
+  const fetchImpl = async (url, init = {}) => {
+    if (/\/descriptor$/.test(url) || /stage-records/.test(url)) {
+      const n = busy.get(url) ?? 0;
+      busy.set(url, n + 1);
+      if (n < 2) return { ok: false, status: 429, headers: { get: () => null }, text: async () => JSON.stringify({ error: "slow down", retry_after_ms: 1000 }), arrayBuffer: async () => new ArrayBuffer(0) };
+    }
+    return p.fetchImpl(url, init);
+  };
+  const slept = [];
+  const j = jobWith(`agent: ${HANDLE}\n`);
+  const out = await runJob(j.argv, env(w), { fetchImpl, now: NOW, sleep: async (ms) => { slept.push(ms); } });
+  const st = Object.fromEntries(out.stages.map((s) => [s.stage, s.state]));
+  assert.equal(st.descriptor, "present");
+  assert.equal(st["deployment-record"], "present");
+  assert.equal(out.checks.find((c) => c.id === "descriptor-stored-signed").result, "pass");
+  assert.ok(slept.length >= 4 && slept.every((ms) => ms === 1500), `waited ${slept.join(", ")}`);
+});
+
+test("asking again: Retry-After first, then the body's retry_after_ms, then 2, 4, 8 seconds; the last answer is handed back", async () => {
+  const { fetchRetrying, waitFor } = await import("../scripts/retry.mjs");
+  const r429 = (headers = {}, body = "") => ({ status: 429, headers: { get: (n) => headers[n.toLowerCase()] ?? null }, text: async () => body });
+  assert.equal(await waitFor(r429({ "retry-after": "3" }), 1), 3000);
+  assert.equal(await waitFor(r429({}, JSON.stringify({ retry_after_ms: 200 })), 1), 700);
+  assert.deepEqual([await waitFor(r429(), 1), await waitFor(r429(), 2), await waitFor(r429(), 3), await waitFor(r429(), 9)], [2000, 4000, 8000, 60000]);
+  let calls = 0;
+  const slept = [];
+  const last = await fetchRetrying("https://x.example/a", {}, { fetchImpl: async () => { calls++; return r429(); }, sleep: async (ms) => { slept.push(ms); }, tries: 4 });
+  assert.equal(last.status, 429, "a read that still fails is handed back as failed");
+  assert.equal(calls, 4);
+  assert.deepEqual(slept, [2000, 4000, 8000]);
+  let posts = 0;
+  const once = await fetchRetrying("https://x.example/b", { method: "POST" }, { fetchImpl: async () => { posts++; return { status: 503, headers: { get: () => null }, text: async () => "" }; }, codes: new Set([429]) });
+  assert.equal(once.status, 503);
+  assert.equal(posts, 1, "a write is not asked again after a 503");
+});
+
+test("a replaced package's debts are closed when its successor is audited: resolved where it passes, dropped as superseded where it fails", async () => {
+  const w = world();
+  const p = fakePlatform(w.routes);
+  const old = `sha256:${"a".repeat(64)}`;
+  const item = (number, mark, state = "open", owed_to = "platform@agentmesh.ai") => ({ number, kind: "dependency", against: HANDLE, owed_to, state, blocks: [], what: `**${HANDLE} 0.9.0: x.**\n\nFixed at the deploy stage.\n\n${mark}` });
+  p.ledger.push(
+    item(1, `finding: registered on ${old}`),
+    item(2, `finding: descriptor-person-members on ${old}`, "acknowledged"),
+    item(3, "finding: stage-record-requirements on no package digest"),
+    item(4, `finding: registered on ${old}`, "resolved"),
+    item(5, `finding: descriptor-person-members on ${w.digest}`),
+    item(6, `finding: registered on ${old}`, "open", "someone@else.example"),
+    { number: 7, kind: "dependency", against: HANDLE, owed_to: "platform@agentmesh.ai", state: "open", blocks: [], what: "a person's own note" },
+  );
+  const j = jobWith(`agent: ${HANDLE}\n`);
+  const out = await runJob(j.argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
+  const byNo = (n) => p.ledger.find((x) => x.number === n);
+  assert.equal(byNo(1).state, "resolved");
+  assert.match(byNo(1).evidence, /was replaced by sha256:[0-9a-f]{64} \(version 1\.0\.0\); its audit on 2026-11-02 passes registered/);
+  assert.equal(byNo(2).state, "dropped");
+  assert.match(byNo(2).evidence, /^superseded: .* the finding is owed on the new package as #5\.$/, "the new package's item is the one already filed for this digest");
+  assert.equal(byNo(3).state, "dropped");
+  assert.match(byNo(3).evidence, /no package on record was replaced .* holds no finding for stage-record-requirements \(an info check\)/);
+  for (const n of [4, 5, 6, 7]) assert.equal(byNo(n).state, n === 4 ? "resolved" : "open", `#${n} is not touched`);
+  assert.deepEqual(out.closed.map((c) => [c.number, c.to, c.state]), [[1, "resolved", "closed"], [2, "dropped", "closed"], [3, "dropped", "closed"]]);
+  assert.match(out.reply, /I closed 3 debts a replaced package left: #1 \(registered, resolved\), #2 \(descriptor-person-members, dropped\), #3 \(stage-record-requirements, dropped\)/);
+  const filedJson = JSON.parse(readFileSync(join(j.root, "records", "job", "filed.json"), "utf8"));
+  assert.equal(filedJson.closed.length, 3);
+});
+
+test("auditing a package that is not the one dev serves closes nothing", async () => {
+  const w = world();
+  w.routes[Object.keys(w.routes).find((k) => k.endsWith("/descriptor"))] = { body: { ...w.served, agent_version: "1.1.0" } };
+  const p = fakePlatform(w.routes);
+  p.ledger.push({ number: 1, kind: "dependency", against: HANDLE, owed_to: "platform@agentmesh.ai", state: "open", blocks: [], what: `x\n\nfinding: registered on sha256:${"a".repeat(64)}` });
+  const out = await runJob(jobWith(`agent: ${HANDLE}\npackage_digest: ${w.digest}\n`).argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
+  assert.deepEqual(out.closed, []);
+  assert.equal(p.ledger[0].state, "open");
+});
+
+test("a package built before Common Agent 0.30.0-draft: its descriptor.json, which plugin.json points at, is the package's Descriptor", async () => {
+  const w = world({ legacy: true });
+  const j = jobWith(`agent: ${HANDLE}\n`);
+  const out = await runJob(j.argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
+  assert.equal(out.checks.find((c) => c.id === "descriptor-matches-package").result, "pass");
+  const text = reportOf(j);
+  assert.match(text, /every other member is the package's descriptor\.json/);
+  assert.match(text, /read from the package's descriptor\.json/);
+});
+
+test("a deployment record signed later counts: an attest act, and one of a request's later records", async () => {
+  const w = world();
+  const req = stageReq(w);
+  const dm = w.keys["deployment-manager.platform@agentmesh.ai"];
+  const attest = signRecord({ record: "v1", role: "deployment-manager", act: "attest", package: { name: "summarizer", version: "1.0.0", sha256: w.digest.slice(7) }, agent: { key: w.keys.agent.key, handle: HANDLE }, produced_at: "2026-10-31T00:00:00Z", by: dm.key }, "agent-deployment-record-v1", dm.seed);
+  req.deploy_record = null;
+  req.later_records = [attest];
+  const j = jobWith(`agent: ${HANDLE}\n`);
+  const out = await runJob(j.argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
+  assert.equal(out.stages.find((s) => s.stage === "deployment-record").state, "present");
+  assert.match(reportOf(j), /deploy request dr_1 \(later record\): attest of sha256:/);
+  const w2 = world();
+  const r2 = stageReq(w2);
+  r2.deploy_record = signRecord({ ...r2.deploy_record, signatures: undefined, act: "reconfigure" }, "agent-deployment-record-v1", w2.keys["deployment-manager.platform@agentmesh.ai"].seed);
+  const out2 = await runJob(jobWith(`agent: ${HANDLE}\n`).argv, env(w2), { fetchImpl: fakePlatform(w2.routes).fetchImpl, now: NOW });
+  assert.equal(out2.stages.find((s) => s.stage === "deployment-record").state, "present");
+  const w3 = world();
+  const r3 = stageReq(w3);
+  r3.deploy_record = signRecord({ ...r3.deploy_record, signatures: undefined, act: "remove" }, "agent-deployment-record-v1", w3.keys["deployment-manager.platform@agentmesh.ai"].seed);
+  const out3 = await runJob(jobWith(`agent: ${HANDLE}\n`).argv, env(w3), { fetchImpl: fakePlatform(w3.routes).fetchImpl, now: NOW });
+  assert.equal(out3.stages.find((s) => s.stage === "deployment-record").state, "missing", "a removal says nothing runs");
+});
+
+test("the conformance line says the verdict, or whether the agent conforms when the record names no verdict", async () => {
+  const w = world();
+  const cc = w.keys["conformance-checker.platform@agentmesh.ai"];
+  w.routes[`GET ${DEV}/v1/agents/${w.keys.agent.key}/eval-record`] = { body: signRecord({ record: "v1", act: "evaluate", subject: { agent_key: w.keys.agent.key, handle: HANDLE }, package: { name: "summarizer", sha256: w.digest.slice(7) }, summary: { pass: 2, fail: 0, inconclusive: 1, flagged_for_review: 1 }, conforms: false, produced_at: "2026-10-31T00:00:00Z", by: cc.key }, "agent-eval-record-v1", cc.seed) };
+  const j = jobWith(`agent: ${HANDLE}\n`);
+  const out = await runJob(j.argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
+  assert.equal(out.stages.find((s) => s.stage === "conformance").state, "present");
+  assert.match(reportOf(j), /verdict does not conform \(2 pass, 0 fail, 1 inconclusive, 1 flagged for review\), signed by/);
 });

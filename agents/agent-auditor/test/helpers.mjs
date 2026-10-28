@@ -112,6 +112,15 @@ export function fakePlatform(routes = {}) {
       ledger.push(item);
       return answer(201, { ok: true, item });
     }
+    const tr = /^\/v1\/operator\/debt\/(\d+)\/transition$/.exec(u.pathname);
+    if (tr && method === "POST") {
+      const b = JSON.parse(init.body);
+      const item = ledger.find((x) => x.number === Number(tr[1]));
+      if (!item) return answer(404, { error: "no such item" });
+      item.state = b.to;
+      item.evidence = b.evidence;
+      return answer(200, { ok: true, item });
+    }
     if (u.pathname === "/v1/operator/audits" && method === "POST") {
       const b = JSON.parse(init.body);
       const d = sha256(Buffer.from(b.report, "utf8"));
