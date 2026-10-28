@@ -1,0 +1,12 @@
+{
+  "bindings": [
+    {"system": "database", "product": "supabase", "provided_by": "customer",
+     "environments": {"production": {"credential": "supabase-prod", "address": "https://xyz.supabase.co", "settings": {"SUPABASE_SCHEMA": "agents"}},
+                      "staging": {"credential": "supabase-staging", "address": "https://abc.supabase.co"}},
+     "since": "2026-10-20", "by": "admin@example.com"},
+    {"system": "mail", "product": "resend", "provided_by": "customer",
+     "environments": {"production": {"credential": "resend-prod"}, "staging": {"credential": "resend-staging"}, "development": {"credential": "resend-dev"}},
+     "since": "2026-10-20", "by": "admin@example.com"}
+  ],
+  "production_stands_in": false
+}

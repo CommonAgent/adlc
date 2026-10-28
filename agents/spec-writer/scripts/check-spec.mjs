@@ -232,7 +232,24 @@ export function modelProblems(spec) {
 /** What the drafting step holds a draft to: what a good spec carries, and
  *  the format rules. checkSpec alone is the first, which is what the specs
  *  that shipped before the format rules are measured by. */
-export const checkDraft = (spec, opts = {}) => [...checkSpec(spec), ...formatProblems(spec, opts), ...modelProblems(spec)];
+export const checkDraft = (spec, opts = {}) => [...checkSpec(spec), ...formatProblems(spec, opts), ...modelProblems(spec), ...architectureProblems(spec, opts.architecture)];
+
+/** The Design is held to the architecture record it was given (the
+ *  Architecture and Design stage's done-when: every step uses only systems
+ *  the record named, and the package's systems are the record's). A system
+ *  the draft declares that the record does not name goes back to the
+ *  architect; a system the record names that the draft leaves out is a
+ *  finding, because the package's systems and the record's must be one set.
+ *  Nothing when no record came. */
+export function architectureProblems(spec, architecture = null) {
+  if (!architecture || !Array.isArray(architecture.systems)) return [];
+  const named = new Set(architecture.systems);
+  const declared = (Array.isArray(spec?.systems) ? spec.systems : []).map((s) => trim(s?.name ?? s?.role)).filter(Boolean);
+  const out = [];
+  for (const n of declared) if (!named.has(n)) out.push(`the draft declares the system ${n}, which the architecture record does not name; do not declare it, and put "architecture" in blanks with the question for the architect`);
+  for (const n of named) if (!declared.includes(n)) out.push(`the architecture record names the system ${n} and the draft does not declare it; the package's systems are the record's`);
+  return out;
+}
 
 /** The systems the platform brokers: the agent asks the mesh for a short-lived
  *  grant each time, so the spec names no credential, variable or setting. */
