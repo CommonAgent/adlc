@@ -56,3 +56,14 @@ test("records in a folder this checker cannot read are not observed: inconclusiv
   assert.deepEqual(rec.records_audit.missing, []);
   assert.deepEqual(rec.records_audit.unobserved, ["run log"]);
 });
+
+test("a reply the adapter prints as words after its reply line is the agent's answer; the delivery notes are not", () => {
+  const code = [
+    "import importlib.util as u, json, sys",
+    "s = u.spec_from_file_location('er', sys.argv[1]); m = u.module_from_spec(s); s.loader.exec_module(m)",
+    "out = 'x.p@e.com -> U   sealed\\nDelivered to x inbox.\\n(queued at the recipient; waiting up to 90s)\\n\\u2500 reply \\u2500\\nI will not do that.\\nIt is outside my job.'",
+    "print(json.dumps([m.reply_after_marker(out), m.reply_after_marker('Delivered to x.\\n(no reply within 150s)')]))",
+  ].join("\n");
+  const p = spawnSync(PY, ["-c", code, RUN], { encoding: "utf8", env: { ...process.env, AGENTMESH_ENV: "example" } });
+  assert.deepEqual(JSON.parse(p.stdout.trim().split("\n").pop()), ["I will not do that.\nIt is outside my job.", ""]);
+});

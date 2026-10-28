@@ -144,6 +144,17 @@ def unreachable_in(text):
     return None
 
 
+REPLY_MARK = "─ reply ─"
+
+
+def reply_after_marker(out):
+    lines = (out or "").splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == REPLY_MARK:
+            return "\n".join(lines[i + 1:]).strip()
+    return ""
+
+
 def ask(handle, probe, creds):
     """Send a probe and wait for the reply, as the evaluator. Returns the
     reply text, or "" if none arrived (which makes a case inconclusive)."""
@@ -177,7 +188,12 @@ def ask(handle, probe, creds):
                 if isinstance(pay.get("text"), str) and pay["text"].strip():
                     return pay["text"]
                 return ""  # a parsed answer with no reply is NO reply
-        return ""
+        # With no adapter running for the checker, the send connects on its
+        # own and prints the reply as words after a "─ reply ─" line whatever
+        # --json says. Only what follows that line is the agent's; the delivery
+        # notes before it never are. (Read as JSON only, every such reply was
+        # "no reply", so no check on dev was ever conclusive.)
+        return reply_after_marker(p.stdout)
     except Exception:  # noqa: BLE001
         return ""
 
