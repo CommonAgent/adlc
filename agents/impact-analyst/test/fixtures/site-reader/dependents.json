@@ -1,0 +1,577 @@
+{
+  "subject": {
+    "kind": "agent",
+    "id": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+    "name": "site-reader.platform@agentmesh.ai"
+  },
+  "view": "owner",
+  "window_days": 90,
+  "read_at": "2026-10-28T04:00:58.776Z",
+  "dependents": [
+    {
+      "kind": "solution",
+      "id": "sol_1",
+      "name": "Explainer from a website and documents",
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": true,
+        "platform": true
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        }
+      ],
+      "via": null,
+      "use": null,
+      "public": false,
+      "url": "/compose/sol_1"
+    },
+    {
+      "kind": "solution",
+      "id": "sol_2",
+      "name": "Meme video from a story",
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": true,
+        "platform": true
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        }
+      ],
+      "via": null,
+      "use": null,
+      "public": false,
+      "url": "/compose/sol_2"
+    },
+    {
+      "kind": "solution",
+      "id": "sol_3",
+      "name": "Ponder",
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": true,
+        "platform": true
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        }
+      ],
+      "via": null,
+      "use": null,
+      "public": false,
+      "url": "/compose/sol_3"
+    },
+    {
+      "kind": "solution",
+      "id": "sol_4",
+      "name": "Research to meme (proof)",
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": true,
+        "platform": true
+      },
+      "declared": true,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        },
+        {
+          "source": "runs",
+          "words": "It gave this agent work twice in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 2,
+        "last_at": "2026-10-09T18:00:34.385Z",
+        "offerings": [
+          "read-site"
+        ]
+      },
+      "public": false,
+      "url": "/compose/sol_4"
+    },
+    {
+      "kind": "solution",
+      "id": null,
+      "name": "Explainer from a website and documents",
+      "owner": {
+        "org": "org_other_1",
+        "name": "agentmesh.ai",
+        "yours": false,
+        "platform": false
+      },
+      "declared": true,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        },
+        {
+          "source": "runs",
+          "words": "It gave this agent work once in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 1,
+        "last_at": "2026-10-06T19:18:03.761Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "solution",
+      "id": null,
+      "name": "Explainer from a website and documents",
+      "owner": {
+        "org": "org_other_1",
+        "name": "agentmesh.ai",
+        "yours": false,
+        "platform": false
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        }
+      ],
+      "via": null,
+      "use": null,
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "solution",
+      "id": null,
+      "name": "Meme video from a story",
+      "owner": {
+        "org": "org_other_2",
+        "name": "agentmesh.ai",
+        "yours": false,
+        "platform": false
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        }
+      ],
+      "via": null,
+      "use": null,
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "solution",
+      "id": null,
+      "name": "Ponder",
+      "owner": {
+        "org": "org_other_2",
+        "name": "agentmesh.ai",
+        "yours": false,
+        "platform": false
+      },
+      "declared": true,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        },
+        {
+          "source": "runs",
+          "words": "It gave this agent work 5 times in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 5,
+        "last_at": "2026-10-22T11:08:58.284Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "solution",
+      "id": null,
+      "name": "Ponder",
+      "owner": {
+        "org": "org_other_2",
+        "name": "agentmesh.ai",
+        "yours": false,
+        "platform": false
+      },
+      "declared": true,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        },
+        {
+          "source": "runs",
+          "words": "It gave this agent work once in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 1,
+        "last_at": "2026-10-09T19:27:54.271Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "solution",
+      "id": null,
+      "name": "Ponder",
+      "owner": {
+        "org": "org_other_1",
+        "name": "agentmesh.ai",
+        "yours": false,
+        "platform": false
+      },
+      "declared": true,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "canvas",
+          "words": "It uses this agent.",
+          "observed": false
+        },
+        {
+          "source": "runs",
+          "words": "It gave this agent work 3 times in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 3,
+        "last_at": "2026-10-09T03:41:34.258Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "share",
+      "id": "shr_1",
+      "name": "a share with a person outside the organization",
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": true,
+        "platform": true
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "share",
+          "words": "It lets someone outside your organization run Research to meme (proof). Research to meme (proof) uses this agent.",
+          "observed": false
+        }
+      ],
+      "via": {
+        "kind": "solution",
+        "id": "sol_4",
+        "name": "Research to meme (proof)"
+      },
+      "use": null,
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "process",
+      "id": "agentmesh-ai/research-to-meme-proof",
+      "name": "Research to meme (proof) v1",
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": true,
+        "platform": true
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "process",
+          "words": "It uses this agent in the step \"site-reader\".",
+          "observed": false
+        }
+      ],
+      "via": null,
+      "use": null,
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "process",
+      "id": "agentmesh/interactive-explainer",
+      "name": "make an interactive explainer v1",
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": false,
+        "platform": true
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "process",
+          "words": "It uses this agent in the step \"read-the-site\".",
+          "observed": false
+        }
+      ],
+      "via": null,
+      "use": null,
+      "public": true,
+      "url": null
+    },
+    {
+      "kind": "process",
+      "id": "agentmesh/ponder",
+      "name": "ponder a source v1",
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": false,
+        "platform": true
+      },
+      "declared": true,
+      "observed": false,
+      "found_by": [
+        {
+          "source": "process",
+          "words": "It uses this agent in the step \"read-the-page\".",
+          "observed": false
+        }
+      ],
+      "via": null,
+      "use": null,
+      "public": true,
+      "url": null
+    },
+    {
+      "kind": "account",
+      "id": "account_1",
+      "name": null,
+      "owner": {
+        "org": "org_platform",
+        "name": "AgentMesh",
+        "yours": true,
+        "platform": true
+      },
+      "declared": false,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "calls",
+          "words": "It sent this agent work twice in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 2,
+        "last_at": "2026-10-28T02:07:10.720Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "account",
+      "id": null,
+      "name": null,
+      "owner": {
+        "org": "org_other_3",
+        "name": "agentmesh.test",
+        "yours": false,
+        "platform": false
+      },
+      "declared": false,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "calls",
+          "words": "It sent this agent work once in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 1,
+        "last_at": "2026-10-28T03:48:59.126Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "account",
+      "id": null,
+      "name": null,
+      "owner": {
+        "org": "org_other_4",
+        "name": "agentmesh.test",
+        "yours": false,
+        "platform": false
+      },
+      "declared": false,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "calls",
+          "words": "It sent this agent work twice in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 2,
+        "last_at": "2026-10-28T01:13:30.711Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "account",
+      "id": null,
+      "name": null,
+      "owner": {
+        "org": "org_other_5",
+        "name": "agentmesh.test",
+        "yours": false,
+        "platform": false
+      },
+      "declared": false,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "calls",
+          "words": "It sent this agent work twice in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 2,
+        "last_at": "2026-10-28T01:01:05.587Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "account",
+      "id": null,
+      "name": null,
+      "owner": {
+        "org": "org_other_6",
+        "name": "agentmesh.test",
+        "yours": false,
+        "platform": false
+      },
+      "declared": false,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "calls",
+          "words": "It sent this agent work once in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 1,
+        "last_at": "2026-10-28T00:10:10.685Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    },
+    {
+      "kind": "account",
+      "id": null,
+      "name": null,
+      "owner": {
+        "org": "org_other_7",
+        "name": "agentmesh.test",
+        "yours": false,
+        "platform": false
+      },
+      "declared": false,
+      "observed": true,
+      "found_by": [
+        {
+          "source": "calls",
+          "words": "It sent this agent work once in the last 90 days.",
+          "observed": true
+        }
+      ],
+      "via": null,
+      "use": {
+        "count": 1,
+        "last_at": "2026-10-27T23:57:51.746Z",
+        "offerings": []
+      },
+      "public": false,
+      "url": null
+    }
+  ],
+  "unread": [],
+  "not_read": [
+    "competitor watches",
+    "channels",
+    "email orders and their offers",
+    "requests made on X",
+    "cards in an organization's catalogs",
+    "copies of an adopted process",
+    "solutions copied from a ready-made one"
+  ]
+}

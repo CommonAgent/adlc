@@ -1,0 +1,86 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "impact-analyst",
+  "version": "0.1.0",
+  "description": "Works out what a change to an agent touches before anything is built. Given the agent's declaration as it runs today and as it would be after the change, and the platform's list of what depends on it, it names every dependent with where it was learned of, and answers each one compatible, breaking or a change of behavior, with the reason. It reads the dependent solutions' canvases and the agents that take what it hands back when they are given, and compares kinds by the platform's own rule for whether a line fits. It files a dependency debt in the ledger, owed to the dependent's owner, for each one that is not compatible, and writes the impact report the person who asked for the change approves or refuses it from. It calls no model, changes nothing it reports on and approves nothing. It holds the impact analyst role (agentroles.ai) for the Impact stage of the Agent Development Lifecycle.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "agent-change",
+    "read-the-change",
+    "compare-the-declarations",
+    "answer-each-dependent",
+    "file-what-is-owed",
+    "write-the-report"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "agent-change": {
+            "scripts": [
+              "scripts/analyze.mjs",
+              "scripts/read-change.mjs",
+              "scripts/kinds.mjs",
+              "scripts/compare.mjs",
+              "scripts/answer.mjs",
+              "scripts/ledger.mjs",
+              "scripts/report.mjs",
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/how-each-change-is-answered.md",
+              "rules.md"
+            ]
+          },
+          "read-the-change": {
+            "scripts": [
+              "scripts/read-change.mjs",
+              "scripts/kinds.mjs"
+            ]
+          },
+          "compare-the-declarations": {
+            "scripts": [
+              "scripts/compare.mjs",
+              "scripts/kinds.mjs"
+            ],
+            "references": [
+              "references/how-each-change-is-answered.md"
+            ]
+          },
+          "answer-each-dependent": {
+            "scripts": [
+              "scripts/answer.mjs",
+              "scripts/kinds.mjs"
+            ],
+            "references": [
+              "references/how-each-change-is-answered.md"
+            ]
+          },
+          "file-what-is-owed": {
+            "scripts": [
+              "scripts/ledger.mjs",
+              "scripts/compare.mjs",
+              "scripts/answer.mjs",
+              "scripts/kinds.mjs"
+            ]
+          },
+          "write-the-report": {
+            "scripts": [
+              "scripts/report.mjs",
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs",
+              "scripts/answer.mjs",
+              "scripts/compare.mjs",
+              "scripts/kinds.mjs"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

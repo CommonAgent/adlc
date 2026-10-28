@@ -1,0 +1,594 @@
+{
+  "id": "sol_4",
+  "name": "Research to meme (proof)",
+  "org": "org_platform",
+  "nodes": [
+    {
+      "id": "n_ca78b281ed92e49f25",
+      "kind": "start",
+      "agent": "",
+      "label": "Start",
+      "ports": {
+        "agent": "",
+        "label": "Start",
+        "offerings": [
+          {
+            "id": "start",
+            "name": "Start",
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "start.out.the template's slot map",
+                "name": "the template's slot map",
+                "media_type": "application/json"
+              },
+              {
+                "id": "start.out.topic",
+                "name": "topic",
+                "media_type": "text"
+              },
+              {
+                "id": "start.out.window",
+                "name": "window",
+                "media_type": "text"
+              },
+              {
+                "id": "start.out.*",
+                "name": "what comes in",
+                "media_type": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_dde5fe10cf13578c3f",
+      "kind": "agent",
+      "agent": "UASF4XODIEOCJMZNKZKYE7555WMNT2JKWCPIWJAFETWUWPCXNASPNDN7",
+      "label": "web-searcher",
+      "ports": {
+        "agent": "UASF4XODIEOCJMZNKZKYE7555WMNT2JKWCPIWJAFETWUWPCXNASPNDN7",
+        "label": "web-searcher",
+        "offerings": [
+          {
+            "id": "search-web",
+            "name": "Search the web for pages",
+            "inputs": [
+              {
+                "id": "search-web.in.topic",
+                "name": "topic",
+                "media_type": "text",
+                "required": true
+              },
+              {
+                "id": "search-web.in.angle",
+                "name": "angle",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "search-web.in.window",
+                "name": "window",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "search-web.in.count",
+                "name": "count",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "search-web.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "search-web.out.search-results",
+                "name": "search-results",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_a6896bd0e4b21accef",
+      "kind": "agent",
+      "agent": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+      "label": "Site reader",
+      "ports": {
+        "agent": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+        "label": "Site reader",
+        "offerings": [
+          {
+            "id": "read-site",
+            "name": "Read a site",
+            "inputs": [
+              {
+                "id": "read-site.in.url",
+                "name": "url",
+                "media_type": "url",
+                "required": true
+              },
+              {
+                "id": "read-site.in.addresses",
+                "name": "addresses",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "read-site.in.max_pages",
+                "name": "max_pages",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "read-site.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "read-site.out.site-read",
+                "name": "site-read",
+                "media_type": "application/vnd.agentmesh.site-read+json"
+              },
+              {
+                "id": "read-site.out.subject",
+                "name": "subject",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_3f8506329f823b293f",
+      "kind": "agent",
+      "agent": "UAVK33U55B25LYAIEM3EJAEIJSJ2CVMWSNT6QXXBPK6RPRTIN3IPODQQ",
+      "label": "Fact writer",
+      "ports": {
+        "agent": "UAVK33U55B25LYAIEM3EJAEIJSJ2CVMWSNT6QXXBPK6RPRTIN3IPODQQ",
+        "label": "Fact writer",
+        "offerings": [
+          {
+            "id": "write-facts",
+            "name": "Write facts",
+            "inputs": [
+              {
+                "id": "write-facts.in.site-read",
+                "name": "site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.document site-read",
+                "name": "document site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.deck site-read",
+                "name": "deck site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.document subject",
+                "name": "document subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.deck subject",
+                "name": "deck subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.posting",
+                "name": "posting",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.repo-read",
+                "name": "repo-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.counts",
+                "name": "counts",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.share of voice",
+                "name": "share of voice",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.timeline",
+                "name": "timeline",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.architecture",
+                "name": "architecture",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "write-facts.out.facts",
+                "name": "facts",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_229f9c0cc8fc6eea69",
+      "kind": "agent",
+      "agent": "UBQVRCKBL3O2REGIZ5XQ6XX4OLONUID23VF4BOJYHU7W3THTMPYJPQ4O",
+      "label": "Fact checker",
+      "ports": {
+        "agent": "UBQVRCKBL3O2REGIZ5XQ6XX4OLONUID23VF4BOJYHU7W3THTMPYJPQ4O",
+        "label": "Fact checker",
+        "offerings": [
+          {
+            "id": "check-facts",
+            "name": "Check facts",
+            "inputs": [
+              {
+                "id": "check-facts.in.facts",
+                "name": "facts",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "check-facts.in.site-read",
+                "name": "site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.repo-read",
+                "name": "repo-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.counts",
+                "name": "counts",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.share of voice",
+                "name": "share of voice",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.timeline",
+                "name": "timeline",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.architecture",
+                "name": "architecture",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck rip",
+                "name": "deck rip",
+                "media_type": "application/vnd.agentmesh.deck-rip+json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document site-read",
+                "name": "document site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck site-read",
+                "name": "deck site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document subject",
+                "name": "document subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck subject",
+                "name": "deck subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document read",
+                "name": "document read",
+                "media_type": "application/vnd.agentmesh.document-read+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "check-facts.out.facts",
+                "name": "facts",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.removed",
+                "name": "removed",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.credit",
+                "name": "credit",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.facts page",
+                "name": "facts page",
+                "media_type": "text/markdown"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_6b9836f70012fcc6ee",
+      "kind": "agent",
+      "agent": "UBZXK45VLRUIY475FHVOJG5LZD5Y27UX3BP6MVS3GI5FBGRSJCLJX4SA",
+      "label": "meme-writer",
+      "ports": {
+        "agent": "UBZXK45VLRUIY475FHVOJG5LZD5Y27UX3BP6MVS3GI5FBGRSJCLJX4SA",
+        "label": "meme-writer",
+        "offerings": [
+          {
+            "id": "write-subtitles",
+            "name": "Write the subtitles for a meme template",
+            "inputs": [
+              {
+                "id": "write-subtitles.in.the story as words",
+                "name": "the story as words",
+                "media_type": "text/plain",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.the story as a reader's JSON output (site-read or x-thread-v1)",
+                "name": "the story as a reader's JSON output (site-read or x-thread-v1)",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.the story as a video transcript",
+                "name": "the story as a video transcript",
+                "media_type": "text/vtt",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.the story as checked facts (fact-checker's facts)",
+                "name": "the story as checked facts (fact-checker's facts)",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.the template's slot map",
+                "name": "the template's slot map",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-subtitles.in.the insider",
+                "name": "the insider",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "write-subtitles.out.subtitles.json",
+                "name": "subtitles.json",
+                "media_type": "application/json"
+              },
+              {
+                "id": "write-subtitles.out.subtitles.srt",
+                "name": "subtitles.srt",
+                "media_type": "application/x-subrip"
+              },
+              {
+                "id": "write-subtitles.out.check report",
+                "name": "check report",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_ecb62a3bc29c1caf3c",
+      "kind": "end",
+      "agent": "",
+      "label": "End",
+      "ports": {
+        "agent": "",
+        "label": "End",
+        "offerings": [
+          {
+            "id": "end",
+            "name": "End",
+            "inputs": [
+              {
+                "id": "end.in.facts page",
+                "name": "facts page",
+                "media_type": "text/markdown",
+                "required": null
+              },
+              {
+                "id": "end.in.search-results",
+                "name": "search-results",
+                "media_type": "application/json",
+                "required": null
+              },
+              {
+                "id": "end.in.subtitles.json",
+                "name": "subtitles.json",
+                "media_type": "application/json",
+                "required": null
+              },
+              {
+                "id": "end.in.subtitles.srt",
+                "name": "subtitles.srt",
+                "media_type": "application/x-subrip",
+                "required": null
+              },
+              {
+                "id": "end.in.*",
+                "name": "what you get",
+                "media_type": null,
+                "required": null
+              }
+            ],
+            "outputs": []
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from_node": "n_3f8506329f823b293f",
+      "from_port": "write-facts.out.facts",
+      "to_node": "n_229f9c0cc8fc6eea69",
+      "to_port": "check-facts.in.facts"
+    },
+    {
+      "from_node": "n_a6896bd0e4b21accef",
+      "from_port": "read-site.out.site-read",
+      "to_node": "n_229f9c0cc8fc6eea69",
+      "to_port": "check-facts.in.site-read"
+    },
+    {
+      "from_node": "n_a6896bd0e4b21accef",
+      "from_port": "read-site.out.subject",
+      "to_node": "n_229f9c0cc8fc6eea69",
+      "to_port": "check-facts.in.subject"
+    },
+    {
+      "from_node": "n_a6896bd0e4b21accef",
+      "from_port": "read-site.out.site-read",
+      "to_node": "n_3f8506329f823b293f",
+      "to_port": "write-facts.in.site-read"
+    },
+    {
+      "from_node": "n_a6896bd0e4b21accef",
+      "from_port": "read-site.out.subject",
+      "to_node": "n_3f8506329f823b293f",
+      "to_port": "write-facts.in.subject"
+    },
+    {
+      "from_node": "n_229f9c0cc8fc6eea69",
+      "from_port": "check-facts.out.facts",
+      "to_node": "n_6b9836f70012fcc6ee",
+      "to_port": "write-subtitles.in.the story as checked facts (fact-checker's facts)"
+    },
+    {
+      "from_node": "n_ca78b281ed92e49f25",
+      "from_port": "start.out.the template's slot map",
+      "to_node": "n_6b9836f70012fcc6ee",
+      "to_port": "write-subtitles.in.the template's slot map"
+    },
+    {
+      "from_node": "n_dde5fe10cf13578c3f",
+      "from_port": "search-web.out.search-results",
+      "to_node": "n_a6896bd0e4b21accef",
+      "to_port": "read-site.in.addresses"
+    },
+    {
+      "from_node": "n_ca78b281ed92e49f25",
+      "from_port": "start.out.topic",
+      "to_node": "n_dde5fe10cf13578c3f",
+      "to_port": "search-web.in.topic"
+    },
+    {
+      "from_node": "n_ca78b281ed92e49f25",
+      "from_port": "start.out.window",
+      "to_node": "n_dde5fe10cf13578c3f",
+      "to_port": "search-web.in.window"
+    },
+    {
+      "from_node": "n_229f9c0cc8fc6eea69",
+      "from_port": "check-facts.out.facts page",
+      "to_node": "n_ecb62a3bc29c1caf3c",
+      "to_port": "end.in.facts page"
+    },
+    {
+      "from_node": "n_dde5fe10cf13578c3f",
+      "from_port": "search-web.out.search-results",
+      "to_node": "n_ecb62a3bc29c1caf3c",
+      "to_port": "end.in.search-results"
+    },
+    {
+      "from_node": "n_6b9836f70012fcc6ee",
+      "from_port": "write-subtitles.out.subtitles.json",
+      "to_node": "n_ecb62a3bc29c1caf3c",
+      "to_port": "end.in.subtitles.json"
+    },
+    {
+      "from_node": "n_6b9836f70012fcc6ee",
+      "from_port": "write-subtitles.out.subtitles.srt",
+      "to_node": "n_ecb62a3bc29c1caf3c",
+      "to_port": "end.in.subtitles.srt"
+    }
+  ]
+}

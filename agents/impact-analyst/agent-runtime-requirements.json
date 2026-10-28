@@ -1,0 +1,66 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "the-ledger",
+      "kind": "service",
+      "credential": "ledger-key",
+      "env": "LEDGER_TOKEN",
+      "settings": [
+        {
+          "env": "MESH_API_BASE",
+          "purpose": "the platform's origin, with no path, such as the app's address; the ledger's doors are under /v1/operator/debt there. Without it, or without the key, the report is delivered and what is owed is listed in it, not filed"
+        }
+      ]
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding what was owed and what the ledger said, and what the job went without"
+    }
+  ],
+  "job_seconds": 120,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "agent-change"
+      ]
+    },
+    "price": {
+      "model": "free"
+    }
+  },
+  "run": {
+    "agent-change": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/agent-change/scripts/analyze.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}
