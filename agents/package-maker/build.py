@@ -2199,10 +2199,11 @@ def copy_into(src_base, rel, dest_dir):
     Returns the names placed, for the SKILL.md to list."""
     src = os.path.normpath(os.path.join(src_base, rel))
     shared = STANDARDS_REF.match(str(rel).replace(os.sep, "/"))
-    if not os.path.exists(src) and shared:
+    if shared and os.path.isfile(os.path.join(src_base, "standards", shared.group(1))):
         # A Builder reads the repository's shared standards/ (../../standards/
         # <file>). Laid out from sent files, that file is placed at
-        # standards/<file> beside the agent's own files instead (pack.py).
+        # standards/<file> beside the agent's own files (pack.py), and the
+        # copy that was sent wins over anything two folders up.
         src = os.path.join(src_base, "standards", shared.group(1))
     if not os.path.exists(src):
         fail(f"file named in the spec does not exist: {rel}")
