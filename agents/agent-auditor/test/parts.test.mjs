@@ -52,7 +52,7 @@ test("a delivery manifest verifies the adapter's way, and not under another agen
   assert.ok(!verifyManifest({ ...m, pieces: [] }));
 });
 
-test("the checklist this package pins is the one in standards/, and reads as 26 checks", () => {
+test("the checklist this package pins is the one in standards/, and reads as 27 checks", () => {
   const pins = JSON.parse(readFileSync(join(HERE, "..", "standards-pins.json"), "utf8")).pins;
   for (const [file, pin] of Object.entries(pins)) {
     const at = join(REPO, "standards", file);
@@ -62,7 +62,7 @@ test("the checklist this package pins is the one in standards/, and reads as 26 
   const c = readChecklist(readFileSync(join(REPO, "standards", "audit-checklist.md")));
   assert.equal(c.digest, pins["audit-checklist.md"]);
   assert.deepEqual(c.problems, []);
-  assert.equal(c.checks.length, 26);
+  assert.equal(c.checks.length, 27);
   assert.equal(c.schema, "https://schemas.agentmesh.ai/audit-checklist/v1");
   assert.equal(c.approved_by, null);
   const unregistered = c.checks.filter((x) => !REGISTERED[x.check]).map((x) => `${x.id} (${x.check})`);

@@ -18,7 +18,7 @@ const HOLDERS = holderHandles();
 const NOW = new Date("2026-11-02T12:00:00Z");
 
 /** A platform holding one agent, and the keys of everyone who signs. */
-function world({ firstReleased = "2026-10-30T00:00:00Z", deployed = true, prodVersion = null, agentdocVersion = null, prodListedAt = null } = {}) {
+function world({ firstReleased = "2026-10-30T00:00:00Z", deployed = true, conformance = true, prodVersion = null, agentdocVersion = null, prodListedAt = null } = {}) {
   const handles = [...new Set(Object.values(HOLDERS).flatMap((s) => s.holders))];
   const keys = keyring([...handles, "agent", "auditor", "stranger"]);
   const pkg = agentFiles({ version: "1.0.0" });
@@ -32,6 +32,8 @@ function world({ firstReleased = "2026-10-30T00:00:00Z", deployed = true, prodVe
   const dm = keys["deployment-manager.platform@agentmesh.ai"];
   const build = signRecord({ record: "v1", role: "agent-builder", act: "build", package: { name: "summarizer", version: "1.0.0", sha256: hexd }, format_rules: { existing: false, mode: "refuse", since: "2026-10-27", findings: [] }, produced_at: firstReleased, by: pm.key }, "agent-build-record-v1", pm.seed);
   const deploy = signRecord({ record: "v1", role: "deployment-manager", act: "deploy", package: { name: "summarizer", version: "1.0.0", url: "x", sha256: hexd }, agent: { key: keys.agent.key, handle: HANDLE }, descriptor: { sha256: servedHex, signed: true, added: ["subject", "interaction", "acts_for"] }, produced_at: firstReleased, by: dm.key }, "agent-deployment-record-v1", dm.seed);
+  const cc = keys["conformance-checker.platform@agentmesh.ai"];
+  const verdict = signRecord({ record: "v1", verdict: "pass", subject: { agent_key: keys.agent.key, handle: HANDLE }, package: { sha256: hexd }, produced_at: firstReleased, by: cc.key }, "agent-eval-record-v1", cc.seed);
   const routes = {};
   for (const h of handles) routes[`GET ${DEV}/a/${encodeURIComponent(h)}`] = { body: { agent_id: keys[h].key } };
   routes[`GET ${DEV}/a/${encodeURIComponent(HANDLE)}`] = { body: { agent_id: keys.agent.key, availability: "online", card: { card: { handle: HANDLE } } } };
@@ -41,6 +43,7 @@ function world({ firstReleased = "2026-10-30T00:00:00Z", deployed = true, prodVe
     body: { requests: deployed ? [{ id: "dr_1", status: "deployed", package: { name: "summarizer", version: "1.0.0", sha256: hexd }, filed_at: firstReleased, decided_at: firstReleased, build_record: build, deploy_record: deploy }] : [] },
   };
   routes[`GET ${DEV}/v1/deploy-requests/dr_1/package.tar.gz`] = { bytes: tar };
+  if (deployed && conformance) routes[`GET ${DEV}/v1/agents/${keys.agent.key}/eval-record`] = { body: verdict };
   if (prodVersion) {
     routes[`GET ${PROD}/a/${encodeURIComponent(HANDLE)}`] = { body: { agent_id: keys.agent.key, ...(prodListedAt ? { card: { listing: { created_at: prodListedAt } } } : {}) } };
     routes[`GET ${PROD}/v1/agents/${keys.agent.key}/descriptor`] = { body: { ...served, agent_version: prodVersion } };
@@ -70,10 +73,9 @@ function lifecycleRecords(w) {
 const env = (w, extra = {}) => ({ MESH_API_BASE: DEV, PROD_API_BASE: PROD, AUDIT_TOKEN: "audit-token", LEDGER_TOKEN: "ledger-token", AUDIT_SIGNING_SEED: w.keys.auditor.seed, PACKAGE_MAKER: "/nowhere/build.py", ...extra });
 
 // Since 2026-10-28 the artifacts before the package are optional evidence
-// (level info): a hand-made agent with a build record and a deployment record
-// bound to its digest is no longer failed for its missing pre-package
-// records. Item 5 reworks the auditor's handling of info; this pins only the
-// verdict the checklist now gives.
+// (level info): a hand-made agent with a build record, a deployment record
+// and a conformance verdict bound to its digest is not failed for its
+// missing pre-package records, and those are shown, never filed.
 test("a hand-made agent, new since the checklist's date: its missing pre-package records are info, and each finding is filed once", async () => {
   const w = world();
   const p = fakePlatform(w.routes);
@@ -99,7 +101,8 @@ test("a hand-made agent, new since the checklist's date: its missing pre-package
   const refusing = p.ledger.filter((x) => x.blocks.includes("promote"));
   assert.equal(refusing.length, 0, `${refusing.length} refusing debts`);
   assert.ok(p.ledger.every((x) => x.kind === "dependency" && x.against === HANDLE && x.owed_to === "platform@agentmesh.ai"));
-  assert.ok(p.ledger.some((x) => /Fixed at the requirements stage/.test(x.what)));
+  assert.ok(!p.ledger.some((x) => /Fixed at the requirements stage/.test(x.what)), "a missing optional record is info, and info is never filed");
+  assert.equal(out.checks.find((c) => c.id === "stage-record-requirements").level, "info");
   assert.equal(p.audits.length, 1, "the report is filed where the gates read it");
   // A second audit of the same package files no debt twice.
   const before = p.ledger.length;
@@ -113,7 +116,7 @@ test("an existing hand-made agent: the same findings are warnings until the date
   const p = fakePlatform(w.routes);
   const out = await runJob(jobWith(`agent: ${HANDLE}\n`).argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
   assert.equal(out.verdict, "pass_with_findings");
-  assert.ok(out.checks.filter((c) => c.result === "fail").every((c) => c.level === "warn"));
+  assert.ok(out.checks.filter((c) => c.result === "fail" && c.level !== "info").every((c) => c.level === "warn"));
   assert.ok(p.ledger.every((x) => x.blocks.length === 0), "a warning blocks nothing");
 });
 
@@ -122,7 +125,7 @@ test("an agent new to dev that prod has listed for months is an existing agent",
   const out = await runJob(jobWith(`agent: ${HANDLE}
 `).argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
   assert.equal(out.verdict, "pass_with_findings");
-  assert.ok(out.checks.filter((c) => c.result === "fail").every((c) => c.level === "warn"));
+  assert.ok(out.checks.filter((c) => c.result === "fail" && c.level !== "info").every((c) => c.level === "warn"));
 });
 
 test("an agent that came through every stage passes its stage records", async () => {
@@ -131,7 +134,7 @@ test("an agent that came through every stage passes its stage records", async ()
   const j = jobWith(`agent: ${HANDLE}\npackage_digest: ${w.digest}\n`, lifecycleRecords(w));
   const out = await runJob(j.argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
   const st = Object.fromEntries(out.stages.map((s) => [s.stage, s.state]));
-  for (const s of ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "docs"]) assert.equal(st[s], "present", `${s}: ${st[s]}`);
+  for (const s of ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "docs"]) assert.equal(st[s], "present", `${s}: ${st[s]}`);
   const failed = out.checks.filter((c) => c.result === "fail").map((c) => c.id);
   assert.deepEqual(failed, ["descriptor-person-members"], "only the proposed person members are missing");
   // The checklist is not approved by a person, so the best verdict is a pass with findings.

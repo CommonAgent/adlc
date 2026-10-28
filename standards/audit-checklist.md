@@ -344,8 +344,7 @@ bound to the digest counts.
 
 What is required, for an agent the platform runs, is the package itself, its
 signed build record and its deployment record, with a signed Descriptor and
-registration for every agent (above). (The conformance verdict is required
-too; its check is added with the auditor's support for it.) The report
+registration for every agent (above), and its conformance verdict. The report
 gives one line per artifact: present, signed and bound to the package
 digest; or missing, unsigned, or stale (bound to another digest). A
 hand-made package has no build record bound to its digest, which is why it
@@ -463,6 +462,22 @@ level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: the dev deployment record's signer, its package digest and when it was made
 ```
+
+```yaml
+id: stage-record-conformance
+says: For an agent the platform runs, a conformance verdict for this version is present, signed by whoever checked it, and names this package digest or the image its deployment record started.
+why: The verdict is the proof that the deployed agent answers as its Descriptor says; without it the platform runs an agent nobody has checked against its own declaration.
+kind: stage-record
+check: stage-record:conformance
+fixed-by: deploy
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the verdict, its signer, and the package digest or image it names
+```
+
+The conformance checker writes the verdict after a deploy, and the registry
+keeps the newest one for the agent (`agent-eval-record-v1`). A verdict for an
+earlier package or image is stale.
 
 ```yaml
 id: stage-record-docs
