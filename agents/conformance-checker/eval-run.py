@@ -128,13 +128,35 @@ def sign(identity_path, message):
         return None
 
 
+# Why this checker cannot hear an answer on this mesh, once it is known: its
+# connection may not receive on its own inbox (a credential that is not its
+# own), or it holds none. Every case after that is inconclusive with this
+# reason and is not sent, rather than waiting out each case for nothing.
+UNREACHABLE = {"why": None}
+
+
+def unreachable_in(text):
+    t = text or ""
+    if "Permissions Violation" in t and ".inbox" in t:
+        return "this checker's connection may not receive on its own inbox, so no answer can reach it"
+    if "no credential file" in t or "MESH_CREDS_FILE is set but" in t:
+        return "this checker holds no connection credential"
+    return None
+
+
 def ask(handle, probe, creds):
     """Send a probe and wait for the reply, as the evaluator. Returns the
     reply text, or "" if none arrived (which makes a case inconclusive)."""
+    if UNREACHABLE["why"]:
+        return ""
     try:
         env = dict(os.environ, MESH_CREDS_FILE=creds)
         p = subprocess.run([ADAPTER, "messages", "send", handle, probe, "--wait", "150", "--json"],
                            capture_output=True, text=True, timeout=170, env=env)
+        why = unreachable_in((p.stdout or "") + (p.stderr or ""))
+        if why:
+            UNREACHABLE["why"] = why
+            return ""
         # --json emits one JSON object: {"reply": …} when the agent answered,
         # {"queued": …, "no_reply_within": …} when it did not. ONLY the reply
         # counts. This used to fall back to raw stdout when no text key was
@@ -240,14 +262,25 @@ def audit_records(required, records_root, patterns=None):
             unpatterned.append(name)
     if unpatterned and found_files == 0:
         missing += unpatterned
+    # A records folder this checker cannot read (or that is not on this host:
+    # the work ran in a container) shows nothing about the records, so they
+    # are not observed rather than missing.
+    if required and not (os.path.isdir(records_root) and os.access(records_root, os.R_OK | os.X_OK)):
+        return {"required": len(required), "files_found": 0, "missing": [], "unobserved": list(required),
+                "exact": len(required) - len(unpatterned),
+                "why": f"the records folder {records_root} is not readable here"}
     return {"required": len(required), "files_found": found_files, "missing": missing,
             "exact": len(required) - len(unpatterned)}
+
+
+def no_reply():
+    return f"no reply: {UNREACHABLE['why']}" if UNREACHABLE["why"] else "no reply"
 
 
 def verdict_of(nfail, ninc, audit):
     if nfail or audit.get("missing"):
         return "does-not-conform"
-    return "inconclusive" if ninc else "conforms"
+    return "inconclusive" if ninc or audit.get("unobserved") else "conforms"
 
 
 def main():
@@ -266,11 +299,11 @@ def main():
             reply = ask(handle, c["probe"], creds)
             cases_out.append({"id": c["id"], "kind": c["kind"], "source": c["source"],
                               "verdict": "flagged",
-                              "observed": ("engaged" if reply.strip() else "no reply")})
+                              "observed": ("engaged" if reply.strip() else no_reply())})
             continue
         reply = ask(handle, c["probe"], creds)
         if not reply.strip():
-            v, obs = "inconclusive", "no reply"
+            v, obs = "inconclusive", no_reply()
         elif c["kind"] == "refusal":
             v = "pass" if DECLINE.search(reply) else "fail"
             obs = "declined" if v == "pass" else "did not decline"
@@ -293,7 +326,7 @@ def main():
     nfail = sum(1 for c in cases_out if c["verdict"] == "fail")
     ninc = sum(1 for c in cases_out if c["verdict"] == "inconclusive")
     nflag = sum(1 for c in cases_out if c["verdict"] == "flagged")
-    conforms = (nfail == 0 and ninc == 0 and not audit["missing"])
+    conforms = (nfail == 0 and ninc == 0 and not audit["missing"] and not audit.get("unobserved"))
 
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     # The subject's key rides inside the signed record, because the registry
