@@ -97,7 +97,7 @@ export function gather(paths = []) {
     let name = basename(p);
     for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${n}-${basename(p)}`;
     taken.add(name.toLowerCase());
-    files.push({ name, path: p, bytes: bytes.length, raw: bytes, sha256: sha256(bytes), text: bytes.toString("utf8") });
+    files.push({ name, original: basename(p), path: p, bytes: bytes.length, raw: bytes, sha256: sha256(bytes), text: bytes.toString("utf8") });
   }
   return { files, unreadable };
 }
@@ -124,7 +124,7 @@ export function inventoryOf({ sources, leftOut = [], unreadable = [] }) {
 const SEGMENT = /^([A-Za-z_][\w-]*)?((?:\[\d+\])*)$/;
 
 /** The lines of a string, trimmed, with blank ones skipped. */
-export const linesOf = (s) => String(s).split("\n").map((l) => l.trim()).filter(Boolean);
+export const linesOf = (s) => String(s).split(/\r\n?|\n/).map((l) => l.trim()).filter(Boolean);
 
 /** Resolve a JSON path in a value. Returns { found, value }. Pure. */
 export function resolvePath(root, path) {
@@ -136,7 +136,7 @@ export function resolvePath(root, path) {
     const m = SEGMENT.exec(part);
     if (!m) return { found: false };
     if (m[1]) {
-      if (node === null || typeof node !== "object" || Array.isArray(node) || !(m[1] in node)) return { found: false };
+      if (node === null || typeof node !== "object" || Array.isArray(node) || !Object.hasOwn(node, m[1])) return { found: false };
       node = node[m[1]];
     }
     for (const ix of m[2].match(/\d+/g) ?? []) {

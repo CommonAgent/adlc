@@ -14,7 +14,7 @@
 //   needs: node >= 22
 //   import { writeDocs, declarationOf, offeringOf } from "./write-docs.mjs"
 import { KIND_WORDS, isEmpty, linesOf, resolvePath, textLines } from "./given.mjs";
-import { CREDENTIAL, GIVEN, LEGEND, code, esc, render, renderAll, silence } from "./templates.mjs";
+import { CREDENTIAL, GIVEN, LEGEND, code, esc, looksSecret, oneLine, render, renderAll, silence, withheld } from "./templates.mjs";
 
 export const WRITER = "doc-writer 0.1.0";
 /** The most lines of one record shown as an example. */
@@ -30,7 +30,26 @@ export function declarationOf(sources) {
   return null;
 }
 
-const oneLine = (s) => typeof s === "string" && s.trim() !== "" && !/[\r\n]/.test(s);
+/** One line once trimmed: the rule for the header and the headings. */
+const line1 = (s) => typeof s === "string" && oneLine(s.trim());
+
+/** The offerings of a declaration, each an object, so an odd entry is a job
+ *  with nothing declared rather than a crash. Writer and check read them the
+ *  same way. */
+export function offeringsOf(decl) {
+  const v = resolvePath(decl.root, decl.offerings).value;
+  return (Array.isArray(v) ? v : []).map((o) => (o && typeof o === "object" && !Array.isArray(o) ? o : {}));
+}
+
+/** A job's id for a line about it: its id, or its number. */
+export const jobIdOf = (o, i) => (line1(o?.id) ? o.id.trim() : `job ${i + 1}`);
+
+/** Is a record empty: text with no lines. */
+export const isEmptyRecord = (s) => s.json === undefined && textLines(s.text).length === 0;
+
+/** Can a record be shown at all: not empty and holding nothing that looks
+ *  like a credential. */
+export const showable = (s) => !hasCredential(s) && !isEmptyRecord(s);
 
 /** The title and the header's agent and version lines: a source's value only
  *  when it is one line, so a value can never break the header. The check
@@ -42,15 +61,17 @@ export function headerOf(sources) {
   const handle = doc?.json?.subject?.handle;
   const version = dsrc?.json?.agent_version ?? (Array.isArray(doc?.json?.sources) ? doc.json.sources : []).find((s) => s?.id === "descriptor")?.agent_version;
   return {
-    title: `# ${oneLine(name) ? name.trim() : "The agent"}`,
-    agent: `agent: ${oneLine(handle) ? handle.trim() : "not given"}`,
-    version: `version: ${oneLine(version) ? version.trim() : "not given"}`,
+    title: `# ${line1(name) ? name.trim() : "The agent"}`,
+    agent: `agent: ${line1(handle) ? handle.trim() : "not given"}`,
+    version: `version: ${line1(version) ? version.trim() : "not given"}`,
+    handle: line1(handle) ? handle.trim() : null,
+    versionValue: line1(version) ? version.trim() : null,
   };
 }
 
 /** A job's heading: its name, or its id, or its number, whichever is one line. */
 export function headingOf(o, i) {
-  return `### ${oneLine(o?.name) ? o.name.trim() : oneLine(o?.id) ? o.id.trim() : `Job ${i + 1}`}`;
+  return `### ${line1(o?.name) ? o.name.trim() : line1(o?.id) ? o.id.trim() : `Job ${i + 1}`}`;
 }
 
 /** Is a record the platform's run record (runs, completed, failed). */
@@ -68,7 +89,7 @@ export const hasCredential = (s) => CREDENTIAL.test(String(s.text));
  *  the same reading. */
 export function offeringOf(record, offerings = []) {
   if (record.kind !== "record" || isRunRecord(record) || isHeaded(record)) return -1;
-  const ids = offerings.map((o) => [o.id, ...(o.steps ?? []).map((s) => s.id)].filter(Boolean));
+  const ids = offerings.map((o) => [o?.id, ...(Array.isArray(o?.steps) ? o.steps : []).map((s) => s?.id)].filter((x) => typeof x === "string" && x));
   const j = record.json && typeof record.json === "object" && !Array.isArray(record.json) ? record.json : {};
   for (const f of ["offering", "offering_id", "skill", "job", "step"]) {
     if (typeof j[f] === "string") { const i = ids.findIndex((l) => l.includes(j[f])); if (i >= 0) return i; }
@@ -84,7 +105,7 @@ export function offeringOf(record, offerings = []) {
   // output `quiz`) is that job's.
   const slug = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const stem = slug(lower.replace(/^\d+-/, "").replace(/\.[^.]+$/, ""));
-  const byOutput = offerings.map((o, i) => ((o.outputs ?? []).some((op) => op && slug(op.name ?? "") === stem) ? i : -1)).filter((i) => i >= 0);
+  const byOutput = offerings.map((o, i) => ((Array.isArray(o?.outputs) ? o.outputs : []).some((op) => op && typeof op.name === "string" && slug(op.name) === stem) ? i : -1)).filter((i) => i >= 0);
   if (byOutput.length === 1) return byOutput[0];
   const quoted = ids.map((l, i) => (l.some((id) => String(record.text).includes(`"${id}"`)) ? i : -1)).filter((i) => i >= 0);
   if (quoted.length === 1) return quoted[0];
@@ -116,7 +137,7 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   const rt = sources.find((s) => s.kind === "runtime");
   const verdicts = sources.filter((s) => s.kind === "verdict");
   const records = sources.filter((s) => s.kind === "record");
-  const files = records.map((r) => r.name);
+  const files = records.map((r) => ({ name: r.name, original: r.original }));
 
   const out = [];
   const notDocumented = [];
@@ -133,7 +154,12 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
     return said;
   };
   /** Say it with the templates, or, when none can, show the value as written. */
-  const sayOr = (ids, src, path, bullet = "- ") => say(ids, src, path, bullet) || say(["as-written"], src, path, bullet);
+  const sayOr = (ids, src, path, bullet = "- ") => {
+    if (say(ids, src, path, bullet) || say(["as-written"], src, path, bullet)) return true;
+    const { found, value } = resolvePath(src.json, path);
+    if (found && looksSecret(value)) notDocumented.push(`- ${withheld(src.kind, path)} [${src.id}: ${path} withheld]`);
+    return false;
+  };
   /** The source's own words at a place, a line at a time. */
   const words = (src, path, bullet = "- ") => {
     const { found, value } = resolvePath(src.json, path);
@@ -147,7 +173,7 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
    *  shape nothing reads, its value as written, in the section being written. */
   const silent = (src, path) => {
     const { found, value } = resolvePath(src.json, path);
-    if (found && !isEmpty(value)) { say(["as-written"], src, path); return; }
+    if (found && !isEmpty(value)) { sayOr([], src, path); return; }
     const s = silence(src.kind, src.json, path);
     if (s) notDocumented.push(`- ${s} [${src.id}: ${path} absent]`);
   };
@@ -195,13 +221,13 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
     else sayOr(["access"], doc, "sections.access");
   });
 
-  const offerings = at(decl.src, decl.offerings).value;
-  const offs = Array.isArray(offerings) ? offerings : [];
+  const offs = offeringsOf(decl);
   if (!offs.length) notDocumented.push(`- ${silence(decl.src.kind, decl.root, decl.offerings) ?? `The ${decl.src.kind === "agentdoc" ? "AgentDoc" : "agent descriptor"} declares no job.`} [given]`);
   const byOffering = offs.map(() => []);
   const unplaced = [];
   for (const r of records) {
     if (hasCredential(r)) { given(GIVEN.credential(r.name)); continue; }
+    if (isEmptyRecord(r)) { given(GIVEN.empty(r.name)); continue; }
     const i = offeringOf(r, offs);
     if (i >= 0) byOffering[i].push(r);
     else if (!isRunRecord(r) && !isHeaded(r)) unplaced.push(r);
@@ -267,13 +293,13 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
           const declared = at(decl.src, decl.records).value;
           (Array.isArray(declared) ? declared : []).forEach((d, k) => {
             const q = `${decl.records}[${k}]`;
-            for (const l of render("record-is", d, q, { files: [r.name] })) line(l, decl.src, q);
+            for (const l of render("record-is", d, q, { files: [{ name: r.name, original: r.original }] })) line(l, decl.src, q);
           });
           const ex = exampleOf(r);
           out.push(`${ex.intro} [${r.id}: ${ex.mark}]`, "", `${ex.fence}${ex.lang}`, ...ex.lines, ex.fence, "");
         }
       } else {
-        given(GIVEN["no-example"](o.id));
+        given(GIVEN["no-example"](jobIdOf(o, i)));
         out.pop(); out.pop();
       }
       while (out[out.length - 1] === "") out.pop();
@@ -330,12 +356,12 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   if (!verdicts.length) given(GIVEN["no-verdict"]());
 
   section("## How it has run", () => {
-    for (const r of records.filter((x) => isRunRecord(x) && !hasCredential(x))) say(["runs"], r, ".");
+    for (const r of records.filter((x) => isRunRecord(x) && showable(x))) say(["runs"], r, ".");
   });
   if (!records.length) given(GIVEN["no-records"]());
 
   section("## Versions", () => {
-    for (const r of records.filter((x) => isHeaded(x) && !hasCredential(x))) {
+    for (const r of records.filter((x) => isHeaded(x) && showable(x))) {
       out.push(`- ${code(r.name)}: ${String(r.text).split(/\r?\n/)[0].replace(/^#+\s+/, "").trim()} [${r.id}: L1]`);
     }
   });

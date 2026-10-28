@@ -22,7 +22,7 @@ const str = (v) => (typeof v === "string" ? v : null);
 const has = (o, ...keys) => o && typeof o === "object" && !Array.isArray(o) && keys.every((k) => o[k] !== undefined && o[k] !== null && o[k] !== "");
 export const code = (s) => `\`${s}\``;
 export const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const oneLine = (s) => typeof s === "string" && !s.includes("\n") && s.trim() === s && s !== "";
+export const oneLine = (s) => typeof s === "string" && !/[\r\n]/.test(s) && s.trim() === s && s !== "";
 
 /** Fixed words for fixed values. A value not here is shown as it stands. */
 export const WORDS = {
@@ -97,7 +97,7 @@ export const TEMPLATES = [
     } },
 
   // What it reaches.
-  { id: "system", at: /(?:^|\.)systems\[\d+\]$/, render: (n) => (has(n, "name", "access") && !has(n, "credential") && n.kind === undefined
+  { id: "system", at: /(?:^|\.)systems\[\d+\]$/, render: (n) => (has(n, "name", "access") && n.kind === undefined
       ? (oneLine(n.needs) ? `**${n.name}**, which it ${word("access", n.access) ?? code(n.access)}: ${n.needs}` : `**${n.name}**, which it ${word("access", n.access) ?? code(n.access)}.`) : null) },
   { id: "system-leaves", at: /(?:^|\.)systems\[\d+\]$/, render: (n) => (has(n, "name", "access") && n.leaves === true
       ? `What a job hands it is sent to **${n.name}**, outside this agent.` : null) },
@@ -153,7 +153,7 @@ export const TEMPLATES = [
 
   // A record that was given, named as the record the descriptor declares.
   { id: "record-is", at: /(?:^|\.)records\[\d+\]$/, render: (n, ctx) => (has(n, "name", "file", "when") && oneLine(n.name)
-      ? (ctx.files ?? []).filter((f) => globMatch(n.file, f)).map((f) => `${code(f)} is the record declared as: ${n.name}.`) : null) },
+      ? (ctx.files ?? []).filter((f) => globMatch(n.file, f.original ?? f.name)).map((f) => `${code(f.name)} is the record declared as: ${n.name}.`) : null) },
 
   // A value no other template can show, shown as the source has it, so a
   // place the declaration fills in an unexpected shape is still documented
@@ -161,8 +161,11 @@ export const TEMPLATES = [
   { id: "as-written", render: (n, ctx) => {
       if (n === undefined || !ctx?.path) return null;
       const v = JSON.stringify(n);
-      const fence = v.includes("`") ? "``" : "`";
-      return `As written at ${code(ctx.path)}: ${fence}${v}${fence}`;
+      if (looksSecret(n)) return null;
+      const run = Math.max(0, ...(v.match(/`+/g) ?? []).map((r) => r.length));
+      const fence = "`".repeat(run + 1);
+      const pad = v.startsWith("`") || v.endsWith("`") ? " " : "";
+      return `As written at ${code(ctx.path)}: ${fence}${pad}${v}${pad}${fence}`;
     } },
 
   // The platform's run record for an agent.
@@ -179,7 +182,7 @@ export function globMatch(pattern, file) {
   if (!last || /^[*?]*$/.test(last)) return false;
   const body = last.split("").map((c) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[.+^$(){}|[\]\\]/, "\\$&"))).join("");
   const re = new RegExp(`^${body}$`, "i");
-  return re.test(String(file).replace(/^\d+-/, ""));
+  return re.test(String(file));
 }
 
 /** Every line the templates give over a node at a path. */
@@ -259,6 +262,7 @@ export const GIVEN = {
   "unreadable": (file, why) => `${code(file)} was given and could not be read (${why}), so nothing from it is here.`,
   "left-out": (file, why) => `${code(file)} was left out: ${why}.`,
   "credential": (file) => `${code(file)} is not quoted, because a line in it looks like a credential.`,
+  "empty": (file) => `${code(file)} was given and is empty, so nothing from it is shown.`,
   "no-offering": (file) => `${code(file)} was given; it names none of the jobs above.`,
 };
 
@@ -286,6 +290,25 @@ export const SECTIONS = [
   "## Sources",
 ];
 export const SUBSECTIONS = ["#### What to give it", "#### What comes back", "#### How it is done", "#### Its steps", "#### Examples"];
+
+/** Does a value hold a field whose name says it is a secret, with a value
+ *  that is not a name. A credential NAME (`text-reasoning-key`) is fine. */
+export function hasSecretField(n) {
+  if (!n || typeof n !== "object") return false;
+  for (const [k, v] of Object.entries(n)) {
+    if (/^(?:password|secret|api_?key|access_?token|token|private_?key)$/i.test(k) && typeof v === "string" && v.length >= 8) return true;
+    if (v && typeof v === "object" && hasSecretField(v)) return true;
+  }
+  return false;
+}
+
+/** Is a value one this documentation never shows. */
+export const looksSecret = (n) => CREDENTIAL.test(JSON.stringify(n) ?? "") || hasSecretField(n);
+
+/** The line for a place whose value is not shown because it looks secret. */
+export function withheld(kind, path) {
+  return `A value at ${code(path)} in the ${SOURCE_WORDS[kind] ?? "source"} is not shown, because it looks like a credential.`;
+}
 
 /** Does a line look like a credential. */
 export const CREDENTIAL = /(-----BEGIN [A-Z ]*PRIVATE KEY|\bsk-[A-Za-z0-9_-]{16,}|\bAKIA[0-9A-Z]{16}\b|\bamt_[A-Za-z0-9]{20,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bxox[abpr]-[A-Za-z0-9-]{10,}|\bSU[A-Z2-7]{50,}|-----BEGIN NATS USER JWT|"(?:password|secret|api_key|apikey|access_token|token)"\s*:\s*"[^"]{8,}")/i;

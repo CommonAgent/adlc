@@ -30,6 +30,13 @@ The source says nothing at that place: it is missing, or empty. The line is
 always "The <source> says nothing about <what>.", and it passes only when the
 place really is missing or empty.
 
+## `[S<n>: <place> withheld]`: a value not shown
+
+The place holds a value that looks like a credential, so it is not shown.
+The line is always "A value at <place> in the <source> is not shown, because
+it looks like a credential.", and it passes only when the value there does
+look like one.
+
 ## `[given]`: what the job had
 
 A line about the job's own inventory: that no AgentDoc was given, that a job

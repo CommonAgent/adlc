@@ -20,8 +20,8 @@
 //   or: DOCS=<documentation.md> GIVEN=<file>... node check-docs.mjs
 import { isEmpty, linesOf, rangeOf, resolvePath, sha256 } from "./given.mjs";
 import { KIND_WORDS } from "./given.mjs";
-import { CREDENTIAL, GIVEN, LEGEND, SECTIONS, SUBSECTIONS, code, esc, renderAll, silence } from "./templates.mjs";
-import { WRITER, declarationOf, hasCredential, headerOf, headingOf, isHeaded, isRunRecord, offeringOf } from "./write-docs.mjs";
+import { GIVEN, LEGEND, SECTIONS, SUBSECTIONS, code, esc, looksSecret, renderAll, silence, withheld } from "./templates.mjs";
+import { WRITER, declarationOf, hasCredential, headerOf, headingOf, isEmptyRecord, isHeaded, isRunRecord, jobIdOf, offeringOf, offeringsOf, showable } from "./write-docs.mjs";
 
 /** The `####` part of a job a line about the job belongs under: none for the
  *  job's own lines (its name, what it does, its trial), which stand above
@@ -61,7 +61,14 @@ function sectionsFor(src, place, decl) {
   }
   return [];
 }
-const MARK = /\s\[(?:(S\d+): (.+?)|given)\]$/;
+/** The mark at a line's end: the last ` [S<n>: ` in it, so a source's own
+ *  words that happen to hold one do not move it. */
+function markOf(text) {
+  if (text.endsWith(" [given]")) return { index: text.length - " [given]".length, given: true };
+  const at = text.lastIndexOf(" [S");
+  const m = at < 0 ? null : /^ \[(S\d+): (.+)\]$/.exec(text.slice(at));
+  return m ? { index: at, id: m[1], place: m[2] } : null;
+}
 const LIST = /^(?:\s*-\s+|\d+\.\s+)/;
 
 /** The lines about what was given that this job's inventory allows. */
@@ -77,11 +84,12 @@ function allowedGiven({ sources, leftOut, unreadable, decl, offs }) {
   const placed = new Set();
   for (const r of records) {
     if (hasCredential(r)) { ok.add(GIVEN.credential(r.name)); continue; }
+    if (isEmptyRecord(r)) { ok.add(GIVEN.empty(r.name)); continue; }
     const i = offeringOf(r, offs);
     if (i >= 0) placed.add(i);
     else if (!isRunRecord(r) && !isHeaded(r)) ok.add(GIVEN["no-offering"](r.name));
   }
-  offs.forEach((o, i) => { if (!placed.has(i)) ok.add(GIVEN["no-example"](o.id)); });
+  offs.forEach((o, i) => { if (!placed.has(i)) ok.add(GIVEN["no-example"](jobIdOf(o, i))); });
   for (const u of unreadable) ok.add(GIVEN.unreadable(u.file, u.why));
   for (const l of leftOut) ok.add(GIVEN["left-out"](l.file, l.why));
   if (!offs.length) {
@@ -99,16 +107,14 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
   const decl = declarationOf(sources);
   if (!decl) return { ok: false, findings: [{ line: 0, text: "", why: "there is no agent descriptor and no AgentDoc, so nothing can be checked" }], trace };
   const byId = new Map(sources.map((s) => [s.id, s]));
-  const offsV = resolvePath(decl.root, decl.offerings).value;
-  const offs = Array.isArray(offsV) ? offsV : [];
-  const files = sources.filter((s) => s.kind === "record").map((s) => s.name);
+  const offs = offeringsOf(decl);
+  const files = sources.filter((s) => s.kind === "record").map((s) => ({ name: s.name, original: s.original }));
   const given = allowedGiven({ sources, leftOut, unreadable, decl, offs });
   const doc = sources.find((s) => s.kind === "agentdoc");
-  const dsrc = sources.find((s) => s.kind === "descriptor");
   const lines = String(markdown).split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
   const byOffering = new Map();
-  for (const r of sources.filter((s) => s.kind === "record" && !hasCredential(s))) {
+  for (const r of sources.filter((s) => s.kind === "record" && showable(s))) {
     const i = offeringOf(r, offs);
     if (i >= 0) byOffering.set(i, (byOffering.get(i) ?? new Set()).add(r.name));
   }
@@ -170,19 +176,28 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
     }
 
     const text = raw.replace(LIST, "");
-    const mm = MARK.exec(text);
+    const mm = markOf(text);
     if (!mm) { find(n, raw, "a line with no mark saying where it came from"); continue; }
     const said = text.slice(0, mm.index);
-    if (!mm[1]) {
+    if (mm.given) {
       if (SECTIONS[section] !== "## Not documented") find(n, raw, "a line about what was given outside Not documented");
       else if (given.has(said)) trace.push({ line: n + 1, source: "given", verdict: "pass" });
       else find(n, raw, "a line about what was given that the job's inventory does not bear out");
       continue;
     }
-    const src = byId.get(mm[1]);
-    if (!src) { find(n, raw, `${mm[1]} is not a source of this job`); continue; }
-    let place = mm[2];
+    const src = byId.get(mm.id);
+    if (!src) { find(n, raw, `${mm.id} is not a source of this job`); continue; }
+    let place = mm.place;
 
+    if (/ withheld$/.test(place)) {
+      place = place.replace(/ withheld$/, "");
+      const r = src.json === undefined ? { found: false } : resolvePath(src.json, place);
+      if (SECTIONS[section] !== "## Not documented") find(n, raw, "a withheld value outside Not documented");
+      else if (!r.found || !looksSecret(r.value)) find(n, raw, `${src.id} at ${place} holds nothing that looks like a credential, so nothing was withheld`);
+      else if (said !== withheld(src.kind, place)) find(n, raw, "a withheld value not in the words this agent says it in");
+      else trace.push({ line: n + 1, source: src.id, place, template: "withheld", verdict: "pass" });
+      continue;
+    }
     if (/ absent$/.test(place)) {
       place = place.replace(/ absent$/, "");
       if (SECTIONS[section] !== "## Not documented") { find(n, raw, "a silence outside Not documented"); continue; }
@@ -198,7 +213,7 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
     if (/^(json )?L\d+(-L\d+)?$/.test(place)) {
       const r = rangeOf(src, place);
       if (!r) { find(n, raw, `${place} is not a range of lines in ${src.id}`); continue; }
-      if (CREDENTIAL.test(String(src.text))) { find(n, raw, `${src.name} looks like it holds a credential and is quoted`); continue; }
+      if (!showable(src)) { find(n, raw, `${src.name} is empty or looks like it holds a credential, and is quoted`); continue; }
       let k = n + 1;
       while (k < lines.length && lines[k].trim() === "") k++;
       const fence = /^(`{3,}|~{3,})(json|text)$/.exec(lines[k] ?? "");
@@ -248,10 +263,11 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
   const d = decl.src.id;
   offs.forEach((o, i) => {
     const p = `${decl.offerings}[${i}]`;
-    if (!offeringHeads.has(i)) findings.push({ line: 0, text: "", why: `the job ${o.id} is declared and not documented` });
-    (Array.isArray(o.inputs) ? o.inputs : []).forEach((_, j) => { if (!marks.has(`${d}: ${p}.inputs[${j}]`)) findings.push({ line: 0, text: "", why: `input ${j + 1} of ${o.id} is declared and not documented` }); });
-    (Array.isArray(o.outputs) ? o.outputs : []).forEach((_, j) => { if (!marks.has(`${d}: ${p}.outputs[${j}]`)) findings.push({ line: 0, text: "", why: `output ${j + 1} of ${o.id} is declared and not documented` }); });
-    if (!examples.has(i) && !String(markdown).includes(`- ${GIVEN["no-example"](o.id)} [given]`)) findings.push({ line: 0, text: "", why: `the job ${o.id} has no example and does not say it has none` });
+    const id = jobIdOf(o, i);
+    if (!offeringHeads.has(i)) findings.push({ line: 0, text: "", why: `the job ${id} is declared and not documented` });
+    (Array.isArray(o.inputs) ? o.inputs : []).forEach((_, j) => { if (!marks.has(`${d}: ${p}.inputs[${j}]`)) findings.push({ line: 0, text: "", why: `input ${j + 1} of ${id} is declared and not documented` }); });
+    (Array.isArray(o.outputs) ? o.outputs : []).forEach((_, j) => { if (!marks.has(`${d}: ${p}.outputs[${j}]`)) findings.push({ line: 0, text: "", why: `output ${j + 1} of ${id} is declared and not documented` }); });
+    if (!examples.has(i) && !String(markdown).includes(`- ${GIVEN["no-example"](id)} [given]`)) findings.push({ line: 0, text: "", why: `the job ${id} has no example and does not say it has none` });
   });
   const ref = resolvePath(decl.root, decl.refusals).value;
   if (typeof ref === "string" && ref.trim()) {

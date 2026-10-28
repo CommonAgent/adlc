@@ -40,7 +40,7 @@ half. The role is published at agentroles.ai/doc-writer.html (v0.1.0-draft).
 
 ## Tests
 
-36 pass: the role's own test (three jobs, records from two), six kinds of
+39 pass: the role's own test (three jobs, records from two), six kinds of
 doctored documentation each refused, quiz-maker's real descriptor, runtime
 requirements, AgentDoc and run record, the AgentDoc alone, silences against
 empty lists, a verdict, a record with a credential, a build record and a
@@ -53,7 +53,11 @@ record, a declared record without `when`, and digests from the bytes read),
 and one for each finding of the second review (values in a shape nothing reads
 shown as written, a verdict no template reads, a line under the wrong part of
 a job, a byte-order mark, a four-backtick line in a record, names over several
-lines, a record's field marked under a job, and a job folder used again).
+lines, a record's field marked under a job, and a job folder used again), and
+for the third (a credential in the declaration withheld and said, an empty
+record, odd offerings, inherited property names, file names that start with
+digits, backticks in a value, a mark inside the source's words, and a
+carriage return).
 
 ## Who held each step
 

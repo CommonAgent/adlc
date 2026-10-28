@@ -359,3 +359,47 @@ test("a record named for what only one job hands back is that job's example", ()
   assert.equal(offeringOf(rec("count.json"), offs), 1);
   assert.equal(offeringOf(rec("names.json"), offs), -1);
 });
+
+// The third review of PR 18 found each of these; each is held here.
+test("review 3: a credential in the declaration is never shown, and the withholding is said", () => {
+  const d = { ...THREE, systems: [{ name: "payments", access: "write", credential: "sk-live-0123456789abcdefghij" }, { name: "odd" }] };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", d)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.doesNotMatch(markdown, /sk-live/);
+  assert.match(markdown, /^- \*\*payments\*\*, which it writes\. \[S1: systems\[0\]\]$/m);
+  const secret = { ...THREE, systems: [{ name: "x", token: "abcdefghijklmnop" }] };
+  const s2 = sortGiven([file("agent-descriptor.json", secret)]);
+  const w2 = writeDocs({ sources: s2.sources, leftOut: s2.leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown: w2.markdown, sources: s2.sources, leftOut: s2.leftOut }).findings, []);
+  assert.doesNotMatch(w2.markdown, /abcdefghijklmnop/);
+  assert.match(w2.markdown, /^- A value at `systems\[0\]` in the agent descriptor is not shown, because it looks like a credential\. \[S1: systems\[0\] withheld\]$/m);
+  // A false withholding is a finding.
+  const bad = w2.markdown.replace("[S1: systems[0] withheld]", "[S1: does withheld]").replace("A value at `systems[0]`", "A value at `does`");
+  assert.equal(checkDocs({ markdown: bad, sources: s2.sources, leftOut: s2.leftOut }).ok, false);
+});
+
+test("review 3: an empty record is said to be empty and is no job's example", () => {
+  const one = { ...THREE, offerings: [THREE.offerings[0]] };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", one), file("run.log", "")]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /`run\.log` was given and is empty/);
+  assert.match(markdown, /No record of a job of `greet` was given/);
+});
+
+test("review 3: odd offerings, inherited names, digit file names, backticks, a mark in the words, a carriage return", () => {
+  const d = { ...THREE, does: "Cites like [S1: x] inline\rand more", offerings: [null, { id: "x", name: "X", steps: {}, inputs: [], outputs: [] }], refusals: [{ a: "``b``" }] };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", d), file("x.json", { a: 1 })]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /^### Job 1$/m);
+  assert.match(markdown, /^- Cites like \[S1: x\] inline \[S1: does\/0\]$/m);
+  assert.match(markdown, /^- As written at `refusals\[0\]`: ```\{"a":"``b``"\}``` \[S1: refusals\[0\]\]$/m);
+  assert.equal(resolvePath({}, "constructor").found, false);
+  const rec = { ...THREE, records: [{ name: "the run", when: "per_task", file: "*/2026-*-run.json" }], offerings: [THREE.offerings[0]] };
+  const s3 = sortGiven([file("agent-descriptor.json", rec), { ...file("2026-10-27-run.json", { x: 1 }), original: "2026-10-27-run.json" }]);
+  const w3 = writeDocs({ sources: s3.sources, leftOut: s3.leftOut, now: NOW });
+  assert.match(w3.markdown, /`2026-10-27-run\.json` is the record declared as: the run\./);
+  assert.ok(checkDocs({ markdown: w3.markdown, sources: s3.sources, leftOut: s3.leftOut }).ok);
+});

@@ -24,7 +24,7 @@ import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { KIND_WORDS, gather, inventoryOf, sortGiven } from "./given.mjs";
-import { writeDocs } from "./write-docs.mjs";
+import { headerOf, writeDocs } from "./write-docs.mjs";
 import { checkDocs } from "./check-docs.mjs";
 import { fill, plan } from "./pieces.mjs";
 import { note, read as wentWithout, sentence } from "./went-without.mjs";
@@ -103,10 +103,9 @@ export async function runJob(argv = [], { now } = {}) {
 
   // 4. Hand it over.
   const listed = fill(args.job, plan({ docPath, tracePath })).map((e) => e.name);
-  const doc = sources.find((s) => s.kind === "agentdoc");
-  const desc = sources.find((s) => s.kind === "descriptor");
-  const who = trim(doc?.json?.subject?.handle) || "the agent";
-  const version = desc?.json?.agent_version ?? (doc?.json?.sources ?? []).find((s) => s.id === "descriptor")?.agent_version;
+  const head = headerOf(sources);
+  const who = head.handle ?? "the agent";
+  const version = head.versionValue;
   const kinds = sources.map((s) => KIND_WORDS[s.kind]).filter((v, i, a) => a.indexOf(v) === i);
   const went = sentence(wentWithout(RECORDS));
   const reply = [

@@ -24,7 +24,7 @@ A list a source declares empty is not a silence. `"systems": []` says the agent 
 
 An example is a record of a real job, shown as its own lines, up to forty of them, with the file it came from. A record is a job's when it names the job (a field `offering`, `skill`, `job` or `step`, the job's or a step's id in its file name, its file named for what only that job hands back, or the job's id in quotes), or when the agent offers one job. No example is ever written: a job with no record says it has none.
 
-A record with a line that looks like a credential is not quoted at all, and is named under Not documented.
+A record with a line that looks like a credential is not quoted at all, and is named under Not documented. The same holds for a value in the declaration: one that looks like a credential is never shown, and a line under Not documented says a value at that place was withheld.
 
 ## The check stands between the writer and the reader
 
