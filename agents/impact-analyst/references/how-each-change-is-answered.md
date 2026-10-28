@@ -29,7 +29,7 @@ Every difference `scripts/compare.mjs` finds, and the answer it gives a dependen
 | `max_bytes` lower, or added | breaking | senders |
 | `max_bytes` higher, or taken off | compatible | senders |
 | `when` changed | breaking | senders |
-| `one_of` changed | breaking, for a dependent whose canvas does not send it as well | every user of the offering |
+| `one_of` changed | breaking, for a dependent whose canvas sends neither it nor another input of its new group | every user of the offering |
 | Only its `about`, `description`, `label`, `example`, `given_by`, `widget`, `parts` or `link` changed | words only | nobody |
 | Anything else about it changed | breaking, because it could not be told | senders |
 
@@ -77,8 +77,8 @@ An output whose kind changed, for each reader, by the platform's rule for whethe
 | The price changed any other way | breaking | every dependent that orders it |
 | `job_seconds` lower, or added | breaking | every dependent that orders it |
 | `job_seconds` higher, or taken off | compatible | every dependent that orders it |
-| A ceiling added, lowered, or changed in any way other than a higher `suggested` | breaking | every dependent that orders it |
-| A ceiling's `suggested` raised, nothing else changed, or the ceiling taken off | compatible | every dependent that orders it |
+| A ceiling added, any of its numbers lowered, or any other member of it changed | breaking | every dependent that orders it |
+| A ceiling's numbers raised and none lowered, nothing else changed, or the ceiling taken off | compatible | every dependent that orders it |
 | A setting changed, the model's above all | change of behavior | every dependent |
 | What it is installed or started with changed (runtimes, binaries, dependencies, the run command) | change of behavior | every dependent |
 | The systems it is bound to, or the directories it keeps things in, changed | breaking: how it handles data changed | every dependent that orders it |

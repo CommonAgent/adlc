@@ -220,6 +220,7 @@ export function answerOne(diffs, use) {
       // A box on a canvas is sent only what its lines carry, so an input that
       // is now required, or a group that now asks for something else, reaches
       // a dependent that does not send it.
+      if (x.change === "input-group-changed" && sends === false && x.group && [...(use.sends ?? [])].some((s) => x.group.has(s))) continue;
       if ((x.change === "input-now-required" || x.change === "input-group-changed") && sends === false) { effects.push({ effect: "breaking", words: `${x.words} This dependent's canvas does not send it.` }); continue; }
       if (sends === false && x.effect !== "compatible") continue;
       effects.push({ effect: x.effect, words: sends === null && x.effect === "breaking" ? `${x.words} What this dependent sends is not known, so it is answered as if it sends it.` : x.words });

@@ -117,17 +117,28 @@ export async function fileOwed(items, { base, token, fetchImpl = globalThis.fetc
   const existing = [];
   try {
     const against = encodeURIComponent(items[0].against);
-    // Every page, so an item past the first page is still found.
-    for (let offset = 0; offset < PAGES * PAGE; offset += PAGE) {
+    // Every page, so an item past the first page is still found. The offset
+    // moves by what came back, so a ledger that answers smaller pages is read
+    // whole; a page that repeats the last one, or a list longer than this
+    // reads, files nothing rather than risk filing twice.
+    let offset = 0;
+    let last = "";
+    for (let n = 0; ; n++) {
+      if (n >= PAGES) return items.map(() => ({ state: "not filed", why: `the ledger holds more than ${PAGES * PAGE} items against this agent, more than this reads, so nothing was filed, rather than risk filing it twice` }));
       const r = await call("GET", `/operator/debt?against=${against}&kind=dependency&state=all&limit=${PAGE}&offset=${offset}`);
       if (!r.ok) {
         const why = `the ledger would not list what is already filed (${r.status}${r.json?.error ? `: ${trim(r.json.error).slice(0, 200)}` : ""}), so nothing was filed, rather than risk filing it twice`;
         return items.map(() => ({ state: "not filed", why }));
       }
       const page = Array.isArray(r.json?.items) ? r.json.items : [];
-      existing.push(...page);
       const total = typeof r.json?.total === "number" ? r.json.total : null;
-      if (page.length < PAGE || (total !== null && existing.length >= total)) break;
+      if (!page.length) break;
+      const sig = JSON.stringify(page.map((x) => x?.number));
+      if (sig === last) return items.map(() => ({ state: "not filed", why: "the ledger answered the same page twice, so what is already filed could not be read whole, and nothing was filed, rather than risk filing it twice" }));
+      last = sig;
+      existing.push(...page);
+      offset += page.length;
+      if (total !== null ? existing.length >= total : page.length < PAGE) break;
     }
   } catch (e) {
     const why = `the ledger did not answer (${trim(e?.name === "AbortError" ? "it took too long" : e?.message ?? e)})`;
@@ -136,7 +147,7 @@ export async function fileOwed(items, { base, token, fetchImpl = globalThis.fetc
   const out = [];
   for (const it of items) {
     const mark = it.what.split("\n").pop();
-    const same = existing.find((x) => trim(x?.caused_by) === it.caused_by && trim(x?.owed_to) === it.owed_to && trim(String(x?.what ?? "").split("\n").pop()) === mark);
+    const same = existing.find((x) => trim(x?.caused_by) === it.caused_by && trim(x?.owed_to) === it.owed_to && String(x?.what ?? "").split("\n").some((l) => trim(l) === mark));
     if (same) { out.push({ state: "already filed", number: same.number, ledger_state: same.state }); continue; }
     try {
       const r = await call("POST", "/operator/debt/items", { kind: it.kind, against: it.against, owed_to: it.owed_to, caused_by: it.caused_by, what: it.what, blocks: it.blocks, who });

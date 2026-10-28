@@ -25,7 +25,11 @@ test("an optional input made required breaks a dependent whose canvas does not s
 test("a ceiling, a member no rule names, the systems it is bound to, or where it keeps things: any change that is not plainly wider breaks", () => {
   const rt = (over = {}) => ({ format: "agent-runtime-requirements-v1", job_seconds: 300, systems: [], directories: [{ name: "records" }], ceilings: [{ system: "text-reasoning", per: "task", suggested: 10, max: 10 }], ...over });
   const ch = (b) => compareRuntimes(rt(), rt(b)).map((x) => [x.change, x.effect]);
-  assert.deepEqual(ch({ ceilings: [{ system: "text-reasoning", per: "task", suggested: 10, max: 1 }] }), [["ceiling-changed", "breaking"]]);
+  assert.deepEqual(ch({ ceilings: [{ system: "text-reasoning", per: "task", suggested: 10, max: 1 }] }), [["ceiling-lower", "breaking"]]);
+  assert.deepEqual(ch({ ceilings: [{ system: "text-reasoning", per: "task", suggested: 20, max: 20 }] }), [["ceiling-wider", "compatible"]]);
+  assert.deepEqual(ch({ ceilings: [{ system: "text-reasoning", per: "task", suggested: 10, max: 10, unit: "calls" }] }), [["ceiling-changed", "breaking"]]);
+  const sys = (scopes) => ({ systems: [{ name: "mail", kind: "service", credential: "mail-key", env: "MAIL_KEY", scopes }] });
+  assert.deepEqual(compareRuntimes(rt(sys(["read"])), rt(sys(["read", "write"]))).map((x) => x.change), ["bound-systems-changed"]);
   assert.deepEqual(ch({ ceilings: [{ system: "text-reasoning", per: "task", suggested: 20, max: 10 }] }), [["ceiling-wider", "compatible"]]);
   assert.deepEqual(ch({ ceilings: [{ system: "text-reasoning", per: "task", suggested: 5, max: 10 }] }), [["ceiling-lower", "breaking"]]);
   assert.deepEqual(ch({ egress: { allow: ["example.com"] } }), [["runtime-other-changed", "breaking"]]);
@@ -83,4 +87,23 @@ test("what is already filed is read past the first page", async () => {
   const r = await fileOwed(items, { base: "https://x", token: "k", fetchImpl });
   assert.deepEqual(pages, [0, 500]);
   assert.deepEqual(r, [{ state: "already filed", number: 999, ledger_state: "open" }]);
+});
+
+test("a ledger that answers smaller pages is still read whole, and one that repeats a page files nothing", async () => {
+  const items = owedItems({ answered: [{ kind: "solution", id: "sol_z", name: "Z", display: "Z", owner: { org: "org_z" }, owner_words: "org_z", verdict: "breaking", reasons: ["r"] }], subject: "a", before: descriptor("1"), after: descriptor("2") });
+  const all = [...Array.from({ length: 250 }, (_, i) => ({ number: i + 1, caused_by: "x", owed_to: "q", what: "w" })), { number: 999, caused_by: items[0].caused_by, owed_to: "org_z", what: `${items[0].what}\n\nadded by the ledger`, state: "open" }];
+  const small = async (url) => { const u = new URL(url); const o = Number(u.searchParams.get("offset")); return { ok: true, status: 200, text: async () => JSON.stringify({ total: all.length, items: all.slice(o, o + 100) }) }; };
+  assert.deepEqual(await fileOwed(items, { base: "https://x", token: "k", fetchImpl: small }), [{ state: "already filed", number: 999, ledger_state: "open" }]);
+  const stuck = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ total: 1000, items: all.slice(0, 100) }) });
+  const r = await fileOwed(items, { base: "https://x", token: "k", fetchImpl: stuck });
+  assert.equal(r[0].state, "not filed");
+  assert.match(r[0].why, /same page twice/);
+});
+
+test("an input moved into a group is not short for a dependent that already sends another of the group", () => {
+  const before = descriptor("1", (d) => { d.offerings[0].inputs[0].required = false; d.offerings[0].inputs[0].one_of = "source"; d.offerings[0].inputs.push({ name: "page", kind: "url", required: false }); return d; });
+  const after = descriptor("2", (d) => { d.offerings[0].inputs[0].required = false; d.offerings[0].inputs[0].one_of = "source"; d.offerings[0].inputs.push({ name: "page", kind: "url", required: false, one_of: "source" }); return d; });
+  const use = useFromCanvas(canvas({ id: "s", org: "o", output: "notes", reader: "W", readerPort: "notes", readerKind: "text/markdown" }), KEY);
+  assert.deepEqual([...use.sends], ["check.in.text"]);
+  assert.equal(answerOne(compareDeclarations(before, after), use).verdict, "compatible");
 });

@@ -4,7 +4,7 @@
 // The rules are the role's (https://agentroles.ai/impact-analyst.html, rule
 // 4), and they are the same every time:
 //   compatible  only adds something optional, offers something new, widens a
-//               limit, or lowers a price;
+//               limit on what it takes or spends, or lowers a price;
 //   breaking    changes what a dependent sends or gets back: an offering or an
 //               output removed or renamed, a new required input, a narrower
 //               limit, a higher price, a changed refusal or way of handling
@@ -67,8 +67,16 @@ function d(scope, change, effect, words, extra = {}) {
   return { scope, change, effect, words, offering: null, port: null, ...extra };
 }
 
+/** The other inputs of the group an input now belongs to, as canvas port
+ *  ids, so a dependent that already sends one of them is not counted short. */
+function groupOf(doc, off, group, name) {
+  if (!group) return null;
+  const o = list(doc?.offerings).find((x) => trim(x?.id ?? x?.name) === off);
+  return new Set(list(o?.inputs).filter((p) => trim(p?.one_of) === group && trim(p?.name) !== name).map((p) => `${off}.in.${trim(p.name)}`));
+}
+
 /** The differences between two inputs of one offering. */
-function inputDiffs(off, name, a, b) {
+function inputDiffs(off, name, a, b, after) {
   const out = [];
   const at = { offering: off, port: name };
   const ka = kindOf(a);
@@ -89,7 +97,7 @@ function inputDiffs(off, name, a, b) {
     else out.push(d("input", "input-limit-wider", "compatible", `The input ${name} of ${off} takes more than it did (${ma ?? "no limit"} bytes before, ${mb ?? "no limit"} after).`, at));
   }
   if (trim(a.when) !== trim(b.when)) out.push(d("input", "input-when-changed", "breaking", `The input ${name} of ${off} was ${trim(a.when) || "per task"} and is now ${trim(b.when) || "per task"}.`, at));
-  if (trim(a.one_of) !== trim(b.one_of)) out.push(d("input", "input-group-changed", "breaking", `The input ${name} of ${off} moved from the group ${trim(a.one_of) || "(none)"} to ${trim(b.one_of) || "(none)"}, which changes what a job must be sent.`, at));
+  if (trim(a.one_of) !== trim(b.one_of)) out.push(d("input", "input-group-changed", "breaking", `The input ${name} of ${off} moved from the group ${trim(a.one_of) || "(none)"} to ${trim(b.one_of) || "(none)"}, which changes what a job must be sent.`, { ...at, group: groupOf(after, off, trim(b.one_of), name) }));
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !RULED.has(k) && !WORDS_ONLY.has(k) && !same(a[k], b[k]));
   if (other.length) out.push(d("input", "input-other", "breaking", `The input ${name} of ${off} changed its ${other.sort().join(", ")}, which these rules do not name, so it could not be told whether a dependent would notice; it is answered breaking.`, at));
   return out;
@@ -162,7 +170,7 @@ export function compareDeclarations(before, after) {
     const ib = byKey(n.inputs, "name");
     for (const [name, p] of ia) {
       if (!ib.has(name)) out.push(d("input", "input-removed", "breaking", `The input ${name} of ${id} is gone, so a dependent that sends it sends something no longer taken.`, { offering: id, port: name }));
-      else out.push(...inputDiffs(id, name, p, ib.get(name)));
+      else out.push(...inputDiffs(id, name, p, ib.get(name), b));
     }
     for (const [name, p] of ib) {
       if (ia.has(name)) continue;
@@ -256,20 +264,36 @@ export function compareRuntimes(before, after) {
     if (jb !== null && (ja === null || jb < ja)) out.push(d("runtime", "job-limit-narrower", "breaking", `A job may now run for at most ${jb} seconds${ja ? ` (it was ${ja})` : ""}, so a longer one is stopped.`));
     else out.push(d("runtime", "job-limit-wider", "compatible", `A job may run longer (${ja ?? "no limit"} seconds before, ${jb ?? "no limit"} after).`));
   }
-  const ck = (c) => `${trim(c?.system)}|${trim(c?.per)}`;
-  const cab = new Map(list(before.ceilings).map((c) => [ck(c), c]));
-  const cbb = new Map(list(after.ceilings).map((c) => [ck(c), c]));
+  // Ceilings by system and period; a second one of the same pair is told
+  // apart by its place among them.
+  const ceilings = (rt) => {
+    const m = new Map();
+    const n = new Map();
+    for (const c of list(rt.ceilings)) {
+      const base = `${trim(c?.system)}|${trim(c?.per)}`;
+      n.set(base, (n.get(base) ?? 0) + 1);
+      m.set(n.get(base) === 1 ? base : `${base}|${n.get(base)}`, c);
+    }
+    return m;
+  };
+  const cab = ceilings(before);
+  const cbb = ceilings(after);
   for (const [k, c] of cbb) {
     const o = cab.get(k);
     const [sys, per] = k.split("|");
     if (!o) out.push(d("runtime", "ceiling-added", "breaking", `There is a new ceiling on ${sys} per ${per || "job"}, so work it did before may now be stopped.`));
     else if (same(o, c)) continue;
     else {
-      const { suggested: os, ...orest } = o;
-      const { suggested: cs, ...crest } = c;
-      const num = typeof os === "number" && typeof cs === "number";
-      if (same(orest, crest) && num && cs > os) out.push(d("runtime", "ceiling-wider", "compatible", `The ceiling on ${sys} per ${per || "job"} is higher (${os} before, ${cs} after).`));
-      else if (same(orest, crest) && num && cs < os) out.push(d("runtime", "ceiling-lower", "breaking", `The ceiling on ${sys} per ${per || "job"} is lower (${os} before, ${cs} after).`));
+      // Every number in it is a limit: higher everywhere it changed is wider,
+      // lower anywhere is narrower, and anything else could not be told.
+      const keys = [...new Set([...Object.keys(o), ...Object.keys(c)])];
+      const numeric = keys.filter((k) => typeof o[k] === "number" && typeof c[k] === "number");
+      const words = keys.filter((k) => !numeric.includes(k));
+      const wordsSame = words.every((k) => same(o[k] ?? null, c[k] ?? null));
+      const lower = numeric.some((k) => c[k] < o[k]);
+      const higher = numeric.some((k) => c[k] > o[k]);
+      if (wordsSame && lower) out.push(d("runtime", "ceiling-lower", "breaking", `The ceiling on ${sys} per ${per || "job"} is lower (${numeric.filter((k) => c[k] < o[k]).map((k) => `${k} ${o[k]} before, ${c[k]} after`).join("; ")}).`));
+      else if (wordsSame && higher) out.push(d("runtime", "ceiling-wider", "compatible", `The ceiling on ${sys} per ${per || "job"} is higher (${numeric.filter((k) => c[k] > o[k]).map((k) => `${k} ${o[k]} before, ${c[k]} after`).join("; ")}).`));
       else out.push(d("runtime", "ceiling-changed", "breaking", `The ceiling on ${sys} per ${per || "job"} changed in a way these rules do not read as higher, so it could not be told whether work it did before is now stopped.`));
     }
   }
@@ -284,7 +308,8 @@ export function compareRuntimes(before, after) {
   for (const k of ["runtimes", "binaries", "dependencies", "run", "wants_replies"]) {
     if (!same(before[k] ?? null, after[k] ?? null)) out.push(d("runtime", `${k}-changed`, "behaviour", `What it is installed or started with (${k}) changed, so it may act differently under the same declaration.`));
   }
-  const bound = (rt) => list(rt.systems).map((s) => JSON.stringify(canonical({ name: trim(s?.name ?? s?.role), kind: trim(s?.kind), credential: trim(s?.credential), env: trim(s?.env), spends: s?.spends ?? null }))).sort();
+  // Each bound system whole, but for its settings, which have their own rule above.
+  const bound = (rt) => list(rt.systems).map((s) => { const { settings, ...rest } = isObject(s) ? s : { value: s }; return JSON.stringify(canonical(rest)); }).sort();
   if (!same(bound(before), bound(after))) out.push(d("runtime", "bound-systems-changed", "breaking", "The systems it is bound to when installed changed, which is a change to how it handles data."));
   if (!same(before.directories ?? null, after.directories ?? null)) out.push(d("runtime", "directories-changed", "breaking", "Where it keeps what it keeps changed, which is a change to how it handles data."));
   const known = new Set(["format", "runtimes", "binaries", "dependencies", "systems", "ceilings", "directories", "job_seconds", "price", "run", "wants_replies"]);

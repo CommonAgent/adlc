@@ -28,7 +28,7 @@ Not in this version: the role's second request, a change to a solution.
 
 ## Tests
 
-43 pass (and one skipped that reads kept examples, of which there are none): the role's own check (role-check.test.mjs), each rule of the
+45 pass (and one skipped that reads kept examples, of which there are none): the role's own check (role-check.test.mjs), each rule of the
 comparison (compare.test.mjs), the answers per reader (answer.test.mjs),
 filing once (ledger.test.mjs), the edges an independent review found (edges.test.mjs), the run command from a laid-out package against
 a ledger served on the machine, with the test writer's delivered-formats check (run.test.mjs, delivered-formats.test.mjs), and a real change, Site reader

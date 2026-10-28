@@ -38,7 +38,7 @@ Every dependent the platform's list names, and every one given, is in the report
 
 ## It files what is owed
 
-For each dependent answered breaking or change of behavior, one dependency debt is filed in the ledger: against the changed agent, owed to the dependent's owner (its organization when the list names one), caused by the change (the versions and the digest of the changed declaration), holding back promote and decommission until it is closed. Before filing, what is already filed against the agent is read, and an item for the same change, owed to the same owner for the same dependent, is reported by its number rather than filed again.
+For each dependent answered breaking or change of behavior, one dependency debt is filed in the ledger: against the changed agent, owed to the dependent's owner (its organization when the list names one), caused by the change (the versions and the digest of the changed declaration), holding back promote and decommission until it is closed. Before filing, what is already filed against the agent is read, and an item for the same change, owed to the same owner for the same dependent, is reported by its number rather than filed again. Two dependents the list cannot tell apart (another organization's two solutions of one name, listed without their ids) are two debts, each marked with its place among them; if a later list names only one of them, its mark changes and it is filed once more.
 
 The ledger is reached only through the host's binding, `the-ledger`: the key in `LEDGER_TOKEN` and the platform's origin in `MESH_API_BASE`. Without them the report is still delivered, what is owed is listed in it, and the reply says nothing was filed and why.
 
