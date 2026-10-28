@@ -81,12 +81,14 @@ export function sortGiven(files = []) {
 
 /** The name a file was sent under. A host stages an attached file as
  *  `<n>-<8 characters>-<name>` (the supervisor's index in front of the
- *  adapter's own prefix), and the documentation names it, and matches it to
- *  a job or a declared record, by the name it was sent under. A name without
- *  both prefixes is taken as it stands. */
-export function givenName(file) {
-  const m = /^\d+-[A-Za-z0-9_-]{8}-(.+)$/.exec(String(file));
-  return m ? m[1] : String(file);
+ *  adapter's own prefix), and each hop through a process run adds one more,
+ *  so every such prefix is taken off, as the code writer's bareName and the
+ *  code critic's plainName do. The documentation names a file, and matches it
+ *  to a job or a declared record, by this name; the inventory keeps the name
+ *  it was staged under beside it. */
+export function givenName(name) {
+  let n = String(name ?? "");
+  for (;;) { const m = /^\d+-[A-Za-z0-9_-]{8}-(.+)$/.exec(n); if (!m) return n; n = m[1]; }
 }
 
 /** Read the files a job was handed. Returns what was read and what could not
@@ -101,14 +103,14 @@ export function gather(paths = []) {
       if (!statSync(p).isFile()) throw new Error("it is not a file");
       bytes = readFileSync(p);
     } catch (e) {
-      unreadable.push({ file: basename(String(p)) || String(p), why: `it could not be read (${e.code ?? trim(e.message)})` });
+      unreadable.push({ file: givenName(basename(String(p))) || String(p), staged: basename(String(p)), why: `it could not be read (${e.code ?? trim(e.message)})` });
       continue;
     }
     const given = givenName(basename(p));
     let name = given;
     for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${n}-${given}`;
     taken.add(name.toLowerCase());
-    files.push({ name, original: given, path: p, bytes: bytes.length, raw: bytes, sha256: sha256(bytes), text: bytes.toString("utf8") });
+    files.push({ name, original: given, staged: basename(p), path: p, bytes: bytes.length, raw: bytes, sha256: sha256(bytes), text: bytes.toString("utf8") });
   }
   return { files, unreadable };
 }
@@ -118,7 +120,7 @@ export function gather(paths = []) {
 export function inventoryOf({ sources, leftOut = [], unreadable = [] }) {
   return {
     given: "v1",
-    sources: sources.map((s) => ({ id: s.id, file: s.name, kind: s.kind, bytes: s.bytes, sha256: s.sha256 })),
+    sources: sources.map((s) => ({ id: s.id, file: s.name, ...(s.staged && s.staged !== s.name ? { staged_as: s.staged } : {}), kind: s.kind, bytes: s.bytes, sha256: s.sha256 })),
     left_out: leftOut,
     unreadable,
   };

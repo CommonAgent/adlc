@@ -15,14 +15,17 @@ record and the documentation said the job had no example.
 ## What changed
 
 - `givenName` in scripts/given.mjs reads the name a file was sent under from
-  a staged name, and the documentation names, matches and lists each file by
-  it. A name without both prefixes is taken as it stands.
+  a staged name, taking off every `<n>-<8 characters>-` prefix as the code
+  writer's bareName and the code critic's plainName do (a process run adds
+  one per hop). The documentation names, matches and lists each file by it,
+  and given.json keeps the staged name beside it as `staged_as`.
 - The documentation's `written_by` says 0.1.1.
 
 ## Tests
 
-41 pass: one new run test starts the job with staged names and checks the
-example, the declared-record line and the Sources line use the sent name,
+42 pass: two new run tests start the job with staged names, one prefix and
+two, and check the example, the declared-record line, the Sources line and
+the inventory,
 and one new parts test holds `written_by` to the package version.
 
 ## Who held each step

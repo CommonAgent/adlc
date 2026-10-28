@@ -122,3 +122,14 @@ test("files staged by the host are named and matched by the name they were sent 
   assert.match(doc, /^- `quiz\.json` is the record declared as: the quiz per job as delivered\. \[S1: records\[3\]\]$/m);
   assert.match(doc, /^- S1: `quiz-maker\.agent-descriptor\.json`, the agent descriptor/m);
 });
+
+test("every staged prefix is taken off, and the inventory keeps the staged name", () => {
+  const h = host();
+  const quiz = JSON.stringify({ quiz: "v1", title: "t" });
+  const r = run(h, { id: "hops", files: [{ name: "1-AbC_d-9x-agent-descriptor.json", text: readFileSync(join(FIX, "quiz-maker.agent-descriptor.json")) }, { name: "6-WTvYlXog-0-abcdefgh-quiz.json", text: quiz }] });
+  assert.equal(r.status, 0, JSON.stringify(r.doc));
+  const doc = readFileSync(join(r.jobDir, "out", "documentation.md"), "utf8");
+  assert.match(doc, /^From `quiz\.json`: \[S2: json L1-L4\]$/m);
+  const given = json(join(r.recordsDir, "given.json"));
+  assert.deepEqual(given.sources.map((s) => [s.file, s.staged_as]), [["agent-descriptor.json", "1-AbC_d-9x-agent-descriptor.json"], ["quiz.json", "6-WTvYlXog-0-abcdefgh-quiz.json"]]);
+});
