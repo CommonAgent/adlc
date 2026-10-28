@@ -255,7 +255,9 @@ def main():
         out({"ok": False, "error": "usage: eval-run.py <evalspec.json> <handle> <records_root> <identity.json>"})
     spec = json.load(open(sys.argv[1]))
     handle, records_root, identity_path = sys.argv[2], sys.argv[3], sys.argv[4]
-    creds = os.path.join(os.path.dirname(identity_path), "..", "..", "config", "fleet", "mesh.creds")
+    # ~/.config/fleet/mesh.creds beside the identity's ~/.agentmesh/adapter
+    # (this read ~/config, which no host has, so every case went unsent).
+    creds = os.path.join(os.path.dirname(identity_path), "..", "..", ".config", "fleet", "mesh.creds")
     creds = os.environ.get("EVAL_CREDS", creds)
 
     cases_out = []
