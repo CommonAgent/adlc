@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,11 +15,12 @@ const RUN = join(HERE, "..", "eval-run.py");
 const PY = process.platform === "win32" ? "python" : "python3";
 const SHA = "ab".repeat(32);
 
-function run(spec) {
+function run(spec, { work = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "eval-run-"));
   try {
     const path = join(dir, "spec.json");
     writeFileSync(path, JSON.stringify(spec));
+    if (work) mkdirSync(join(dir, "work"));
     // No identity and no cases: nothing is sent, nothing is signed or filed.
     const p = spawnSync(PY, [RUN, path, "x.p@example.com", join(dir, "work"), join(dir, "no-identity.json")], { encoding: "utf8", env: { ...process.env, AGENTMESH_ENV: "example" } });
     const line = p.stdout.trim().split("\n").filter((l) => l.startsWith("{")).pop();
@@ -44,7 +45,14 @@ test("a spec without them names neither, as before", () => {
 });
 
 test("a promised record that is missing is does-not-conform, never rounded up", () => {
-  const rec = run({ agent: "x", subject_key: "U" + "A".repeat(55), cases: [], records_required: ["run log"], records_files: ["*.log"] });
+  const rec = run({ agent: "x", subject_key: "U" + "A".repeat(55), cases: [], records_required: ["run log"], records_files: ["*.log"] }, { work: true });
   assert.equal(rec.verdict, "does-not-conform");
   assert.equal(rec.conforms, false);
+});
+
+test("records in a folder this checker cannot read are not observed: inconclusive, never missing", () => {
+  const rec = run({ agent: "x", subject_key: "U" + "A".repeat(55), cases: [], records_required: ["run log"], records_files: ["*.log"] });
+  assert.equal(rec.verdict, "inconclusive");
+  assert.deepEqual(rec.records_audit.missing, []);
+  assert.deepEqual(rec.records_audit.unobserved, ["run log"]);
 });
