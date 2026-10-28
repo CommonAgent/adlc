@@ -253,6 +253,7 @@ class EachDeployIsFollowedByAConformanceCheck(unittest.TestCase):
         self.assertEqual((spec["package_sha256"], spec["subject_key"]), (SHA, KEY))
         run_cmd = calls[1]
         self.assertEqual(run_cmd[:3], ["sudo", "-u", "agentevaluator"])
+        self.assertIn(f"AGENTMESH_ENV={os.environ.get('AGENTMESH_ENV') or 'prod'}", run_cmd, "sudo drops the environment; the mesh is named")
         self.assertIn("brand-reader.platform@example.com", run_cmd)
 
     def test_with_only_the_nodes_credential_it_runs_as_root_over_a_private_copy_of_the_checkers_state(self):
