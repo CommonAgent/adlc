@@ -17,7 +17,7 @@ A draft that carries what the reference says a good spec carries, and a list of 
 
 ## When it comes back empty
 
-If the service will not answer, or answers with something that is not a spec, nothing is written and the reply says which of those happened. A draft that still carries findings after a second go is delivered as it is, with every finding said out loud.
+If the service will not answer, or answers with something that is not a spec, nothing is written and the reply says which of those happened. An answer wrapped in prose or a code fence is read for the JSON object inside it; an answer with no object in it is asked for once more with a reminder to answer with JSON only, and never a third time. The whole step runs inside DRAFT_SECONDS (240 by default): no call starts without a minute left, and each call is cut at what remains, so the job ends in words and never at its own time limit. A draft that still carries findings after a second go is delivered as it is, with every finding said out loud.
 
 ## How to do it
 
