@@ -900,8 +900,10 @@ def can_use_declaration(spec):
 
 
 RUN_CONFIG_MEMBERS = ("settings", "tested_models", "named", "replay")
-RUN_CONFIG_SETTING_MEMBERS = ("name", "kind", "default", "allowed", "label", "about", "value_labels", "min", "max",
-                              "step", "job_may_set", "does")
+RUN_CONFIG_SETTING_MEMBERS = ("name", "kind", "default", "allowed", "label", "about", "value_labels", "range",
+                              "multiple", "min", "max", "step", "job_may_set", "does")
+#: The members of a setting's `range` (Common Agent 6.13.4, proposed).
+RANGE_MEMBERS = ("min", "max", "step")
 RUN_CONFIG_KINDS = ("preference", "rule")
 RUN_CONFIG_NAMED_MEMBERS = ("name", "settings", "does", "digest")
 
@@ -984,14 +986,25 @@ def run_config_declaration(spec):
             fail(f"run_config setting {name}: job_may_set is true or false, whether a sender who does not own "
                  f"the agent may set it per job")
         entry = {"name": name, "kind": s["kind"], "default": s["default"]}
+        # `multiple` (6.13.4): the value is a list of several allowed values.
+        if "multiple" in s and not isinstance(s["multiple"], bool):
+            fail(f"run_config setting {name}: multiple is true or false, whether its value is a list of several allowed values")
+        many = s.get("multiple") is True
+        if many and "allowed" not in s:
+            fail(f"run_config setting {name}: multiple picks several of its allowed values, and the setting has none")
         if "allowed" in s:
             allowed = s["allowed"]
             if not (isinstance(allowed, list) and allowed):
                 fail(f"run_config setting {name}: allowed is a non-empty list of the values it may take; leave it "
                      f"out when any value goes")
-            if s["default"] not in allowed:
+            if many:
+                if not (isinstance(s["default"], list) and all(v in allowed for v in s["default"])):
+                    fail(f"run_config setting {name}: multiple is true, so the default is a list of its allowed values")
+            elif s["default"] not in allowed:
                 fail(f"run_config setting {name}: the default {s['default']!r} is not in its own allowed list")
             entry["allowed"] = allowed
+        if "multiple" in s:
+            entry["multiple"] = s["multiple"]
         # What a person sees for the setting (Common Agent 6.13, proposed):
         # its label, a sentence about it, a label for each allowed value, and
         # for a number its range. Carried as declared; whether a setting says
@@ -1012,18 +1025,35 @@ def run_config_declaration(spec):
                 if k not in keys:
                     fail(f"run_config setting {name}: value_labels names {k!r}, which is not an allowed value")
             entry["value_labels"] = {k: v.strip() for k, v in vl.items()}
-        for k in ("min", "max", "step"):
-            if k in s:
-                if isinstance(s[k], bool) or not isinstance(s[k], (int, float)):
-                    fail(f"run_config setting {name}: {k} is a number")
-                entry[k] = s[k]
-        if "min" in entry and "max" in entry and entry["min"] > entry["max"]:
+        # A number's range (6.13.4): `range: {min, max, step}`. The members
+        # min, max and step written on the setting itself are the older
+        # spelling, still read and carried as written, with a warning.
+        flat = [k for k in RANGE_MEMBERS if k in s]
+        if "range" in s and flat:
+            fail(f"run_config setting {name}: says its range twice; write range: {{min, max, step}} and not {', '.join(flat)} beside it")
+        if "range" in s:
+            rg = s["range"]
+            if not (isinstance(rg, dict) and rg and all(k in RANGE_MEMBERS for k in rg)):
+                fail(f"run_config setting {name}: range is an object of min, max and step")
+            where, bounds = entry.setdefault("range", {}), rg
+        else:
+            if flat:
+                warn(f"run_config setting {name}: min, max and step on the setting are the older spelling; "
+                     f"write range: {{min, max, step}} (Common Agent 6.13.4)")
+            where, bounds = entry, {k: s[k] for k in flat}
+        for k, v in bounds.items():
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                fail(f"run_config setting {name}: {k} is a number")
+            where[k] = v
+        if "step" in bounds and not bounds["step"] > 0:
+            fail(f"run_config setting {name}: step is more than zero")
+        if "min" in bounds and "max" in bounds and bounds["min"] > bounds["max"]:
             fail(f"run_config setting {name}: min is more than max")
-        if any(k in entry for k in ("min", "max", "step")):
+        if bounds:
             d = s["default"]
             if isinstance(d, bool) or not isinstance(d, (int, float)):
-                fail(f"run_config setting {name}: min, max and step are for a number, and the default is not one")
-            if ("min" in entry and d < entry["min"]) or ("max" in entry and d > entry["max"]):
+                fail(f"run_config setting {name}: a range is for a number, and the default is not one")
+            if ("min" in bounds and d < bounds["min"]) or ("max" in bounds and d > bounds["max"]):
                 fail(f"run_config setting {name}: the default {d!r} is outside its own range")
         entry["job_may_set"] = s["job_may_set"]
         if "does" in s:
@@ -1063,8 +1093,11 @@ def run_config_declaration(spec):
             for k, v in vals.items():
                 if k not in declared:
                     fail(f"named run config {nm!r} sets {k}, which this agent does not declare in run_config.settings")
-                if "allowed" in declared[k] and v not in declared[k]["allowed"]:
-                    fail(f"named run config {nm!r} sets {k} to {v!r}, which is not in its allowed list")
+                if "allowed" in declared[k]:
+                    ok = (isinstance(v, list) and all(x in declared[k]["allowed"] for x in v)) \
+                        if declared[k].get("multiple") is True else v in declared[k]["allowed"]
+                    if not ok:
+                        fail(f"named run config {nm!r} sets {k} to {v!r}, which is not in its allowed list")
             e = {"name": nm, "settings": vals}
             if "does" in n:
                 if not (isinstance(n["does"], str) and n["does"].strip()):
@@ -1581,8 +1614,8 @@ def standing_findings(spec, jobs, src_base, table):
 #   settings-declared-fully. Every run-config setting has a label, an about
 #   and a default; allowed whenever its value has a natural set of choices
 #   (its name says voice, tone, length, format and the like, or it is a
-#   rule); a label for each allowed value; and min, max and step for a
-#   number.
+#   rule); a label for each allowed value; and range {min, max, step} for a
+#   number (the older min, max and step on the setting are still read).
 OPTION_RULES_CUTOVER = "2026-10-28"
 OPTION_WORDS = re.compile(r"\b(voice|tone|sounds?|style|length|word[ -]?count|format|duration|pace|speed|level|"
                           r"mode|size|register|formality|persona)\b", re.I)
@@ -1634,7 +1667,8 @@ def option_findings(spec, jobs):
             if unlabelled:
                 missing.append("value_labels for " + ", ".join(repr(a) for a in unlabelled))
         if numeric and "allowed" not in st:
-            missing += [k for k in ("min", "max", "step") if k not in st]
+            rg = st.get("range") if isinstance(st.get("range"), dict) else st
+            missing += [f"range.{k}" for k in RANGE_MEMBERS if k not in rg]
         if missing:
             found.append(f"settings-declared-fully: run_config setting {nm!r} does not declare {', '.join(missing)}; every "
                          f"option gets a label, an about, a default and its choices, decided at design time")
