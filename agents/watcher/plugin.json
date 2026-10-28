@@ -1,0 +1,98 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "watcher",
+  "version": "0.1.0",
+  "description": "Watches the agents its owner names and reports, for each, whether it is alive, whether it answers a question sent to it, and whether it is inside the limits it declared, and what each spent, job by job, per agent, per owner and in total, against what its owner allowed, with whether every spend traces to a job and whether the totals reconcile. It reads the platform's own records and asks each agent one light question, the worker interface's status; it spends nothing, changes nothing it watches and calls no model. Each open alert goes to the incident recorder in the shape it takes.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "watch-the-fleet",
+    "read-the-watch-list",
+    "ask-each-agent",
+    "check-the-limits",
+    "read-the-spend",
+    "write-the-report",
+    "raise-the-alarms"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "watch-the-fleet": {
+            "scripts": [
+              "scripts/watch.mjs",
+              "scripts/watch-list.mjs",
+              "scripts/ask.mjs",
+              "scripts/send.mjs",
+              "scripts/platform.mjs",
+              "scripts/checks.mjs",
+              "scripts/spend.mjs",
+              "scripts/write-report.mjs",
+              "scripts/alarms.mjs",
+              "scripts/raise.mjs",
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/what-the-watcher-reads.md",
+              "rules.md"
+            ]
+          },
+          "read-the-watch-list": {
+            "scripts": [
+              "scripts/watch-list.mjs"
+            ]
+          },
+          "ask-each-agent": {
+            "scripts": [
+              "scripts/ask.mjs",
+              "scripts/send.mjs"
+            ],
+            "references": [
+              "references/what-the-watcher-reads.md"
+            ]
+          },
+          "check-the-limits": {
+            "scripts": [
+              "scripts/checks.mjs",
+              "scripts/platform.mjs",
+              "scripts/ask.mjs",
+              "scripts/send.mjs",
+              "scripts/spend.mjs"
+            ],
+            "references": [
+              "references/what-the-watcher-reads.md"
+            ]
+          },
+          "read-the-spend": {
+            "scripts": [
+              "scripts/spend.mjs",
+              "scripts/platform.mjs"
+            ],
+            "references": [
+              "references/what-the-watcher-reads.md"
+            ]
+          },
+          "write-the-report": {
+            "scripts": [
+              "scripts/write-report.mjs",
+              "scripts/spend.mjs"
+            ]
+          },
+          "raise-the-alarms": {
+            "scripts": [
+              "scripts/alarms.mjs",
+              "scripts/raise.mjs",
+              "scripts/send.mjs",
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

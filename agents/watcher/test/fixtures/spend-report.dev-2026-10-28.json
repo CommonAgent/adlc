@@ -1,0 +1,95 @@
+{
+ "format": "spend-report-v1",
+ "generated_at": "2026-10-28T04:29:43.103Z",
+ "window": {
+  "from": "2026-10-01",
+  "to": "2026-10-28"
+ },
+ "agents": [
+  {
+   "agent": "UAS3DOZT7IFEATIXXVM3LKKOUTVYVCR7VL3IG2ZCKR7PADDRWS7CHNPK",
+   "handle": null,
+   "label": "Your assistant's agent",
+   "owner": "01a169e3-5346-7000-ac0a-03c821407ee8",
+   "read": "ok",
+   "currencies": [
+    {
+     "currency": "XCR",
+     "spent_micro": 1980000000,
+     "traced_micro": 330000000,
+     "untraced_micro": 1650000000,
+     "days": [
+      {
+       "day": "2026-10-23",
+       "spent_micro": 1650000000,
+       "jobs": [],
+       "untraced_micro": 1650000000
+      },
+      {
+       "day": "2026-10-28",
+       "spent_micro": 330000000,
+       "jobs": [
+        {
+         "job": "credits:f7364c40-d49d-4f68-bf07-e9a14fc86ad0:01a180c4-602d-7000-ba95-9fb26203d8c9",
+         "spent_micro": 330000000,
+         "at": "2026-10-28T04:29:35.896Z"
+        }
+       ],
+       "untraced_micro": 0
+      }
+     ],
+     "untraced": [
+      {
+       "day": "2026-10-23",
+       "amount_micro": 1650000000,
+       "why": "accounted before the platform kept a line per job, which began 2026-10-28T04:29:35.896Z"
+      }
+     ],
+     "total_ever_micro": 1980000000,
+     "older_than_kept_micro": 0,
+     "oldest_kept_day": "2026-10-23",
+     "window_reaches_past_kept": false
+    }
+   ],
+   "allowed": {
+    "registered": false
+   },
+   "against": [],
+   "crossings": []
+  }
+ ],
+ "owners": [
+  {
+   "owner": "01a169e3-5346-7000-ac0a-03c821407ee8",
+   "label": null,
+   "agents": [
+    "UAS3DOZT7IFEATIXXVM3LKKOUTVYVCR7VL3IG2ZCKR7PADDRWS7CHNPK"
+   ],
+   "currencies": [
+    {
+     "currency": "XCR",
+     "spent_micro": 1980000000,
+     "traced_micro": 330000000,
+     "untraced_micro": 1650000000
+    }
+   ]
+  }
+ ],
+ "totals": [
+  {
+   "currency": "XCR",
+   "spent_micro": 1980000000,
+   "traced_micro": 330000000,
+   "untraced_micro": 1650000000
+  }
+ ],
+ "every_spend_traced": false,
+ "reconciles": true,
+ "discrepancies": [],
+ "says": [
+  "Your assistant's agent spent 1980 XCR between 2026-10-01 and 2026-10-28, in 1 job, 1650 XCR not traced to a job.",
+  "Your assistant's agent has no allowance registered with the platform, so nothing was allowed or measured against.",
+  "In all, 1980 XCR was spent between 2026-10-01 and 2026-10-28, 1650 XCR of it not traced to a job.",
+  "The totals reconcile: each day's spend equals its job lines plus what is named as untraced."
+ ]
+}
