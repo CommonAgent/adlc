@@ -22,6 +22,27 @@ nothing. There is no model in it: the same catalog gives the same answer.
 - `src/catalog-agent.ts` is the agent on the mesh: its identity, its
   registration and the `source` offering, wired to the catalog store.
 - `test/catalog-source.test.ts` tests the Source logic.
+- `src/audit-gate.ts` is the audit gate's rule, and `test/audit-gate.test.ts`
+  tests it. See "The audit gate" below.
+
+## The audit gate
+
+The catalog lists an agent version only with a current audit pass for the
+exact package digest that version was deployed from. A current pass is the
+newest audit report for that digest, with a verdict of `pass` or
+`pass_with_findings`, not past its `expires_at`, and signed by the auditor key
+the environment pins. Where the environment requires the gate (prod), nothing
+turns it off. Elsewhere it is off unless its switch, `AUDIT_GATE`, is on. A
+refusal names the digest and what is missing, and it points to the audit
+report, or says that no report exists.
+
+`src/audit-gate.ts` holds the rule, and it is pure. On AgentMesh, the
+catalog's listing doors apply it before a version is listed, in
+`catalog/src/listing-gate.ts`, which reads the audit from the platform's
+`GET /v1/audits/<digest>`. A listing that already stands at the same version
+is refreshed without being asked again, so the gate never delists anything.
+The Source logic answers only from what is listed, so it never offers a
+version that the gate refused.
 
 ## What it needs
 
@@ -31,7 +52,7 @@ nothing. There is no model in it: the same catalog gives the same answer.
 
 ```sh
 npm install
-npm test          # 13 tests
+npm test          # 17 tests
 ```
 
 The role publishes its own conformance check at

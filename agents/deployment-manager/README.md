@@ -48,6 +48,42 @@ its name.
 - `host/`: the agent's descriptor and listing, its brain, and the placement
   templates for a platform project and a tenant project.
 
+## The audit gate
+
+The deployment manager installs a package only with a current audit pass
+for that exact package digest, wherever the environment requires one. It
+applies to a new install, an update, a person's own package and a version
+kept alongside. Retiring a version installs nothing, so it is not checked.
+A container agent from a repository has no package digest, so it is not
+covered.
+
+The gate is required when any of these holds:
+
+- the environment file says `audit_gate.required: true` (prod);
+- its switch, `AUDIT_GATE`, is on;
+- the control plane marks the request `audit_gate.required`, which it does
+  when its own gate is on.
+
+Nothing on a request can turn off a gate the environment requires.
+
+`deploy-executor.py` checks the pass itself, from the signed report's own
+bytes. It reads `GET /v1/audits/<digest>`, then fetches the report that the
+audit names and requires all of the following:
+
+- its bytes hash to the report digest;
+- it is for this package digest;
+- it is signed by an auditor key that the environment pins (or that the
+  control plane pins, when the host's environment file names none), and the
+  signature verifies;
+- its verdict is `pass` or `pass_with_findings`;
+- it has not expired.
+
+A refusal places nothing: no token, no argfile and no procedure. It is
+recorded and signed like any other refusal (`step: audit-gate`). Its
+sentence names the digest and what is missing, and it points to the audit
+report, or says that no report exists. `test_audit_gate.py` covers each
+case.
+
 ## What it needs
 
 - A fleet host: Linux with Python 3.11 or later, Node 22 or later, pm2, the
