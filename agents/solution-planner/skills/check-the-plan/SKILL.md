@@ -13,7 +13,7 @@ after the model has answered with JSON
 
 ## What this needs
 
-- draft plan (application/json, required)
+- draft plan (application/vnd.agentmesh.build-plan+json, required)
 
 ## What a good result looks like
 
@@ -21,8 +21,8 @@ Every step marked new with no agent and no offering, and an agent or offering th
 
 ## What it produces
 
-- checked plan (application/json, per task)
-- what the checks changed (application/json, per task)
+- checked plan (application/vnd.agentmesh.build-plan+json, per task)
+- what the checks changed (application/vnd.agentmesh.plan-checks+json, per task)
 
 ## When it comes back empty
 

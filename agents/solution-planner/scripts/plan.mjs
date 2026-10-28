@@ -13,14 +13,14 @@
 // the fetch handed to makePlan.
 //
 //   needs: node >= 22
-//   TEXT_API_KEY=<key> [TEXT_MODEL=<model>] [NEW_AGENT_USD=1.50] \
+//   TEXT_API_KEY=<key> TEXT_MODEL=<model> (or AGENT_MODEL) [NEW_AGENT_USD=1.50] \
 //     node plan.mjs --job <job folder> --records <records folder> --work <work folder> \
 //       --text-file <message file> [--file <path>::<media type>]...
 //   exit 0 a plan was written, 2 arguments missing, 3 nothing to plan (the reply says why)
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { readRequest } from "./request.mjs";
-import { DEFAULT_MODEL, askModel, buildPrompt, modelSummary } from "./ask.mjs";
+import { NO_MODEL, askModel, buildPrompt, modelOf, modelSummary } from "./ask.mjs";
 import { checkPlan, NEW_AGENT_USD_DEFAULT } from "./check.mjs";
 import { plan as piecesPlan, fill } from "./pieces.mjs";
 import { note, sentence } from "./went-without.mjs";
@@ -128,8 +128,12 @@ export async function makePlan({ env = process.env, argv = process.argv.slice(2)
     const request = readRequest({ text: readText(args.textFile), files: filesOf(args.files) });
     if (!request.ok) return stop(3, request.reply);
 
-    // No TEXT_MODEL means the default, Claude Sonnet on Vertex AI.
-    const model = String(env.TEXT_MODEL ?? "").trim() || DEFAULT_MODEL;
+    // The install's model: TEXT_MODEL, else AGENT_MODEL. There is no default.
+    const model = modelOf(env);
+    if (!model) {
+      seen.notes.push({ wanted: "a model to draft the plan", did: "stopped without a plan", why: NO_MODEL });
+      return stop(3, `I cannot plan this now: ${NO_MODEL}, so no plan was made.`);
+    }
     const key = String(env.TEXT_API_KEY ?? "").trim();
     if (!key) {
       seen.notes.push({ wanted: "a model to draft the plan", did: "stopped without a plan", why: "TEXT_API_KEY is not set" });

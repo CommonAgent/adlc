@@ -319,6 +319,7 @@ test("a whole job: two files placed, both addresses read back, and the pieces fi
 
     const listed = JSON.parse(readFileSync(join(at.job, "pieces.json"), "utf8"));
     assert.deepEqual(listed.map((e) => e.name), ["address", "publication record"]);
+    assert.equal(listed[1].media_type, "application/vnd.agentmesh.publication-record+json");
     assert.equal(readFileSync(join(at.job, "out", "addresses.txt"), "utf8").trim().split("\n").length, 2);
     assert.match(out.reply, /2 files are published/);
     assert.equal(out.reply.includes("—"), false);

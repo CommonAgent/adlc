@@ -23,7 +23,7 @@ All platform activity records and agent records for the failure window read, has
 
 ## What it produces
 
-- record inventory (application/json, per task)
+- record inventory (application/vnd.agentmesh.record-inventory+json, per task)
 
 ## When it comes back empty
 

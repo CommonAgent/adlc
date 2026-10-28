@@ -50,7 +50,7 @@ export function plan({ served = [], recordPath = "" }) {
   copies.push({ from: recordPath, to: "out/published.json", what: "the publication record" });
   entries.push({
     name: "publication record", step: STEP_OF["publication record"], path: "out/published.json",
-    media_type: "application/json", produced_from: ["address"],
+    media_type: "application/vnd.agentmesh.publication-record+json", produced_from: ["address"],
     about: "What was published where, with the digest of each file as it was read back from its address. This is what somebody checks a year later to know that what is served is what was handed over.",
   });
 

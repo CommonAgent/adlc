@@ -36,12 +36,12 @@ export function plan({ incidentPath = "", timelinePath = "" } = {}) {
     entries: [
       {
         name: "incident record", step: STEP_OF["incident record"], path: "out/incident.json",
-        media_type: "application/json", produced_from: ["agent handle", "failure time", "records"],
+        media_type: "application/vnd.agentmesh.incident-record+json", produced_from: ["agent handle", "failure time", "records"],
         about: "The incident record: each fact the records state, with the file it came from, that file's digest and the byte offset of the line, and every gap where the records say nothing. It names no cause and no fix.",
       },
       {
         name: "timeline", step: STEP_OF.timeline, path: "out/timeline.json",
-        media_type: "application/json", produced_from: ["records"],
+        media_type: "application/vnd.agentmesh.incident-timeline+json", produced_from: ["records"],
         about: "The timeline the record was written from: the events in time order and the intervals where no record was found, each marked unknown rather than filled in.",
       },
     ],

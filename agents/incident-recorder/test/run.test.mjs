@@ -106,7 +106,8 @@ test("the run command reads the message, records the incident and timeline, and 
   const pieces = json(join(r.jobDir, "pieces.json"));
   assert.deepEqual(pieces.map((p) => p.name), ["incident record", "timeline"]);
   assert.deepEqual(pieces.map((p) => p.path), ["out/incident.json", "out/timeline.json"]);
-  assert.ok(pieces.every((p) => p.step === "write-incident-record" && p.media_type === "application/json"));
+  assert.ok(pieces.every((p) => p.step === "write-incident-record"));
+  assert.deepEqual(pieces.map((p) => p.media_type).sort(), ["application/vnd.agentmesh.incident-record+json", "application/vnd.agentmesh.incident-timeline+json"]);
   assert.deepEqual(json(join(r.jobDir, "out", "incident.json")), incident);
   assert.deepEqual(json(join(r.jobDir, "out", "timeline.json")), timeline);
 

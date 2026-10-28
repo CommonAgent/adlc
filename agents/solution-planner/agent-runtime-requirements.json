@@ -17,7 +17,7 @@
       "settings": [
         {
           "env": "TEXT_MODEL",
-          "purpose": "the model that drafts the plan. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI, paid for with a token from the machine it runs on, and the credential is then where to call, <project>/<location>. When it is absent the model is the google-vertex-anthropic/ name with claude-sonnet-5-5 after it. A bare name is a Gemini model at Google and the credential is its key. Any other name with a provider in front is refused in words."
+          "purpose": "the model that drafts the plan. The package names no model of its own: absent, the model the host runs agents on (AGENT_MODEL) is used, and with neither the job is refused in words. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI, paid for with a token from the machine it runs on, and the credential is then where to call, <project>/<location>. A bare name is a Gemini model at Google and the credential is its key. Any other name with a provider in front is refused in words."
         },
         {
           "env": "NEW_AGENT_USD",

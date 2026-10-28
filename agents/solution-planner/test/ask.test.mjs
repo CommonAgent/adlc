@@ -17,7 +17,7 @@
 // Run: node --test test/ask.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_MODEL, askModel, buildPrompt, modelRoute, modelSummary, readAnswer, shapeProblems, vertexCost } from "../scripts/ask.mjs";
+import { NO_MODEL, askModel, buildPrompt, modelOf, modelRoute, modelSummary, readAnswer, shapeProblems, vertexCost } from "../scripts/ask.mjs";
 
 const MODEL = "google-vertex-anthropic/claude-sonnet-5-5";
 const WHERE = "test-project/us";
@@ -51,11 +51,10 @@ const vertex = (answer) => async (url, init) => (String(url).startsWith("http://
 const messagesOf = (init) => JSON.parse(init.body).messages.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))).join("\n");
 const header = (init, name) => Object.entries(init.headers || {}).find(([k]) => k.toLowerCase() === name)?.[1];
 
-test("a google-vertex-anthropic name is Vertex, a blank name is the Vertex default, and a bare name is Gemini", () => {
+test("a google-vertex-anthropic name is Vertex, a blank name reaches nothing, and a bare name is Gemini", () => {
   assert.equal(modelRoute(MODEL).provider, "vertex");
-  assert.equal(modelRoute("").provider, "vertex");
-  assert.equal(modelRoute(undefined).model, DEFAULT_MODEL);
-  assert.equal(DEFAULT_MODEL, "google-vertex-anthropic/claude-sonnet-5-5");
+  assert.equal(modelRoute("").provider, "none");
+  assert.equal(modelRoute(undefined).model, "");
   assert.equal(modelRoute("gemini-2.5-flash").provider, "gemini");
   assert.equal(modelRoute("anthropic/claude-sonnet-5.5").provider, "none");
 });
@@ -72,13 +71,19 @@ test("a model name with any other provider in front is refused in words and noth
   assert.match(out.problems[0], /Gemini/);
 });
 
-test("a blank model name is called at Vertex as Claude Sonnet", async () => {
+test("the package names no model: a blank name calls nothing and says no model is configured", async () => {
   const seen = [];
   const out = await askModel({ prompt: "P", model: "", key: WHERE,
     fetchImpl: vertex(async (url) => { seen.push(url); return reply(JSON.stringify(VALID)); }) });
-  assert.deepEqual(seen, [RAW_PREDICT]);
-  assert.equal(out.failed, false);
-  assert.equal(out.calls[0].model, DEFAULT_MODEL);
+  assert.deepEqual(seen, [], "no fetch at all");
+  assert.equal(out.failed, true);
+  assert.equal(out.problems[0], NO_MODEL);
+});
+
+test("the model is TEXT_MODEL, else AGENT_MODEL, else none", () => {
+  assert.equal(modelOf({ TEXT_MODEL: "a", AGENT_MODEL: "b" }), "a");
+  assert.equal(modelOf({ TEXT_MODEL: " ", AGENT_MODEL: "b" }), "b");
+  assert.equal(modelOf({}), "");
 });
 
 test("the description sits between the marker lines as content, once, after the instruction", () => {
@@ -148,14 +153,14 @@ test("an answer that is not JSON or breaks the shape is rejected with the proble
   assert.ok(wrong.problems.length > 0);
 });
 
-test("every call is recorded with model, tokens and the cost worked out from the tokens", async () => {
+test("every call is recorded with model and tokens, and a Vertex call states no cost", async () => {
   const out = await askModel({ prompt: "P", model: MODEL, key: WHERE, fetchImpl: vertex(async () => reply(JSON.stringify(VALID))) });
   assert.equal(out.calls.length, 1);
   assert.equal(out.calls[0].model, MODEL);
   assert.equal(out.calls[0].tokens_in, 1000);
   assert.equal(out.calls[0].tokens_out, 200);
-  assert.equal(out.calls[0].cost_usd, vertexCost(MODEL, 1000, 200));
-  assert.equal(out.calls[0].cost_usd, 0.0044);
+  assert.equal(out.calls[0].cost_usd, vertexCost());
+  assert.equal(out.calls[0].cost_usd, null);
 });
 
 test("a first answer that is not JSON is asked again once with the problems appended", async () => {
@@ -202,12 +207,13 @@ test("the model block adds up the calls and their costs", () => {
     { model: MODEL, tokens_in: 500, tokens_out: 100, cost_usd: 0.5 },
   ]);
   assert.deepEqual(model, { name: MODEL, calls: 2, tokens_in: 1500, tokens_out: 300, cost_usd: 0.75 });
+  const unpriced = modelSummary([{ model: MODEL, tokens_in: 10, tokens_out: 2, cost_usd: null }]);
+  assert.equal(unpriced.cost_usd, null, "no call stated a cost, so none is stated");
 });
 
-// Claude on Google Vertex AI (since 2026-09-29, the only way since 2026-10-03):
-// the credential says where to call, the job's own token pays, and the cost is the
-// tokens at the published price, since Vertex reports no money.
-test("a google-vertex-anthropic model is called at Vertex with the metadata server's token and priced from its tokens", async () => {
+// Claude on Google Vertex AI: the credential says where to call, the job's own
+// token pays, and no cost is stated, since Vertex reports no money.
+test("a google-vertex-anthropic model is called at Vertex with the metadata server's token", async () => {
   const model = "google-vertex-anthropic/claude-sonnet-5-5";
   assert.equal(modelRoute(model).provider, "vertex");
   const seen = [];
@@ -228,7 +234,7 @@ test("a google-vertex-anthropic model is called at Vertex with the metadata serv
   const body = JSON.parse(call.init.body);
   assert.equal(body.anthropic_version, "vertex-2023-10-16");
   assert.equal(body.model, undefined);
-  assert.deepEqual(out.calls, [{ model, tokens_in: 10000, tokens_out: 1000, cost_usd: 0.033 }]);
+  assert.deepEqual(out.calls, [{ model, tokens_in: 10000, tokens_out: 1000, cost_usd: null }]);
   assert.equal(modelSummary(out.calls).name, model, "the full name, so the platform can price it");
 });
 

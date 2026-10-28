@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "planner",
-  "version": "0.3.0",
-  "description": "The solution planner behind the AgentMesh Build page. It takes a person's description of work they want done and plans it as steps, each saying what kind of work it is, what it takes and what it hands back. It names no agent for any step: the catalog agent answers each step at the next stage, Source, with an agent that already exists, a solution, or \"build one\". The plan is checked in code before it is written. It hands the plan back to the platform, never to a person directly. Its handle is solution-planner.platform@agentmesh.ai, and it is a Mesh Provided Agent on the platform account.",
+  "version": "0.3.1",
+  "description": "Plans a described piece of work as steps, each saying what kind of work it is, what it takes and what it hands back. It names no agent for any step: the catalog answers each step at the next stage, Source, with an agent that already exists, a solution, or a new agent to build. The plan is checked in code before it is written, and it is handed back to whoever asked for it.",
   "author": {
     "name": "Agent Builder"
   },

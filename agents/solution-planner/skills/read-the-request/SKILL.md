@@ -13,7 +13,7 @@ first, on every job
 
 ## What this needs
 
-- request (application/json, required)
+- request (application/vnd.agentmesh.build-request+json, required)
 
 ## What a good result looks like
 
@@ -21,7 +21,7 @@ The description, and the earlier plan and change when given, read from the reque
 
 ## What it produces
 
-- the reading (application/json, per task)
+- the reading (application/vnd.agentmesh.build-request-reading+json, per task)
 
 ## When it comes back empty
 

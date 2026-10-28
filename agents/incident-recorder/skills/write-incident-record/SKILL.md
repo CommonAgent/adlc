@@ -13,8 +13,8 @@ after the timeline is constructed and gaps are identified
 
 ## What this needs
 
-- timeline (application/json, required)
-- record inventory (application/json, required)
+- timeline (application/vnd.agentmesh.incident-timeline+json, required)
+- record inventory (application/vnd.agentmesh.record-inventory+json, required)
 
 ## What a good result looks like
 
@@ -22,8 +22,8 @@ The incident record and timeline written to the job folder as files, with every 
 
 ## What it produces
 
-- incident record (application/json, per task)
-- timeline (application/json, per task)
+- incident record (application/vnd.agentmesh.incident-record+json, per task)
+- timeline (application/vnd.agentmesh.incident-timeline+json, per task)
 
 ## When it comes back empty
 

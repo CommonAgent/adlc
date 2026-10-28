@@ -13,7 +13,7 @@ after the request is read and is work to plan
 
 ## What this needs
 
-- the reading (application/json, required)
+- the reading (application/vnd.agentmesh.build-request-reading+json, required)
 
 ## What a good result looks like
 
@@ -21,8 +21,8 @@ One plan in build-plan-v1 shape, as JSON only, whose steps say what each takes, 
 
 ## What it produces
 
-- draft plan (application/json, per task)
-- model calls (application/json, per task)
+- draft plan (application/vnd.agentmesh.build-plan+json, per task)
+- model calls (application/vnd.agentmesh.model-calls+json, per task)
 
 ## When it comes back empty
 
@@ -30,7 +30,7 @@ If the answer is not JSON or fails the shape checks, the same request goes once 
 
 ## How to do it
 
-Call the model named in TEXT_MODEL. A name starting google-vertex-anthropic/, with claude-sonnet-5-5 after it, is Claude on Google Vertex AI: it is called at the Vertex address for the project and location the credential names (<project>/<location>), with a token from the job's own service account read from the metadata server, and its cost is its tokens at the published price. When TEXT_MODEL is absent the model is the google-vertex-anthropic/ name with claude-sonnet-5-5 after it. A bare name is a Gemini model at Google, called with the credential as its key. Any other name with a provider in front is refused in words and nothing is called. Hand it the instruction, the description between the marker lines, and the earlier plan and the change (with the instruction to revise rather than start again). Tell it to name no agent and no offering, and to say for each step what kind of work it is, what it takes and what it hands back, each with a kind from the fixed list. Give either service an output budget of 32,000 tokens (max_tokens for Claude, maxOutputTokens for Gemini) and read the finish reason: an answer that stopped at its limit is a failure that says it was cut at its limit, is never read as whole and is not asked again with the same budget. Read every part of a Gemini answer, its thinking left out. Record each call's model, tokens and cost.
+Call the model the install names in TEXT_MODEL, or else AGENT_MODEL; the package names none of its own, and with neither set the job is refused in words and nothing is called. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI: it is called at the Vertex address for the project and location the credential names (<project>/<location>), with a token from the job's own service account read from the metadata server; Vertex reports tokens and not money, so its cost is left for the platform to price. A bare name is a Gemini model at Google, called with the credential as its key. Any other name with a provider in front is refused in words and nothing is called. Hand it the instruction, the description between the marker lines, and the earlier plan and the change (with the instruction to revise rather than start again). Tell it to name no agent and no offering, and to say for each step what kind of work it is, what it takes and what it hands back, each with a kind from the fixed list. Give either service an output budget of 32,000 tokens (max_tokens for Claude, maxOutputTokens for Gemini) and read the finish reason: an answer that stopped at its limit is a failure that says it was cut at its limit, is never read as whole and is not asked again with the same budget. Read every part of a Gemini answer, its thinking left out. Record each call's model and tokens, and its cost where the service states one.
 
 ## Scripts
 

@@ -5,16 +5,18 @@
 // of work each is, what it takes and what it hands back. Since 0.3.0 it is
 // handed no catalog and names no agent, because the catalog agent answers each
 // step at Source; everything else about the plan is checked in code
-// afterwards. A google-vertex-anthropic/ name is Claude on Vertex AI (see
-// VERTEX below), and no name at all is Claude Sonnet on Vertex, the default.
-// A bare name is a Gemini model at Google. Any other name with a provider in
+// afterwards. The model is the one the install sets, TEXT_MODEL or else
+// AGENT_MODEL; this package names none of its own, and with neither set no
+// call is made. A google-vertex-anthropic/ name is Claude on Vertex AI (see
+// VERTEX below). A bare name is a Gemini model at Google. Any other name with a provider in
 // front is refused in words, with nothing fetched: since 2026-10-03 (owner)
 // every Claude call goes through Vertex and no other model service is reached.
 // The description sits between marker lines as content, never as instructions.
 // An answer that is not JSON, or fails the shape checks, is asked again once
 // with the problems appended and never a third time; after two failures there
 // is no plan, and nothing here writes one to fill the gap. Every call is
-// recorded with model, tokens and cost. The fetch is handed in and the key is
+// recorded with model and tokens; the cost of a Vertex call is not stated here
+// (Vertex reports tokens, and the platform prices them). The fetch is handed in and the key is
 // passed in, never read from the environment here.
 //
 // 0.2.0 (docs/handoff-audit.md P15): each candidate's description goes whole
@@ -37,23 +39,27 @@ const STATUSES = ["exists", "named", "new"];
 
 const isObject = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 
-/** Claude on Google Vertex AI (since 2026-09-29, and the only way Claude is
- *  reached since 2026-10-03). A google-vertex-anthropic/<id> name is called at Vertex with a token
- *  from the job's own service account (the metadata server, fetched with the
- *  same fetch), and the credential is not a key but where to call:
- *  "<project>/<location>". Vertex reports tokens and not money, so the cost is
- *  the tokens at the published US multi-region price, and the platform's day
- *  budget adds that up. */
+/** Claude on Google Vertex AI. A google-vertex-anthropic/<id> name is called
+ *  at Vertex with a token from the job's own service account (the metadata
+ *  server, fetched with the same fetch), and the credential is not a key but
+ *  where to call: "<project>/<location>". */
 export const VERTEX = "google-vertex-anthropic";
-export const DEFAULT_MODEL = `${VERTEX}/claude-sonnet-5-5`;
 export const METADATA_TOKEN_URL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-/** USD per million tokens, in and out (Vertex pricing page, US multi-region, 2026-09-29). */
-export const VERTEX_PRICES = { "claude-sonnet-5-5": [2.2, 11], "claude-haiku-4-5": [1.1, 5.5] };
 
-export function vertexCost(model, tokensIn, tokensOut) {
-  const id = String(model ?? "").trim().replace(`${VERTEX}/`, "").split("@")[0];
-  const [i, o] = VERTEX_PRICES[id] ?? [2.2, 11];
-  return Math.round(((tokensIn || 0) * i + (tokensOut || 0) * o) / 1e6 * 1e8) / 1e8;
+/** The model, from the install's settings: TEXT_MODEL, the text-reasoning
+ *  system's own setting, else AGENT_MODEL, the model the host runs agents on.
+ *  The package names no model of its own, because a model named in a package
+ *  is a rebuild waiting to happen: models are retired on somebody else's
+ *  schedule. With neither set, the job is refused in words (NO_MODEL). */
+export const MODEL_SETTINGS = ["TEXT_MODEL", "AGENT_MODEL"];
+export const modelOf = (env = {}) => MODEL_SETTINGS.map((k) => String(env[k] ?? "").trim()).find(Boolean) ?? "";
+export const NO_MODEL = "no model is configured: the install sets TEXT_MODEL (the text-reasoning system's model) or AGENT_MODEL (the model the host runs agents on), and this package names none of its own";
+
+/** Vertex reports tokens and not money, and a price table would name models,
+ *  so the cost is not stated here: the tokens are recorded, and the platform
+ *  prices them against the planner's day budget. */
+export function vertexCost() {
+  return null;
 }
 
 function vertexUrl(model, where) {
@@ -75,7 +81,8 @@ async function metadataToken(fetchImpl, signal) {
 
 /** Where a model name is reached. */
 export function modelRoute(model) {
-  const name = String(model ?? "").trim() || DEFAULT_MODEL;
+  const name = String(model ?? "").trim();
+  if (!name) return { provider: "none", url: "", model: "" };
   if (name.startsWith(`${VERTEX}/`)) return { provider: "vertex", url: "", model: name };
   if (name.includes("/")) return { provider: "none", url: "", model: name };
   return { provider: "gemini", url: `${GEMINI_BASE}/${encodeURIComponent(name)}:generateContent`, model: name };
@@ -184,11 +191,12 @@ export function readAnswer(text) {
 }
 
 /** The model block of a plan, from the calls made. The cost is each call's
- *  cost, added up. */
+ *  stated cost, added up, or null when no call stated one (a Vertex call
+ *  states none: the platform prices its tokens). */
 export function modelSummary(calls = []) {
   const sum = (k) => calls.reduce((n, c) => n + (Number.isFinite(c[k]) ? c[k] : 0), 0);
   const named = [...calls].reverse().find((c) => c.model && !c.error);
-  const cost = Math.round(sum("cost_usd") * 1e8) / 1e8;
+  const cost = calls.some((c) => Number.isFinite(c.cost_usd)) ? Math.round(sum("cost_usd") * 1e8) / 1e8 : null;
   return {
     name: named?.model ?? calls[calls.length - 1]?.model ?? "",
     calls: calls.length,
@@ -229,7 +237,7 @@ function answerOf(route, doc) {
       model: route.model,
       tokens_in: tin,
       tokens_out: tout,
-      cost_usd: vertexCost(route.model, tin, tout),
+      cost_usd: vertexCost(),
       cut: doc?.stop_reason === "max_tokens",
     };
   }
@@ -253,6 +261,7 @@ async function callOnce({ route, key, prompt, fetchImpl, timeoutMs }) {
   });
   try {
     const go = (async () => {
+      if (route.provider === "none" && !route.model) throw new Error(NO_MODEL);
       if (route.provider === "none") throw new Error(`the model ${route.model} is not one this agent reaches: name a ${VERTEX}/<id> model (Claude on Vertex AI) or a bare Gemini name`);
       const token = route.provider === "vertex" ? await metadataToken(fetchImpl, controller.signal) : "";
       const { url, init } = requestFor(route, key, prompt, token);

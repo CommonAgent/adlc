@@ -21,7 +21,7 @@ Every file read into memory once, hashed, and its real type taken from its bytes
 
 ## What it produces
 
-- the reading (application/json, per task)
+- the reading (application/vnd.agentmesh.publish-reading+json, per task)
 
 ## When it comes back empty
 

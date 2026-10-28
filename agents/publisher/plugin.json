@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "publisher",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Puts finished files where a person can open them. It writes under the one folder it was bound to and nowhere else, reads every byte before it goes, and reads back what is served to check it matches what it was handed. It answers with the address and the digest of what is there.",
   "license": "Apache-2.0",
   "author": {

@@ -1,6 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.2",
+  "agent_version": "0.1.3",
+  "name": "Incident recorder",
+  "summary": "Writes the record of an incident when an agent goes quiet or a job fails: a timeline of what the records show, each fact with its source.",
+  "will_not": [
+    "It will not guess the cause of an incident.",
+    "It will not propose a fix.",
+    "It will not contact the agent the incident is about.",
+    "It will not fill a gap in the records; it marks the gap as unknown.",
+    "It will not reach any system beyond the records it is given."
+  ],
   "does": "Records an incident when a fleet agent goes quiet or a job fails. Reads platform activity records and the agent's own records around the failure window, builds a strict chronological timeline of known facts and gaps, and writes an incident record attributing every fact to its source. Never guesses causes, never proposes fixes, and never contacts the agent.",
   "offerings": [
     {
@@ -11,28 +20,31 @@
         {
           "name": "agent handle",
           "kind": "identifier",
-          "required": true
+          "required": true,
+          "given_by": "either"
         },
         {
           "name": "failure time",
           "kind": "text",
-          "required": true
+          "required": true,
+          "given_by": "either"
         },
         {
           "name": "records",
           "kind": "document",
-          "required": false
+          "required": false,
+          "given_by": "either"
         }
       ],
       "outputs": [
         {
           "name": "incident record",
-          "kind": "application/json",
+          "kind": "application/vnd.agentmesh.incident-record+json",
           "when": "per_task"
         },
         {
           "name": "timeline",
-          "kind": "application/json",
+          "kind": "application/vnd.agentmesh.incident-timeline+json",
           "when": "per_task"
         }
       ],
@@ -51,23 +63,26 @@
             {
               "name": "agent handle",
               "kind": "identifier",
-              "required": true
+              "required": true,
+              "given_by": "either"
             },
             {
               "name": "failure time",
               "kind": "text",
-              "required": true
+              "required": true,
+              "given_by": "either"
             },
             {
               "name": "records",
               "kind": "document",
-              "required": false
+              "required": false,
+              "given_by": "either"
             }
           ],
           "outputs": [
             {
               "name": "record inventory",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.record-inventory+json",
               "when": "per_task"
             }
           ],
@@ -85,14 +100,15 @@
           "inputs": [
             {
               "name": "record inventory",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.record-inventory+json",
+              "required": true,
+              "given_by": "agent"
             }
           ],
           "outputs": [
             {
               "name": "timeline",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.incident-timeline+json",
               "when": "per_task"
             }
           ],
@@ -110,24 +126,26 @@
           "inputs": [
             {
               "name": "timeline",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.incident-timeline+json",
+              "required": true,
+              "given_by": "agent"
             },
             {
               "name": "record inventory",
-              "kind": "application/json",
-              "required": true
+              "kind": "application/vnd.agentmesh.record-inventory+json",
+              "required": true,
+              "given_by": "agent"
             }
           ],
           "outputs": [
             {
               "name": "incident record",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.incident-record+json",
               "when": "per_task"
             },
             {
               "name": "timeline",
-              "kind": "application/json",
+              "kind": "application/vnd.agentmesh.incident-timeline+json",
               "when": "per_task"
             }
           ],
@@ -138,6 +156,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -175,5 +208,6 @@
       "when": "per_task",
       "file": "*/went-without.json"
     }
-  ]
+  ],
+  "can_use": []
 }
