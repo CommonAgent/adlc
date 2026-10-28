@@ -139,26 +139,48 @@ test("an agent that came through every stage passes its stage records", async ()
   assert.equal(p.ledger.filter((x) => x.blocks.includes("promote")).length, 0);
 });
 
-test("a delivery signed by someone who holds no stage is not a stage's record", async () => {
+test("a delivery signed by someone who holds no stage is a stage's record when the message names it for the stage", async () => {
   const w = world();
-  const p = fakePlatform(w.routes);
   const code = signManifest([{ name: "run.mjs", digest: sha256(Buffer.from(w.pkg.files["skills/summarize/scripts/run.mjs"])) }], w.keys.stranger.seed);
-  const out = await runJob(jobWith(`agent: ${HANDLE}\n`, { "code.manifest.json": code }).argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
-  assert.equal(out.stages.find((s) => s.stage === "code").state, "missing");
+  const unnamed = await runJob(jobWith(`agent: ${HANDLE}\n`, { "code.manifest.json": code }).argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
+  assert.equal(unnamed.stages.find((s) => s.stage === "code").state, "missing", "unnamed, a stranger's delivery belongs to no stage");
+  const named = await runJob(jobWith(`agent: ${HANDLE}\ncode: code.manifest.json\n`, { "code.manifest.json": code }).argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
+  assert.equal(named.stages.find((s) => s.stage === "code").state, "present", "any signer counts when the record is signed and bound");
 });
 
-test("a build record signed by a key that is not the package maker's is unsigned, and one for another digest is stale", async () => {
+test("a build record signed by a key that is not the package maker's counts, one that does not verify is unsigned, and one for another digest is stale", async () => {
   const w = world();
   const req = w.routes[Object.keys(w.routes).find((k) => k.includes("stage-records"))].body.requests[0];
   req.build_record = signRecord({ ...req.build_record, signatures: undefined }, "agent-build-record-v1", w.keys.stranger.seed);
-  const p = fakePlatform(w.routes);
-  const out = await runJob(jobWith(`agent: ${HANDLE}\n`).argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
-  assert.equal(out.stages.find((s) => s.stage === "build-record").state, "unsigned");
+  const out = await runJob(jobWith(`agent: ${HANDLE}\n`).argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
+  assert.equal(out.stages.find((s) => s.stage === "build-record").state, "present");
+  const wb = world();
+  const rb = wb.routes[Object.keys(wb.routes).find((k) => k.includes("stage-records"))].body.requests[0];
+  rb.build_record = { ...rb.build_record, produced_at: "2026-01-01T00:00:00Z" };
+  const outb = await runJob(jobWith(`agent: ${HANDLE}\n`).argv, env(wb), { fetchImpl: fakePlatform(wb.routes).fetchImpl, now: NOW });
+  assert.equal(outb.stages.find((s) => s.stage === "build-record").state, "unsigned", "a record changed after signing does not verify");
   const w2 = world();
   const r2 = w2.routes[Object.keys(w2.routes).find((k) => k.includes("stage-records"))].body.requests[0];
   r2.build_record = signRecord({ ...r2.build_record, signatures: undefined, package: { ...r2.build_record.package, sha256: "f".repeat(64) } }, "agent-build-record-v1", w2.keys["package-maker.platform@agentmesh.ai"].seed);
   const out2 = await runJob(jobWith(`agent: ${HANDLE}\n`).argv, env(w2), { fetchImpl: fakePlatform(w2.routes).fetchImpl, now: NOW });
   assert.equal(out2.stages.find((s) => s.stage === "build-record").state, "stale");
+});
+
+test("an info check is shown in the report, never counted toward the verdict, and never filed", async () => {
+  const w = world();
+  const p = fakePlatform(w.routes);
+  const checklist = "---\nschema: https://schemas.agentmesh.ai/audit-checklist/v1\nname: A small checklist\napproved_by: owner@example.com\napproved_at: 2026-10-28\n---\n\n```yaml\nid: registered\nsays: It is registered.\nwhy: r\nkind: run-time\ncheck: registered\nfixed-by: deploy\nlevel: refuse\napplies: new agents from 2026-10-28; existing agents from not set\nevidence: e\n```\n\n```yaml\nid: stage-record-architecture\nsays: An architecture record is on file.\nwhy: a\nkind: stage-record\ncheck: stage-record:architecture\nfixed-by: architecture\nlevel: info\napplies: new agents from 2026-10-28; existing agents from not set\nevidence: e\n```\n\n```yaml\nid: something-optional\nsays: Something nobody tests yet.\nwhy: w\nkind: design-time\ncheck: nobody-registered-this\nfixed-by: design\nlevel: info\napplies: new agents from 2026-10-28; existing agents from not set\nevidence: e\n```\n";
+  const j = jobWith(`agent: ${HANDLE}\nversion: 1.0.0\n`, { "checklist.md": checklist });
+  const out = await runJob(j.argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
+  assert.equal(out.code, 0, out.reply);
+  const arch = out.checks.find((c) => c.id === "stage-record-architecture");
+  assert.deepEqual([arch.result, arch.level], ["fail", "info"]);
+  assert.equal(out.checks.find((c) => c.id === "something-optional").level, "info");
+  assert.equal(out.verdict, "pass", "a missing optional record and an unregistered info check change nothing");
+  assert.equal(p.ledger.length, 0, "nothing is filed for an info check");
+  const text = readFileSync(join(j.job, "out", "audit-report.md"), "utf8");
+  assert.match(text, /Info checks, shown as evidence on file and not counted toward the verdict/);
+  assert.match(text, /\*\*stage-record-architecture\*\* \(stage-record, `stage-record:architecture`, info\): \*\*not on file\*\*/);
 });
 
 test("a check with no registered test is reported as not checked, never skipped", async () => {

@@ -5,6 +5,7 @@
 // cannot be changed after the report is signed.
 //
 // The verdict:
+// Info checks are shown under Rule checks and never count toward it.
 //   fail                 any finding at level refuse, as it applies to this agent
 //   pass_with_findings   no refusal, and any warning or anything not checked
 //   pass                 every check passed and nothing went unchecked
@@ -50,27 +51,35 @@ export function writeReport({ facts, checklist, lines, results, findings, notChe
     "",
   ];
   const B = [];
-  const count = (r) => results.filter((x) => x.result === r).length;
+  const required = results.filter((x) => (x.level_applied ?? x.level) !== "info");
+  const info = results.filter((x) => (x.level_applied ?? x.level) === "info");
+  const count = (r) => required.filter((x) => x.result === r).length;
   B.push(`# Audit of ${facts.handle} ${t.version ?? "(no version on record)"}`);
   B.push("");
-  B.push(`Verdict: **${verdict}**. ${results.length} checks from ${checklist.name} (${checklist.digest}): ${count("pass")} passed, ${count("fail")} failed, ${count("not checked")} not checked. ${findings.filter((f) => f.level === "refuse").length} finding(s) refuse and ${findings.filter((f) => f.level === "warn").length} warn.`);
+  B.push(`Verdict: **${verdict}**. ${required.length} required checks from ${checklist.name} (${checklist.digest}): ${count("pass")} passed, ${count("fail")} failed, ${count("not checked")} not checked. ${findings.filter((f) => f.level === "refuse").length} finding(s) refuse and ${findings.filter((f) => f.level === "warn").length} warn.${info.length ? ` ${info.length} info check(s) are shown as evidence and not counted: ${info.filter((x) => x.result === "pass").length} on file, ${info.filter((x) => x.result !== "pass").length} not on file.` : ""}`);
   B.push("");
   B.push(`The audited package is ${t.digest ?? "not on record"}, chosen by ${t.how}. The agent was read on ${facts.dev.origin}${facts.prod ? ` and ${facts.prod.origin}` : ""}, registered as ${facts.dev.key ?? "nothing"}. ${facts.firstReleased ? `Its first release on record is ${facts.firstReleased}.` : "No release of it is on record, so it is read as an existing agent."} This report expires ${expires}.`);
   B.push("");
 
   B.push("## Stage records");
   B.push("");
-  B.push("One line per lifecycle stage: whether its record is present, signed by the stage's holder, and bound to this package digest.");
+  B.push("One line per lifecycle stage: whether its record is present, signed (by whoever made it; the stage's holder is named when it was the signer), and bound to this package digest.");
   B.push("");
   for (const l of lines) {
-    B.push(`- **${l.asset}** (${l.made_at}): **${l.state}**. Present ${yes(l.present)}, signed by its holder ${yes(l.signed)}, bound to this digest ${yes(l.bound)}. ${one(l.evidence)}`);
+    B.push(`- **${l.asset}** (${l.made_at}): **${l.state}**. Present ${yes(l.present)}, signed ${yes(l.signed)}, bound to this digest ${yes(l.bound)}. ${one(l.evidence)}`);
   }
   B.push("");
 
   B.push("## Rule checks");
   B.push("");
-  for (const r of results) {
+  for (const r of required) {
     B.push(`- **${r.id}** (${r.kind}, \`${r.check}\`, ${r.level_applied ?? r.level}): **${r.result}**. ${one(r.evidence)}`);
+  }
+  if (info.length) {
+    B.push("");
+    B.push("Info checks, shown as evidence on file and not counted toward the verdict:");
+    B.push("");
+    for (const r of info) B.push(`- **${r.id}** (${r.kind}, \`${r.check}\`, info): **${r.result === "pass" ? "on file" : r.result === "fail" ? "not on file" : "not checked"}**. ${one(r.evidence)}`);
   }
   B.push("");
 

@@ -12,7 +12,7 @@ The checklist is a standing asset: `standards/audit-checklist.md`, at the digest
 
 ## Stage records
 
-For each lifecycle stage the report gives one line: present, signed by the stage's holder, and bound to the package digest; or missing, unsigned, or stale (bound to another digest). Who holds each stage is `references/stage-holders.json`, resolved to keys on the platform. Where each record is found, and what binds it, is `references/how-each-stage-and-check-is-read.md`. A record is never called present on someone's word: an unsigned note in a records folder is not a stage's record.
+For each lifecycle stage the report gives one line: present, signed, and bound to the package digest; or missing, unsigned, or stale (bound to another digest). Any signed record bound to the digest counts, whoever signed it; no check requires a particular holder's signature. Where the signer is the stage's usual holder (`references/stage-holders.json`, resolved to keys on the platform), the line says so. A delivery manifest signed by anyone else is a stage's record when the message names it for that stage (`<stage>: <file name>`). Where each record is found, and what binds it, is `references/how-each-stage-and-check-is-read.md`. A record is never called present on someone's word: an unsigned note in a records folder is not a stage's record.
 
 ## Rule checks
 
@@ -21,6 +21,8 @@ Each checklist entry is run through the test registered for its `check`. Where a
 ## Levels and the verdict
 
 A finding has the check's level for a new agent, one first released on or after the check's first `applies` date. For an existing agent, a finding is a warning until the second date, which the owner sets; until then it reads "not set". An agent with no release on record is read as existing.
+
+A check at level `info` is shown in the report as evidence on file, whatever the dates. It never counts toward the verdict and is never filed. An organization may raise an info check to warn or refuse in its own checklist.
 
 - `fail`: a finding at level refuse.
 - `pass_with_findings`: no refusal, and a warning or something not checked.
@@ -44,4 +46,4 @@ A job that went ahead without something it takes says so in the reply. The recor
 
 ## Never
 
-Never approve, deploy or list. Never change what is audited. Never skip a check. Never call a record present that is not signed by its holder and bound to the digest. Never file the same debt twice. Never read anything a message names but the agent and its version. Never call a model.
+Never approve, deploy or list. Never change what is audited. Never skip a check. Never call a record present that is not signed and bound to the digest. Never file the same debt twice. Never read anything a message names but the agent and its version. Never call a model.

@@ -13,7 +13,7 @@ Once the agent and its records are read, before the checklist runs.
 
 ## What a good result looks like
 
-One line per stage, in the lifecycle's order: present, signed by its holder and bound to the package digest, or missing, unsigned or stale, with where it was found and why.
+One line per stage, in the lifecycle's order: present, signed (by whoever made it) and bound to the package digest, or missing, unsigned or stale, with where it was found and why.
 
 ## When it comes back empty
 

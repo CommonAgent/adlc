@@ -5,6 +5,9 @@
 //   version: <x.y.z>                      or
 //   package_digest: sha256:<64 hex>       either, or both; with neither, the
 //                                         version the agent serves on dev
+//   <stage>: <file name>                  optional: an attached delivery
+//                                         manifest that is this stage's record,
+//                                         whoever signed it
 // Attached files are known by what they hold, whatever kind they came under:
 //   - the checklist (Markdown whose checks are YAML blocks); without one, the
 //     checklist this package carries, standards/audit-checklist.md at the
@@ -23,6 +26,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 
 const trim = (s) => String(s ?? "").trim();
+/** The stages whose record is a delivery manifest (stages.mjs MANIFEST_STAGES). */
+const STAGE_NAMES = ["requirements", "architecture", "design", "impact", "test", "code", "review", "security"];
 
 /** The message's asks. */
 export function fromText(text = "") {
@@ -39,7 +44,14 @@ export function fromText(text = "") {
   let digest = line("package_digest") || line("digest");
   if (digest && /^[0-9a-f]{64}$/i.test(digest)) digest = `sha256:${digest}`;
   digest = digest.toLowerCase();
-  return { handle: handle.toLowerCase(), version: line("version").replace(/^v/, ""), digest, asksToApprove: asksForApproval(t) };
+  // Which attached delivery manifest is which stage's record, when its signer
+  // is not the stage's usual holder: `<stage>: <file name>[, <file name>]`.
+  const stages = {};
+  for (const st of STAGE_NAMES) {
+    const m = new RegExp(`^\\s*(?:[-*]\\s*)?${st}\\s*:\\s*(.+)$`, "im").exec(t);
+    if (m) stages[st] = m[1].split(",").map((x) => trim(x)).filter(Boolean);
+  }
+  return { handle: handle.toLowerCase(), version: line("version").replace(/^v/, ""), digest, stages, asksToApprove: asksForApproval(t) };
 }
 
 /** Whether the message asks the auditor to approve, deploy or list: it never does. */

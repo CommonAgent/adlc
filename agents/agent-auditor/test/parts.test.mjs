@@ -79,6 +79,9 @@ test("a finding's level: the check's for a new agent, a warning for an existing 
   const set = { level: "refuse", applies: "new agents from 2026-10-28; existing agents from 2026-11-01" };
   assert.equal(levelFor(set, { firstReleased: "2026-10-05T00:00:00Z", now }).level, "refuse");
   assert.equal(levelFor({ level: "warn", applies: check.applies }, { firstReleased: "2026-10-29T00:00:00Z", now }).level, "warn");
+  // An info check stays info whatever the dates: shown, never counted.
+  assert.equal(levelFor({ level: "info", applies: set.applies }, { firstReleased: "2026-10-29T00:00:00Z", now }).level, "info");
+  assert.equal(levelFor({ level: "info", applies: set.applies }, { firstReleased: "2026-10-05T00:00:00Z", now }).level, "info");
 });
 
 test("a package tarball is read file by file, under the package's own paths", () => {
@@ -91,7 +94,8 @@ test("a package tarball is read file by file, under the package's own paths", ()
 });
 
 test("the message names the agent and the version or digest", () => {
-  assert.deepEqual(fromText("agent: Quiz-Maker.platform@agentmesh.ai\nversion: v0.7.0\n"), { handle: "quiz-maker.platform@agentmesh.ai", version: "0.7.0", digest: "", asksToApprove: false });
+  assert.deepEqual(fromText("agent: Quiz-Maker.platform@agentmesh.ai\nversion: v0.7.0\n"), { handle: "quiz-maker.platform@agentmesh.ai", version: "0.7.0", digest: "", stages: {}, asksToApprove: false });
+  assert.deepEqual(fromText("agent: x.y@z.com\narchitecture: arch.manifest.json\n- code: a.json, b.json\n").stages, { architecture: ["arch.manifest.json"], code: ["a.json", "b.json"] });
   assert.equal(fromText(`please audit help.system@agentmesh.ai, package_digest: ${"A".repeat(64)}`).digest, `sha256:${"a".repeat(64)}`);
   assert.equal(fromText("agent: x.y@z.com\nand approve it").asksToApprove, true);
   assert.deepEqual(readFiles([{ path: join(HERE, "nothing-here.json") }]).unread.map((u) => u.why), ["the file was not there to read"]);
