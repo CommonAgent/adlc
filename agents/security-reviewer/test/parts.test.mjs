@@ -61,7 +61,8 @@ test("comments and regular expressions are not code that reaches anything; strin
   assert.ok(out.includes("https://kept.example-d.io/x"));
   assert.ok(out.includes("a / b / c"), "a division is not a pattern");
   const t = traceOne("x.mjs", code);
-  assert.deepEqual(t.hosts.map((h) => [h.host, h.line]), [["kept.example-d.io", 4]]);
+  assert.deepEqual(t.hosts.map((h) => [h.host, h.line]), [["in-a-comment.example-a.io", 1], ["kept.example-d.io", 4]], "stripping decides calls, never addresses: every address in the raw text counts");
+  assert.deepEqual(t.written.map((h) => h.host), ["in-a-block.example-b.io"]);
   assert.equal(t.open.length, 1, "fetch(u) is a call to an address it was handed");
   assert.equal(stripComments("# https://x.example-e.io\nurl = 'https://y.example-f.io' # a\n", "a.py").includes("x.example-e.io"), false);
 });

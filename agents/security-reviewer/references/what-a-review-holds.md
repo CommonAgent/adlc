@@ -71,8 +71,12 @@ every program is read for what it reaches:
   browser that routes none of its requests (it loads every address the pages
   pull in).
 
-Comments, tests, and names that are not places (XML namespaces, schema
-addresses, example hosts) are left out. The programs are read as text and not
+Every address in a program's text counts, comments included: where a comment
+starts and ends is what a package can make a reader misjudge, so an address in
+a comment that nothing covers is a refusal that names its file and line, and
+the author names it in a reason or takes it out. Names that are not places (XML
+namespaces, schema addresses, the reserved example hosts) are left out, and so
+is a test nothing traced loads. The programs are read as text and not
 run, and the review says that an address built from parts at run time is not
 seen.
 

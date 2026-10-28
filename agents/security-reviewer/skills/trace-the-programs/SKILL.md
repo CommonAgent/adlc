@@ -21,7 +21,7 @@ A package with no programs is a harness reading skills: the review says what it 
 
 ## How to do it
 
-Read every program the package carries as text with scripts/trace-programs.mjs, comments, patterns and tests left out, for each address written where it is fetched or called, each call to an address the program is handed, each environment variable that holds a credential, each command it starts, and whether a browser it drives routes its requests. Match each address by evidence only: the platform's own address for a system the package declares, the architecture record's egress (scripts/architecture.mjs reads the record), or a system whose reason names it. Name what nothing matches as undeclared. Run nothing: an address built at run time from parts it computes is not seen, and the review says so. Write <records>/<job id>/traced.json.
+Read every program the package carries as text with scripts/trace-programs.mjs, every address in it counted, comments included, and a test left out only when nothing traced loads it, for each address it writes down, each call to an address the program is handed, each environment variable that holds a credential, each command it starts, and whether a browser it drives routes its requests. Match each address by evidence only: the platform's own address for a system the package declares, the architecture record's egress (scripts/architecture.mjs reads the record), or a system whose reason names it. Name what nothing matches as undeclared. Run nothing: an address built at run time from parts it computes is not seen, and the review says so. Write <records>/<job id>/traced.json.
 
 ## Scripts
 

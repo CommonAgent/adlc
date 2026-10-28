@@ -6,7 +6,7 @@
 // nobody agreed to, so this reads every program the package carries and lists:
 //
 // - each network address written into a program (an address in a comment, or
-//   a name that is not a place such as http://www.w3.org/2000/svg, is left
+//   a name that is not a place, such as the SVG namespace at www.w3.org, is left
 //   out), and whether the line it is on goes to it;
 // - each call to an address the program is handed rather than one it writes
 //   down, which reaches whatever the caller or the page hands it;
@@ -152,8 +152,8 @@ export function stripComments(text, path = "") {
 }
 
 // An address's authority: everything after // up to the path. A user name
-// before an @ is not the host (https://example.com@elsewhere.net goes to
-// elsewhere.net), and a part built from a value (`https://${where}-x.io`) is
+// before an @ is not the host (an address written example.com@elsewhere.net
+// goes to elsewhere.net), and a part built from a value is
 // taken off, so the written part is still seen.
 const URL_RE = /\b(https?|wss?):\/\/((?:\$\{[^}]*\}|[^\s/"'`?#)\\<>])+)/g;
 /** The host an address's authority names, or "" when a value builds all of it. */
@@ -193,19 +193,16 @@ export function traceOne(path, text) {
   const open = [];
   const vars = new Set();
   const commands = [];
-  // Addresses are read off the RAW text, so no trick of quotes and slashes
-  // can make stripping drop one. An address is left out only on a line that
-  // is a comment and nothing else, by both readings: the raw line opens with
-  // a comment mark, AND the stripped line is empty. A trailing comment's
-  // address counts (a false refusal, said in words, is the cheaper mistake),
-  // and so does every address on a line that holds any code at all, whether
-  // or not a call is seen beside it: a list of call shapes always misses one.
-  const hashy = /\.(?:py|sh|bash|zsh|rb|ps1|pl)$/i.test(path) || (!CODE.test(path) && text.startsWith("#!"));
-  const opensComment = hashy ? /^\s*#/ : /^\s*(?:\/\/|\/\*|\*|<!--)/;
+  // Addresses are read off the RAW text, every one of them, comments
+  // included. Where a comment starts and ends is exactly what a package can
+  // make a reader misjudge (a regular expression after `if (...)` can read as
+  // the start of one), so no address is left out for sitting in one: an
+  // address in a comment that no declared system covers is a false refusal,
+  // said with its file and line, and the cheaper of the two mistakes. Every
+  // address counts whether or not a call is seen beside it: a list of call
+  // shapes always misses one.
   text.split("\n").forEach((raw, at) => {
-    const onlyComment = opensComment.test(raw) && !trim(lines[at] ?? "");
     for (const m of raw.matchAll(URL_RE)) {
-      if (onlyComment) continue;
       const host = hostOf(m[2]);
       if (!host || NOT_REACHED.some((r) => r.test(host))) continue;
       const list = CALLS.test(raw) || DOOR.test(raw) ? hosts : written;
