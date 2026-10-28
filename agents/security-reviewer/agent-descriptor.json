@@ -1,0 +1,153 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "does": "Reviews an Agent Package before it is installed and before any credential is bound to it, and writes down what the agent may reach, what it may spend and what it must never do, with the reason for each. It flags every permission the package asks for that has no recorded reason, refuses a package whose programs reach a system its declaration does not name or whose owner set no spending limit, and lists what it lets through knowingly. It grants nothing and changes nothing.",
+  "offerings": [
+    {
+      "id": "review-a-package",
+      "name": "Review a package",
+      "does": "Reviews one Agent Package and hands back the security review: each reach, each spend ceiling and each never-do with its reason, each permission with no reason flagged, and the verdict.",
+      "inputs": [
+        {
+          "name": "the package",
+          "kind": "application/gzip",
+          "required": true,
+          "given_by": "either",
+          "about": "The Agent Package as the package maker built it, a .tar.gz, or the package's own files handed over one by one: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the scripts."
+        },
+        {
+          "name": "the architecture record",
+          "kind": "text/markdown",
+          "required": false,
+          "given_by": "either",
+          "about": "The solution architect's record from Architecture and Design: Markdown with a heading for its systems, its limits, its decisions and its egress. Without it the package is reviewed against its own declaration alone, and the review says so."
+        },
+        {
+          "name": "the owner's spending limit",
+          "kind": "text",
+          "required": false,
+          "given_by": "person",
+          "about": "A line of the message of its own, `spending limit: <amount> per <day|month|job>`, or the architecture record's limits. A package whose owner set none is refused."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "security review",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: a header (YAML front matter) `review, package, version, digest, verdict, reviewed_at, architecture_record, spending_limit, reaches, spends, never_does, no_reason_recorded, refused_for`, then `## Verdict`, `## Reaches`, `## Spends`, `## Never does`, `## No reason recorded`, `## Programs`, `## Parts`, `## Accepted knowingly`, `## Reasons weighed` and `## Not reviewed`."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-package",
+          "name": "Read the package",
+          "does": "Unpacks the package in memory and reads what it declares: each system at its access with its reason, the credentials it names, what it spends and its ceilings, its binaries, folders, dependencies and refusals.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "trace-the-programs",
+          "name": "Trace the programs",
+          "does": "Reads every program the package carries for the addresses it reaches, the credentials it reads and the commands it starts, and matches each to a declared system or names it as undeclared.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "weigh-the-reasons",
+          "name": "Weigh the reasons",
+          "does": "Calls the text-reasoning service once to judge whether each recorded reason accounts for the access it is given for. The judgment says which reasons to read hardest and never changes the verdict.",
+          "how": {
+            "control": "script",
+            "intelligence": "called",
+            "cost": "metered",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-review",
+          "name": "Write the review",
+          "does": "Applies the role's rules to what was read and traced, decides the verdict, and writes the review with its structured header.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Binding a credential, granting an access or installing the agent. The review is made before any of them and grants nothing, so a message asking for one is declined in the reply and the review goes ahead without it.\nChanging the package. A review that edited what it reviewed would be reviewing its own work, so a finding is written down and what to do about it is the owner's decision.\nPassing an access that has no recorded reason. The stage is done when every permission asked for has one, so an access without one is flagged and the package is refused until somebody records why or takes it out.\nPassing a package whose programs reach a system its declaration does not name. That reach is access nobody agreed to, so the package is refused and the refusal names the address or the credential.\nPassing a package whose owner set no spending limit. What an agent may spend is somebody's money, and a number this reviewer invented would be a number they never agreed to.\nRepeating a credential. Something in the package that looks like one is reported by file and line, and its bytes go into no review, record or reply.\nCalling a bound enforced that the platform does not enforce. Each bound says what holds it, and where only the package's own code does, the review says so.\nLetting the model decide. The verdict comes from the role's rules applied the same way every time; the model's one call says which reasons to read hardest and never passes or refuses anything.",
+  "escalates": [
+    "A refused package. The review names what stopped it, and whether to change the package, record a reason or accept the risk is the owner's decision.",
+    "What is accepted knowingly. Each risk the review lets through is listed for a person to read before the credentials are bound."
+  ],
+  "records": [
+    {
+      "name": "what was handed over per job: each file's name, the package's digest, whether an architecture record came, and the message with anything that looks like a credential left out",
+      "when": "per_task",
+      "file": "*/asked.json"
+    },
+    {
+      "name": "what the package declares, as it was read",
+      "when": "per_task",
+      "file": "*/declared.json"
+    },
+    {
+      "name": "what each program reaches: the addresses, the calls to addresses it is handed, the credentials it reads and the commands it starts, each matched to a declared system or not",
+      "when": "per_task",
+      "file": "*/traced.json"
+    },
+    {
+      "name": "the assessment: the verdict, what stopped the package, each reach, spend and never-do, and each permission with no reason",
+      "when": "per_task",
+      "file": "*/assessment.json"
+    },
+    {
+      "name": "the security review as delivered",
+      "when": "per_task",
+      "file": "*/security-review.md"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "every review this agent has made: the package, its version and digest, and the verdict",
+      "when": "standing",
+      "file": "reviews.json"
+    },
+    {
+      "name": "the model call that weighed the reasons, kept whole in the job folder's model record",
+      "when": "per_task"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "access": "trigger",
+      "needs": "to judge, in one call per review, whether each reason the package records accounts for the access it is given for; the one judgment in a review, and it never changes the verdict",
+      "leaves": true
+    }
+  ]
+}
