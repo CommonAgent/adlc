@@ -232,9 +232,10 @@
       ]
     }
   ],
-  "refusals": "Watching an agent its owner did not name. The agents watched are the install's list; a message may narrow a watch to some of them and never adds one, and the watcher never lists an account's agents on its own.\nReading silence as no news. An agent that does not answer within the wait is reported as not answering and keeps an open alert, and an agent it could not ask is said to have no current answer.\nCalling a process being up an answer. Presence is reported as presence; an agent is answering only when it answered the question sent to it.\nStating a figure the platform's records do not carry. Every amount is the spend report's own, every count is a count of readings, and a limit nothing measures is said to be not measured.\nSpending, buying credits or changing a budget. It reads with a key that can only read, and says so in the reply when the key it was given can do more.\nChanging anything it watches. It sends each agent one status question and nothing else: it never pauses, restarts, stops or fixes an agent, and never answers for one.\nGuessing a cause. An alert says what was seen and where; what happened is the incident recorder's record and what to do about it is a person's decision.\nRaising an alarm to anyone but the incident recorder the install names.\nCalling a model.",
+  "refusals": "Watching an agent its owner did not name. The agents watched are the install's list; a message may narrow a watch to some of them and never adds one, and the watcher never lists an account's agents on its own.\nReading silence as no news. An agent that does not answer within the wait is reported as not answering and keeps an open alert, and an agent it could not ask is said to have no current answer.\nCalling a process being up an answer. Presence is reported as presence; an agent is answering only when it answered the question sent to it.\nStating a figure the platform's records do not carry. Every amount is the spend report's own, every count is a count of readings, and a limit nothing measures is said to be not measured.\nSpending, buying credits or changing a budget. It reads with a key that can only read, and says so in the reply when the key it was given can do more.\nChanging anything it watches. It sends each agent one status question and nothing else: it never pauses, restarts, stops or fixes an agent, and never answers for one.\nGuessing a cause. An alert says what was seen and where; what happened is the incident recorder's record and what to do about it is a person's decision.\nRaising an alarm to anyone but the incident recorder the install names.\nRaising the same failure twice. An alert raised and still open is reported as still open, with where it was raised, and only a new reason raises it again.\nCalling a model.",
   "escalates": [
-    "No agent named to watch. Nothing is watched, and the reply says how the owner names the agents in the install's WATCH_AGENTS setting."
+    "No agent named to watch. Nothing is watched, and the reply says how the owner names the agents in the install's WATCH_AGENTS setting.",
+    "More than 50 agents named for one watch, the most the platform's spend report reads at once. Nothing is watched, and the reply asks for at most 50."
   ],
   "records": [
     {
@@ -256,6 +257,11 @@
       "name": "what became of each alarm, per job: sent to the incident recorder, with its message id, or why not",
       "when": "per_task",
       "file": "*/raised.json"
+    },
+    {
+      "name": "the alerts raised and still open, across watches: per agent, the reasons that opened it, when, and the incident recorder and message it was raised as, so a later watch reports it as still open rather than raising it again, and forgets it when a watch finds the agent clear",
+      "when": "standing",
+      "file": "open-alerts.json"
     },
     {
       "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",

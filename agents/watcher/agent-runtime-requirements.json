@@ -43,7 +43,7 @@
   "directories": [
     {
       "name": "records",
-      "purpose": "one folder per job, holding the watch record, the watch report, the alarms, what became of each alarm and the went-without notes"
+      "purpose": "one folder per job, holding the watch record, the watch report, the alarms, what became of each alarm and the went-without notes, and beside them the standing list of alerts raised and still open"
     }
   ],
   "job_seconds": 300,

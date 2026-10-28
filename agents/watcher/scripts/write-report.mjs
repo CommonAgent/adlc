@@ -174,7 +174,9 @@ export function writeReport({ watchedAt, account, agents, spend, raised = [], no
       const r = raised.find((x) => x.agent === a.handle);
       L.push(`### ${a.handle}`, "");
       L.push(`- Opened at ${a.alert.at}: ${a.alert.reasons.join("; ")}.`);
-      if (!a.alert.raise) L.push("- Not raised to the incident recorder: the watcher could not ask this agent, which is a gap in the watch, not a failure seen in the agent.");
+      const so = a.alert.still_open;
+      if (so) L.push(`- Still open since ${so.since}: raised to the incident recorder ${so.raised_to ?? "named then"}${so.request_id ? ` as message ${so.request_id}` : ""}${so.raised_at ? ` at ${so.raised_at}` : ""}. Nothing new has been seen, so it was not raised again.`);
+      else if (!a.alert.raise) L.push("- Not raised to the incident recorder: the watcher could not ask this agent, which is a gap in the watch, not a failure seen in the agent.");
       else if (!r) L.push("- Not raised to the incident recorder.");
       else if (r.sent) L.push(`- Raised to the incident recorder ${r.to}${r.request_id ? ` as message ${r.request_id}` : ""}, with \`${r.file}\` attached.`);
       else L.push(`- Not raised to the incident recorder: ${r.why}. Its alarm, \`${r.file}\`, is handed back with this report.`);

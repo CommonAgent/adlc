@@ -136,3 +136,52 @@ test("a raise is read as sent, held or refused", () => {
   assert.equal(readRaise({ stdout: JSON.stringify({ ok: false, error: "blocked" }) }).sent, false);
   assert.equal(readRaise({ killed: true }).sent, false);
 });
+
+// From review, 2026-10-28.
+
+test("with no node here the send prints words, and they are read: an answer, silence, and a raise", () => {
+  const reply = JSON.stringify({ interface: "interface-worker", exchange: "status", job: "j", state: "done", detail: "ok" });
+  const a = readSendOutput({ stdout: `→ alpha (queued at the recipient; waiting…)\n─ reply ─\n${reply}` });
+  assert.equal(a.outcome, "answered");
+  assert.equal(a.path, "direct");
+  assert.equal(readAnswer(a.reply).worker, true);
+  assert.deepEqual(readSendOutput({ stdout: "→ alpha\n(no reply within 60s; it lands in this agent's inbox when it arrives)" }), { outcome: "silent", request_id: null, why: "no answer within 60s", path: "direct" });
+  assert.equal(readRaise({ status: 0, stdout: "→ incident-recorder (queued at the recipient)" }).sent, true);
+  assert.equal(readRaise({ status: 1, stdout: "✗ not delivered: blocked" }).sent, false);
+});
+
+test("a hold or a refusal under payload is read as one, and a note is never taken for an answer", () => {
+  assert.equal(readSendOutput({ stdout: JSON.stringify({ reply: "Held, not delivered", payload: { held: true, text: "Held, not delivered" } }) }).outcome, "held");
+  assert.equal(readSendOutput({ stdout: JSON.stringify({ reply: null, payload: { ok: false, code: "BLOCKED", error: "no" } }) }).outcome, "refused");
+  assert.equal(readRaise({ stdout: JSON.stringify({ reply: "Held", payload: { held: true, text: "Held" } }) }).held, true);
+});
+
+test("one overspend is one reason: the platform's mark of a crossing the report measured is not said twice", () => {
+  const card = read(storefront(A));
+  const allowed = { registered: true, valid: true, currency: "XCR", ceilings: [{ scope: "task", amount_micro: 10_000_000 }] };
+  const c = checkAgent({
+    named: A, card, agentdoc: read(agentdoc(A)), record: read({ runs: 0 }), asked: answered(),
+    spendRead: { url: "https://p/spend", at: "2026-10-28T06:00:00.000Z" },
+    spendAgent: agentSpend({ key: "U", handle: A, allowed, against: [{ scope: "task", ceiling_micro: 10_000_000, checked: 1, over: [{ day: "2026-10-20", job: "j9", spent_micro: 12_000_000 }] }], crossings: [{ scope: "task", currency: "XCR", ceiling_micro: 10_000_000, spent_micro: 12_000_000, at: "2026-10-20T09:00:00Z", task_id: "j9" }] }),
+  });
+  assert.equal(c.alert.reasons.length, 1);
+  assert.deepEqual(c.alert.keys, ["money:task:j9"]);
+});
+
+test("an alarm for a crossing is dated when the watcher saw it, not when the crossing happened", () => {
+  const allowed = { registered: true, valid: true, currency: "XCR", ceilings: [{ scope: "day", amount_micro: 10_000_000 }] };
+  const c = checkAgent({
+    named: A, card: read(storefront(A)), agentdoc: read(agentdoc(A)), record: read({ runs: 0 }), asked: answered(),
+    spendRead: { url: "https://p/spend", at: "2026-10-28T06:00:02.000Z" },
+    spendAgent: agentSpend({ key: "U", handle: A, allowed, against: [], crossings: [{ scope: "day", currency: "XCR", ceiling_micro: 10_000_000, spent_micro: 11_000_000, at: "2026-10-20T09:00:00Z", day: "2026-10-20" }] }),
+  });
+  assert.equal(c.alert.at, "2026-10-28T06:00:02.000Z");
+  assert.match(c.alert.reasons[0], /crossed at 2026-10-20T09:00:00Z/);
+});
+
+test("an amount the report leaves out is nothing, not a discrepancy", () => {
+  const r = spendReport([agentSpend({ key: "U1", handle: A, days: [{ day: "2026-10-27", jobs: [{ job: "j1", spent_micro: 5_000_000 }] }] })]);
+  delete r.agents[0].currencies[0].days[0].untraced_micro;
+  delete r.agents[0].currencies[0].untraced;
+  assert.deepEqual(readSpend(r).discrepancies, []);
+});

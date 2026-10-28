@@ -45,6 +45,21 @@ const trim = (s) => String(s ?? "").trim();
 const many = (n, word, plural = `${word}s`) => `${n} ${n === 1 ? word : plural}`;
 const list = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
+export const STANDING_FILE = "open-alerts.json";
+
+/** The alerts raised and still open, by agent. A list that cannot be read is
+ *  empty: the worst that does is raise an open alert again. */
+export function readStanding(records) {
+  try {
+    const doc = JSON.parse(readFileSync(join(records, STANDING_FILE), "utf8"));
+    return doc && typeof doc.agents === "object" && doc.agents ? doc.agents : {};
+  } catch { return {}; }
+}
+
+export function writeStanding(records, agents) {
+  writeFileSync(join(records, STANDING_FILE), JSON.stringify({ open_alerts: "v1", agents }, null, 2) + "\n");
+}
+
 export function fromArgv(args = []) {
   const parsed = {};
   for (let i = 0; i < args.length; i++) {
@@ -56,6 +71,9 @@ export function fromArgv(args = []) {
   }
   return parsed;
 }
+
+/** The most agents one watch covers: the spend report's own bound. */
+export const MAX_AGENTS = 50;
 
 export const HOW_TO_NAME = "The agents to watch are named by the owner in the install's WATCH_AGENTS setting, by handle, such as spec-writer.platform@agentmesh.ai. A message may narrow a watch to some of them with lines of their own, `agent: <handle>`.";
 
@@ -72,17 +90,21 @@ async function readSpendFor(p, handles, window, records) {
   const reads = [info];
   let names = [...handles];
   const leftOut = [];
+  const leftWhy = new Map();
   for (let tries = 0; tries <= handles.length && names.length; tries++) {
     const r = await p.spendReport(account, names, window);
     reads.push(r);
     if (r.ok) {
       const spend = readSpend(r.body);
-      return { ...spend, read_from: r.url.replace(/\?.*$/, ""), url: r.url, at: r.at, account, scopes, leftOut, reads };
+      return { ...spend, read_from: r.url.replace(/\?.*$/, ""), url: r.url, at: r.at, account, scopes, leftOut, leftWhy, reads };
     }
-    const named = r.status === 404 ? names.find((n) => String(r.error ?? "").startsWith(`${n} `)) : null;
+    // 404: not one of the account's agents; 409: a name that fits more than
+    // one of them. Either way that one name is taken out and the rest read.
+    const named = r.status === 404 || r.status === 409 ? names.find((n) => String(r.error ?? "").startsWith(`${n} `)) : null;
     if (!named) return { ok: false, why: `the spend report could not be read: ${r.error}`, account, scopes, reads };
     leftOut.push(named);
     note(records, { wanted: `the spend of ${named}`, did: "read the spend of the other agents and left it out", why: r.error });
+    leftWhy.set(named, r.error);
     names = names.filter((n) => n !== named);
   }
   return { ok: false, why: "none of the agents watched is one of the read key's account's agents, so there was no spend to read", account, scopes, leftOut, reads };
@@ -116,6 +138,10 @@ export async function runWatch(argv = [], { env = process.env, fetchImpl, bin, s
     return { ok: false, code: 3, reply: `${why} ${HOW_TO_NAME}` };
   }
 
+  if (wl.agents.length > MAX_AGENTS) {
+    return { ok: false, code: 3, reply: `${wl.agents.length} agents are named and one watch takes at most ${MAX_AGENTS}, the most the platform's spend report reads at once. Nothing was watched. Name at most ${MAX_AGENTS} in WATCH_AGENTS, or narrow this watch with \`agent:\` lines.` };
+  }
+
   // 2 to 4, at once: the questions take a wait, and the reads do not need it.
   const waitSeconds = Math.max(5, Math.min(600, Number(env.ANSWER_SECONDS) || 60));
   const p = platform({ base: env.MESH_API_BASE ?? "", token: env.WATCH_TOKEN ?? "", fetchImpl, now });
@@ -137,25 +163,48 @@ export async function runWatch(argv = [], { env = process.env, fetchImpl, bin, s
     const key = r.card?.ok ? r.card.body?.agent_id ?? null : null;
     const handle = r.card?.ok ? (r.card.body?.card?.card?.handle ?? named) : named;
     const entry = spend.ok ? spendEntryFor(spend, { handle, key }) : null;
-    const why = spend.ok ? (spend.leftOut?.includes(named) ? "the platform says it is not one of the read key's account's agents, so its spend was not read" : "") : spend.why;
+    const why = spend.ok ? (spend.leftOut?.includes(named) ? `the platform did not report its spend (${spend.leftWhy?.get(named) ?? "no reason given"})` : "") : spend.why;
     return checkAgent({ named, card: r.card, record: r.record, agentdoc: r.agentdoc, asked: answers[i], spendAgent: entry, spendRead: spend.ok ? { url: spend.read_from, at: spend.at } : null, spendWhy: why, waitSeconds });
   });
 
   // 5. Raise the alarms: one file each, then to the incident recorder.
+  //
+  // An alert stays open from one watch to the next until a watch finds the
+  // agent clear. The standing list ({records}/open-alerts.json) keeps, per
+  // agent, what opened it and where it was raised, so a scheduled watch does
+  // not raise the same failure as a new incident every time it runs: an
+  // alert whose every reason was already raised is reported as still open,
+  // and only a new reason raises it again.
+  const standing = readStanding(args.records);
   const alarmsDir = join(RECORDS, "alarms");
   const alarms = [];
-  for (const a of agents.filter((x) => x.alert?.raise)) {
+  for (const a of agents) {
+    const was = standing[a.handle];
+    if (!a.alert?.raise) {
+      if (was && !a.alert) delete standing[a.handle];
+      continue;
+    }
+    if (was && a.alert.keys.every((k) => was.keys.includes(k))) {
+      a.alert.still_open = { since: was.opened_at, raised_to: was.raised_to ?? null, request_id: was.request_id ?? null, raised_at: was.raised_at ?? null };
+      continue;
+    }
     const al = alarmFor(a, { watcher: WATCHER });
     if (!al) continue;
     mkdirSync(alarmsDir, { recursive: true });
     const path = join(alarmsDir, al.file);
     writeFileSync(path, al.jsonl);
-    alarms.push({ agent: al.agent, time: al.time, text: al.text, file: al.file, path });
+    alarms.push({ agent: al.agent, time: al.time, text: al.text, file: al.file, path, keys: a.alert.keys, since: was?.opened_at ?? a.alert.at });
   }
   const recorder = trim(env.INCIDENT_RECORDER);
   const raised = alarms.length ? await raiseAll(alarms, { recorder, bin, spawnImpl }) : [];
   if (alarms.length && !recorder) note(RECORDS, { wanted: "an incident recorder to raise alarms to (INCIDENT_RECORDER)", did: "handed each alarm back with the report instead" });
   for (const r of raised.filter((x) => recorder && !x.sent)) note(RECORDS, { wanted: `the alarm for ${r.agent} reaching ${recorder}`, did: "handed it back with the report", why: r.why });
+  // Only an alarm that reached the recorder joins the standing list, so one
+  // that did not is tried again by the next watch.
+  for (const r of raised.filter((x) => x.sent)) {
+    standing[r.agent] = { keys: [...new Set([...(standing[r.agent]?.keys ?? []), ...r.keys])], opened_at: r.since, raised_to: r.to, request_id: r.request_id ?? null, raised_at: watchedAt };
+  }
+  writeStanding(args.records, standing);
   writeFileSync(join(RECORDS, "raised.json"), JSON.stringify(raised.map(({ path, ...r }) => r), null, 2) + "\n");
 
   // What is not known, said plainly.
@@ -168,7 +217,7 @@ export async function runWatch(argv = [], { env = process.env, fetchImpl, bin, s
     for (const c of a.limits.checks.filter((x) => x.verdict === "not measured")) notKnown.push(`${a.handle}, ${c.limit}: ${c.why}.`);
   }
   if (!spend.ok) notKnown.push(`What the agents spent: ${spend.why}.`);
-  for (const h of spend.leftOut ?? []) notKnown.push(`What ${h} spent: the platform says it is not one of the read key's account's agents.`);
+  for (const h of spend.leftOut ?? []) notKnown.push(`What ${h} spent: the platform did not report it (${spend.leftWhy?.get(h) ?? "no reason given"}).`);
 
   // Every read, as a source.
   const sources = [];

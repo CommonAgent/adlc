@@ -40,3 +40,15 @@ export function runAgentmesh(args, { timeoutSeconds = 60, bin = process.env.AGEN
     child.on("close", (code) => finish(code, null));
   });
 }
+
+/** The object a send printed: the whole of stdout when it is one JSON value
+ *  (pretty-printed or not), else its last line that is one. */
+export function jsonOf(out) {
+  const t = trim(out);
+  if (t.startsWith("{")) { try { return JSON.parse(t); } catch { /* a line of its own below */ } }
+  for (const l of t.split("\n").reverse()) {
+    if (!l.trim().startsWith("{")) continue;
+    try { return JSON.parse(l); } catch { /* not this one */ }
+  }
+  return null;
+}

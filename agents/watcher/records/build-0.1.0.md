@@ -46,13 +46,22 @@ reading, the platform's spend report, was built the day before
   the recorder reads it as the platform's activity record. A test hands the
   alarm to the recorder's own reader. An agent the watcher could not ask
   keeps an open alert and is not raised, because the gap is the watcher's.
+- An alert stays open across watches (`open-alerts.json`, standing): one
+  raised and unchanged is reported as still open and not raised again, so a
+  scheduled watch does not file the same failure as a new incident each run.
+- From the review of PR 27: a crossing the report measured and the platform
+  also marked is one reason, not two; a crossing's alarm is dated when the
+  watcher read it; the send's words are read when no node runs here (and the
+  questions then go one at a time); a hold or refusal nested under `payload`
+  is read as one; an amount the report leaves out is zero; a 409 for one name
+  costs only that name's spend; a watch of more than 50 agents is refused.
 - No model, and specific kinds throughout: `text/markdown` for the report,
   vendor `+json` kinds for the record and the working pieces, and
   `application/x-ndjson` for the alarm. Free: it calls no model.
 
 ## Tests
 
-28 pass. The role's own check (three named agents, one quiet, one over its
+34 pass. The role's own check (three named agents, one quiet, one over its
 ceiling: the quiet one named as not answering, the crossed ceiling named, the
 spend figures equal to the records', both alarms raised and nothing else
 sent); an alarm read by the incident recorder's own reader with every line

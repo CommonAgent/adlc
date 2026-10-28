@@ -80,6 +80,7 @@ function timeChecks({ ceilings, recordRead, answer, agentdocRead }) {
       observed: `an average of ${avg}s over ${rec.runs} run${rec.runs === 1 ? "" : "s"} in ${rec.window_days ?? 30} days`,
       observed_at: recordRead.url, at: recordRead.at,
       verdict: avg > most ? "outside" : "inside",
+      ...(avg > most ? { keys: ["time:average"] } : {}),
       ...(avg > most ? { why: `its average job took ${avg}s, longer than the longest it declares, ${most}s` } : {}),
     });
   } else {
@@ -93,6 +94,7 @@ function timeChecks({ ceilings, recordRead, answer, agentdocRead }) {
         limit: "time", declared, declared_at: declaredAt,
         observed: `a job running for ${s}s when asked`, observed_at: answer.source, at: answer.answered_at,
         verdict: s > most ? "outside" : "inside",
+        ...(s > most ? { keys: [`time:running:${answer.job ?? ""}`] } : {}),
         ...(s > most ? { why: `it said a job had been running for ${s}s, past the ${most}s it declares` } : {}),
       });
     }
@@ -117,13 +119,23 @@ function moneyChecks({ spendAgent, spendRead, spendWhy }) {
       limit: "money", declared, declared_at: "its registered allowance, as the spend report carries it",
       observed: `${c.checked} ${c.scope === "task" ? "job" : c.scope}${c.checked === 1 ? "" : "s"} in the window`, observed_at: spendRead?.url, at: spendRead?.at,
       verdict: over.length ? "outside" : "inside",
+      ...(over.length ? { keys: over.map((o) => `money:${c.scope}:${o.job ?? o.day ?? o.context_id ?? ""}`) } : {}),
       ...(over.length ? { why: over.map((o) => `${moneyWords(o.spent_micro, al.currency ?? "")} spent${o.job ? ` in job ${o.job}` : ""}${o.day ? ` on ${o.day}` : ""}${o.context_id ? ` in context ${o.context_id}` : ""}, over its ${declared} ceiling`).join("; ") } : {}),
     });
   }
+  // The platform's own mark of a crossing is the same event as a line the
+  // report's own measure found over, when both name the same job, day or
+  // context: it is said once, by the measure, and the mark stands alone only
+  // where nothing measured it.
+  const measured = new Set(out.flatMap((c) => c.keys ?? []));
   for (const m of spendAgent.crossings ?? []) {
+    const key = `money:${m.scope}:${m.task_id ?? m.day ?? m.context_id ?? String(m.at ?? "").slice(0, 10)}`;
+    if (measured.has(key)) continue;
+    measured.add(key);
     out.push({
       limit: "money", declared: `${moneyWords(m.ceiling_micro, m.currency)} per ${m.scope}`, declared_at: "the ceiling the platform marked as crossed",
-      observed: `${moneyWords(m.spent_micro, m.currency)} at ${m.at}`, observed_at: spendRead?.url, at: m.at,
+      // Seen when the spend report was read; the crossing's own time is in its words.
+      observed: `${moneyWords(m.spent_micro, m.currency)} at ${m.at}`, observed_at: spendRead?.url, at: spendRead?.at, keys: [key],
       verdict: "outside", why: `the platform marked its ${m.scope} ceiling of ${moneyWords(m.ceiling_micro, m.currency)} crossed at ${m.at}${m.task_id ? ` (job ${m.task_id})` : ""}`,
     });
   }
@@ -171,12 +183,15 @@ export function checkAgent({ named, card, record, agentdoc, asked, spendAgent = 
 
   const reasons = [];
   const times = [];
+  const keys = [];
   let raise = false;
-  const open = (why, when, raised) => { reasons.push(why); if (raised) raise = true; if (when) times.push(when); };
-  if (a.state === "no") open(`not alive: ${a.why}`, a.at, true);
-  if (ans.state === "no") open(`not answering: ${ans.why}`, ans.gave_up_at, true);
-  if (ans.state === "unknown") open(`no current answer: ${ans.why}`, ans.gave_up_at ?? ans.asked_at, false);
-  for (const c of outside) open(`outside its limits: ${c.why}`, c.at, true);
+  // `keys` name what opened the alert, the same way from one watch to the
+  // next, so a later watch can tell an alert still open from a new one.
+  const open = (why, when, raised, ks) => { reasons.push(why); if (raised) raise = true; if (when) times.push(when); keys.push(...ks); };
+  if (a.state === "no") open(`not alive: ${a.why}`, a.at, true, ["alive"]);
+  if (ans.state === "no") open(`not answering: ${ans.why}`, ans.gave_up_at, true, ["answering"]);
+  if (ans.state === "unknown") open(`no current answer: ${ans.why}`, ans.gave_up_at ?? ans.asked_at, false, ["unasked"]);
+  for (const c of outside) open(`outside its limits: ${c.why}`, c.at, true, c.keys ?? [`${c.limit}:outside`]);
   // The alert's time is the latest moment the watcher saw what opened it, so
   // what it saw falls before it, inside the incident recorder's window.
   times.sort();
@@ -185,7 +200,7 @@ export function checkAgent({ named, card, record, agentdoc, asked, spendAgent = 
   return {
     named, handle, key,
     alive: a, answering: ans, limits,
-    alert: reasons.length ? { at, reasons, raise } : null,
+    alert: reasons.length ? { at, reasons, raise, keys } : null,
     observations: obs,
   };
 }

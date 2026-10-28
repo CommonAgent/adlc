@@ -41,6 +41,10 @@ Only an agent seen failing is raised to the incident recorder. An agent the watc
 
 An alarm is the incident recorder's own input: a message with `agent: <handle>` and `time: <ISO time>` as lines of their own, and one file of JSON lines, `{time, agent, event, source, seen_by}`, named with `platform` in it so the recorder reads it as the platform's activity record. The alarm's time is the latest moment the watcher saw what opened it, so what it saw falls inside the window the recorder reads. It is sent only to the incident recorder the install names. What happened is the recorder's to record, and what to do about it is a person's to decide.
 
+## An alert stays open until a watch finds the agent clear
+
+A watch that runs on a schedule sees the same failure again and again. An alert raised to the incident recorder is kept in a standing list beside the job folders, with the reasons that opened it, when, and the message it was raised as. A later watch that sees nothing new reports it as still open, with where it was raised, and does not raise it again; a new reason raises it again; a watch that finds the agent clear takes it off the list, so the next failure is a new incident. One overspend is one reason: the platform's own mark of a crossing that the spend report also measured is said once.
+
 ## Never
 
 Never watch an agent the owner did not name. Never read silence as no news. Never call presence an answer. Never state a figure the records do not carry, and never smooth over one that does not add up. Never spend, buy or change a budget. Never pause, restart, stop, fix or answer for an agent. Never guess a cause. Never raise an alarm to anyone but the install's incident recorder. Never call a model.

@@ -93,6 +93,14 @@ the incident recorder the install names. An agent the watcher could not ask
 it has no current answer, but it is not raised as an incident: the watcher
 has not seen it fail.
 
+An alert stays open across watches. `{records}/open-alerts.json` keeps, per
+agent, the reasons raised, when, and the message they were raised as; a later
+watch that sees nothing new says the alert is still open and does not raise
+it again, a new reason raises it again, and a watch that finds the agent
+clear closes it. An alarm that did not reach the recorder is not kept, so the
+next watch tries again. One watch covers at most 50 agents, the most the
+spend report reads at once.
+
 ## What this folder is
 
 This folder is the agent's source, laid out the way the
@@ -114,7 +122,9 @@ This folder is the agent's source, laid out the way the
 ## What it needs
 
 Node 22 or later, a records folder, and the `agentmesh` command on the path,
-running as this agent. The install places one credential and four settings:
+running as this agent. With the agent's node running on the host (a fleet
+host's case) the questions go out at once through it; with none, the command
+connects on its own for each send, so the questions go one at a time. The install places one credential and four settings:
 
 | Variable | What it is |
 |---|---|

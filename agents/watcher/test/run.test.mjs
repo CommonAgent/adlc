@@ -210,7 +210,7 @@ test("a stranger on the list costs only its own spend, and a key that can do mor
     assert.equal(r.status, 0, JSON.stringify(r.doc));
     assert.match(r.doc.reply, /the key placed also carries credits, which can do more than read/);
     const md = readFileSync(join(r.jobDir, "out", "watch-report.md"), "utf8");
-    assert.match(md, /What charlie\.platform@agentmesh\.ai spent: the platform says it is not one of the read key's account's agents\./);
+    assert.match(md, /What charlie\.platform@agentmesh\.ai spent: the platform did not report it \(charlie\.platform@agentmesh\.ai is not one of this account's agents\)\./);
     const asks = p.seen.filter((s) => s.path.endsWith("/spend-report"));
     assert.equal(asks.length, 2);
     assert.match(decodeURIComponent(asks[1].query), new RegExp(`agents=${A.replace(/\./g, "\\.")}$`));
@@ -235,5 +235,33 @@ test("it reads the real dev spend report and reconciles it, naming what traces t
     assert.match(md, /1650 XCR traces to no job: accounted before the platform kept a line per job/);
     assert.match(md, /\| `credits:f7364c40-d49d-4f68-bf07-e9a14fc86ad0:01a180c4-602d-7000-ba95-9fb26203d8c9` \| 330 XCR \|/);
     assert.equal(ACCOUNT, json(join(r.recordsDir, "watch-record.json")).account);
+  } finally { await p.close(); }
+});
+
+test("an alert stays open from one watch to the next and is raised once; a new reason raises it again; a clear watch closes it", async () => {
+  const world = threeAgents();
+  const p = await fakePlatform(world);
+  try {
+    const h = host({ [B]: "silent" });
+    const env = { WATCH_AGENTS: B, MESH_API_BASE: p.base, WATCH_TOKEN: TOKEN, INCIDENT_RECORDER: RECORDER, ANSWER_SECONDS: "5" };
+    const raisedTo = () => readFileSync(h.log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((s) => s.to === RECORDER).length;
+    await run(h, { id: "w1", env });
+    assert.equal(raisedTo(), 1);
+    const second = await run(h, { id: "w2", env });
+    assert.equal(raisedTo(), 1, "not raised again");
+    const md = readFileSync(join(second.jobDir, "out", "watch-report.md"), "utf8");
+    assert.match(md, /Still open since .*: raised to the incident recorder incident-recorder\.platform@agentmesh\.ai as message req-.*\. Nothing new has been seen, so it was not raised again\./);
+    // A new reason: it is now down as well.
+    world.cards[B] = storefront(B, { key: "UBRAVO", availability: "offline" });
+    await run(h, { id: "w3", env });
+    assert.equal(raisedTo(), 2);
+    // Clear: it answers and is up; the standing list forgets it, and the next failure is raised anew.
+    world.cards[B] = storefront(B, { key: "UBRAVO" });
+    writeFileSync(h.mesh, JSON.stringify({}));
+    await run(h, { id: "w4", env });
+    assert.deepEqual(json(join(h.records, "open-alerts.json")).agents, {});
+    writeFileSync(h.mesh, JSON.stringify({ [B]: "silent" }));
+    await run(h, { id: "w5", env });
+    assert.equal(raisedTo(), 3);
   } finally { await p.close(); }
 });

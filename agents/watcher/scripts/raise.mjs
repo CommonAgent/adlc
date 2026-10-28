@@ -13,28 +13,29 @@
 //
 //   needs: node >= 22, and the agentmesh command on the path
 //   import { raiseAll, readRaise } from "./raise.mjs"
-import { runAgentmesh } from "./send.mjs";
+import { jsonOf, runAgentmesh } from "./send.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
-/** What `agentmesh messages send --files … --json` printed, read as a
- *  delivery: { sent, request_id, why }. */
+/** What `agentmesh messages send <recorder> <text> --files <alarm> --json`
+ *  printed, read as a delivery: { sent, request_id, why }. A file goes
+ *  through the node running here as {queued, inbox_id, request_id}, or a
+ *  refusal or a hold ({payload: {held}}); with no node here it prints words,
+ *  and exit 0 with nothing said against it is a send. */
 export function readRaise({ status = 0, stdout = "", stderr = "", killed = false, error = null } = {}) {
   if (error) return { sent: false, why: error };
   if (killed) return { sent: false, why: "the send did not return in time and was stopped" };
-  const out = trim(stdout);
-  let j = null;
-  if (out.startsWith("{")) { try { j = JSON.parse(out); } catch { j = null; } }
+  const j = jsonOf(stdout);
   if (!j) {
-    const line = out.split("\n").reverse().find((l) => l.trim().startsWith("{"));
-    if (line) { try { j = JSON.parse(line); } catch { j = null; } }
+    if (status === 0 && !/not delivered|not sent|✗/i.test(String(stdout))) return { sent: true, request_id: null, status: "sent" };
+    return { sent: false, why: (trim(stderr) || trim(stdout) || `the send printed nothing (exit ${status})`).slice(0, 400) }; // cut-ok: a reason; the whole is in the log
   }
-  if (!j) return { sent: false, why: (trim(stderr) || out || `the send printed nothing (exit ${status})`).slice(0, 400) }; // cut-ok: a reason; the whole is in the log
-  if (j.status === "held") return { sent: false, held: true, request_id: j.request_id ?? null, why: trim(j.note) || "held at its door for its owner" };
-  if (j.ok === false || (j.delivered === false && !j.queued && j.status !== "queued_offline")) {
-    return { sent: false, why: trim(j.error ?? j.note ?? j.code) || "refused at its door" };
+  const p = j.payload && typeof j.payload === "object" ? j.payload : null;
+  if (j.status === "held" || p?.held) return { sent: false, held: true, request_id: j.request_id ?? p?.request_id ?? null, why: trim(j.note ?? p?.text) || "held at its door for its owner" };
+  if (j.ok === false || p?.ok === false || (j.delivered === false && !j.queued && j.status !== "queued_offline")) {
+    return { sent: false, why: trim(j.error ?? p?.error ?? j.note ?? j.code) || "refused at its door" };
   }
-  return { sent: true, request_id: j.request_id ?? j.in_reply_to ?? j.inbox_id ?? null, status: j.status ?? (j.queued ? "queued" : "sent") };
+  return { sent: true, request_id: j.request_id ?? p?.request_id ?? j.in_reply_to ?? j.inbox_id ?? null, status: j.status ?? (j.queued || p?.queued ? "queued" : "sent") };
 }
 
 /** Send every alarm. Each is { agent, text, path }; resolves to each with

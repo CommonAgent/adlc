@@ -16,7 +16,10 @@
 export const FORMAT = "spend-report-v1";
 
 const sum = (xs) => xs.reduce((t, x) => t + x, 0);
-const n = (v) => (Number.isFinite(v) ? v : NaN);
+// An amount the report leaves out is nothing spent: the platform writes its
+// zeros, and a reader that turned a missing one into NaN would find every sum
+// on that agent wrong.
+const n = (v) => (v === undefined || v === null ? 0 : Number.isFinite(v) ? v : NaN);
 
 /** micro-units as a person reads them: 1650000000 XCR micro is "1650 XCR".
  *  The same words the platform's report uses, so a figure here can be
@@ -95,18 +98,6 @@ export function readSpend(body) {
   const reconciles = body.reconciles === true && allProblems.length === 0;
   const traced = body.every_spend_traced === true;
 
-  // Every ceiling crossed, per agent: the report's `against` and its marks.
-  const crossed = [];
-  for (const a of agents) {
-    for (const c of a.against ?? []) for (const o of c.over ?? []) {
-      crossed.push({ agent: agentName(a), key: a.agent, scope: c.scope, ceiling_micro: c.ceiling_micro, spent_micro: o.spent_micro, day: o.day ?? null, job: o.job ?? null, context_id: o.context_id ?? null, currency: a.allowed?.currency ?? a.currencies?.[0]?.currency ?? "" });
-    }
-    for (const m of a.crossings ?? []) {
-      // The platform's own once-per-crossing mark (spend-rollup.ts ExceededMark).
-      crossed.push({ agent: agentName(a), key: a.agent, mark: true, scope: m.scope, ceiling_micro: m.ceiling_micro, spent_micro: m.spent_micro, day: m.day ?? null, job: m.task_id ?? null, context_id: m.context_id ?? null, at: m.at ?? null, currency: m.currency ?? "" });
-    }
-  }
-
   return {
     ok: true,
     window: body.window ?? null,
@@ -116,7 +107,6 @@ export function readSpend(body) {
     platform_reconciles: body.reconciles === true,
     reconciles,
     discrepancies: allProblems,
-    crossed,
   };
 }
 
