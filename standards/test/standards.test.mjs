@@ -65,11 +65,11 @@ test("the checklist covers the checks the lifecycle plan names", () => {
 // otherwise is reported "not checked" until the auditor registers it, and
 // each one is listed for the auditor in NEW_CHECKS below, never silently.
 const REGISTERED = new Set(["package-maker-format-rules", "no-model-literals", "can-use-declared", "descriptor-floor",
-  "descriptor-signed", "descriptor-matches-package", "versions-dev-prod", "registered",
+  "descriptor-signed", "descriptor-matches-package", "versions-dev-prod", "registered", "package-maker-option-rules",
   ...["requirements", "architecture", "design", "impact", "source", "test", "code", "review", "security", "package",
     "build-record", "descriptor", "deployment-record", "conformance"].map((a) => `stage-record:${a}`)]);
 const NEW_CHECKS = new Set(["descriptor-person-members", "delivered-formats", "revisions-declared", "standing-assets-cited",
-  "stage-record:docs", "package-maker-option-rules"]);
+  "stage-record:docs"]);
 
 test("every check names a test the auditor registers, or one listed as new for it", () => {
   for (const pairs of checksOf(read("audit-checklist.md"))) {

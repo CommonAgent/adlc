@@ -4,7 +4,8 @@
 // is reported as not checked, never skipped.
 //
 // Where a test already holds the rule, the check runs it:
-//   package-maker-format-rules, can-use-declared   the package maker's own
+//   package-maker-format-rules, can-use-declared, package-maker-option-rules
+//                        the package maker's own
 //       build.py over the package (format_rules, standing_rules), or the
 //       format_rules its signed build record carries for this digest
 //   no-model-literals    AgentMesh's check-no-model-literals rule (models.mjs)
@@ -211,6 +212,23 @@ export const REGISTERED = {
     if (!facing.length) return PASS("no output a person reads or watches is declared");
     if (cu.length) return PASS(`person-facing outputs ${facing.join(", ")}; can_use declares ${cu.map((c) => trim(c?.schema)).join(", ")}`);
     return FAIL(`person-facing outputs ${facing.join(", ")}, and no can_use entry; no architecture record was given to the audit to say why it reads none`, "can_use");
+  },
+
+  // options-are-settings and settings-declared-fully: the package maker's
+  // option rules (build.py option_findings), each finding prefixed by its id.
+  "package-maker-option-rules": (entry, ctx) => {
+    const pm = ctx.packageMaker;
+    const mine = (xs) => (xs ?? []).filter((x) => trim(x).includes(`${entry.id}:`));
+    if (pm?.ran && pm.ok === false) {
+      const f = mine(trim(pm.why).split(/;\s+/));
+      if (f.length) return FAIL(`the package maker refuses the package: ${f.join("; ")}`, entry.id === "options-are-settings" ? "inputs" : "run_config.settings");
+    }
+    const or = pm?.ran ? pm.option_rules : null;
+    if (!or) return NOT(`the package maker's option rules did not run here (${pm?.ran ? "its result carries no option_rules: a package maker from before them" : pm?.why ?? "not available"})`);
+    const f = mine(or.findings);
+    return f.length
+      ? FAIL(`the package maker's option rules find: ${f.join("; ")}`, entry.id === "options-are-settings" ? "inputs" : "run_config.settings")
+      : PASS(`the package maker's option rules (${or.mode}, since ${or.since}) find nothing for ${entry.id}`);
   },
 
   "standing-assets-cited": (entry, ctx) => {
