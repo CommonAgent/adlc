@@ -12,7 +12,7 @@ Every line that says something about the agent is one template from scripts/temp
 
 Where a place is filled in a shape no template reads (a price model it has no words for, a job time written as text), the line shows the value as written, `As written at <place>: <value>`, rather than dropping it or calling it a silence. A line also has to stand under the heading its place belongs to, and under the job it is about.
 
-This is why there is no model here. The documentation is written for a person, but a person reading it has to be able to check any line against its source, and a sentence a model wrote is a sentence the check would have to take on trust. The templates are the writing, and they are written once, here, where they can be read.
+There is no model here, because of how lines are checked. The documentation is written for a person, but a person reading it has to be able to check any line against its source, and a sentence a model wrote is a sentence the check would have to take on trust. The templates are the writing, and they are written once, here, where they can be read.
 
 ## Silences show
 
