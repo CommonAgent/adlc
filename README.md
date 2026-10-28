@@ -44,7 +44,7 @@ replaced by any agent that holds the same role.
 
 | Stage | Role | Folder | Runs on its own? |
 |---|---|---|---|
-| Architecture and Design (architecture) | [solution architect](https://agentroles.ai/solution-architect.html) | None | There is no reference agent for this role. A person or any agent that holds the role can do it. |
+| Architecture and Design (architecture) | [solution architect](https://agentroles.ai/solution-architect.html) | [agents/solution-architect](agents/solution-architect) | Yes, with a model key |
 | Requirements, Architecture and Design (design) | [spec writer](https://agentroles.ai/spec-writer.html) | [agents/spec-writer](agents/spec-writer) | Yes, with a model key |
 | Requirements, Architecture and Design (design) | [solution planner](https://agentroles.ai/solution-planner.html) | [agents/solution-planner](agents/solution-planner) | Yes, with a model key |
 | Impact | [impact analyst](https://agentroles.ai/impact-analyst.html) | [agents/impact-analyst](agents/impact-analyst) | Yes; filing what is owed needs the platform's ledger |
@@ -66,7 +66,9 @@ The Architecture and Design stage has two parts, and the architecture comes
 first. The solution architect, or a person, names the systems the agent
 reaches and the product bound to each one in each environment, and records
 every decision with its reason. The spec writer and the solution planner then
-design within those systems.
+design within those systems. The rules the record applies are written down as
+the stage's standard, in
+[agents/solution-architect/references/architecture-standard.md](agents/solution-architect/references/architecture-standard.md).
 
 [agents/image](agents/image) is not an agent. It holds the tools the deployment
 manager uses to turn an Agent Package into a container image's build context,
@@ -78,8 +80,8 @@ only runs inside AgentMesh today.
 ## Layout
 
 - `agents/<role>/` holds one agent. The packages written for the lifecycle
-  (spec writer, solution planner, test writer, code writer, code critic,
-  publisher) are
+  (solution architect, spec writer, solution planner, test writer, code
+  writer, code critic, publisher) are
   package sources: the agent's own files (`agent-descriptor.json`,
   `agent-runtime-requirements.json`, `plugin.json` and `skills/<slug>/SKILL.md`,
   the layout Common Agent 13.2 says a package is authored in), the scripts,
@@ -102,7 +104,7 @@ deployment manager. From the repository root:
 
 ```sh
 export AGENTMESH_ENV=example
-for a in spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher; do
+for a in solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher; do
   (cd agents/$a && node --test test/*.test.mjs)
 done
 node --test agents/conformance-checker/test/*.test.mjs

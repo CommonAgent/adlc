@@ -1,0 +1,20 @@
+{"title": "renewal reminders by email",
+ "environments": ["dev", "test", "production"],
+ "systems": [
+  {"name": "database", "plain": "the customer list", "access": "read", "why": "The customers and their renewal dates are kept there.", "called_for": "reads the customer list"},
+  {"name": "mail", "plain": "a mail sender", "access": "write", "why": "Each reminder goes to a customer by email.", "called_for": "emails each customer"},
+  {"name": "text-reasoning", "plain": "text reasoning", "capability": "text: a short, plain reminder in the customer's own terms", "access": "trigger", "why": "Writing each reminder so it reads as a person wrote it is a judgment.", "called_for": "a short reminder"}
+ ],
+ "kind": {"kind": "plugin-on-harness", "why": "A short program with one judgment: read, write each reminder, send. A harness reading skills carries it."},
+ "dependencies": [],
+ "limits": {"cost": {"limit": "at most 5 USD a day", "why": "the statement says so"}, "speed": {"limit": "a whole list sent within 600 seconds", "why": "A list of a few hundred customers is one pass."}, "data": {"limit": "reads names, emails and renewal dates; keeps nothing between runs; never sends the list anywhere but the mail sender", "why": "Customer data stays in the organization's own database."}, "trust": {"limit": "takes the run only from its owner", "why": "Sending email to customers is the organization's voice."}},
+ "egress": [],
+ "formats": [
+  {"piece": "the run's account", "direction": "out", "kind": "text/markdown", "convention": "a header `sent, skipped`, then `## Sent` and `## Skipped` with one bullet per customer and why", "why": "A person reads what went out."},
+  {"piece": "which customers to remind", "direction": "in", "kind": "text", "given_by": "person", "why": "The owner says which renewals are due, in words."}
+ ],
+ "settings": [{"name": "days-before", "kind": "preference", "default": 14, "job_may_set": false, "why": "How far ahead of a renewal a reminder goes is the organization's habit; two weeks is common."}],
+ "decisions": [
+  {"decided": "Report each run as Markdown", "why": "A person reads it.", "weighed": "a vendor JSON kind, which only code reads", "follows": "Its headings are fixed so a test can hold them."}
+ ],
+ "questions": []}

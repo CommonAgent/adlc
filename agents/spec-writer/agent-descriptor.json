@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.4.0",
+  "agent_version": "0.5.0",
   "does": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
   "offerings": [
     {
@@ -12,6 +12,13 @@
           "name": "what it should do",
           "kind": "text",
           "required": true
+        },
+        {
+          "name": "the architecture record",
+          "kind": "text/markdown",
+          "required": false,
+          "given_by": "either",
+          "about": "The Architecture stage's record (the solution architect's): Markdown with a front matter header `record, statement, environments, kind, done, questions, systems, bindings`. The draft declares exactly its systems, and a step that needs another goes back to the architect as a question."
         },
         {
           "name": "an existing spec",
@@ -62,7 +69,7 @@
         {
           "id": "draft-the-spec",
           "name": "Draft the spec",
-          "does": "Calls the text-reasoning service once, twice at most, to write the spec and name what it could not settle.",
+          "does": "Calls the text-reasoning service once, twice at most, to write the spec within the architecture record it was given and name what it could not settle.",
           "how": {
             "control": "script",
             "intelligence": "called",
@@ -95,14 +102,14 @@
       ]
     }
   ],
-  "refusals": "Naming an agent. A name becomes a handle on the mesh that cannot be changed without a redeploy, so it is asked for and never chosen here, and a draft that quietly carries one has that name taken back out and put to the person as a question.\nPricing an agent. What a job costs is somebody's money, and a number invented here would be a number they never agreed. It is asked, and the draft is delivered with the price still open.\nGranting an agent access to anything. A system, a credential or a directory the request never mentioned is authority nobody gave, so it is asked for by name and by whether it reads or writes. An empty list is an answer this agent will take; an invented entry is not.\nWriting the scripts a spec names. This package writes the declaration and nothing else, and the files it names are stood in for as empty when the builder is run, which is said out loud every time rather than left for somebody to discover.\nBuilding, packing or deploying anything. The draft is a file in a job folder. What becomes of it is somebody else's act, and this agent has no part in it.\nReporting that a spec builds when the files it names do not exist. The builder was run against empty stand-ins, so what was checked is the declaration, and the reply says which files were stood in for every time it says anything at all about building.\nAsking a third time. The draft is written, checked and written once more with the findings, and then it stands. A model told twice that it wrote no refusals will not write them on the third ask, and the person is owed the draft plus the truth about it rather than another wait.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every record and every line of the reply.\nDelivering a draft that was changed after the drafting step wrote it. The drafting step records the draft's digest, and a draft edited by hand, or cut by a tool that reads long lines short, is refused with a reply saying so rather than delivered as the agent's work.\nPutting an address into a package's systems. The builder refuses a package whose install file carries one, so a keyless public read is declared as a system with no credential and its address stays in the script, and a finding says so on the second go.",
+  "refusals": "Naming an agent. A name becomes a handle on the mesh that cannot be changed without a redeploy, so it is asked for and never chosen here, and a draft that quietly carries one has that name taken back out and put to the person as a question.\nPricing an agent. What a job costs is somebody's money, and a number invented here would be a number they never agreed. It is asked, and the draft is delivered with the price still open.\nGranting an agent access to anything. A system, a credential or a directory the request never mentioned is authority nobody gave, so it is asked for by name and by whether it reads or writes. An empty list is an answer this agent will take; an invented entry is not.\nWriting the scripts a spec names. This package writes the declaration and nothing else, and the files it names are stood in for as empty when the builder is run, which is said out loud every time rather than left for somebody to discover.\nBuilding, packing or deploying anything. The draft is a file in a job folder. What becomes of it is somebody else's act, and this agent has no part in it.\nReporting that a spec builds when the files it names do not exist. The builder was run against empty stand-ins, so what was checked is the declaration, and the reply says which files were stood in for every time it says anything at all about building.\nAsking a third time. The draft is written, checked and written once more with the findings, and then it stands. A model told twice that it wrote no refusals will not write them on the third ask, and the person is owed the draft plus the truth about it rather than another wait.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every record and every line of the reply.\nDelivering a draft that was changed after the drafting step wrote it. The drafting step records the draft's digest, and a draft edited by hand, or cut by a tool that reads long lines short, is refused with a reply saying so rather than delivered as the agent's work.\nPutting an address into a package's systems. The builder refuses a package whose install file carries one, so a keyless public read is declared as a system with no credential and its address stays in the script, and a finding says so on the second go.\nDeclaring a system the architecture record does not name. The record is the Architecture stage's and comes before the Design; a system the design needs and the record lacks is taken out of the draft and goes back to the architect as a question, and the record is revised first.",
   "escalates": [
     "A name, a price, or access to a system. None of the three can be inferred from what somebody wants an agent to do, and each one is a commitment they would be held to.",
     "A draft that still carries findings after two goes. It is delivered with the findings named, and what to do about it is the person's decision."
   ],
   "records": [
     {
-      "name": "the request as it arrived and what came with it, per job",
+      "name": "the request as it arrived and what came with it, the architecture record among it, per job",
       "when": "per_task",
       "file": "*/asked.json"
     },

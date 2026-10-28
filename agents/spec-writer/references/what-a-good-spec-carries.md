@@ -118,6 +118,13 @@ the job did not have and did anyway, and the signed job manifest.
 
 ## What it reaches
 
+When an architecture record came with the request, what it reaches is
+settled already: the draft's systems are the record's, by name and access,
+and a step that needs another is asked of the architect rather than declared
+(the Architecture stage's standard, agents/solution-architect/references/
+architecture-standard.md). The rest of this section is how a system is
+declared once it is named.
+
 Systems run from zero to five. process-runner declares none at all and still
 reaches the platform, with a token scoped to one route family, which is worth
 knowing: a system is for a directory, an MCP server or a service the package
