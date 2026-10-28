@@ -1430,7 +1430,7 @@ def person_facing_outputs(jobs, table):
         if j["slug"] not in offered:
             continue
         for o in j.get("outputs") or []:
-            if isinstance(o, dict) and any(kind_matches(o.get("kind"), p) for p in kinds):
+            if isinstance(o, dict) and any(kind_matches(o.get("kind"), p) for p in kinds)                     and not any((n, k) == (o.get("name"), o.get("kind")) for _, n, k in out):
                 out.append((j["slug"], o.get("name"), o.get("kind")))
     return out
 
