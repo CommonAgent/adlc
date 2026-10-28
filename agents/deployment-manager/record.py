@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and sign the record of one act (agentroles.ai SPEC §11.3).
 
-Takes a deploy/update/remove/build/refusal result object from steps.py on
+Takes a deploy/update/reconfigure/attest/remove/build/refusal result object from steps.py on
 stdin, emits the signed record on stdout. The signature is the family
 convention: the ASCII tag, one newline, then the JCS (RFC 8785) canonical
 JSON of the document with `signatures` removed. Ed25519 over the deployment
@@ -36,6 +36,10 @@ import sys
 import time
 
 TAG = "agent-deployment-record-v1"
+# The acts that change how an installed agent runs without installing a
+# version (steps.py model, jobs-at-once, rebind), each recorded as a
+# reconfigure naming the package already running.
+RECONFIGURE_ACTS = ("model", "jobs-at-once", "rebind")
 BUILD_TAG = "agent-build-record-v1"
 # The adapter's own nkeys.js, so a record is signed by the same library and the
 # same identity the agent presents on the mesh. No extra software installed.
@@ -326,6 +330,53 @@ def build(res, identity_path, dm_key):
         if res.get("rolled_back"):
             doc["outcome"] = f"rolled back: {res.get('error')}; {res.get('state')}"
             doc["watch"] = res.get("watch")
+    elif act == "attest" and res.get("ok"):
+        # The running install, attested without installing anything: the
+        # package digest the inventory names, the ledger re-hashed and found
+        # unchanged, and the image the job runs where its work runs in a
+        # container. Made for a version that was deployed before every
+        # deploy and update left a record, so it can carry one without being
+        # redeployed. It says it is an attest, never a deploy: what it
+        # observed is what runs now, not the act that put it there.
+        doc = {
+            "record": "v1", "role": "deployment-manager", "act": "attest",
+            "instructed_by": res.get("instructed_by", "the owner"),
+            "package": {"name": res["package"], "version": res["version"],
+                        **({"url": res["url"]} if res.get("url") else {}), "sha256": res["sha256"]},
+            **observed(res, "image_digest"),
+            "target": target_part(res),
+            "agent": {"key": res["agent_key"], "handle": res.get("handle")},
+            **({"environment": res["environment"]} if res.get("environment") else {}),
+            **observed(res, "deployed_at"),
+            "ledger": res.get("ledger"),
+            "checks": [{"kind": "ledger", "passed": True, "at": now,
+                        "what": ("every file of the package and its brain re-hashed to the digest it was placed with"
+                                 + (f"; {len((res.get('ledger') or {}).get('drift') or [])} other placed file(s) "
+                                    "differ, listed under ledger.drift" if (res.get("ledger") or {}).get("drift") else ""))}],
+            "produced_at": now, "by": dm_key, "signatures": [],
+        }
+    elif act in RECONFIGURE_ACTS and res.get("ok"):
+        # A change to how an installed agent runs that installs no version:
+        # its model, how many jobs it takes at once, or its Descriptor bound
+        # again from its own package. The record names the package already
+        # running, so a reader can tell which version was reconfigured.
+        doc = {
+            "record": "v1", "role": "deployment-manager", "act": "reconfigure",
+            "change": act,
+            "instructed_by": res.get("instructed_by", "the owner"),
+            **({"package": {"name": res["package"], "version": res.get("version"),
+                            **({"url": res["url"]} if res.get("url") else {}),
+                            **({"sha256": res["sha256"]} if res.get("sha256") else {})}}
+               if res.get("package") else {}),
+            "target": target_part(res),
+            **({"agent": {"key": res["agent_key"], "handle": res.get("handle")}} if res.get("agent_key") else {}),
+            **({"was": res["was"]} if "was" in res else {}),
+            **({"now": res["now"]} if "now" in res else {}),
+            **({"descriptor": descriptor_part(res["descriptor"])} if res.get("descriptor") else {}),
+            **observed(res, "credential", "ledger"),
+            **({"checks": [smoke_check({"smoke": res["check"]}, now)]} if isinstance(res.get("check"), dict) else {}),
+            "produced_at": now, "by": dm_key, "signatures": [],
+        }
     elif act == "alongside" and res.get("ok"):
         # Another version of an installed agent, beside the current one, under
         # the same subject (Common Agent 12.7, Install alongside). No subject

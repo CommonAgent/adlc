@@ -4825,6 +4825,84 @@ def status():
          "containers": containers, "images": load_json_list(IMAGES)})
 
 
+# ── the running package, for a record of an act that changes no version ──
+
+def running_package(entry, home=None):
+    """What an installed agent runs, from its inventory row: the package, its
+    version and digest, where it came from, and the agent's key and handle. A
+    reconfigure (model, jobs at once, rebind) changes no version, so its record
+    names the package already running, and an attest names what it re-hashed.
+    The key is read from the agent's own identity file where the row does not
+    carry it; nothing is filled in that neither holds."""
+    home = home or f"/home/{entry['name']}"
+    key = entry.get("agent_key")
+    if not key:
+        try:
+            key = json.load(open(f"{home}/.agentmesh/adapter/identity.json")).get("public_key")
+        except Exception:  # noqa: BLE001
+            key = None
+    return {k: v for k, v in (("package", entry.get("package")), ("version", entry.get("version")),
+                              ("sha256", entry.get("sha256")), ("url", entry.get("url")),
+                              ("agent_key", key), ("handle", entry.get("handle"))) if v}
+
+
+def attest(name):
+    """Attest what an installed agent runs, without installing anything: the
+    package digest the inventory names, its ledger re-hashed (every placed file
+    against the digest it was placed with), and, where its work runs in a
+    container, the image digest the job runs. For an agent deployed before the
+    deploy of every version left a signed record (an update used to leave
+    none), so its running version can carry one without being redeployed.
+
+    It changes nothing: no file, no process, no inventory row. A ledger that
+    no longer matches is reported as drift and the attest is refused, because
+    a record would then name a package that is not what runs."""
+    if not NAME_RE.match(name):
+        fail("validate", f"bad agent name {name!r}")
+    entry = next((a for a in load_list() if a["name"] == name), None)
+    if not entry:
+        fail("validate", f"{name} is not in the deployment inventory")
+    if entry.get("state", "running") != "running":
+        fail("validate", f"{name} is {entry.get('state')}, not running, so there is nothing running to attest")
+    pkg = running_package(entry)
+    # A row written before rows carried the handle: the name the naming
+    # service answers for the key, read and not written back (attest changes
+    # nothing).
+    if pkg.get("agent_key") and not pkg.get("handle"):
+        h = naming_handle(pkg["agent_key"])
+        if h:
+            pkg["handle"] = h
+    if not re.fullmatch(r"[0-9a-f]{64}", str(pkg.get("sha256") or "")):
+        fail("validate", f"{name} has no package digest in the inventory, so no record can name one")
+    if not pkg.get("agent_key"):
+        fail("validate", f"{name} has no identity on this host, so no record can name its key")
+    drift = ledger_drift(name)
+    if drift is None:
+        fail("ledger", f"{name} has no ledger (deployed before the ledger existed), so what runs cannot be re-hashed")
+    # The package's own files, and the brain, are what the digest stands for:
+    # one of them changed means the package named is not what runs, and no
+    # record is made. A file the install wrote beside them (the bound
+    # Descriptor, which the adapter may file again, or an environment file) is
+    # reported in the record and does not stop it.
+    pkg_dir = f"{entry.get('package') or ''}/"
+    in_package = [d for d in drift if d["path"].startswith(pkg_dir) or d["path"].startswith(f"{BRAINS}/")]
+    if in_package:
+        fail("ledger", f"{name} no longer matches its ledger: {len(in_package)} file(s) of the package or its "
+                       f"brain differ from what was placed", state="nothing changed", act="attest",
+             drift=in_package[:50], **pkg)
+    row = next((c for c in load_json_list(CONTAINERS) if c.get("name") == name), None)
+    image = row.get("image_digest") if row and row.get("sha256") == pkg["sha256"] else None
+    doc = read_ledger(name) or {}
+    out({"ok": True, "act": "attest", "name": name, **pkg,
+         "host": HOST, "harness": entry.get("harness") or entry.get("framework") or "",
+         **({"image_digest": image} if image else {}),
+         **({"environment": entry["environment"]} if entry.get("environment") else {}),
+         "deployed_at": entry.get("updated_at") or entry.get("deployed_at"),
+         "ledger": {"path": f"{LEDGERS}/{name}.json", "sha256": doc.get("sha256"),
+                    "files": len(doc.get("files") or []) + len(doc.get("outside") or []),
+                    "drift": drift[:50]}})
+
+
 # ── jobs at once ──────────────────────────────────────────────────────────
 
 def set_jobs_at_once(name, word):
@@ -4854,7 +4932,7 @@ def set_jobs_at_once(name, word):
     # In place, so the other rows keep their order and the roster reads the
     # same list with one fact changed.
     save_list(agents)
-    out({"ok": True, "act": "jobs-at-once", "name": name, "was": was, "now": n,
+    out({"ok": True, "act": "jobs-at-once", "name": name, "was": was, "now": n, **running_package(entry),
          "written": [LIST, CONF],
          "applies": "the fleet supervisor rebuilds its roster from these files within thirty seconds and holds "
                     "this agent to the new number from its next job; nothing was restarted"})
@@ -4937,7 +5015,7 @@ def set_model(name, model, harness=None):
     # something an owner reads and has to re-state it. Where the work runs is
     # untouched, and the helper reads that off the inventories.
     runtime = publish_runtime_for(name)
-    out({"ok": True, "act": "model", "name": name, "was": was, "now": model,
+    out({"ok": True, "act": "model", "name": name, "was": was, "now": model, **running_package(entry, home),
          "harness": harness, "credential": secret, "descriptor": descriptor,
          "ledger": ledger, "runtime": runtime, "check": smoke,
          **({"container": container} if container else {})})
@@ -5027,6 +5105,7 @@ def rebind(name):
                                  entry.get("version"), entry.get("interaction") or "service",
                                  harness, entry.get("model"), sha256=entry.get("sha256"))
     out({"ok": "absent" not in descriptor, "act": "rebind", "name": name, "descriptor": descriptor,
+         **running_package(entry, home),
          **({"handle": handle_change} if handle_change else {})})
 
 
@@ -5087,7 +5166,7 @@ def reledger_brain(name):
 # job. Giving them root would be power nothing in them uses.
 # `runtime` is here for one reason: the bearer it posts with is a root-owned
 # file in the fleet's secret store. It makes and unmakes nothing.
-AS_ROOT = ("deploy", "update", "alongside", "retire-version", "remove", "model", "status", "runtime", "jobs-at-once")
+AS_ROOT = ("deploy", "update", "alongside", "retire-version", "remove", "model", "status", "runtime", "jobs-at-once", "attest")
 
 
 def main():
@@ -5124,6 +5203,8 @@ def main():
             fail("validate", f"bad agent name {sys.argv[2]!r}")
         out({"ok": True, "act": "runtime", "name": sys.argv[2],
              "runtime": publish_runtime_for(sys.argv[2])})
+    elif cmd == "attest" and len(sys.argv) == 3:
+        attest(sys.argv[2])
     elif cmd == "rebind" and len(sys.argv) == 3:
         rebind(sys.argv[2])
     elif cmd == "jobs-at-once" and len(sys.argv) == 4:
@@ -5132,7 +5213,7 @@ def main():
         fail("usage", "deploy <argfile> | update <argfile> | alongside <argfile> | retire-version <argfile> | "
                       "image <argfile> | container <argfile> | "
                       "model <name> <model> [harness] | jobs-at-once <name> <n|default> | remove <name> | "
-                      "runtime <name> | rebind <name> | status")
+                      "runtime <name> | rebind <name> | attest <name> | status")
 
 
 if __name__ == "__main__":

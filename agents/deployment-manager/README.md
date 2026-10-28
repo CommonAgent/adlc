@@ -48,6 +48,36 @@ its name.
 - `host/`: the agent's descriptor and listing, its brain, and the placement
   templates for a platform project and a tenant project.
 
+## Records and the conformance check after every deploy
+
+Every act that puts a version in place ends in a signed deployment record
+naming the package digest: a deploy, an update (including a reinstall of the
+same version with new settings), and a version kept alongside. A reconfigure
+that installs nothing (`model`, `jobs-at-once`, `rebind`) is recorded as act
+`reconfigure`, naming the package already running. The executor files a
+deploy's or an update's record with the request it carried out.
+
+After a deploy or an update that worked, the executor runs the Conformance
+Checker (agentevaluator, on the same host) against the agent it put in place,
+in a process of its own and one at a time: the cases are derived from the
+installed package, the verdict is signed by the checker and filed with the
+registry, and it names the package digest the deploy verified. It runs in
+every environment but prod unless `DM_CONFORMANCE` (`on` or `off`) says
+otherwise; its log is `~deploymgr/records/conformance.log`.
+
+An agent that already runs can be given both without being redeployed:
+
+```sh
+python3 /opt/fleet/deploy-executor.py backfill [--records-only | --checks-only] [name ...]
+```
+
+For each running agent in the inventory, `deploymgr-steps.py attest <name>`
+re-hashes the install against its ledger and installs nothing (a changed file
+of the package or its brain refuses it); its answer is signed as an `attest`
+record and filed on the deploy request that filed that package
+(`POST /v1/deploy-requests/record`), and the check runs as it does after a
+deploy.
+
 ## The audit gate
 
 The deployment manager installs a package only with a current audit pass

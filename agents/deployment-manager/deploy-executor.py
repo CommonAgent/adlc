@@ -25,8 +25,13 @@ runtimes are present. Never a value. The approver's page uses it to say
 "set up" and to fill in settings before the click, instead of the installer
 refusing after it.
 
+After a deploy or an update that worked, it starts the Conformance Checker on
+the agent it put in place (conform, below), and `backfill` gives an agent that
+already runs its deployment record and verdict without redeploying it.
+
 Env: MESH_CONTROL_URL (default the environment's urls.app + /v1, env/prod.json),
-MESH_DEPLOY_EXECUTOR_TOKEN_FILE (one line, the bearer), POLL_SECONDS (60).
+MESH_DEPLOY_EXECUTOR_TOKEN_FILE (one line, the bearer), POLL_SECONDS (60),
+DM_CONFORMANCE (on/off; default on everywhere but prod).
 """
 import calendar
 import hashlib
@@ -113,6 +118,9 @@ STEPS = f"{FLEET}/deploymgr-steps.py"
 DEPLOY_TIMEOUT = (int(os.environ.get("DM_BUILD_MINUTES", "40")) * 60 + 900
                   + int(os.environ.get("DM_NODE_LOCK_SECONDS", "600")))
 RECORD = f"{FLEET}/deploymgr-record.py"
+# The acts of the host procedure that end in a signed deployment record when
+# they succeed. A refusal is recorded too, whatever act it stopped.
+RECORDED_ACTS = ("deploy", "update")
 DM_HOME = "/home/deploymgr"
 DM_TOKENS = f"{DM_HOME}/secrets/boot-tokens"
 DM_IDENTITY = f"{DM_HOME}/.agentmesh/adapter/identity.json"
@@ -628,6 +636,29 @@ def refuse_by_audit_gate(r, why):
     return {"ok": False, "result": result, **({"record": record} if record else {})}
 
 
+def signed_record(result):
+    """The procedure's answer, signed by the deployment manager's own identity
+    (deploymgr-record.py), or None when the recorder gave nothing back.
+
+    Twice if needed: the first real deploys produced unsigned records because
+    node's cold start under deploy load blew the signer's timeout, and a record
+    signed on the second try beats an unsigned one filed fast."""
+    record = None
+    for attempt in (1, 2):
+        try:
+            rp = subprocess.run(["python3", RECORD, DM_IDENTITY],
+                                input=json.dumps(result), capture_output=True, text=True, timeout=180)
+            if rp.returncode == 0 and rp.stdout.strip():
+                record = json.loads(rp.stdout)
+                if record.get("signatures"):
+                    return record
+                print(f"[deploy-executor] record unsigned (attempt {attempt}): {record.get('_unsigned')}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[deploy-executor] record step failed (attempt {attempt}): {e}", flush=True)
+        time.sleep(5)
+    return record
+
+
 def run_one(r):
     if r.get("container"):
         return run_container(r)
@@ -746,23 +777,13 @@ def run_one(r):
     # A deploy that ran is recorded; so is a refusal, since §11.3 says every
     # act leaves a record and a refusal is an act. A crash with no JSON at
     # all (no `step`) is not a procedure's answer and gets no record.
-    if result.get("act") == "deploy" or (not result.get("ok") and result.get("step")):
-        # Twice if needed: the first real deploys produced unsigned records
-        # because node's cold start under deploy load blew the signer's
-        # timeout, and a record signed on the second try beats an unsigned
-        # one filed fast.
-        for attempt in (1, 2):
-            try:
-                rp = subprocess.run(["python3", RECORD, DM_IDENTITY],
-                                    input=json.dumps(result), capture_output=True, text=True, timeout=180)
-                if rp.returncode == 0 and rp.stdout.strip():
-                    record = json.loads(rp.stdout)
-                    if record.get("signatures"):
-                        break
-                    print(f"[deploy-executor] record unsigned (attempt {attempt}): {record.get('_unsigned')}", flush=True)
-            except Exception as e:  # noqa: BLE001
-                print(f"[deploy-executor] record step failed (attempt {attempt}): {e}", flush=True)
-            time.sleep(5)
+    #
+    # An update is an act like a deploy, and its record names the package it
+    # put in place. Until 2026-10-28 only `deploy` was recorded here, so every
+    # agent updated through the queue ran a version no deployment record named
+    # (56 of 62 dev agents at the fleet audit, lifecycle plan item 5).
+    if result.get("act") in RECORDED_ACTS or (not result.get("ok") and result.get("step")):
+        record = signed_record(result)
         if record is not None:
             os.makedirs(DM_RECORDS, exist_ok=True)
             with open(f"{DM_RECORDS}/{args['name']}-{record.get('act', 'deploy')}.json", "w") as f:
@@ -770,6 +791,239 @@ def run_one(r):
 
     return {"ok": bool(result.get("ok")), "result": result, **({"record": record} if record else {})}
 
+
+# ── the conformance verdict after each deploy (fix pass, 2026-10-28) ──────
+#
+# A deploy or an update that worked is followed, where the environment wants
+# it, by the Conformance Checker (agentevaluator, on this same host) run
+# against the agent it put in place: the cases derived from the installed
+# package's own declarations (agenteval-gen.py), sent to the agent, judged and
+# signed by the checker's own key (agenteval-run.py), and filed with the
+# registry, where the auditor reads the newest verdict. The verdict names the
+# package digest the deploy verified, so the auditor binds it to this version.
+#
+# It runs after the result is posted, in a process of its own, one at a time
+# on this host (a lock), so a long check never holds the queue or the next
+# deploy. It is wanted everywhere but prod unless DM_CONFORMANCE says
+# otherwise; a check that cannot run says why in its log and fails nothing.
+
+EVAL_GEN = f"{FLEET}/agenteval-gen.py"
+EVAL_RUN = f"{FLEET}/agenteval-run.py"
+EVAL_USER = "agentevaluator"
+EVAL_HOME = f"/home/{EVAL_USER}"
+EVAL_IDENTITY = f"{EVAL_HOME}/.agentmesh/adapter/identity.json"
+EVAL_CREDS = f"{EVAL_HOME}/.config/fleet/mesh.creds"
+EVAL_LOCK = f"{EVAL_HOME}/tmp/.after-deploy.lock"
+EVAL_TIMEOUT = int(os.environ.get("DM_CONFORMANCE_SECONDS") or 3600)
+CONFORM_LOG = f"{DM_RECORDS}/conformance.log"
+_CHECKS = []
+
+
+def conformance_wanted():
+    """DM_CONFORMANCE on or off, else on in every environment but prod."""
+    v = (os.environ.get("DM_CONFORMANCE") or "").strip().lower()
+    if v in ("on", "1", "true", "yes"):
+        return True
+    if v in ("off", "0", "false", "no"):
+        return False
+    try:
+        name, _path, _v = _am_env_file()
+    except RuntimeError:
+        return False
+    return name != "prod"
+
+
+def conformance_subject(r, outcome):
+    """The agent a request put in place, as the check needs it, or None when
+    the request is not one the check follows: only a package this host's
+    procedure installed, and only when it worked (a deploy or an update). A
+    container agent from a repository has its role's check, a person's own
+    package runs in the tenant project, and a version kept alongside is not
+    the one served."""
+    res = outcome.get("result") or {}
+    if not outcome.get("ok") or res.get("act") not in RECORDED_ACTS:
+        return None
+    if r.get("container") or r.get("tenant") or r.get("alongside") or r.get("retire"):
+        return None
+    s = {"request": r.get("id"), "name": res.get("name") or (r.get("args") or {}).get("name"),
+         "package": res.get("package"), "version": res.get("version"), "sha256": res.get("sha256"),
+         "agent_key": res.get("agent_key"), "handle": res.get("handle")}
+    return s if all(s.get(k) for k in ("request", "name", "package", "sha256", "handle")) else None
+
+
+def reap_checks():
+    """Collect the checks started earlier that have finished, so none lingers."""
+    _CHECKS[:] = [p for p in _CHECKS if p.poll() is None]
+
+
+def start_conformance(subject):
+    """Start the check in a process of its own and return at once."""
+    try:
+        os.makedirs(f"{DM_HOME}/tmp", exist_ok=True)
+        os.makedirs(DM_RECORDS, exist_ok=True)
+        argfile = f"{DM_HOME}/tmp/conform-{str(subject['request'])[3:15].lower()}.json"
+        with open(argfile, "w") as f:
+            json.dump(subject, f)
+        with open(CONFORM_LOG, "a") as log:
+            p = subprocess.Popen([sys.executable or "python3", os.path.abspath(__file__), "conform", argfile],
+                                 stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                 start_new_session=True, close_fds=True)
+        _CHECKS.append(p)
+        print(f"[deploy-executor] {subject['request']}: conformance check of {subject['handle']} "
+              f"{subject.get('version')} started (log {CONFORM_LOG})", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[deploy-executor] {subject.get('request')}: the conformance check did not start: {e}", flush=True)
+
+
+def conform(subject, run=subprocess.run):
+    """One check, under the host's lock. Returns what it came to."""
+    import fcntl
+    os.makedirs(f"{EVAL_HOME}/tmp", exist_ok=True)
+    with open(EVAL_LOCK, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return conform_now(subject, run=run)
+
+
+def _owned_by_checker(path):
+    try:
+        import pwd
+        u = pwd.getpwnam(EVAL_USER)
+        os.chown(path, u.pw_uid, u.pw_gid)
+    except (ImportError, KeyError, OSError):
+        pass
+
+
+def conform_now(s, run=subprocess.run):
+    """Derive the cases from the installed package, run them as the checker,
+    and keep the signed verdict beside the deployment records. The verdict is
+    filed with the registry by agenteval-run.py itself."""
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    def said(d):
+        print(json.dumps({"at": stamp, "request": s.get("request"), "handle": s.get("handle"),
+                          "version": s.get("version"), **d}), flush=True)
+        return d
+
+    pkg_dir = f"/home/{s['name']}/{s['package']}"
+    if not os.path.isdir(pkg_dir):
+        return said({"ok": False, "why": f"the installed package is not at {pkg_dir}"})
+    try:
+        g = run(["python3", EVAL_GEN, pkg_dir], capture_output=True, text=True, timeout=120)
+        spec = json.loads(g.stdout)
+        if not isinstance(spec, dict) or "cases" not in spec:
+            raise ValueError(spec.get("error") if isinstance(spec, dict) else "no spec")
+    except Exception as e:  # noqa: BLE001
+        return said({"ok": False, "why": f"the cases could not be derived from the package: {str(e)[:300]}"})
+    # Which package was checked, by the digest the deploy verified: the record
+    # the checker signs names it, which is what binds the verdict to a version.
+    spec.update({"package_sha256": s["sha256"], "package_version": s.get("version"),
+                 "requested_by": f"the deployment manager, after deploy request {s['request']}"})
+    if s.get("agent_key"):
+        spec["subject_key"] = s["agent_key"]
+    spec_path = f"{EVAL_HOME}/tmp/{s['name']}-{str(s['request'])[3:15].lower()}-eval.json"
+    with open(spec_path, "w") as f:
+        json.dump(spec, f, indent=2)
+    _owned_by_checker(spec_path)
+    stderr = ""
+    try:
+        p = run(["sudo", "-u", EVAL_USER, "env", f"HOME={EVAL_HOME}", f"EVAL_CREDS={EVAL_CREDS}",
+                 "python3", EVAL_RUN, spec_path, s["handle"], f"/home/{s['name']}/work", EVAL_IDENTITY],
+                capture_output=True, text=True, timeout=EVAL_TIMEOUT)
+        stderr = p.stderr or ""
+        lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip().startswith("{")]
+        answer = json.loads(lines[-1]) if lines else {"ok": False, "error": stderr[-300:] or "no output"}
+    except Exception as e:  # noqa: BLE001
+        answer = {"ok": False, "error": str(e)[:300]}
+    record = answer.get("record") if isinstance(answer.get("record"), dict) else None
+    if record:
+        try:
+            os.makedirs(DM_RECORDS, exist_ok=True)
+            with open(f"{DM_RECORDS}/{s['name']}-conformance-{s['sha256'][:12]}.json", "w") as f:
+                json.dump(record, f, indent=2)
+        except OSError:
+            pass
+    signed = bool(record and record.get("signatures"))
+    return said({"ok": signed, "conforms": answer.get("conforms"), "verdict": (record or {}).get("verdict"),
+                 "summary": answer.get("summary"), "signed": signed,
+                 "filed": signed and "submitted eval record to the registry" in stderr,
+                 **({} if record else {"why": str(answer.get("error") or "the checker returned no record")[:300]})})
+
+
+# ── the backfill: a record and a verdict for what already runs ───────────
+#
+# For an agent deployed before every deploy and update left a signed record,
+# and before every deploy was followed by a conformance check. The record is
+# an `attest` (deploymgr-steps.py attest re-hashes the running install against
+# its ledger and installs nothing), signed like any other and filed on the
+# deploy request that filed that package (POST /v1/deploy-requests/record);
+# then the check runs as it does after a deploy. Nothing is redeployed.
+#   python3 deploy-executor.py backfill [--records-only | --checks-only] [name ...]
+
+def file_record(record):
+    """POST /v1/deploy-requests/record: the platform finds the deployed request
+    that filed this package and keeps the record on it. Returns its answer."""
+    try:
+        return call("/deploy-requests/record", "POST", {"record": record})
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read().decode("utf-8", "replace"))
+        except Exception:  # noqa: BLE001
+            body = {}
+        return {"ok": False, "status": e.code, "error": body.get("error") or str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def backfill(names=(), records=True, checks=True, run=subprocess.run, inventory=None):
+    """A signed attest record and a conformance verdict for each running agent
+    in the inventory (or the ones named). One JSON line per agent."""
+    path = inventory or f"{FLEET}/deploymgr-agents.json"
+    try:
+        with open(path, encoding="utf-8") as f:
+            rows = [e for e in json.load(f) if isinstance(e, dict) and e.get("state", "running") == "running"]
+    except (OSError, ValueError) as e:
+        print(json.dumps({"ok": False, "why": f"no inventory: {e}"}), flush=True)
+        return []
+    if names:
+        rows = [e for e in rows if e.get("name") in names]
+    done = []
+    for e in rows:
+        name = e["name"]
+        try:
+            p = run(["python3", STEPS, "attest", name], capture_output=True, text=True, timeout=600)
+            lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip().startswith("{")]
+            res = json.loads(lines[-1]) if lines else {"ok": False, "error": (p.stderr or "no output")[-300:]}
+        except Exception as ex:  # noqa: BLE001
+            res = {"ok": False, "error": str(ex)[:300]}
+        row = {"name": name, "version": res.get("version") or e.get("version"),
+               "sha256": res.get("sha256") or e.get("sha256")}
+        if not res.get("ok"):
+            row["attest"] = f"refused at {res.get('step', '?')}: {str(res.get('error'))[:300]}"
+            print(json.dumps(row), flush=True)
+            done.append(row)
+            continue
+        request = None
+        if records:
+            record = signed_record(res)
+            if record and record.get("signatures"):
+                os.makedirs(DM_RECORDS, exist_ok=True)
+                with open(f"{DM_RECORDS}/{name}-attest-{res['sha256'][:12]}.json", "w") as f:
+                    json.dump(record, f, indent=2)
+                answer = file_record(record)
+                request = answer.get("request")
+                row["record"] = {k: answer.get(k) for k in ("ok", "request", "kept_as", "already", "error", "status")
+                                 if answer.get(k) is not None}
+            else:
+                row["record"] = {"ok": False, "error": (record or {}).get("_unsigned") or "the recorder gave nothing back"}
+        if checks:
+            subject = {"request": request or f"dr_backfill-{res['sha256'][:12]}", "name": name,
+                       "package": res["package"], "version": res.get("version"), "sha256": res["sha256"],
+                       "agent_key": res.get("agent_key"), "handle": res.get("handle")}
+            row["check"] = (conform(subject, run=run) if subject["handle"]
+                            else {"ok": False, "why": "no handle in the inventory"})
+        print(json.dumps(row), flush=True)
+        done.append(row)
+    return done
 
 def answer_the_run(r, outcome):
     """A request a process run filed at its gate is answered back to the run:
@@ -943,6 +1197,12 @@ def serve_request(r, kept):
     # and once: only by the round that ran it, never by a re-post.
     if r.get("run_gate") and not held:
         answer_the_run(r, outcome)
+    # The conformance verdict for what this request put in place, once, by the
+    # round that ran it.
+    if not held and conformance_wanted():
+        subject = conformance_subject(r, outcome)
+        if subject:
+            start_conformance(subject)
     return posted
 
 
@@ -950,6 +1210,7 @@ def one_round(state):
     """One pass of the loop: the host report, one queue read, and each request
     on it. Returns how long to sleep before the next pass."""
     erred = False
+    reap_checks()
     # The host's report, when it changed or ten minutes passed. A failed
     # post is logged and retried next round; it never blocks a deploy.
     try:
@@ -1000,6 +1261,19 @@ def main():
 
 if __name__ == "__main__":
     try:
+        if len(sys.argv) == 3 and sys.argv[1] == "conform":
+            with open(sys.argv[2], encoding="utf-8") as f:
+                _subject = json.load(f)
+            try:
+                os.remove(sys.argv[2])
+            except OSError:
+                pass
+            sys.exit(0 if conform(_subject).get("ok") else 1)
+        if len(sys.argv) >= 2 and sys.argv[1] == "backfill":
+            _rest = sys.argv[2:]
+            backfill([a for a in _rest if not a.startswith("--")],
+                     records="--checks-only" not in _rest, checks="--records-only" not in _rest)
+            sys.exit(0)
         main()
     except KeyboardInterrupt:
         sys.exit(0)
