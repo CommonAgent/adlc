@@ -211,8 +211,14 @@ test("the files the builder takes come back as the agent's own files, and they b
 test("a draft whose name is open is checked under a stand-in name, and its files carry no name", () => {
   const dir = mkdtempSync(join(tmpdir(), "spec-writer-unnamed-"));
   try {
+    // An unnamed draft is a new agent, so the format rules refuse the bare
+    // application/json publisher declared before them; this test is about the
+    // name, so its JSON pieces are given the specific kind a new draft carries.
     const unnamed = clone(PUBLISHER);
     delete unnamed.name;
+    for (const j of unnamed.jobs) for (const e of [...(j.inputs ?? []), ...(j.outputs ?? [])]) {
+      if (e.kind === "application/json") e.kind = "application/vnd.agentmesh.publication+json";
+    }
     const keep = join(dir, "agent");
     const r = checkBuilds({ spec: unnamed, env, keep });
     assert.equal(r.ok, true, JSON.stringify(r.problems));

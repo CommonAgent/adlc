@@ -23,12 +23,17 @@ writer does not control.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 55 tests
+node --test test/*.test.mjs                                   # 72 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
 `references/` holds an example suite and the spec it tests, which the model
-reads as the shape of a good suite.
+reads as the shape of a good suite, and `delivered-formats.test.mjs`, the
+standard format check copied into every suite this writes: each delivered
+piece must be what its declared kind says (Markdown with its convention's
+headings, a JSON kind with its declared shape, HTML, an address, a signed
+binary), and the model's tests call its `checkDelivered(jobDir)` on every job
+folder they fill.
 
 ## Replacing it
 

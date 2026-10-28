@@ -20,7 +20,7 @@ when somebody wants an agent built and has said what it should do, in their own 
 
 ## What a good result looks like
 
-The agent's own files, the layout a package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), the same bytes the builder writes for the draft, carrying the four sentences on every job, a how declaration on each, at least four refusals written as acts, and the records an agent is audited by. Beside it, the questions it could not answer itself, each one something nobody else could have answered.
+The agent's own files, the layout a package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), the same bytes the builder writes for the draft, carrying the four sentences on every job, a how declaration on each, a specific kind on every input and output (Markdown with a convention for what agents hand each other or a person reviews, a vendor JSON kind for typed data only code reads, never a bare application/json), who gives each input, a model reached only as a bound system and never named, at least four refusals written as acts, and the records an agent is audited by. Beside it, the questions it could not answer itself, each one something nobody else could have answered.
 
 ## What it produces
 

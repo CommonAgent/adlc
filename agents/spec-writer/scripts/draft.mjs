@@ -30,7 +30,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkSpec } from "./check-spec.mjs";
+import { checkDraft, earlierBareJson } from "./check-spec.mjs";
 import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
 
@@ -92,8 +92,37 @@ is. A model in control has to earn it, and when it is in control the contract
 is the ends and never the method.
 
 Every input and output kind is one of text, identifier, url, document, or
-one media type such as application/json. "array of ..." and "list of ..." are
+one media type such as text/markdown. "array of ..." and "list of ..." are
 not kinds: several files of one kind are one input.
+
+Choose each kind for who reads the piece:
+- Content one agent hands another, or a person reviews, is "text/markdown"
+  by default, with a light convention: a short header for the few structured
+  fields, then fixed headings. Sketch the convention in the piece's "about",
+  with the header's fields and each heading in backticks, for example
+  "about": "Markdown: a header \`source, read_at\`, then \`## Key points\`
+  with one bullet per point, then \`## Not read\`."
+- JSON is only for exact typed data that code consumes and a person never
+  reads: IDs, coordinates, timings, numeric series. Then the kind says what
+  it is, "application/vnd.agentmesh.<name>+json", and the "about" sketches
+  its top-level shape in backticks, such as \`{points, source}\`.
+- Never a bare "application/json": the package maker refuses a new agent
+  that declares one.
+- Every input says who gives it: "given_by" is "person", "agent" or "either".
+When you revise a spec that already declares a piece as bare
+"application/json", keep that piece as it is, because the agent already
+sends it and changing it is its own decision, and name it in "notes" as one
+to make specific.
+Where a person might want another format than the default, draft the
+default and say so in "notes"; never decide it for them.
+
+A job that calls a model reaches it as a bound system with access "trigger":
+"text-reasoning" for text, "image-reading" for pictures, "speech-to-text" or
+"text-to-speech" for speech. Its "purpose" says the capability the job needs
+(text, vision, long context). The scripts read the model from AGENT_MODEL or
+TEXT_MODEL through the shared caller, so the install and a run config choose
+it. Never name a model or a version anywhere in the spec: not in a setting's
+default, an instruction or a sentence.
 
 No address goes anywhere in "systems": not in a setting, not in a purpose.
 A product somebody binds is named by its system and credential. A public read
@@ -336,8 +365,13 @@ export function blanksOf(spec, said = []) {
 
 /** Ask, check what came back, and ask once more with the findings. Returns the
  *  draft, whatever survived, and what it cost. */
-export async function askForSpec({ call, check = checkSpec, tries = TRIES, ...opts } = {}) {
+export async function askForSpec({ call, check = null, tries = TRIES, ...opts } = {}) {
   if (typeof call !== "function") throw new Error("askForSpec needs a call");
+  // What a good spec carries, and the format rules, holding a revision to
+  // them only for the pieces it adds: what an earlier spec already sent as
+  // bare JSON is kept, and named in the notes.
+  const earlier = earlierBareJson(opts.asked);
+  check ??= (spec) => checkDraft(spec, { earlier });
   let findings = [];
   let last = null;
   let calls = 0;

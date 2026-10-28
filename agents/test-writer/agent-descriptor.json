@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.0",
+  "agent_version": "0.3.0",
   "does": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something.",
   "offerings": [
     {

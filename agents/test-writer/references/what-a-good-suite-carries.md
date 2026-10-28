@@ -107,6 +107,28 @@ async call.
    claims. A package's root holds its agent-descriptor.json, so a suite reads
    it at `../agent-descriptor.json` from test/, and never a spec.json.
 
+## Every delivered piece is checked against its declared kind
+
+Since 2026-10-27 every suite carries `test/delivered-formats.test.mjs`. The
+test writer adds it; it is the same bytes in every suite and the model never
+writes it. It exports `checkDelivered(jobDir)`, which reads
+`../agent-descriptor.json` and the job folder's `pieces.json`, and returns
+a sentence for each piece that is not what its declared kind says: Markdown
+that is JSON or lacks a heading its `about` sketches in backticks, a JSON
+kind that does not parse or lacks a top-level member its `about` sketches as
+`{a, b}`, HTML that carries no element, a binary without its signature, or a
+piece pieces.json lists under a media type other than the declared one.
+
+Every test that fills a job folder, by running a job's main or calling its
+pieces script's `fill`, ends with it:
+
+    import { checkDelivered } from "./delivered-formats.test.mjs";
+    // ... the job runs into jobDir ...
+    assert.deepEqual(checkDelivered(jobDir), []);
+
+It was added because an inventory of 73 agents found 59 pieces whose declared
+kind was not what the code sent, and nothing in any suite looked.
+
 ## Where the nine are thin
 
 Two files import nothing from the scripts and pin by process alone. Four

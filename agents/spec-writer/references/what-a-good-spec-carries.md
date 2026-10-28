@@ -164,7 +164,8 @@ three cases, and each has its own place:
 
 - A product somebody binds (a database, a mail service, a model): the system
   name and the credential name. The installer binds the address from what the
-  account chose. Nothing in the spec says where it is.
+  account chose. Nothing in the spec says where it is, and for a model nothing
+  says which one: see the next section.
 - A public read that needs no key (a public web page, an open API anybody may
   call): declare it as a system with `"access": "read"`, `"kind": "service"`,
   `"leaves": true` when a caller's material is sent to it, and no credential
@@ -175,15 +176,66 @@ three cases, and each has its own place:
 - An address the caller gives with the job (a page to read): an input of kind
   `url`, never a setting.
 
+### A model is a bound system, never a name
+
+A job that calls a model declares the capability as a system with access
+`trigger`: `text-reasoning` for text, `image-reading` for pictures,
+`speech-to-text` and `text-to-speech` for speech. The system's `purpose`
+says what the job needs of it, such as "reads a whole 200-page document at
+once" for long context. The scripts read the model from configuration,
+`AGENT_MODEL` or `TEXT_MODEL`, through the shared caller, so the install
+binds it and a run config can override it.
+
+    { "name": "text-reasoning", "access": "trigger", "kind": "service",
+      "purpose": "judges which sentences on the page are its key points; needs text only" }
+
+A spec never names a model or a version: not in a setting's default, not in
+an instruction, not in a sentence. Brand reader shipped with
+`gemini-2.5-flash` in a script and answered 404 when Google retired it. The
+package maker warns on a model named in an existing agent's scripts or
+skills and refuses a new agent that names one.
+
 ## What a job takes, in kinds the builder reads
 
 Each input and output has one `kind`, and there are only two forms of it: one
 of the four words `text`, `identifier`, `url` and `document`, or one media
-type written as `type/subtype` (`application/json`, `image/png`,
-`application/octet-stream`). Nothing else builds. "array of
+type written as `type/subtype` (`text/markdown`, `image/png`,
+`application/vnd.agentmesh.site-read+json`). Nothing else builds. "array of
 application/octet-stream", "list of urls", "json" and "file" are not kinds.
 Several files of the same kind are one input, declared once; the job reads
 every file that arrives under it.
+
+## Which kind, for who reads it
+
+Since 2026-10-27 this is a rule, and not only a habit. An inventory of 73
+agents that day found 77 pieces sent as JSON that people should have read as
+Markdown, about 180 declared as nothing more than `application/json`, and 59
+whose declared kind was not what the code sent. Hand-offs broke on them, and
+people were given raw JSON to review. The eight packages this reference was
+measured on are among them, so do not copy their kinds.
+
+- **Between agents, or for a person: Markdown.** `text/markdown`, with a
+  light convention: a short header for the few structured fields, then fixed
+  headings. Sketch it in the piece's `about`, the header's fields and each
+  heading in backticks:
+
+      "about": "Markdown: a header `source, read_at`, then `## Key points` with one bullet per point, then `## Not read` with one line per page that could not be read."
+
+  brief-writer's brief, quiz-maker's concept list and explainer-critic's
+  review already work this way, and the code that reads them parses the
+  headings.
+- **Exact typed data only code reads: a specific JSON kind.** IDs,
+  coordinates, timings, numeric series. `application/vnd.agentmesh.<name>+json`,
+  with the top-level shape sketched in the `about`, such as
+  `` `{cues, font}` ``.
+- **Never bare `application/json`.** The package maker refuses a new agent
+  that declares it, and warns on an agent released before the rule. A
+  revision of a released agent keeps a piece it already sends that way and
+  says so in the notes; converting it is its own decision.
+- **Who gives each input.** `given_by`: `person`, `agent` or `either`
+  (Common Agent 6.13, proposed; optional, so it is safe to write).
+
+      { "name": "page", "kind": "url", "required": true, "given_by": "person" }
 
 A job's `references` and `assets` are files the package ships beside its
 scripts. Nobody downstream writes them: the test-writer writes tests and the

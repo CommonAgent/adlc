@@ -71,6 +71,16 @@ It prints one JSON object. If `ok` is false, report the step and stop. If
 `act` is `refuse`, the description was missing a required part; tell the
 requester which part, in plain words.
 
+Pack also holds the spec to the format and model rules (2026-10-27). A bare
+`application/json` input or output, a piece the scripts deliver that no job
+declares, and a model named in a job's scripts or skills, are findings. For an agent released before the rules came in,
+they come back as `format_rules.findings` with `mode` `warn` and the package
+is built: say each one in the report, as something to fix later. For a new
+agent, `act` is `refuse` and the refusal names each finding: tell the
+requester to send the spec back to the spec writer with them. Never change a
+kind or take a model name out yourself to get a package through, and never set `FORMAT_EXISTING` to
+make a new agent pass.
+
 Pack also checks what the spec declares against the bases a package can be
 built on, and refuses a package that no base satisfies. The refusal names
 the missing binary or runtime. Do not work around it by dropping the

@@ -24,6 +24,12 @@ Each refusal the spec lists, as a case that tries the thing and is refused with 
 
 Read the reference. Every number in it was counted across the nine suites that hold working packages, and where those nine disagree the reference has no rule rather than an invented one.
 
+## Every delivered piece is in its declared format
+
+Every suite carries one file the model does not write: `test/delivered-formats.test.mjs`, the standard check that each piece a job delivers is what its declared kind says it is. Markdown parses as Markdown and carries the headings its convention names; a JSON kind parses and has its declared top-level shape; HTML is HTML; an address is an address; an image, audio, a PDF or an archive starts with its own signature; and the media type pieces.json lists is the kind declared. The next agent, the person reviewing the piece and the App all go by the declared kind, so a piece sent as one thing and declared as another breaks the hand-off, and nothing else in the lifecycle looks at the bytes.
+
+The file is copied whole from the references into every suite, never rewritten and never answered with. Each test that fills a job folder calls its `checkDelivered(jobDir)` and asserts there is nothing wrong. A suite for a spec with outputs whose tests never call it goes back with that finding.
+
 ## Adding to a suite that exists
 
 A released package has a suite somebody relies on. When its test files come with the message, they are kept byte for byte and new files are written beside them for what was asked; nothing in a kept file is rewritten, and only the new files are delivered. A suite for a change is judged as it will stand, the kept files and the new ones together, and the new files must still fail against stand-ins on their own.

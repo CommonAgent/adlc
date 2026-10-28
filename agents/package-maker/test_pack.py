@@ -731,3 +731,72 @@ class TheLicenceAWorkspacePublishesUnder(Harness):
         # The layout tool notes a named license with no LICENSE file beside it,
         # which is the note that tells us the license actually landed.
         self.assertIn("Apache-2.0", " ".join(res["repository"].get("notes", [])))
+
+
+def bare_json_spec(name="key-points"):
+    """A new agent whose one output is declared bare application/json."""
+    doc = spec(name=name)
+    doc["jobs"][0]["outputs"] = [{"name": "key points", "kind": "application/json", "when": "per_task"}]
+    return doc
+
+
+class TheFormatCutOver(Harness):
+    """The pack procedure tells the builder whether it released an agent
+    before the format rules: an earlier build record of the name with no
+    format_rules member is that release, and its findings are warned; no
+    record, or one the rules already called new, refuses them. The record it
+    writes carries what the rules found, so the next build can read it back."""
+
+    def setUp(self):
+        super().setUp()
+        self._env = os.environ.pop("FORMAT_EXISTING", None)
+
+    def tearDown(self):
+        if self._env is not None:
+            os.environ["FORMAT_EXISTING"] = self._env
+        super().tearDown()
+
+    def earlier_record(self, name, **doc):
+        d = os.path.join(self.home, "records")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, f"{name}-build.json"), "w", encoding="utf-8") as f:
+            json.dump({"package": {"name": name, "version": "0.9.0"}, **doc}, f)
+
+    def test_a_new_agent_with_a_bare_json_output_is_refused_in_words(self):
+        res = self.pack(bare_json_spec())
+        self.assertEqual(res["act"], "refuse", res)
+        self.assertIn("key-points is refused on its formats", res["refused"])
+        self.assertEqual(self.dist(), [])
+
+    def test_an_agent_this_builder_released_before_the_rules_is_warned_and_packed(self):
+        self.earlier_record("key-points", produced_at="2026-10-24T21:50:43Z")
+        res = self.pack(bare_json_spec())
+        self.assertEqual(res["act"], "build", res)
+        self.assertEqual(res["format_rules"]["mode"], "warn")
+        self.assertTrue(res["format_rules"]["existing"])
+        rec = self.record(res)
+        self.assertEqual(rec["format_rules"]["findings"], res["format_rules"]["findings"])
+        self.assertEqual(len(rec["format_rules"]["findings"]), 1)
+
+    def test_a_record_from_an_old_builder_written_after_the_cut_over_is_not_an_earlier_release(self):
+        self.earlier_record("key-points", produced_at="2026-10-28T09:00:00Z")
+        self.assertEqual(self.pack(bare_json_spec())["act"], "refuse")
+        self.earlier_record("key-points")
+        self.assertEqual(self.pack(bare_json_spec())["act"], "refuse", "a record that says nothing of when is no evidence")
+
+    def test_an_agent_first_released_under_the_rules_stays_new(self):
+        self.earlier_record("key-points", format_rules={"existing": False, "mode": "refuse", "findings": []})
+        res = self.pack(bare_json_spec())
+        self.assertEqual(res["act"], "refuse", res)
+
+    def test_a_clean_new_agent_is_packed_and_its_record_says_it_is_new(self):
+        doc = bare_json_spec()
+        doc["jobs"][0]["outputs"][0]["kind"] = "text/markdown"
+        res = self.pack(doc)
+        self.assertEqual(res["act"], "build", res)
+        rec = self.record(res)
+        self.assertEqual(rec["format_rules"]["existing"], False)
+        self.assertEqual(rec["format_rules"]["findings"], [])
+        # So its next build, with a bare JSON output, is refused and not warned.
+        res = self.pack(bare_json_spec())
+        self.assertEqual(res["act"], "refuse", res)
