@@ -23,7 +23,7 @@ The documentation and its trace in the job's out/ folder with pieces.json listin
 ## What it produces
 
 - documentation (text/markdown, per task)
-- trace (application/vnd.agentmesh.doc-trace+json, per task, working)
+- trace (application/vnd.agentmesh.doc-trace+json, per task, working out)
 
 ## When it comes back empty
 

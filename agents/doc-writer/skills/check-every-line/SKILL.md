@@ -22,7 +22,7 @@ A trace with one entry per line that says something, naming its source, its plac
 
 ## What it produces
 
-- trace (application/vnd.agentmesh.doc-trace+json, per task, working)
+- trace (application/vnd.agentmesh.doc-trace+json, per task, working out)
 
 ## When it comes back empty
 

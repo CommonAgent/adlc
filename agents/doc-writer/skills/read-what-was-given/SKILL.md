@@ -13,8 +13,8 @@ first, on every documentation job
 
 ## What this needs
 
-- agent descriptor (application/vnd.agentmesh.agent-descriptor+json, one of declaration)
-- AgentDoc (application/vnd.agentmesh.agentdoc+json, one of declaration)
+- agent descriptor (application/vnd.agentmesh.agent-descriptor+json, any one of the declaration group)
+- AgentDoc (application/vnd.agentmesh.agentdoc+json, any one of the declaration group)
 - runtime requirements (application/vnd.agentmesh.agent-runtime-requirements+json, optional)
 - verdicts (application/vnd.agentmesh.eval-record+json, optional)
 - records (document, optional)
@@ -25,7 +25,7 @@ Every attached file named as one of the five things it can be, by what is in it,
 
 ## What it produces
 
-- what was given (application/vnd.agentmesh.doc-sources+json, per task, working)
+- what was given (application/vnd.agentmesh.doc-sources+json, per task, working out)
 
 ## When it comes back empty
 

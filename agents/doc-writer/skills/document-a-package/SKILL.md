@@ -13,8 +13,8 @@ when somebody has to use or maintain an agent and needs its documentation, writt
 
 ## What this needs
 
-- agent descriptor (application/vnd.agentmesh.agent-descriptor+json, one of declaration)
-- AgentDoc (application/vnd.agentmesh.agentdoc+json, one of declaration)
+- agent descriptor (application/vnd.agentmesh.agent-descriptor+json, any one of the declaration group)
+- AgentDoc (application/vnd.agentmesh.agentdoc+json, any one of the declaration group)
 - runtime requirements (application/vnd.agentmesh.agent-runtime-requirements+json, optional)
 - verdicts (application/vnd.agentmesh.eval-record+json, optional)
 - records (document, optional)
@@ -26,7 +26,7 @@ Markdown documentation a stranger can use: what the agent does, where to send it
 ## What it produces
 
 - documentation (text/markdown, per task)
-- trace (application/vnd.agentmesh.doc-trace+json, per task, working)
+- trace (application/vnd.agentmesh.doc-trace+json, per task, working out)
 
 ## When it comes back empty
 
@@ -51,4 +51,4 @@ Run these from this skill's folder; each one says what it needs at the top.
 ## References
 
 - references/how-a-line-is-traced.md
-- rules.md
+- references/rules.md
