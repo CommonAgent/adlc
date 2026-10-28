@@ -13,7 +13,8 @@ first, on every job
 
 ## What this needs
 
-- request (application/vnd.agentmesh.build-request+json, required)
+- request (application/vnd.agentmesh.build-request+json, any one of the what to plan group)
+- what you want done (text, any one of the what to plan group)
 
 ## What a good result looks like
 
