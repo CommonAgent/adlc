@@ -111,3 +111,10 @@ test("with a diff, a finding off the changed lines is kept apart", () => {
   assert.equal(out.kept.length, 1);
   assert.equal(out.outside_the_change[0].place.file, "scripts/read.mjs");
 });
+
+test("the ask says how a package is laid out, so a copied script's path is not reported as missing", () => {
+  const { read, texts } = pkg();
+  const p = reviewPrompt({ read, texts, sent: [] });
+  assert.match(p, /copies each script, reference and lockfile a skill lists in plugin\.json/);
+  assert.match(p, /a finding only when plugin\.json does not/);
+});

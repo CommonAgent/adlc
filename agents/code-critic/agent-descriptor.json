@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.0",
+  "agent_version": "0.1.1",
   "does": "Reviews a change to an agent package, its scripts, tests and declarations alike, and hands back findings for a person to answer, each naming a place, a claim and a consequence. It checks the house architecture rules with a program and calls a model once for the rest, and it changes nothing.",
   "offerings": [
     {
