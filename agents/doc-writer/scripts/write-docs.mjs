@@ -62,7 +62,8 @@ export const hasCredential = (s) => CREDENTIAL.test(String(s.text));
 
 /** Which offering a record is a job of, by index, or -1. A record names its
  *  offering by a top-level field (offering, offering_id, skill, job, step),
- *  by its file name, or by an offering's or a step's id quoted in it; with
+ *  by its file name (a job's or a step's id in it, or the name of what only
+ *  that job hands back), or by an id quoted in it; with
  *  one offering, any job record is that offering's. Pure, and the check uses
  *  the same reading. */
 export function offeringOf(record, offerings = []) {
@@ -79,6 +80,12 @@ export function offeringOf(record, offerings = []) {
   const lower = record.name.toLowerCase();
   const byName = pairs.find(([id]) => new RegExp(`(^|[^a-z0-9])${esc(id)}([^a-z0-9]|$)`).test(lower));
   if (byName) return byName[1];
+  // A file named for what exactly one job hands back (`quiz.json` for the
+  // output `quiz`) is that job's.
+  const slug = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const stem = slug(lower.replace(/^\d+-/, "").replace(/\.[^.]+$/, ""));
+  const byOutput = offerings.map((o, i) => ((o.outputs ?? []).some((op) => op && slug(op.name ?? "") === stem) ? i : -1)).filter((i) => i >= 0);
+  if (byOutput.length === 1) return byOutput[0];
   const quoted = ids.map((l, i) => (l.some((id) => String(record.text).includes(`"${id}"`)) ? i : -1)).filter((i) => i >= 0);
   if (quoted.length === 1) return quoted[0];
   return offerings.length === 1 ? 0 : -1;

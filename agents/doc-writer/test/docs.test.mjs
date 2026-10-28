@@ -351,3 +351,11 @@ test("review 2: a record's own field marked under a job is not an example, and f
   assert.notEqual(bad, markdown);
   assert.equal(checkDocs({ markdown: bad, sources, leftOut }).ok, false);
 });
+
+test("a record named for what only one job hands back is that job's example", () => {
+  const offs = THREE.offerings;
+  const rec = (name) => ({ kind: "record", name, json: {}, text: "{}" });
+  assert.equal(offeringOf(rec("receipt.json"), offs), 2);
+  assert.equal(offeringOf(rec("count.json"), offs), 1);
+  assert.equal(offeringOf(rec("names.json"), offs), -1);
+});
