@@ -52,6 +52,20 @@ function findRequest(files) {
   return {};
 }
 
+/** The description in a message's words. A page names the job on the first
+ *  line ("Make a plan") and gives each input as a `name: value` line, so the
+ *  job's name is not part of the description, and a `what you want done:`
+ *  line starts it; anything after that line is the description too. Any
+ *  other message is read whole. */
+export function wordsOf(text) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  while (lines.length && !lines[0].trim()) lines.shift();
+  if (lines.length && /^make a plan[.:]?$/i.test(lines[0].trim())) lines.shift();
+  const at = lines.findIndex((l) => /^\s*what you want done\s*:/i.test(l));
+  if (at < 0) return lines.join("\n");
+  return [lines[at].replace(/^\s*what you want done\s*:\s*/i, ""), ...lines.slice(at + 1)].join("\n");
+}
+
 /** Read the description, and any earlier plan and change.
  *  { text, files: [{ name, text }] } in; { ok: true, description, earlier,
  *  change } or { ok: false, reply, stopped? } out. */
@@ -64,7 +78,7 @@ export function readRequest({ text = "", files = [] } = {}) {
   const { body, refusal } = findRequest(Array.isArray(files) ? files : []);
   if (refusal) return refusal;
 
-  let description = String(text ?? "");
+  let description = wordsOf(text);
   let earlier = null;
   let change = "";
   if (body) {

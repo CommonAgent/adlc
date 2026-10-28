@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.2",
+  "agent_version": "0.3.3",
   "name": "Solution planner",
   "summary": "Plans a piece of work you describe as steps, each saying what kind of work it is, what it takes and what it hands back.",
   "will_not": [
@@ -19,8 +19,18 @@
         {
           "name": "request",
           "kind": "application/vnd.agentmesh.build-request+json",
-          "required": true,
-          "given_by": "agent"
+          "required": false,
+          "given_by": "agent",
+          "one_of": "what to plan",
+          "about": "The platform's build request: a JSON object with the description, and an earlier plan with the change to it when one is revised."
+        },
+        {
+          "name": "what you want done",
+          "kind": "text",
+          "required": false,
+          "given_by": "person",
+          "one_of": "what to plan",
+          "about": "The work you want done, in your own words, up to 2,000 characters."
         }
       ],
       "outputs": [
@@ -45,8 +55,18 @@
             {
               "name": "request",
               "kind": "application/vnd.agentmesh.build-request+json",
-              "required": true,
-              "given_by": "agent"
+              "required": false,
+              "given_by": "agent",
+              "one_of": "what to plan",
+              "about": "The platform's build request: a JSON object with the description, and an earlier plan with the change to it when one is revised."
+            },
+            {
+              "name": "what you want done",
+              "kind": "text",
+              "required": false,
+              "given_by": "person",
+              "one_of": "what to plan",
+              "about": "The work you want done, in your own words, up to 2,000 characters."
             }
           ],
           "outputs": [
@@ -164,6 +184,7 @@
         }
       },
       "started_by": [
+        "person",
         "agent"
       ]
     }

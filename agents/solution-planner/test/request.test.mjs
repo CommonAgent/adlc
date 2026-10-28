@@ -13,7 +13,7 @@
 // Run: node --test test/request.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readRequest } from "../scripts/request.mjs";
+import { readRequest, wordsOf } from "../scripts/request.mjs";
 
 const file = (name, body) => ({ name, text: typeof body === "string" ? body : JSON.stringify(body) });
 
@@ -107,4 +107,11 @@ test("a stop notice that is not on the first line, or is not the exact form, is 
   assert.equal(later.stopped, undefined);
   const inexact = readRequest({ text: "run r-12 phase draft: stop", files: [] });
   assert.equal(inexact.ok, true);
+});
+
+test("a page's message: the job's name on the first line, then what you want done as a name: value line", () => {
+  const r = readRequest({ text: "Make a plan\nwhat you want done: Read my bakery's site\nand write a short brief" });
+  assert.equal(r.ok, true);
+  assert.equal(r.description, "Read my bakery's site\nand write a short brief");
+  assert.equal(wordsOf("Plan a newsletter"), "Plan a newsletter");
 });
