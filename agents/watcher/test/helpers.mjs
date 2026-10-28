@@ -2,6 +2,8 @@
 // script, a spend report built the way the platform builds one, and a host
 // laid out the way the builder lays the package out.
 import { createServer } from "node:http";
+import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,13 +11,21 @@ import { fileURLToPath } from "node:url";
 
 export const AGENT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const FIX = join(AGENT, "test", "fixtures");
-export const FAKE_BIN = join(AGENT, "test", "fake-agentmesh.mjs");
 export const json = (p) => JSON.parse(readFileSync(p, "utf8"));
 export const TOKEN = "amt_testtokenthatonlyreads";
 export const ACCOUNT = "acct-watch-1";
 
+/** An agent id for a handle, shaped the way the mesh spells one. */
+export function keyFor(handle) {
+  const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const b = createHash("sha256").update(handle).digest();
+  let out = "U";
+  for (let i = 0; out.length < 56; i++) out += A[b[i % b.length] % 32];
+  return out;
+}
+
 /** A storefront as the platform serves one. */
-export function storefront(handle, { key = `U${handle.length}KEY`, availability = "online", lastSeen = "2026-10-28T05:00:00Z" } = {}) {
+export function storefront(handle, { key = keyFor(handle), availability = "online", lastSeen = "2026-10-28T05:00:00Z" } = {}) {
   return { agent_id: key, visibility: "public", name: handle.split(".")[0], ...(availability ? { availability } : {}), card: { card: { handle, presence: lastSeen ? { state: availability, last_seen_at: lastSeen } : null }, listing: { handle, last_seen_at: null } } };
 }
 
@@ -104,8 +114,8 @@ export async function fakePlatform(world) {
 }
 
 /** A host: the package laid out as the builder lays it out, a records
- *  folder, a work folder, and the fake agentmesh with its script. */
-export function host(script = {}) {
+ *  folder and a work folder. */
+export function host() {
   const root = mkdtempSync(join(tmpdir(), "watcher-"));
   const pkg = "watcher";
   const plugin = json(join(AGENT, "plugin.json"));
@@ -118,7 +128,50 @@ export function host(script = {}) {
     }
   }
   for (const d of ["records", "work", "jobs"]) mkdirSync(join(root, d), { recursive: true });
-  const mesh = join(root, "fake-mesh.json");
-  writeFileSync(mesh, JSON.stringify(script));
-  return { root, home: join(root, "home"), pkg, records: join(root, "records"), work: join(root, "work"), mesh, log: join(root, "fake-mesh.log") };
+  return { root, home: join(root, "home"), pkg, records: join(root, "records"), work: join(root, "work"), n: 0 };
+}
+
+const RUN = json(join(AGENT, "agent-runtime-requirements.json")).run["watch-the-fleet"];
+
+/** One message, run as the host runs the package's command: the run spec's
+ *  own arguments with the placeholders filled in. Resolves { status, doc,
+ *  jobDir, recordsDir, outbox }. */
+export function runJob(h, { message = "", from = "owner.platform@agentmesh.ai", inReplyTo = "none", env = {} } = {}) {
+  const id = `msg-${++h.n}`;
+  const jobDir = join(h.root, "jobs", id);
+  mkdirSync(jobDir, { recursive: true });
+  writeFileSync(join(jobDir, "message.txt"), message);
+  const values = { "{home}": h.home, "{package}": h.pkg, "{job_dir}": jobDir, "{records}": h.records, "{work}": h.work, "{sender}": from, "{in_reply_to}": inReplyTo, "{message_id}": id };
+  const argv = RUN.command.map((x) => Object.entries(values).reduce((t, [k, v]) => t.replaceAll(k, v), x));
+  const [cmd, ...args] = argv;
+  if (cmd !== "node") throw new Error("the run command is not node");
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, { env: { ...process.env, MESH_JOB_OUT: "", ...env }, stdio: ["ignore", "pipe", "pipe"] });
+    let out = ""; let err = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { err += d; });
+    child.on("close", (status) => {
+      let doc = null;
+      try { doc = JSON.parse(out.trim()); } catch { doc = { unreadable: out, err }; }
+      resolve({ status, doc, jobDir, recordsDir: join(h.records, id), outbox: outboxOf(jobDir) });
+    });
+  });
+}
+
+/** What a job left for the host to send. */
+export function outboxOf(jobDir) {
+  try { return readFileSync(join(jobDir, "out", "outbox.jsonl"), "utf8").trim().split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l)); }
+  catch { return []; }
+}
+
+/** Move the open round's clock back, as if the wait had passed. */
+export function ageOpenRound(h, seconds) {
+  const id = json(join(h.records, "rounds", "open.json")).id;
+  const p = join(h.records, "rounds", `${id}.json`);
+  const r = json(p);
+  const back = (t) => new Date(new Date(t).getTime() - seconds * 1000).toISOString();
+  r.opened_at = back(r.opened_at);
+  for (const a of r.agents) if (a.asked?.sent_at) a.asked.sent_at = back(a.asked.sent_at);
+  writeFileSync(p, JSON.stringify(r, null, 2));
+  return r;
 }

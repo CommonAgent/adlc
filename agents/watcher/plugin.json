@@ -26,13 +26,13 @@
               "scripts/watch.mjs",
               "scripts/watch-list.mjs",
               "scripts/ask.mjs",
-              "scripts/send.mjs",
+              "scripts/outbox.mjs",
+              "scripts/rounds.mjs",
               "scripts/platform.mjs",
               "scripts/checks.mjs",
               "scripts/spend.mjs",
               "scripts/write-report.mjs",
               "scripts/alarms.mjs",
-              "scripts/raise.mjs",
               "scripts/pieces.mjs",
               "scripts/went-without.mjs"
             ],
@@ -49,7 +49,8 @@
           "ask-each-agent": {
             "scripts": [
               "scripts/ask.mjs",
-              "scripts/send.mjs"
+              "scripts/outbox.mjs",
+              "scripts/rounds.mjs"
             ],
             "references": [
               "references/what-the-watcher-reads.md"
@@ -60,7 +61,7 @@
               "scripts/checks.mjs",
               "scripts/platform.mjs",
               "scripts/ask.mjs",
-              "scripts/send.mjs",
+              "scripts/outbox.mjs",
               "scripts/spend.mjs"
             ],
             "references": [
@@ -85,8 +86,7 @@
           "raise-the-alarms": {
             "scripts": [
               "scripts/alarms.mjs",
-              "scripts/raise.mjs",
-              "scripts/send.mjs",
+              "scripts/outbox.mjs",
               "scripts/pieces.mjs",
               "scripts/went-without.mjs"
             ]

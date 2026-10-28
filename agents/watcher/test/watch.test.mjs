@@ -5,10 +5,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { watchList, windowOf, namesIn } from "../scripts/watch-list.mjs";
-import { readSendOutput, readAnswer, STATUS_TEXT } from "../scripts/ask.mjs";
+import { readAnswer, askAll, STATUS_TEXT } from "../scripts/ask.mjs";
+import { newRoundId, saveRound, openRound, recordAnswer, allAnswered, askedAt } from "../scripts/rounds.mjs";
+import { leave, outboxDir } from "../scripts/outbox.mjs";
+import { mkdtempSync, readFileSync as readText } from "node:fs";
+import { tmpdir } from "node:os";
 import { checkAgent } from "../scripts/checks.mjs";
 import { readSpend, moneyWords } from "../scripts/spend.mjs";
-import { readRaise } from "../scripts/raise.mjs";
 import { alarmFor, alarmFileName } from "../scripts/alarms.mjs";
 import { FIX, agentSpend, agentdoc, json, spendReport, storefront } from "./helpers.mjs";
 
@@ -32,18 +35,6 @@ test("the spend window is read from lines of its own, and a bad day is said", ()
   assert.deepEqual(windowOf("from: last week"), { from: null, to: null, bad: ["last week"] });
 });
 
-test("the question is the worker interface's status, and every shape the send prints is read", () => {
-  assert.equal(STATUS_TEXT, "agentmesh-worker/v1\nstatus");
-  assert.equal(readSendOutput({ stdout: "resolved x\n" + JSON.stringify({ reply: "{}", in_reply_to: "r1" }) }).outcome, "answered");
-  assert.equal(readSendOutput({ stdout: JSON.stringify({ status: "answered", reply: "hi" }, null, 2) }).outcome, "answered");
-  assert.deepEqual(readSendOutput({ stdout: JSON.stringify({ queued: true, no_reply_within: 60 }) }), { outcome: "silent", request_id: null, why: "no answer within 60s" });
-  assert.equal(readSendOutput({ stdout: JSON.stringify({ status: "queued_offline", note: "kept" }) }).outcome, "silent");
-  assert.equal(readSendOutput({ stdout: JSON.stringify({ status: "held", delivered: false }) }).outcome, "held");
-  assert.equal(readSendOutput({ stdout: JSON.stringify({ ok: false, delivered: false, code: "BLOCKED", error: "no" }) }).outcome, "refused");
-  assert.equal(readSendOutput({ status: 1, stdout: "", stderr: "boom" }).outcome, "not-sent");
-  assert.deepEqual(readAnswer(JSON.stringify({ interface: "interface-worker", exchange: "status", job: "j", state: "working", detail: "running for 5s" })), { worker: true, job: "j", state: "working", detail: "running for 5s" });
-  assert.deepEqual(readAnswer("I am fine"), { worker: false, words: "I am fine" });
-});
 
 test("presence is alive or not, and a storefront with none says not known", () => {
   const base = { named: A, record: read({ runs: 0 }), agentdoc: read(agentdoc(A)), asked: answered() };
@@ -129,32 +120,10 @@ test("an alarm is the recorder's two lines and a file named for the platform", (
   assert.ok(lines.every((l) => l.time <= "2026-10-28T06:01:00.000Z"));
 });
 
-test("a raise is read as sent, held or refused", () => {
-  assert.equal(readRaise({ stdout: JSON.stringify({ queued: true, request_id: "r" }) }).sent, true);
-  assert.equal(readRaise({ stdout: JSON.stringify({ status: "delivered", delivered: true, request_id: "r" }) }).sent, true);
-  assert.equal(readRaise({ stdout: JSON.stringify({ status: "held", delivered: false }) }).held, true);
-  assert.equal(readRaise({ stdout: JSON.stringify({ ok: false, error: "blocked" }) }).sent, false);
-  assert.equal(readRaise({ killed: true }).sent, false);
-});
 
 // From review, 2026-10-28.
 
-test("with no node here the send prints words, and they are read: an answer, silence, and a raise", () => {
-  const reply = JSON.stringify({ interface: "interface-worker", exchange: "status", job: "j", state: "done", detail: "ok" });
-  const a = readSendOutput({ stdout: `→ alpha (queued at the recipient; waiting…)\n─ reply ─\n${reply}` });
-  assert.equal(a.outcome, "answered");
-  assert.equal(a.path, "direct");
-  assert.equal(readAnswer(a.reply).worker, true);
-  assert.deepEqual(readSendOutput({ stdout: "→ alpha\n(no reply within 60s; it lands in this agent's inbox when it arrives)" }), { outcome: "silent", request_id: null, why: "no answer within 60s", path: "direct" });
-  assert.equal(readRaise({ status: 0, stdout: "→ incident-recorder (queued at the recipient)" }).sent, true);
-  assert.equal(readRaise({ status: 1, stdout: "✗ not delivered: blocked" }).sent, false);
-});
 
-test("a hold or a refusal under payload is read as one, and a note is never taken for an answer", () => {
-  assert.equal(readSendOutput({ stdout: JSON.stringify({ reply: "Held, not delivered", payload: { held: true, text: "Held, not delivered" } }) }).outcome, "held");
-  assert.equal(readSendOutput({ stdout: JSON.stringify({ reply: null, payload: { ok: false, code: "BLOCKED", error: "no" } }) }).outcome, "refused");
-  assert.equal(readRaise({ stdout: JSON.stringify({ reply: "Held", payload: { held: true, text: "Held" } }) }).held, true);
-});
 
 test("one overspend is one reason: the platform's mark of a crossing the report measured is not said twice", () => {
   const card = read(storefront(A));
@@ -184,4 +153,38 @@ test("an amount the report leaves out is nothing, not a discrepancy", () => {
   delete r.agents[0].currencies[0].days[0].untraced_micro;
   delete r.agents[0].currencies[0].untraced;
   assert.deepEqual(readSpend(r).discrepancies, []);
+});
+
+test("the question is the worker interface's status, left for the host in one thread, to agent ids only", () => {
+  assert.equal(STATUS_TEXT, "agentmesh-worker/v1\nstatus");
+  const dir = mkdtempSync(join(tmpdir(), "watcher-outbox-"));
+  const key = "U" + "A".repeat(55);
+  const asked = askAll([{ handle: A, key }, { handle: "b.x@y.com", key: null, no_key_why: "no card" }], { dir, thread: "w-1", at: "2026-10-28T06:00:00.000Z" });
+  assert.equal(asked[0].outcome, "asked");
+  assert.deepEqual(asked[1], { outcome: "not-sent", sent_at: "2026-10-28T06:00:00.000Z", why: "no card" });
+  const lines = readText(join(dir, "outbox.jsonl"), "utf8").trim().split(/\r?\n/).map((l) => JSON.parse(l));
+  assert.deepEqual(lines.map((l) => [l.to, l.handle, l.text, l.thread]), [[key, A, STATUS_TEXT, "w-1"]]);
+  assert.equal(leave(dir, { to: "not-an-id", text: "x" }).error.includes("no agent id"), true);
+  assert.equal(outboxDir("/job", { MESH_JOB_OUT: "/elsewhere" }), "/elsewhere");
+  assert.deepEqual(readAnswer(JSON.stringify({ interface: "interface-worker", exchange: "status", job: "j", state: "working", detail: "running for 5s" })), { worker: true, job: "j", state: "working", detail: "running for 5s" });
+  assert.deepEqual(readAnswer("I am fine"), { worker: false, words: "I am fine" });
+});
+
+test("a round keeps who was asked and who answered, by handle or agent id, and dates silence at the end of the wait", () => {
+  const records = mkdtempSync(join(tmpdir(), "watcher-rounds-"));
+  const key = "U" + "B".repeat(55);
+  const round = { round: "v1", id: newRoundId(new Date("2026-10-28T06:00:00Z")), status: "open", opened_at: "2026-10-28T06:00:00.000Z", wait_seconds: 60,
+    agents: [{ handle: A, key, asked: { outcome: "asked", sent_at: "2026-10-28T06:00:00.000Z" } }, { handle: "b.x@y.com", key: null, asked: { outcome: "not-sent", sent_at: "2026-10-28T06:00:00.000Z", why: "no card" } }, { handle: "c.x@y.com", key: "U" + "C".repeat(55), asked: { outcome: "asked", sent_at: "2026-10-28T06:00:00.000Z" } }] };
+  saveRound(records, round);
+  assert.equal(openRound(records).id, round.id);
+  assert.equal(recordAnswer(round, { from: "nobody@x.com", at: "t" }), null);
+  assert.equal(recordAnswer(round, { from: key, at: "2026-10-28T06:00:03.500Z", text: "{}" }).handle, A);
+  assert.equal(recordAnswer(round, { from: key, at: "later" }), null, "an agent answers a round once");
+  assert.equal(allAnswered(round), false);
+  assert.deepEqual(askedAt(round.agents[0], round), { handle: A, sent_at: "2026-10-28T06:00:00.000Z", answered_at: "2026-10-28T06:00:03.500Z", seconds: 3.5, outcome: "answered", reply: "{}" });
+  assert.deepEqual(askedAt(round.agents[2], round), { handle: "c.x@y.com", sent_at: "2026-10-28T06:00:00.000Z", gave_up_at: "2026-10-28T06:01:00.000Z", outcome: "silent", why: "no answer within 60s" });
+  assert.equal(askedAt(round.agents[1], round).outcome, "not-sent");
+  round.status = "closed";
+  saveRound(records, round);
+  assert.equal(openRound(records), null);
 });

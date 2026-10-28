@@ -6,12 +6,7 @@
       "version": ">=22"
     }
   ],
-  "binaries": [
-    {
-      "name": "agentmesh",
-      "purpose": "sends each watched agent the worker interface's status question and waits for its answer, and sends each alarm to the incident recorder, as this agent"
-    }
-  ],
+  "binaries": [],
   "dependencies": [],
   "systems": [
     {
@@ -47,6 +42,7 @@
     }
   ],
   "job_seconds": 300,
+  "wants_replies": true,
   "price": {
     "sku": "default",
     "covers": {
@@ -70,7 +66,13 @@
         "--work",
         "{work}",
         "--text-file",
-        "{job_dir}/message.txt"
+        "{job_dir}/message.txt",
+        "--from",
+        "{sender}",
+        "--in-reply-to",
+        "{in_reply_to}",
+        "--message",
+        "{message_id}"
       ],
       "reply": "json:reply",
       "message_file": "{job_dir}/message.txt"
