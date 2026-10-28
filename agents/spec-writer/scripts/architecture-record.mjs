@@ -45,7 +45,6 @@ export function headerOf(rec) {
   const lines = [
     `record: ${RECORD}`,
     // Quoted, so a colon or a hash in the person's words stays their words.
-    // cut-ok: the header carries a one-line preview; the body's "## Statement" quotes it whole.
     `statement: ${JSON.stringify(oneLine(rec.statement).slice(0, 240) || "(none given)")}`,
     `environments: [${(rec.environments ?? []).join(", ")}]`,
     `kind: ${trim(rec.kind?.kind) || "not settled"}`,
@@ -266,7 +265,7 @@ export function parseRecord(text) {
     if (item && listing) { out[listing].push(unquote(item[1])); continue; }
     const at = line.indexOf(":");
     if (at < 0) continue;
-    const key = line.slice(0, at).trim(); // cut-ok: the key before the colon; the value after it is read next
+    const key = line.slice(0, at).trim();
     const value = line.slice(at + 1).trim();
     if (indent === 0) {
       inBindings = key === "bindings" && !value;
