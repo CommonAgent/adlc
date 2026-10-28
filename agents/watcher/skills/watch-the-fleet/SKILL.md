@@ -13,7 +13,7 @@ when the owner wants to know which of the agents they named are alive, answering
 
 ## What this needs
 
-- what to watch (text, optional): `agent:` lines narrowing the watch, `from:` and `to:` days for the spend
+- what to watch (text, optional)
 
 ## What a good result looks like
 
@@ -23,7 +23,7 @@ A Markdown watch report a person can act on: a header of counts and the two Cost
 
 - watch report (text/markdown, per task)
 - watch record (application/vnd.agentmesh.watch-record+json, per task, working out)
-- alarms (application/x-ndjson, per task, only when an alert is open)
+- alarms (application/x-ndjson, per task)
 
 ## When it comes back empty
 
