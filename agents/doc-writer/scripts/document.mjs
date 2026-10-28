@@ -70,6 +70,9 @@ export async function runJob(argv = [], { now } = {}) {
   const RECORDS = join(args.records, id);
   mkdirSync(RECORDS, { recursive: true });
   for (const f of ["went-without.json", "given.json", "documentation.md", "check.json"]) rmSync(join(RECORDS, f), { force: true });
+  // A job folder used again delivers only what this run passes: an earlier
+  // run's pieces are taken away before anything else happens.
+  for (const f of ["pieces.json", join("out", "documentation.md"), join("out", "trace.json")]) rmSync(join(args.job, f), { force: true });
 
   // 1. Read what was given.
   const { files, unreadable } = gather(args.files);

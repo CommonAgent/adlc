@@ -291,3 +291,63 @@ test("review: a declared record without `when` gets no hand-made line, and the j
   assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
   assert.doesNotMatch(markdown, /is the record declared as/);
 });
+
+// The second review of PR 18 found each of these; each is held here.
+test("review 2: a place filled in a shape nothing reads is shown as written, never called silent", () => {
+  const d = { ...THREE, escalates: "When unsure it asks the owner.", refusals: { a: "no" }, does: ["one", "two"] };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", d)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /^- As written at `escalates`: `"When unsure it asks the owner\."` \[S1: escalates\]$/m);
+  assert.doesNotMatch(markdown, /says nothing about/);
+});
+
+test("review 2: a verdict no template reads is shown as written", () => {
+  const verdict = { record: "v1", act: "evaluate", summary: { pass: 3, fail: 0 } };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", THREE), file("verdict.json", verdict)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /^- As written at `\.`: .* \[S2: \.\]$/m);
+});
+
+test("review 2: an input moved under What comes back, or parts out of order, fails", () => {
+  const { sources, leftOut, markdown } = three();
+  const line = "- **names** (text, required). [S1: offerings[0].inputs[0]]\n";
+  const moved = markdown.replace(line, "").replace("#### What comes back\n\n", `#### What comes back\n\n${line}`);
+  assert.notEqual(moved, markdown);
+  assert.equal(checkDocs({ markdown: moved, sources, leftOut }).ok, false);
+  const twice = markdown.replace("#### What comes back\n", "#### What comes back\n\n#### What to give it\n");
+  assert.equal(checkDocs({ markdown: twice, sources, leftOut }).ok, false);
+});
+
+test("review 2: a descriptor saved with a byte-order mark is still the descriptor", () => {
+  const { sources } = sortGiven([file("agent-descriptor.json", "\uFEFF" + JSON.stringify(THREE))]);
+  assert.equal(sources[0].kind, "descriptor");
+});
+
+test("review 2: a record line of four backticks does not close the example early", () => {
+  const md = "notes\n````\ninner\n````\n";
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", THREE), file("greet-notes.txt", md)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /^`{5}text$/m);
+});
+
+test("review 2: a name, handle or job name over several lines never breaks a heading", () => {
+  const doc = JSON.parse(readFileSync(join(FIX, "quiz-maker.agentdoc.json"), "utf8"));
+  doc.sections.identity.name = "Quiz maker\nbeta";
+  const d = JSON.parse(JSON.stringify(THREE));
+  d.offerings[0].name = "Greet\nthem";
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", d), file("agentdoc.json", doc)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /^# The agent$/m);
+  assert.match(markdown, /^### greet$/m);
+});
+
+test("review 2: a record's own field marked under a job is not an example, and fails", () => {
+  const { sources, leftOut, markdown } = three();
+  const bad = markdown.replace("#### Examples\n\n", "#### Examples\n\n- greet [S2: offering]\n");
+  assert.notEqual(bad, markdown);
+  assert.equal(checkDocs({ markdown: bad, sources, leftOut }).ok, false);
+});

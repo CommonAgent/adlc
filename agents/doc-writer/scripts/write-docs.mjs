@@ -13,14 +13,13 @@
 //
 //   needs: node >= 22
 //   import { writeDocs, declarationOf, offeringOf } from "./write-docs.mjs"
-import { isEmpty, linesOf, resolvePath, textLines } from "./given.mjs";
-import { CREDENTIAL, GIVEN, LEGEND, globMatch, render, renderAll, silence } from "./templates.mjs";
+import { KIND_WORDS, isEmpty, linesOf, resolvePath, textLines } from "./given.mjs";
+import { CREDENTIAL, GIVEN, LEGEND, code, esc, render, renderAll, silence } from "./templates.mjs";
 
 export const WRITER = "doc-writer 0.1.0";
 /** The most lines of one record shown as an example. */
 export const EXAMPLE_LINES = 40;
 
-const code = (s) => `\`${s}\``;
 
 /** Where the declaration is read from, and the paths of its parts there. */
 export function declarationOf(sources) {
@@ -29,6 +28,29 @@ export function declarationOf(sources) {
   const a = sources.find((s) => s.kind === "agentdoc");
   if (a) return { src: a, root: a.json, offerings: "sections.sells.offerings", refusals: "sections.refuses.statement", escalates: "sections.refuses.hands_over", records: "sections.leaves.records", systems: "sections.reaches.systems", does: "sections.identity.description" };
   return null;
+}
+
+const oneLine = (s) => typeof s === "string" && s.trim() !== "" && !/[\r\n]/.test(s);
+
+/** The title and the header's agent and version lines: a source's value only
+ *  when it is one line, so a value can never break the header. The check
+ *  builds the same lines. */
+export function headerOf(sources) {
+  const doc = sources.find((s) => s.kind === "agentdoc");
+  const dsrc = sources.find((s) => s.kind === "descriptor");
+  const name = doc?.json?.sections?.identity?.name;
+  const handle = doc?.json?.subject?.handle;
+  const version = dsrc?.json?.agent_version ?? (Array.isArray(doc?.json?.sources) ? doc.json.sources : []).find((s) => s?.id === "descriptor")?.agent_version;
+  return {
+    title: `# ${oneLine(name) ? name.trim() : "The agent"}`,
+    agent: `agent: ${oneLine(handle) ? handle.trim() : "not given"}`,
+    version: `version: ${oneLine(version) ? version.trim() : "not given"}`,
+  };
+}
+
+/** A job's heading: its name, or its id, or its number, whichever is one line. */
+export function headingOf(o, i) {
+  return `### ${oneLine(o?.name) ? o.name.trim() : oneLine(o?.id) ? o.id.trim() : `Job ${i + 1}`}`;
 }
 
 /** Is a record the platform's run record (runs, completed, failed). */
@@ -55,7 +77,6 @@ export function offeringOf(record, offerings = []) {
   // `make-a-quiz` are both jobs, `make-a-quiz.json` is make-a-quiz's.
   const pairs = ids.flatMap((l, i) => l.map((id) => [String(id).toLowerCase(), i])).sort((a, b) => b[0].length - a[0].length);
   const lower = record.name.toLowerCase();
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const byName = pairs.find(([id]) => new RegExp(`(^|[^a-z0-9])${esc(id)}([^a-z0-9]|$)`).test(lower));
   if (byName) return byName[1];
   const quoted = ids.map((l, i) => (l.some((id) => String(record.text).includes(`"${id}"`)) ? i : -1)).filter((i) => i >= 0);
@@ -68,7 +89,10 @@ export function exampleOf(s) {
   const json = s.json !== undefined;
   const lines = json ? JSON.stringify(s.json, null, 2).split("\n") : textLines(s.text);
   const to = Math.min(lines.length, EXAMPLE_LINES);
-  const fence = lines.slice(0, to).some((l) => /^\s*```/.test(l)) ? "````" : "```";
+  // The fence is longer than any run of backticks a shown line opens with, so
+  // no line of the record can close it.
+  const run = Math.max(0, ...lines.slice(0, to).map((l) => (/^\s*(`+)/.exec(l)?.[1].length ?? 0)));
+  const fence = "`".repeat(Math.max(3, run + 1));
   return {
     mark: `${json ? "json " : ""}L1-L${to}`,
     intro: to === lines.length ? `From ${code(s.name)}:` : `From ${code(s.name)}, lines 1 to ${to} of ${lines.length}:`,
@@ -112,7 +136,11 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
     else ls.forEach((l, i) => line(l, src, `${path}/${i}`, bullet));
     return true;
   };
+  /** A silence where the place is missing or empty; where it is there in a
+   *  shape nothing reads, its value as written, in the section being written. */
   const silent = (src, path) => {
+    const { found, value } = resolvePath(src.json, path);
+    if (found && !isEmpty(value)) { say(["as-written"], src, path); return; }
     const s = silence(src.kind, src.json, path);
     if (s) notDocumented.push(`- ${s} [${src.id}: ${path} absent]`);
   };
@@ -120,13 +148,11 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   const at = (src, path) => resolvePath(src.json, path);
 
   // Title and header.
-  const name = doc ? at(doc, "sections.identity.name").value : undefined;
-  const handle = doc ? at(doc, "subject.handle").value : undefined;
   const dsrc = sources.find((s) => s.kind === "descriptor");
-  const version = dsrc?.json?.agent_version ?? (doc?.json?.sources ?? []).find((s) => s.id === "descriptor")?.agent_version;
-  out.push(`# ${typeof name === "string" && name.trim() ? name.trim() : "The agent"}`, "");
-  out.push(`agent: ${typeof handle === "string" ? handle : "not given"}`);
-  out.push(`version: ${typeof version === "string" ? version : "not given"}`);
+  const head = headerOf(sources);
+  out.push(head.title, "");
+  out.push(head.agent);
+  out.push(head.version);
   out.push(`written_by: ${WRITER}`);
   out.push(`written_at: ${now}`);
   out.push("");
@@ -183,7 +209,7 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   section("## How to use it", () => {
     offs.forEach((o, i) => {
       const p = `${decl.offerings}[${i}]`;
-      out.push(`### ${o.name ?? o.id}`, "");
+      out.push(headingOf(o, i), "");
       say(["offering"], decl.src, p);
       if (!words(decl.src, `${p}.does`)) silent(decl.src, `${p}.does`);
       if (o.trial) { say(["trial"], decl.src, `${p}.trial`); if (o.trial.limits) sayOr(["trial-limits"], decl.src, `${p}.trial.limits`); }
@@ -290,7 +316,7 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
 
   section("## Verdicts", () => {
     for (const v of verdicts) {
-      say(["verdict", "verdict-conforms", "verdict-signed"], v, ".");
+      sayOr(["verdict", "verdict-conforms", "verdict-signed"], v, ".");
       (Array.isArray(v.json.cases) ? v.json.cases : []).forEach((_, k) => say(["verdict-case"], v, `cases[${k}]`, "  - "));
     }
   });
@@ -321,19 +347,12 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   section("## Not documented", () => { out.push(...notDocumented); });
 
   section("## Sources", () => {
-    for (const s of sources) out.push(`- ${s.id}: ${code(s.name)}, ${KIND_LABEL[s.kind]}, sha256 ${code(s.sha256)}`);
+    for (const s of sources) out.push(`- ${s.id}: ${code(s.name)}, ${KIND_WORDS[s.kind]}, sha256 ${code(s.sha256)}`);
   });
 
   while (out.length && out[out.length - 1] === "") out.pop();
   return { markdown: `${out.join("\n")}\n`, silences: notDocumented.length };
 }
 
-export const KIND_LABEL = {
-  descriptor: "the agent descriptor",
-  runtime: "the runtime requirements",
-  agentdoc: "the AgentDoc",
-  verdict: "a verdict",
-  record: "a record",
-};
 
 export { renderAll };

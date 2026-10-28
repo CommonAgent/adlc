@@ -19,11 +19,20 @@
 //   import { checkDocs } from "./check-docs.mjs"
 //   or: DOCS=<documentation.md> GIVEN=<file>... node check-docs.mjs
 import { isEmpty, linesOf, rangeOf, resolvePath, sha256 } from "./given.mjs";
-import { CREDENTIAL, GIVEN, LEGEND, SECTIONS, SUBSECTIONS, renderAll, silence } from "./templates.mjs";
-import { WRITER, declarationOf, hasCredential, isHeaded, isRunRecord, KIND_LABEL, offeringOf } from "./write-docs.mjs";
+import { KIND_WORDS } from "./given.mjs";
+import { CREDENTIAL, GIVEN, LEGEND, SECTIONS, SUBSECTIONS, code, esc, renderAll, silence } from "./templates.mjs";
+import { WRITER, declarationOf, hasCredential, headerOf, headingOf, isHeaded, isRunRecord, offeringOf } from "./write-docs.mjs";
 
-const code = (s) => `\`${s}\``;
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** The `####` part of a job a line about the job belongs under: none for the
+ *  job's own lines (its name, what it does, its trial), which stand above
+ *  the first one. */
+function subsectionFor(rest) {
+  if (/^\.inputs(\[|$)/.test(rest)) return "#### What to give it";
+  if (/^\.outputs(\[|$)/.test(rest)) return "#### What comes back";
+  if (/^\.how$/.test(rest)) return "#### How it is done";
+  if (/^\.steps(\[|$)/.test(rest)) return "#### Its steps";
+  return null;
+}
 
 /** The sections a marked line may stand in, by its source and place. A line
  *  true to its place but put under the wrong heading tells a reader something
@@ -34,7 +43,7 @@ function sectionsFor(src, place, decl) {
   if (src.kind === "record") {
     if (isRunRecord(src)) return ["## How it has run"];
     if (isHeaded(src)) return ["## Versions"];
-    return ["## How to use it"];
+    return /^(json )?L\d+(-L\d+)?$/.test(place) ? ["## How to use it"] : [];
   }
   const head = place.split("/")[0];
   if (src === decl.src) {
@@ -107,16 +116,9 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
   const marked = (id, path) => marks.add(`${id}: ${path}`);
 
   // The title and the header.
-  const name = doc ? resolvePath(doc.json, "sections.identity.name").value : undefined;
-  const title = `# ${typeof name === "string" && name.trim() ? name.trim() : "The agent"}`;
-  if (lines[0] !== title) find(0, lines[0] ?? "", `the title must be "${title}", from the AgentDoc's identity`);
-  const handle = doc ? resolvePath(doc.json, "subject.handle").value : undefined;
-  const version = dsrc?.json?.agent_version ?? (doc?.json?.sources ?? []).find((s) => s.id === "descriptor")?.agent_version;
-  const header = [
-    `agent: ${typeof handle === "string" ? handle : "not given"}`,
-    `version: ${typeof version === "string" ? version : "not given"}`,
-    `written_by: ${WRITER}`,
-  ];
+  const head = headerOf(sources);
+  if (lines[0] !== head.title) find(0, lines[0] ?? "", `the title must be "${head.title}", from the AgentDoc's identity`);
+  const header = [head.agent, head.version, `written_by: ${WRITER}`];
   let n = 1;
   if (lines[n] === "") n++;
   for (const h of header) { if (lines[n] !== h) find(n, lines[n] ?? "", `the header line must be "${h}"`); n++; }
@@ -126,6 +128,7 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
 
   let section = -1;
   let inOffering = -1;
+  let sub = -1;
   const offeringHeads = new Set();
   const examples = new Set();
   const listedSources = new Set();
@@ -138,16 +141,21 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
       else if (i <= section) find(n, raw, "a section out of order or twice");
       else section = i;
       inOffering = -1;
+      sub = -1;
       continue;
     }
     if (raw.startsWith("### ")) {
-      const i = offs.findIndex((o) => `### ${o.name ?? o.id}` === raw && !offeringHeads.has(o.id));
+      const i = offs.findIndex((o, k) => headingOf(o, k) === raw && !offeringHeads.has(k));
       if (SECTIONS[section] !== "## How to use it" || i < 0) find(n, raw, "a heading that is not a job the declaration names");
-      else { offeringHeads.add(offs[i].id); inOffering = i; }
+      else { offeringHeads.add(i); inOffering = i; }
+      sub = -1;
       continue;
     }
     if (raw.startsWith("#### ")) {
-      if (!SUBSECTIONS.includes(raw) || inOffering < 0) find(n, raw, "a heading this agent does not write");
+      const k = SUBSECTIONS.indexOf(raw);
+      if (k < 0 || inOffering < 0) find(n, raw, "a heading this agent does not write");
+      else if (k <= sub) find(n, raw, "a part of a job out of order or twice");
+      else sub = k;
       continue;
     }
     if (/^(`{3,}|~{3,})/.test(raw)) { find(n, raw, "an example block with no line saying which record it is from"); continue; }
@@ -156,7 +164,7 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
       const m = /^- (S\d+): `(.+)`, (.+), sha256 `([0-9a-f]{64})`$/.exec(raw);
       const s = m && byId.get(m[1]);
       const digest = s ? sha256(s.raw ?? Buffer.from(s.text)) : null;
-      if (!s || s.name !== m[2] || KIND_LABEL[s.kind] !== m[3] || digest !== m[4]) find(n, raw, "a source line that does not match the file read: its name, its kind or its digest");
+      if (!s || s.name !== m[2] || KIND_WORDS[s.kind] !== m[3] || digest !== m[4]) find(n, raw, "a source line that does not match the file read: its name, its kind or its digest");
       else listedSources.add(m[1]);
       continue;
     }
@@ -201,6 +209,7 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
         if (said !== intro) find(n, raw, `an example must be introduced as "${intro}"`);
         else if (!body || body.length !== r.lines.length || body.some((l, i) => l !== r.lines[i])) find(n, raw, `the example's lines are not ${src.name}'s lines ${r.from} to ${r.to}`);
         else if (inOffering < 0 || offeringOf(src, offs) !== inOffering) find(n, raw, `${src.name} is not a record of the job it is shown under`);
+        else if (SUBSECTIONS[sub] !== "#### Examples") find(n, raw, "an example outside its job's Examples");
         else {
           trace.push({ line: n + 1, source: src.id, place, template: "example", verdict: "pass" });
           examples.add(inOffering);
@@ -222,6 +231,12 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
     if (src === decl.src) {
       const om = new RegExp(`^${esc(decl.offerings)}\\[(\\d+)\\]`).exec(place);
       if (om && Number(om[1]) !== inOffering) { find(n, raw, `a line about job ${Number(om[1]) + 1} under another job's heading`); continue; }
+      if (om) {
+        const want = subsectionFor(place.split("/")[0].slice(om[0].length));
+        const now = sub < 0 ? null : SUBSECTIONS[sub];
+        if (want !== now) { find(n, raw, `a line about ${place} under ${now ?? "the job's own lines"}, where it belongs under ${want ?? "the job's own lines"}`); continue; }
+      }
+      if (!om && SECTIONS[section] === "## How to use it" && hit.id === "record-is" && SUBSECTIONS[sub] !== "#### Examples") { find(n, raw, "a record named outside its job's Examples"); continue; }
       if (SECTIONS[section] === "## How to use it" && !om && hit.id !== "record-is") { find(n, raw, "a line under How to use it that is about no job"); continue; }
       if (SECTIONS[section] === "## How to use it" && hit.id === "record-is" && !(byOffering.get(inOffering) ?? new Set()).has(said.slice(1, said.indexOf("`", 1)))) { find(n, raw, "a record named under a job it is not a record of"); continue; }
     }
@@ -233,7 +248,7 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
   const d = decl.src.id;
   offs.forEach((o, i) => {
     const p = `${decl.offerings}[${i}]`;
-    if (!offeringHeads.has(o.id)) findings.push({ line: 0, text: "", why: `the job ${o.id} is declared and not documented` });
+    if (!offeringHeads.has(i)) findings.push({ line: 0, text: "", why: `the job ${o.id} is declared and not documented` });
     (Array.isArray(o.inputs) ? o.inputs : []).forEach((_, j) => { if (!marks.has(`${d}: ${p}.inputs[${j}]`)) findings.push({ line: 0, text: "", why: `input ${j + 1} of ${o.id} is declared and not documented` }); });
     (Array.isArray(o.outputs) ? o.outputs : []).forEach((_, j) => { if (!marks.has(`${d}: ${p}.outputs[${j}]`)) findings.push({ line: 0, text: "", why: `output ${j + 1} of ${o.id} is declared and not documented` }); });
     if (!examples.has(i) && !String(markdown).includes(`- ${GIVEN["no-example"](o.id)} [given]`)) findings.push({ line: 0, text: "", why: `the job ${o.id} has no example and does not say it has none` });

@@ -100,3 +100,14 @@ test("the pieces it files are the outputs the descriptor declares, with the decl
   const filed = json(join(r.jobDir, "pieces.json")).map((p) => [p.name, p.media_type]);
   assert.deepEqual(filed, declared);
 });
+
+test("a job folder used again keeps nothing from an earlier run that delivered", () => {
+  const h = host();
+  const first = run(h, { id: "again", files: [{ name: "quiz-maker.agent-descriptor.json" }] });
+  assert.equal(first.status, 0);
+  assert.ok(existsSync(join(first.jobDir, "pieces.json")));
+  const second = run(h, { id: "again", files: [{ name: "quiz-maker.record.json" }] });
+  assert.equal(second.status, 3);
+  assert.equal(existsSync(join(second.jobDir, "pieces.json")), false);
+  assert.equal(existsSync(join(second.jobDir, "out", "documentation.md")), false);
+});

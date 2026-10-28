@@ -41,7 +41,8 @@ export const KIND_WORDS = {
 /** What a file is, from its bytes. Pure. */
 export function kindOf(text) {
   let json;
-  try { json = JSON.parse(text); } catch { return { kind: "record", json: undefined }; }
+  // A file saved with a byte-order mark is the same JSON without it.
+  try { json = JSON.parse(String(text).replace(/^\uFEFF/, "")); } catch { return { kind: "record", json: undefined }; }
   if (json && typeof json === "object" && !Array.isArray(json)) {
     if (json.format === "agent-descriptor-v1") return { kind: "descriptor", json };
     if (json.format === "agent-runtime-requirements-v1") return { kind: "runtime", json };

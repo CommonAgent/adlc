@@ -20,7 +20,8 @@ import { isEmpty } from "./given.mjs";
 
 const str = (v) => (typeof v === "string" ? v : null);
 const has = (o, ...keys) => o && typeof o === "object" && !Array.isArray(o) && keys.every((k) => o[k] !== undefined && o[k] !== null && o[k] !== "");
-const code = (s) => `\`${s}\``;
+export const code = (s) => `\`${s}\``;
+export const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const oneLine = (s) => typeof s === "string" && !s.includes("\n") && s.trim() === s && s !== "";
 
 /** Fixed words for fixed values. A value not here is shown as it stands. */
@@ -188,7 +189,9 @@ export function renderAll(node, path, ctx = {}) {
     if (t.at && !t.at.test(path)) continue;
     let r;
     try { r = t.render(node, { ...ctx, path }); } catch { r = null; }
-    for (const line of [r].flat()) if (typeof line === "string" && line) out.push({ id: t.id, line });
+    // A line is one line: a value over several lines makes no line here, and
+    // the writer shows it as written instead.
+    for (const line of [r].flat()) if (typeof line === "string" && line && !/[\r\n]/.test(line)) out.push({ id: t.id, line });
   }
   return out;
 }
@@ -199,7 +202,7 @@ export function render(id, node, path = "", ctx = {}) {
   const t = TEMPLATES.find((x) => x.id === id);
   if (!t) throw new Error(`there is no template ${id}`);
   if (t.at && !t.at.test(path)) return [];
-  return [t.render(node, { ...ctx, path })].flat().filter((l) => typeof l === "string" && l);
+  return [t.render(node, { ...ctx, path })].flat().filter((l) => typeof l === "string" && l && !/[\r\n]/.test(l));
 }
 
 // ── Silences ───────────────────────────────────────────────────────────────
@@ -279,7 +282,6 @@ export const SECTIONS = [
   "## Verdicts",
   "## How it has run",
   "## Versions",
-  "## Other records given",
   "## Not documented",
   "## Sources",
 ];
