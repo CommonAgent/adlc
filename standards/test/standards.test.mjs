@@ -56,7 +56,7 @@ test("the checklist covers the checks the lifecycle plan names", () => {
   const ids = new Set(checksOf(read("audit-checklist.md")).map((p) => Object.fromEntries(p).id));
   for (const id of ["descriptor-stored-signed", "descriptor-person-members", "specific-kinds", "people-read-markdown",
     "no-model-names", "revisions-declared", "can-use-known-schema", "can-use-without", "person-facing-declares-library",
-    "reads-standing-assets", "present-dev-and-prod", "stage-record-package"]) {
+    "reads-standing-assets", "present-dev-and-prod", "stage-record-package", "options-are-settings", "settings-declared-fully"]) {
     assert.ok(ids.has(id), `no check ${id}`);
   }
 });
@@ -69,7 +69,7 @@ const REGISTERED = new Set(["package-maker-format-rules", "no-model-literals", "
   ...["requirements", "architecture", "design", "impact", "source", "test", "code", "review", "security", "package",
     "build-record", "descriptor", "deployment-record", "conformance"].map((a) => `stage-record:${a}`)]);
 const NEW_CHECKS = new Set(["descriptor-person-members", "delivered-formats", "revisions-declared", "standing-assets-cited",
-  "stage-record:docs"]);
+  "stage-record:docs", "package-maker-option-rules"]);
 
 test("every check names a test the auditor registers, or one listed as new for it", () => {
   for (const pairs of checksOf(read("audit-checklist.md"))) {
