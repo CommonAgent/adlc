@@ -70,7 +70,8 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
     { "schema": "https://schemas.agentmesh.ai/brand/v1",   #   which fields of each this agent reads
       "reads": ["palette.ink", "type.heading.family"],     #   REQUIRED, non-empty: the field list is
       "required": false,                                   #   ? what says which agent you are hiring
-      "does": "colors the page and sets the heading face" }  # ?
+      "does": "colors the page and sets the heading face",  # ?
+      "without": "draws in its own house style and says so" }  # ? what it does when none is given
   ],
   "run_config": {                        # ? what a run config may set (docs/run-config-plan.md 2.2)
     "settings": [ { "name": "model", "kind": "rule",      #   preference (closest layer wins) | rule (tightest)
@@ -823,7 +824,7 @@ def trial_declarations(spec, jobs):
 # URI. Anything else is an address that can be edited under every declaration
 # that ever pointed at it.
 SCHEMA_URI_RE = re.compile(r"^https://[a-z0-9][a-z0-9.-]*(?::\d+)?/\S+$", re.I)
-CAN_USE_MEMBERS = ("schema", "reads", "required", "does")
+CAN_USE_MEMBERS = ("schema", "reads", "required", "does", "without")
 
 
 def can_use_declaration(spec):
@@ -881,6 +882,13 @@ def can_use_declaration(spec):
                 fail(f"can_use entry {schema}: does is one sentence on what those fields change about the "
                      f"result")
             entry["does"] = e["does"].strip()
+        # What the agent does when none is given. Its absence is a finding of
+        # the standing-asset rules (apply_standing_rules), by the cut-over,
+        # not a refusal here; a value that is there must be a sentence.
+        if "without" in e:
+            if not (isinstance(e["without"], str) and e["without"].strip()):
+                fail(f"can_use entry {schema}: without is one sentence on what the agent does when none is given")
+            entry["without"] = e["without"].strip()
         out_entries.append(entry)
     return out_entries
 
@@ -1339,6 +1347,166 @@ def apply_format_rules(name, jobs, src_base, authored=None):
     for f in found:
         warn(f"{'model' if ' names the model ' in f else 'format'}: {f}")
     return {"existing": existing, "mode": mode, "since": FORMAT_CUTOVER, "findings": found}
+
+
+# ── standing assets ───────────────────────────────────────────────────────
+#
+# Standing assets are the organization's shared material many agents read: a
+# brand profile, a style guide, a glossary, media templates. An agent declares
+# each kind it reads as a can_use entry. Since STANDING_CUTOVER the builder
+# holds every package to three rules, the audit checklist's can-use-known-schema,
+# can-use-without and person-facing-declares-library:
+#
+#   1. Every can_use entry names a schema on the list of known standing-asset
+#      kinds, standards/standing-asset-schemas.json at the top of the adlc
+#      repository. A schema nobody publishes is a shape an organization cannot
+#      keep, approve or hand over.
+#   2. Every can_use entry says `without`: what the agent does when none is
+#      given. Most jobs run without the organization's brand at hand.
+#   3. A new agent whose offered jobs hand a person something to read, watch
+#      or hear (text/markdown, text/html, an image, video or audio) and that
+#      declares no can_use is WARNED, unless its architecture record says why
+#      none apply. The record is read from architecture-record.md at the top of
+#      the agent's folder, or the file ARCHITECTURE_RECORD names; it says why
+#      when its header says `standing_assets: none` and its "## Standing assets"
+#      section gives the reason.
+#
+# The cut-over is the format rules' own: rules 1 and 2 refuse a new agent and
+# warn for an existing one (format_existing, FORMAT_EXISTING_NAMES and
+# FORMAT_EXISTING), and FORMAT_EXISTING_MODE = "refuse" refuses both. Rule 3
+# is a warning only, and only for a new agent.
+#
+# The list is read at the version this builder pins, STANDING_SCHEMAS_PIN, the
+# sha256 of its bytes. On a fleet host it sits beside this file as
+# agentbuilder-standing-asset-schemas.json; in the repository it is read from
+# standards/. A list whose bytes are not the pinned version is refused: a
+# changed list is adopted on purpose, by re-pinning here and releasing. With
+# no list at all, rule 1 is not run, and the result says so.
+STANDING_CUTOVER = "2026-10-28"
+STANDING_SCHEMAS_PIN = "sha256:c4b89a0b7a10d82a9788f5072a5805149372f818ba866566a622d3c01ead3328"
+STANDING_SCHEMAS_FILES = (os.path.join(HERE, "agentbuilder-standing-asset-schemas.json"),
+                          os.path.join(HERE, "standing-asset-schemas.json"),
+                          os.path.join(HERE, "..", "..", "standards", "standing-asset-schemas.json"))
+STANDING_LEVELS = {"can-use-known-schema": "refuse", "can-use-without": "refuse", "person-facing-declares-library": "warn"}
+
+
+def standing_schemas():
+    """The list of known standing-asset kinds, at the pinned version, and its
+    digest; (None, None) when it is not beside this builder."""
+    path = next((p for p in STANDING_SCHEMAS_FILES if os.path.isfile(p)), None)
+    if not path:
+        return None, None
+    data = open(path, "rb").read()
+    digest = "sha256:" + hashlib.sha256(data).hexdigest()
+    if digest != STANDING_SCHEMAS_PIN:
+        fail(f"the standing-asset schema list at {path} is {digest}, not the version this builder pins "
+             f"({STANDING_SCHEMAS_PIN}); re-pin STANDING_SCHEMAS_PIN in build.py to adopt the new list")
+    try:
+        return json.loads(data.decode("utf-8")), digest
+    except ValueError:
+        fail(f"the standing-asset schema list at {path} is not JSON")
+
+
+def kind_matches(kind, pattern):
+    k = str(kind or "").split(";")[0].strip().lower()
+    p = str(pattern or "").strip().lower()
+    return k.startswith(p[:-1]) if p.endswith("/*") else k == p
+
+
+def person_facing_outputs(jobs, table):
+    """(job, output name, kind) for every output of an offered job that a person
+    reads, watches or hears."""
+    kinds = (table or {}).get("person_facing_kinds") or ["text/markdown", "text/html", "image/*", "video/*", "audio/*"]
+    offered = set(offered_slugs(jobs))
+    out = []
+    for j in jobs:
+        if j["slug"] not in offered:
+            continue
+        for o in j.get("outputs") or []:
+            if isinstance(o, dict) and any(kind_matches(o.get("kind"), p) for p in kinds):
+                out.append((j["slug"], o.get("name"), o.get("kind")))
+    return out
+
+
+def record_says_none(src_base):
+    """The reason an architecture record gives for declaring no standing
+    asset, or None when there is no record or it does not say none."""
+    paths = [p for p in (os.environ.get("ARCHITECTURE_RECORD", "").strip(),
+                         os.path.join(src_base, "architecture-record.md") if src_base else "") if p]
+    for p in paths:
+        try:
+            text = open(p, encoding="utf-8").read()
+        except OSError:
+            continue
+        head = re.match(r"^﻿?---\r?\n([\s\S]*?)\r?\n---", text)
+        if not head or not re.search(r"^standing_assets:\s*none\s*$", head.group(1), re.M):
+            continue
+        sec = re.search(r"^## Standing assets\s*\n([\s\S]*?)(?=^## |\Z)", text, re.M)
+        why = re.search(r"None, because (.+)", sec.group(1)) if sec else None
+        if why and why.group(1).strip():
+            return why.group(1).strip().rstrip(".")
+    return None
+
+
+def standing_findings(spec, jobs, src_base, table):
+    """(findings, warnings) of the standing-asset rules, as sentences: the
+    findings are rules 1 and 2, the warnings rule 3 (checked only by the
+    caller, for a new agent)."""
+    findings = []
+    known = {s.get("schema") for s in (table or {}).get("schemas") or [] if isinstance(s, dict)}
+    entries = spec.get("can_use") if isinstance(spec.get("can_use"), list) else []
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        schema = str(e.get("schema") or "").strip()
+        if table is not None and schema not in known:
+            findings.append(f"can_use names {schema}, which is not a known kind of standing asset; use one from "
+                            f"standards/standing-asset-schemas.json ({', '.join(sorted(known))}), or add the kind "
+                            f"to that list first")
+        if not (isinstance(e.get("without"), str) and e["without"].strip()):
+            findings.append(f"can_use {schema} does not say without: what the agent does when none is given. Say it "
+                            f"in one sentence, such as \"writes in a plain, neutral voice and says that none was given\"")
+    warnings = []
+    if not entries:
+        facing = person_facing_outputs(jobs, table)
+        if facing:
+            said = ", ".join(f"{n!r} ({k})" for _, n, k in facing)
+            warnings.append(f"the agent hands a person {said} and declares no can_use: say which of the organization's "
+                            f"standing assets it reads (a brand profile for what a person sees, a style guide for what "
+                            f"a person reads, media templates for film and sound), or let the architecture record say "
+                            f"why none apply")
+    return findings, warnings
+
+
+def apply_standing_rules(name, spec, jobs, src_base):
+    """Warn or refuse on the standing-asset rules, by the cut-over, and return
+    what the result and the build record carry about it."""
+    table, digest = standing_schemas()
+    existing = format_existing(name)
+    mode = format_mode(existing)
+    found, facing = standing_findings(spec, jobs, src_base, table)
+    if found and mode == "refuse":
+        why = (f"it is a new agent, and the standing-asset rules refuse a new agent's findings since {STANDING_CUTOVER}"
+               if not existing else "the standing-asset rules now refuse an existing agent's findings too")
+        fail(f"{name} is refused on its standing assets, because {why}: " + "; ".join(found)
+             + ". An agent released before the cut-over is warned instead; FORMAT_EXISTING=1 says so for one this builder does not list")
+    for f in found:
+        warn(f"standing assets: {f}")
+    warnings = []
+    none_because = None
+    if facing and not existing:
+        none_because = record_says_none(src_base)
+        if none_because is None:
+            warnings = facing
+            for w in warnings:
+                warn(f"standing assets: {w}")
+    out = {"existing": existing, "mode": mode, "since": STANDING_CUTOVER, "findings": found, "warnings": warnings,
+           "schemas_digest": digest, "levels": dict(STANDING_LEVELS)}
+    if table is None:
+        out["not_checked"] = ["can-use-known-schema: the standing-asset schema list is not beside this builder"]
+    if none_because:
+        out["none_because"] = none_because
+    return out
 
 
 def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
@@ -2520,9 +2688,11 @@ def build(spec, src_base, out_dir, authored):
     # The format rules: warned for an agent released before them, refused for
     # a new one, before any file is written.
     formats = apply_format_rules(name, jobs, src_base, authored)
+    # The standing-asset rules, by the same cut-over, before any file is written.
+    standing = apply_standing_rules(name, spec, jobs, src_base)
     if spec.get("kind") in CONTAINER_KINDS:
         # Checked, and nothing written: its code is in its own repository.
-        out({**container_spec(spec, name, version, jobs), "format_rules": formats,
+        out({**container_spec(spec, name, version, jobs), "format_rules": formats, "standing_rules": standing,
              **({"warnings": list(WARNINGS)} if WARNINGS else {})})
     lin = lineage(spec)        # what this package was copied from, if anything
     verify_script(spec, jobs)  # refuse a bad verify before anything is written
@@ -2668,6 +2838,7 @@ def build(spec, src_base, out_dir, authored):
          "lockfiles": lockfiles,
          "refuses_count": len(refuses), "records_count": len(records),
          "format_rules": formats,
+         "standing_rules": standing,
          "draft": True,
          **({"warnings": list(WARNINGS)} if WARNINGS else {}),
          "note": "Draft package. Nobody has run this agent; review before deploying."})

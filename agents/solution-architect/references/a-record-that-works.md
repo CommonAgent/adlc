@@ -6,6 +6,7 @@ kind: plugin-on-harness
 done: yes
 questions: 0
 systems: [database, mail, text-reasoning]
+standing_assets: [https://schemas.agentmesh.ai/brand/v1, https://schemas.agentmesh.ai/style-guide/v1]
 bindings:
   database:
     dev: supabase (customer)
@@ -69,6 +70,11 @@ None.
 
 - It hands back the run's account as `text/markdown`; a header `sent, skipped`, then `## Sent` and `## Skipped` with one bullet per customer and why. A person reads what went out.
 - It takes which customers to remind as `text`, given by a person. The owner says which renewals are due, in words.
+
+## Standing assets
+
+- **the run's account** (`text/markdown`, written copy): the style guide (`https://schemas.agentmesh.ai/style-guide/v1`), because written copy a person reads speaks for the organization, and the style guide says its voice, its spelling and the words it uses and avoids; the brand profile (`https://schemas.agentmesh.ai/brand/v1`), because written copy that speaks for the organization names it, and the brand profile says how its name is written, how it is first mentioned and the words it never says.
+- The Design declares exactly these as `can_use`, each with what it reads, what it does with it and what it does `without` it: `https://schemas.agentmesh.ai/brand/v1`, `https://schemas.agentmesh.ai/style-guide/v1`.
 
 ## Settings
 

@@ -66,7 +66,7 @@ test("a design step that needs a new system comes back as a question in a revisi
 });
 
 test("the prompt carries the statement, the reserved systems and the standard, and names no model", () => {
-  const standard = readFileSync(join(ROOT, "references", "architecture-standard.md"), "utf8");
+  const standard = readFileSync(join(ROOT, "..", "..", "standards", "architecture-standard.md"), "utf8");
   const text = requestParts({ asked: asked(), standard }).join("\n\n");
   assert.ok(text.includes(KEY_POINTS));
   assert.ok(text.includes("- text-reasoning:"));

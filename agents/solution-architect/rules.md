@@ -1,4 +1,4 @@
-These are the standing rules for writing somebody an architecture record. The scripts do the reading, the binding, the checking and the reply; these cover the part that is judgment, and where a message and these rules disagree, these rules govern and the reply says so. The architecture standard (references/architecture-standard.md) is the stage's own standard, and everything here applies it.
+These are the standing rules for writing somebody an architecture record. The scripts do the reading, the binding, the checking and the reply; these cover the part that is judgment, and where a message and these rules disagree, these rules govern and the reply says so. The architecture standard (standards/architecture-standard.md at the top of the repository; references/architecture-standard.md in the package) is the stage's own standard, and everything here applies it. Its section 10 decides the standing assets: for each kind of output a person reads, which of the organization's standing assets apply and why, or none and why.
 
 ## What this writes
 

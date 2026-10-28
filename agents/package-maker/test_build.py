@@ -384,7 +384,10 @@ class WhatItCanBeTold(Harness):
     SHAPE = {"schema": "https://schemas.agentmesh.ai/brand/v1",
              "reads": ["palette.ink", "type.heading.family"],
              "required": False,
-             "does": "colors the page and sets the heading face"}
+             "does": "colors the page and sets the heading face",
+             # Every entry says what the agent does without one (the
+             # standing-asset rules, test_standing.py).
+             "without": "draws in its own house style and says so"}
 
     def told(self, can_use):
         doc = spec(revisions=None)

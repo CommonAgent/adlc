@@ -884,6 +884,7 @@ def main():
         # counts as released before them, warn or refuse, and the findings. A
         # later build of the same name reads `existing` back from here.
         **({"format_rules": built["format_rules"]} if isinstance(built.get("format_rules"), dict) else {}),
+        **({"standing_rules": built["standing_rules"]} if isinstance(built.get("standing_rules"), dict) else {}),
         "draft": True, "produced_at": now, "by": by, "signatures": [],
     }
     message = TAG + "\n" + canonical({k: v for k, v in doc.items() if k != "signatures"})
@@ -931,6 +932,7 @@ def main():
          **({"laid_out": laid} if laid else {}),
          **({"warnings": built["warnings"]} if built.get("warnings") else {}),
          **({"format_rules": built["format_rules"]} if isinstance(built.get("format_rules"), dict) else {}),
+         **({"standing_rules": built["standing_rules"]} if isinstance(built.get("standing_rules"), dict) else {}),
          **({"repository": repository} if repository else {}),
          **({"pieces": pieces} if pieces else {})})
 

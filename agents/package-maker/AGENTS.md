@@ -44,6 +44,7 @@ less:
 |---|---|
 | `agentbuilder-pack.py` | `fleet-manager/agentbuilder/pack.py` |
 | `agentbuilder-build.py` | `fleet-manager/agentbuilder/build.py` |
+| `agentbuilder-standing-asset-schemas.json` | `standards/standing-asset-schemas.json` (adlc), at the version `build.py` pins |
 | `agentbuilder-request.py` | `fleet-manager/agentbuilder/request.py` |
 | `agentbuilder-sign.mjs` | `fleet-manager/agentbuilder/sign.mjs` |
 | `agentbuilder-provenance.mjs` | `fleet-manager/agentbuilder/provenance.mjs` |

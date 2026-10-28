@@ -19,10 +19,10 @@
 export const RECORD = "architecture-record-v1";
 
 /** The header's fields, in order, and the body's fixed headings, in order.
- *  The architecture standard (references/architecture-standard.md, section 9)
+ *  The architecture standard (standards/architecture-standard.md, section 9)
  *  names the same lists. */
-export const HEADER_FIELDS = ["record", "statement", "environments", "kind", "done", "questions", "systems", "bindings"];
-export const HEADINGS = ["Statement", "Systems", "Bindings", "Dependencies", "Kind", "Limits", "Egress", "Formats", "Settings", "Decisions", "Questions"];
+export const HEADER_FIELDS = ["record", "statement", "environments", "kind", "done", "questions", "systems", "standing_assets", "bindings"];
+export const HEADINGS = ["Statement", "Systems", "Bindings", "Dependencies", "Kind", "Limits", "Egress", "Formats", "Standing assets", "Settings", "Decisions", "Questions"];
 
 /** The environments a record may bind, in the words the deploy into each uses
  *  (Common Agent 8.3), and the stack's word for each. */
@@ -51,6 +51,9 @@ export function headerOf(rec) {
     `done: ${rec.done ? "yes" : "no"}`,
     `questions: ${(rec.questions ?? []).length}`,
     `systems: [${systems.join(", ")}]`,
+    // The schemas the record decided (standard section 10), or none. A record
+    // written before the section has no line, and reads as not decided.
+    ...(rec.standing_assets ? [`standing_assets: ${rec.standing_assets.schemas?.length ? `[${rec.standing_assets.schemas.join(", ")}]` : "none"}`] : []),
   ];
   if (systems.length) {
     lines.push("bindings:");
@@ -151,6 +154,22 @@ function formatsSection(rec) {
   });
 }
 
+/** For each kind of output a person reads, the standing assets that apply and
+ *  why, or none and why (the architecture standard, section 10). */
+function standingSection(rec) {
+  const sa = rec.standing_assets;
+  if (!sa) return "Not decided.";
+  const lines = [];
+  for (const o of sa.outputs ?? []) {
+    const what = `**${oneLine(o.piece)}** (\`${trim(o.kind)}\`${o.classes?.length ? `, ${o.classes.join(" and ")}` : ""})`;
+    if (!(o.assets ?? []).length) { lines.push(bullet(`${what}: none.`)); continue; }
+    lines.push(bullet(`${what}: ${o.assets.map((a) => `the ${oneLine(a.word || a.schema)} (\`${a.schema}\`), because ${noStop(a.why)}`).join("; ")}.`));
+  }
+  if (trim(sa.none)) lines.push(bullet(`None, because ${noStop(sa.none)}.`));
+  else lines.push(bullet(`The Design declares exactly these as \`can_use\`, each with what it reads, what it does with it and what it does \`without\` it: ${(sa.schemas ?? []).map((x) => `\`${x}\``).join(", ")}.`));
+  return lines.join("\n");
+}
+
 function settingsSection(rec) {
   const lines = (rec.settings ?? []).map((s) => `\`${trim(s.name)}\`, a ${s.kind === "rule" ? "rule" : "preference"} with the default ${JSON.stringify(s.default)}${s.job_may_set ? ", which a sender may set for one job" : ""}: ${sentence(s.why)}`);
   return lines.length ? lines.map(bullet).join("\n") : "No setting beyond the bindings' own.";
@@ -191,6 +210,7 @@ export function renderRecord(rec) {
     "## Limits", "", limitsSection(rec), "",
     "## Egress", "", egressSection(rec), "",
     "## Formats", "", formatsSection(rec), "",
+    "## Standing assets", "", standingSection(rec), "",
     "## Settings", "", settingsSection(rec), "",
     "## Decisions", "", decisionsSection(rec), "",
     "## Questions", "", questionsSection(rec), "",
@@ -207,8 +227,10 @@ export function bodyOf(text) {
 
 /** Read a record's header back, or null when the text is not an architecture
  *  record. Returns the fields, with `environments` and `systems` as lists,
- *  `done` as a boolean, `questions` as a number, and `bindings` as
- *  {system: {environment: {product, provided_by} | {unbound: true}}}. */
+ *  `done` as a boolean, `questions` as a number, `bindings` as
+ *  {system: {environment: {product, provided_by} | {unbound: true}}}, and
+ *  `standing_assets` as a list of schemas ([] for none, null when the
+ *  record does not say). */
 /** A scalar as YAML would read it: a double-quoted one as JSON, a single-quoted
  *  one with its quotes taken off, anything else trimmed. */
 function unquote(v) {
@@ -242,7 +264,7 @@ export function parseRecord(text) {
       system = null;
       listing = null;
       if (key === "bindings") continue;
-      if (!value && (key === "systems" || key === "environments")) { out[key] = []; listing = key; continue; }
+      if (!value && (key === "systems" || key === "environments" || key === "standing_assets")) { out[key] = []; listing = key; continue; }
       out[key] = value;
       continue;
     }
@@ -270,6 +292,9 @@ export function parseRecord(text) {
     questions: Number(out.questions) || 0,
     systems: list(out.systems),
     bindings: typeof out.bindings === "object" ? out.bindings : {},
+    // null when the record has no line (written before the standard's
+    // section 10), [] when it says none.
+    standing_assets: out.standing_assets === undefined ? null : list(out.standing_assets),
   };
 }
 

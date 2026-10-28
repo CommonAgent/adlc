@@ -1,3 +1,12 @@
+---
+schema: https://schemas.agentmesh.ai/architecture-standard/v1
+name: Architecture standard
+owner: agentmesh.ai
+layer: publisher
+approved_by: null
+approved_at: null
+---
+
 # The architecture standard
 
 This is the standard the Architecture stage holds an agent to, the first part
@@ -155,8 +164,9 @@ on; the system is never added on the designer's word alone.
 ## 8. Done
 
 The Architecture part is done when every system is named and bound in each
-environment the agent will run in, every decision has a reason, and every
-step of the design uses only systems the record named. The architect checks
+environment the agent will run in, every decision has a reason, every kind
+of output a person reads has its standing assets decided (section 10), and
+every step of the design uses only systems the record named. The architect checks
 the first two before it delivers, and says the record is not finished while
 a question is open. The third is checked when the design comes back: the
 spec writer's draft declares exactly the record's systems, and a step that
@@ -167,9 +177,45 @@ needs another goes back as a question.
 The record is a Markdown document for the person, with a structured header
 for the bindings, so the next stage and a test can read the bindings without
 parsing prose. The header is front matter: `record`, `statement`,
-`environments`, `kind`, `done`, `questions`, `systems`, and `bindings`, one
-line per system and environment. The body quotes the statement it answers
-under `## Statement`, then carries the fixed headings `## Systems`,
-`## Bindings`, `## Dependencies`, `## Kind`, `## Limits`, `## Egress`,
-`## Formats`, `## Settings`, `## Decisions` and `## Questions`, in that
-order. The header is written from the same facts as the body, never by hand.
+`environments`, `kind`, `done`, `questions`, `systems`, `standing_assets`
+(the schemas section 10 decided, or `none`), and `bindings`, one line per
+system and environment. The body quotes the statement it answers under
+`## Statement`, then carries the fixed headings `## Systems`, `## Bindings`,
+`## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`,
+`## Standing assets`, `## Settings`, `## Decisions` and `## Questions`, in
+that order. The header is written from the same facts as the body, never by
+hand.
+
+## 10. Standing assets
+
+A standing asset is the organization's shared material that many agents
+read: its brand profile, its style guide, its glossary, its media templates
+(standards/README.md). The record decides, for each kind of output a person
+reads, which standing assets apply, each with its reason, or says "none,
+because" and the reason. The Design then declares exactly those as
+`can_use` entries, each saying what the agent reads, what it does with it,
+and what it does `without` it.
+
+- **Which outputs.** An output a person reads, watches or hears: one whose
+  kind is `text/markdown`, `text/html`, an image, a video or audio
+  (`person_facing_kinds` in standards/standing-asset-schemas.json).
+- **The house rule.** Written copy (`text/markdown`, `text/html`) reads the
+  style guide, for the voice, and the brand profile, for how the
+  organization's name is written and the words it never says. Visual output
+  (`text/html`, images, video) reads the brand profile, for the look. Media
+  (video, audio) reads the media templates. A glossary is added where the
+  work uses the organization's own terms. The rule, its reasons and the
+  fields each kind reads are written as data in
+  standards/standing-asset-schemas.json (`outputs`), and the record applies
+  them.
+- **None, because.** An agent with no output a person reads declares none,
+  and the record says so with that reason. An agent whose person-facing
+  output should read none says why, in the person's words, as the answer to
+  `standing-assets: none, because ...`.
+- **Only known kinds.** A standing asset is named by a schema on the list in
+  standards/standing-asset-schemas.json. The package maker refuses any other.
+- **Whose library.** Work content (brand, style, templates) comes from the
+  requester's library, under the requester's grant; build standards come
+  from the operator's.
+- **No secrets.** A standing asset is never a credential and never an
+  address the agent is told to reach; it is handed to the job.

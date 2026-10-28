@@ -31,6 +31,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkDraft, earlierBareJson } from "./check-spec.mjs";
+import { CAN_USE_RULE, canUseProblems, fitCanUse, loadSchemas } from "./can-use.mjs";
 import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
 
@@ -209,15 +210,17 @@ export function requestParts({ asked = null, reference = "", worked = "", answer
 }
 
 /** The architecture record, as the Design is given it (Agent Roles, the
- *  solution architect; the stage's standard is agents/solution-architect/
- *  references/architecture-standard.md). The Design designs within it: the
- *  record's systems and no other, its kind, its formats and its settings. */
+ *  solution architect; the stage's standard is standards/
+ *  architecture-standard.md). The Design designs within it: the record's
+ *  systems and no other, its kind, its formats, its standing assets and its
+ *  settings. */
 export const ARCHITECTURE_RULE = "Design within this record. It was written by the Architecture stage, which comes before the Design, "
   + "and it settles what the agent stands on. Declare exactly the systems it names, under the same names and with the access it gives each, and no other; "
   + "a model system is declared as the record states its capability, and no model is named. The agent's kind is the record's kind. "
   + "The formats at the agent's edge, and the settings with their defaults, are the record's. The record's products and bindings are for the install: "
   + "the spec names no product, address or credential. Where a step of your design needs a system the record does not name, do not declare it: "
-  + "put \"architecture\" in \"blanks\" with the question for the architect, naming the step and the system it needs.";
+  + "put \"architecture\" in \"blanks\" with the question for the architect, naming the step and the system it needs. "
+  + CAN_USE_RULE;
 
 export function architecturePart(record, architecture = null) {
   const n = Number(architecture?.questions) || 0;
@@ -434,13 +437,19 @@ export async function askForSpec({ call, check = null, tries = TRIES, ...opts } 
   }
   // A system the record does not name never stays in the draft.
   const fitted = fitToArchitecture(last.spec, architecture);
-  const blanks = blanksOf(fitted.spec, last.blanks);
+  // The standing assets are the record's: exactly those, as can_use, each
+  // with reads, does and without (the architecture standard, section 10).
+  const table = opts.table === undefined ? loadSchemas() : opts.table;
+  const withAssets = fitCanUse(fitted.spec, architecture, table);
+  const blanks = blanksOf(withAssets.spec, last.blanks);
   if (fitted.blank && !blanks.some((b) => b.key === "architecture")) blanks.push(fitted.blank);
+  const kept = (fitted.blank ? findings.filter((f) => !/which the architecture record does not name/.test(f)) : findings)
+    .filter((f) => !/^can_use |declare it in can_use$/.test(f));
   return {
-    spec: fitted.spec,
+    spec: withAssets.spec,
     blanks,
-    notes: last.notes,
-    findings: fitted.blank ? findings.filter((f) => !/which the architecture record does not name/.test(f)) : findings,
+    notes: [last.notes, ...withAssets.notes].filter(Boolean).join(" "),
+    findings: [...kept, ...canUseProblems(withAssets.spec, architecture, table)],
     calls,
     used,
     tried_again: calls > 1,

@@ -6,6 +6,7 @@ version each Builder pins.
 
 | File | Kind (schema) | Who reads it |
 |---|---|---|
+| [architecture-standard.md](architecture-standard.md) | `https://schemas.agentmesh.ai/architecture-standard/v1` | the solution architect, which applies it; the spec writer, which designs within it |
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [standing-asset-schemas.json](standing-asset-schemas.json) | the list of known standing-asset kinds | the package maker, which refuses a `can_use` entry naming any other; the solution architect and the spec writer, which choose from it |
 
@@ -88,8 +89,10 @@ package maker refuses a `can_use` entry whose schema is not in
 
 ## How the Builders read these files
 
-Each Builder that reads a file here pins it by digest in its own folder, and
-its tests fail when the file here no longer matches the pin. A change to a
+Each Builder that reads a file here pins it by digest in its own folder (the
+solution architect and the spec writer in `standards-pins.json`, the package
+maker in `build.py`'s `STANDING_SCHEMAS_PIN`), and its tests fail when the
+file here no longer matches the pin. A change to a
 standard is therefore a new version on purpose: the change is made here,
 approved by a person, and each Builder re-pins, is tested and is released
 with it. A Builder's package carries the bytes it pinned, so an agent built
