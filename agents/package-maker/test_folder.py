@@ -67,7 +67,9 @@ def spec():
         "price": {"model": "flat", "amount_micro": 200000, "currency": "USD", "covers": ["read-a-note"]},
         "trial_ceiling": {"amount_micro": 1000000, "currency": "USD", "per": "day"},
         "verify": {"job": "read-a-note", "script": "scripts/read.mjs"},
-        "run_config": {"settings": [{"name": "model", "kind": "rule", "default": "m1", "allowed": ["m1", "m2"], "job_may_set": False}],
+        "run_config": {"settings": [{"name": "model", "kind": "rule", "default": "m1", "allowed": ["m1", "m2"],
+                                     "label": "Model", "about": "Which tested model writes the sentence.",
+                                     "value_labels": {"m1": "The first", "m2": "The second"}, "job_may_set": False}],
                        "named": [{"name": "Plain", "settings": {"model": "m1"}}]},
         "job_seconds": 600, "wants_replies": True, "answer": "summary",
     }

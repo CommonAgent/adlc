@@ -15,6 +15,7 @@
 //   DRAFT=<draft.json> node check-spec.mjs
 import { readFileSync } from "node:fs";
 import { canUseProblems, loadSchemas } from "./can-use.mjs";
+import { optionProblems } from "./options.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const words = (s) => trim(s).split(/\s+/).filter(Boolean).length;
@@ -234,7 +235,7 @@ export function modelProblems(spec) {
  *  the format rules. checkSpec alone is the first, which is what the specs
  *  that shipped before the format rules are measured by. */
 export const checkDraft = (spec, opts = {}) => [...checkSpec(spec), ...formatProblems(spec, opts), ...modelProblems(spec), ...architectureProblems(spec, opts.architecture),
-  ...canUseProblems(spec, opts.architecture, opts.table === undefined ? loadSchemas() : opts.table)];
+  ...canUseProblems(spec, opts.architecture, opts.table === undefined ? loadSchemas() : opts.table), ...optionProblems(spec)];
 
 /** The Design is held to the architecture record it was given (the
  *  Architecture and Design stage's done-when: every step uses only systems

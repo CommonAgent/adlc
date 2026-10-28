@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.5.1",
+  "agent_version": "0.5.2",
   "does": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
   "offerings": [
     {

@@ -434,10 +434,17 @@ class WhatARunConfigMaySet(Harness):
     registered descriptor alone; and a declaration the platform would refuse
     the first time anybody used it is refused here instead."""
 
+    # Each setting declared fully (the option rules, test_options.py).
     MODEL = {"name": "model", "kind": "rule", "default": "google/gemini-3.8-flash",
-             "allowed": ["google/gemini-3.8-flash", "google/gemini-3.5-pro"], "job_may_set": False}
+             "allowed": ["google/gemini-3.8-flash", "google/gemini-3.5-pro"],
+             "label": "Model", "about": "Which tested model writes the script.",
+             "value_labels": {"google/gemini-3.8-flash": "Fast", "google/gemini-3.5-pro": "Thorough"},
+             "job_may_set": False}
     SPEAKER = {"name": "speaker", "kind": "preference", "default": "the deck's author",
-               "allowed": ["the deck's author", "a narrator"], "job_may_set": True}
+               "allowed": ["the deck's author", "a narrator"],
+               "label": "Speaker", "about": "Who the narration speaks as.",
+               "value_labels": {"the deck's author": "The deck's author", "a narrator": "A narrator"},
+               "job_may_set": True}
     BLOCK = {"settings": [MODEL, SPEAKER], "tested_models": ["google/gemini-3.8-flash"],
              "named": [{"name": "Deck explainer, Oct 6", "settings": {"speaker": "the deck's author"}}]}
 

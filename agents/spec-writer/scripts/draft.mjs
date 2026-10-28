@@ -114,8 +114,20 @@ When you revise a spec that already declares a piece as bare
 "application/json", keep that piece as it is, because the agent already
 sends it and changing it is its own decision, and name it in "notes" as one
 to make specific.
-Where a person might want another format than the default, draft the
-default and say so in "notes"; never decide it for them.
+Where a person might want another format than the default, make the format
+a setting (below), with the default and its choices, and say so in "notes".
+
+Inputs are only the material the job is about: the page, the brief, the
+facts. Anything that only shapes how the job runs (a voice, a tone, a length,
+a style, a format choice, anything with a fixed set of values or a default)
+is a run-config setting and never an input, so a person's page draws a choice
+and not a free-text box. Declare it in "run_config": {"settings": [...]},
+each with "name", "kind" "preference", "label", "about", a "default",
+"allowed" (its choices, decided now and never left open), "value_labels" (a
+label for each allowed value) and "job_may_set" true; a number gets "min",
+"max" and "step" in place of "allowed". Brand, palette, a style guide and
+templates are the organization's standing assets, declared in "can_use", and
+never inputs.
 
 A job that calls a model reaches it as a bound system with access "trigger":
 "text-reasoning" for text, "image-reading" for pictures, "speech-to-text" or

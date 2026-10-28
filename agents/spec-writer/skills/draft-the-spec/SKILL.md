@@ -39,6 +39,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/agent-folder.mjs
 - scripts/architecture-record.mjs
 - scripts/can-use.mjs
+- scripts/options.mjs
 
 ## References
 

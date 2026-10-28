@@ -43,7 +43,8 @@ What you decide, applying the standard:
 - The limits on cost, speed, data and trust. A spending limit is a commitment: write one only when the statement states it, in its own numbers; otherwise leave cost null. Speed, data and trust you may draft from the statement, each with its reason.
 - The egress: each destination the agent must reach on the network beyond its systems, the mesh, the registrar and its model, named by what it is (never by address) and why. Reading pages at addresses a caller gives is such a destination. Never grant one: list it, and it will be asked.
 - The formats of what the agent takes and hands back at its edge. Content a person reviews or an agent hands on is text/markdown with a light convention: a short header of named fields, then fixed headings, sketched in "convention". JSON only for exact typed data code consumes, with a vendor kind such as application/vnd.agentmesh.<name>+json, never a bare application/json. Every input says who gives it: "person", "agent" or "either".
-- Settings the work needs, each with a default and whether it is a preference or a rule. An address is never a setting, and the model is never a setting you declare: the text-reasoning binding places it.
+- Inputs are only the material the job is about. Anything that only shapes how the job runs (a voice, a tone, a length, a style, a format choice, anything with a fixed set of values or a default) is a setting, never an input, and brand, palette or template material is a standing asset the agent reads, never an input.
+- Settings the work needs, each a preference or a rule, with a "label" and an "about" for a person, a "default", its "allowed" choices with a label for each in "value_labels" (a number gets "min", "max" and "step" instead), all decided now and never left open. An address is never a setting, and the model is never a setting you declare: the text-reasoning binding places it.
 - The environments it will run in: dev, test and production unless the statement says otherwise.
 - Every choice above as a decision with its reason: what was decided, why, the options weighed, and what follows.
 
@@ -60,7 +61,7 @@ Answer with this JSON object:
  "limits": {"cost": null, "speed": {"limit": "...", "why": "..."}, "data": {"limit": "...", "why": "..."}, "trust": {"limit": "...", "why": "..."}},
  "egress": [{"destination": "...", "why": "..."}],
  "formats": [{"piece": "...", "direction": "in | out", "kind": "text/markdown", "convention": "...", "given_by": "person | agent | either", "why": "..."}],
- "settings": [{"name": "...", "kind": "preference | rule", "default": "...", "job_may_set": true, "why": "..."}],
+ "settings": [{"name": "...", "kind": "preference | rule", "label": "...", "about": "...", "default": "...", "allowed": ["...", "..."], "value_labels": {"...": "..."}, "job_may_set": true, "why": "..."}],
  "decisions": [{"decided": "...", "why": "...", "weighed": "...", "follows": "..."}],
  "questions": [{"key": "lowercase-hyphen-key", "question": "..."}]}`;
 

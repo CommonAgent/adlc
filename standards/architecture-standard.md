@@ -141,6 +141,19 @@ Readable formats by default.
   (the closest layer wins) or a rule (the tightest layer wins), and whether a
   sender who does not own the agent may set it for one job (AgentMesh
   docs/run-config-plan.md). A setting nobody declared cannot be set.
+- **Inputs are the material; options are settings.** An input is only the
+  material the job is about: the page, the brief, the facts. Anything that
+  only shapes how the job runs (a voice, a tone, a length, a style, a format
+  choice, anything with a fixed set of values or a default) is a setting,
+  never an input, so a person's page draws a choice and not a free-text box.
+  Brand, palette and template material is a standing asset (section 10),
+  never an input.
+- **Settings are declared in full.** Every setting has a `label` and an
+  `about` for a person, a `default`, its `allowed` values whenever the value
+  has a natural set of choices (voices, tones, lengths, formats) with a label
+  for each in `value_labels`, and for a number its `min`, `max` and `step`.
+  Every option gets its default and its choices at design time, and none is
+  left open.
 
 ## 6. The kind and the `how`
 
