@@ -18,7 +18,10 @@ it is and its sha256. The place is where in it the line came from:
 - `json L1-L40`: lines of a JSON record laid out with two-space indentation.
 
 The line passes when one template in scripts/templates.mjs, filled from that
-place, gives exactly that line, list marker aside. An example's opening line
+place, gives exactly that line, list marker aside. It must also stand under
+the section its place belongs to (an input under its own job's `###`
+heading, a refusal under What it will not do), and a value no other template
+reads is shown `As written at <place>: <value>`. An example's opening line
 passes when the block under it is exactly the lines its mark names.
 
 ## `[S<n>: <place> absent]`: a silence

@@ -96,7 +96,7 @@ export function gather(paths = []) {
     let name = basename(p);
     for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${n}-${basename(p)}`;
     taken.add(name.toLowerCase());
-    files.push({ name, path: p, bytes: bytes.length, sha256: sha256(bytes), text: bytes.toString("utf8") });
+    files.push({ name, path: p, bytes: bytes.length, raw: bytes, sha256: sha256(bytes), text: bytes.toString("utf8") });
   }
   return { files, unreadable };
 }
@@ -157,11 +157,21 @@ export function resolvePath(root, path) {
 export function rangeOf(source, mark) {
   const m = /^(json )?L(\d+)(?:-L(\d+))?$/.exec(trim(mark));
   if (!m) return null;
-  const lines = m[1] ? JSON.stringify(source.json, null, 2).split("\n") : String(source.text).split(/\r?\n/);
+  if (m[1] && source.json === undefined) return null;
+  const lines = m[1] ? JSON.stringify(source.json, null, 2).split("\n") : textLines(source.text);
   const a = Number(m[2]);
   const b = m[3] ? Number(m[3]) : a;
   if (a < 1 || b < a || b > lines.length) return null;
   return { from: a, to: b, of: lines.length, lines: lines.slice(a - 1, b), json: Boolean(m[1]) };
+}
+
+/** A text record's lines, without the blank ones after its last line, so a
+ *  file that ends in a newline has as many lines as it shows. The writer and
+ *  the check both count lines this way. */
+export function textLines(text) {
+  const lines = String(text).split(/\r?\n/);
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 /** Is a value empty: absent, null, "", [] or {}. */

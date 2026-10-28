@@ -18,12 +18,40 @@
 //   needs: node >= 22
 //   import { checkDocs } from "./check-docs.mjs"
 //   or: DOCS=<documentation.md> GIVEN=<file>... node check-docs.mjs
-import { readFileSync } from "node:fs";
 import { isEmpty, linesOf, rangeOf, resolvePath, sha256 } from "./given.mjs";
 import { CREDENTIAL, GIVEN, LEGEND, SECTIONS, SUBSECTIONS, renderAll, silence } from "./templates.mjs";
 import { WRITER, declarationOf, hasCredential, isHeaded, isRunRecord, KIND_LABEL, offeringOf } from "./write-docs.mjs";
 
 const code = (s) => `\`${s}\``;
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The sections a marked line may stand in, by its source and place. A line
+ *  true to its place but put under the wrong heading tells a reader something
+ *  false, so where a line stands is checked as well as what it says. */
+function sectionsFor(src, place, decl) {
+  if (src.kind === "verdict") return ["## Verdicts"];
+  if (src.kind === "runtime") return ["## What it costs"];
+  if (src.kind === "record") {
+    if (isRunRecord(src)) return ["## How it has run"];
+    if (isHeaded(src)) return ["## Versions"];
+    return ["## How to use it"];
+  }
+  const head = place.split("/")[0];
+  if (src === decl.src) {
+    if (new RegExp(`^${esc(decl.offerings)}\\[\\d+\\]`).test(head)) return ["## How to use it"];
+    if (head === decl.does || head === "agent_version") return ["## What it does"];
+    if (head === decl.refusals || head.startsWith(`${decl.refusals}[`)) return ["## What it will not do"];
+    if (head === decl.escalates || head.startsWith(`${decl.escalates}[`)) return ["## When it hands work back to a person"];
+    if (head === decl.systems || head.startsWith(`${decl.systems}[`)) return ["## What it reaches"];
+    if (head === decl.records || head.startsWith(`${decl.records}[`)) return ["## What it leaves behind", "## How to use it"];
+  }
+  if (src.kind === "agentdoc") {
+    if (head.startsWith("not_stated[")) return ["## Not documented"];
+    if (head === "sections.access") return ["## Where to send it work"];
+    if (head === "sections.identity" || head === "assembled_at" || /^sources\[\d+\]\.agent_version$/.test(head)) return ["## What it does"];
+  }
+  return [];
+}
 const MARK = /\s\[(?:(S\d+): (.+?)|given)\]$/;
 const LIST = /^(?:\s*-\s+|\d+\.\s+)/;
 
@@ -70,6 +98,11 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
   const dsrc = sources.find((s) => s.kind === "descriptor");
   const lines = String(markdown).split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
+  const byOffering = new Map();
+  for (const r of sources.filter((s) => s.kind === "record" && !hasCredential(s))) {
+    const i = offeringOf(r, offs);
+    if (i >= 0) byOffering.set(i, (byOffering.get(i) ?? new Set()).add(r.name));
+  }
   const marks = new Set();
   const marked = (id, path) => marks.add(`${id}: ${path}`);
 
@@ -122,7 +155,7 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
     if (SECTIONS[section] === "## Sources") {
       const m = /^- (S\d+): `(.+)`, (.+), sha256 `([0-9a-f]{64})`$/.exec(raw);
       const s = m && byId.get(m[1]);
-      const digest = s ? (s.path ? safeDigest(s.path) : sha256(Buffer.from(s.text))) : null;
+      const digest = s ? sha256(s.raw ?? Buffer.from(s.text)) : null;
       if (!s || s.name !== m[2] || KIND_LABEL[s.kind] !== m[3] || digest !== m[4]) find(n, raw, "a source line that does not match the file read: its name, its kind or its digest");
       else listedSources.add(m[1]);
       continue;
@@ -133,7 +166,8 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
     if (!mm) { find(n, raw, "a line with no mark saying where it came from"); continue; }
     const said = text.slice(0, mm.index);
     if (!mm[1]) {
-      if (given.has(said)) trace.push({ line: n + 1, source: "given", verdict: "pass" });
+      if (SECTIONS[section] !== "## Not documented") find(n, raw, "a line about what was given outside Not documented");
+      else if (given.has(said)) trace.push({ line: n + 1, source: "given", verdict: "pass" });
       else find(n, raw, "a line about what was given that the job's inventory does not bear out");
       continue;
     }
@@ -143,6 +177,7 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
 
     if (/ absent$/.test(place)) {
       place = place.replace(/ absent$/, "");
+      if (SECTIONS[section] !== "## Not documented") { find(n, raw, "a silence outside Not documented"); continue; }
       const r = src.json === undefined ? { found: false } : resolvePath(src.json, place);
       const expect = silence(src.kind, src.json, place);
       if (r.found && !isEmpty(r.value)) find(n, raw, `${src.id} does say something at ${place}, so it is not a silence`);
@@ -151,6 +186,7 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
       continue;
     }
 
+    if (!sectionsFor(src, place, decl).includes(SECTIONS[section])) { find(n, raw, `a line from ${src.id} at ${place} under the wrong heading`); continue; }
     if (/^(json )?L\d+(-L\d+)?$/.test(place)) {
       const r = rangeOf(src, place);
       if (!r) { find(n, raw, `${place} is not a range of lines in ${src.id}`); continue; }
@@ -164,9 +200,10 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
         const body = end < 0 ? null : lines.slice(k + 1, end);
         if (said !== intro) find(n, raw, `an example must be introduced as "${intro}"`);
         else if (!body || body.length !== r.lines.length || body.some((l, i) => l !== r.lines[i])) find(n, raw, `the example's lines are not ${src.name}'s lines ${r.from} to ${r.to}`);
+        else if (inOffering < 0 || offeringOf(src, offs) !== inOffering) find(n, raw, `${src.name} is not a record of the job it is shown under`);
         else {
           trace.push({ line: n + 1, source: src.id, place, template: "example", verdict: "pass" });
-          if (inOffering >= 0) examples.add(inOffering);
+          examples.add(inOffering);
         }
         n = end < 0 ? lines.length : end;
         continue;
@@ -180,8 +217,14 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
     if (src.json === undefined) { find(n, raw, `${src.id} is not JSON, so ${place} is no place in it`); continue; }
     const r = resolvePath(src.json, place);
     if (!r.found) { find(n, raw, `${place} is not in ${src.id}`); continue; }
-    const hit = renderAll(r.value, place.split("/")[0] === place ? place : place, { files }).find((c) => c.line === said);
+    const hit = renderAll(r.value, place, { files }).find((c) => c.line === said);
     if (!hit) { find(n, raw, `no template gives this line from ${src.id} at ${place}: it says something that place does not`); continue; }
+    if (src === decl.src) {
+      const om = new RegExp(`^${esc(decl.offerings)}\\[(\\d+)\\]`).exec(place);
+      if (om && Number(om[1]) !== inOffering) { find(n, raw, `a line about job ${Number(om[1]) + 1} under another job's heading`); continue; }
+      if (SECTIONS[section] === "## How to use it" && !om && hit.id !== "record-is") { find(n, raw, "a line under How to use it that is about no job"); continue; }
+      if (SECTIONS[section] === "## How to use it" && hit.id === "record-is" && !(byOffering.get(inOffering) ?? new Set()).has(said.slice(1, said.indexOf("`", 1)))) { find(n, raw, "a record named under a job it is not a record of"); continue; }
+    }
     marked(src.id, place);
     trace.push({ line: n + 1, source: src.id, place, template: hit.id, verdict: "pass" });
   }
@@ -200,6 +243,13 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
     const ls = linesOf(ref);
     const ok = ls.length === 1 && ref.trim() === ref ? marks.has(`${d}: ${decl.refusals}`) : ls.every((_, k) => marks.has(`${d}: ${decl.refusals}/${k}`));
     if (!ok) findings.push({ line: 0, text: "", why: "a refusal the declaration names is not documented" });
+  } else if (Array.isArray(ref)) {
+    ref.forEach((item, k) => {
+      const q = `${decl.refusals}[${k}]`;
+      const ls = typeof item === "string" ? linesOf(item) : [];
+      const ok = typeof item === "string" && !(ls.length === 1 && item.trim() === item) ? ls.every((_, i) => marks.has(`${d}: ${q}/${i}`)) : marks.has(`${d}: ${q}`);
+      if (!ok) findings.push({ line: 0, text: "", why: `refusal ${k + 1} the declaration names is not documented` });
+    });
   }
   for (const s of sources) {
     if (!listedSources.has(s.id)) findings.push({ line: 0, text: "", why: `${s.id} (${s.name}) is not listed under Sources` });
@@ -212,6 +262,3 @@ export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadabl
   return { ok: findings.length === 0, findings, trace };
 }
 
-function safeDigest(path) {
-  try { return sha256(readFileSync(path)); } catch { return null; }
-}

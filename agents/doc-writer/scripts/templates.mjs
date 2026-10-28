@@ -146,12 +146,23 @@ export const TEMPLATES = [
   { id: "none-reached", at: /^(?:systems|sections\.reaches\.systems)$/, render: (n) => (Array.isArray(n) && !n.length ? "It declares that it reaches no system." : null) },
   { id: "none-left", at: /^(?:records|sections\.leaves\.records)$/, render: (n) => (Array.isArray(n) && !n.length ? "It declares that it leaves no record." : null) },
   { id: "none-handed-back", at: /^(?:escalates|sections\.refuses\.hands_over)$/, render: (n) => (Array.isArray(n) && !n.length ? "It declares nothing it hands back to a person." : null) },
+  { id: "hands-back-nothing", at: /\.outputs$/, render: (n) => (Array.isArray(n) && !n.length ? "It hands back nothing." : null) },
   { id: "takes-nothing", at: /\.inputs$/, render: (n) => (Array.isArray(n) && !n.length ? "It takes nothing." : null) },
   { id: "no-ceilings", at: /^ceilings$/, render: (n) => (Array.isArray(n) && !n.length ? "It declares no ceiling on what a job may use." : null) },
 
   // A record that was given, named as the record the descriptor declares.
   { id: "record-is", at: /(?:^|\.)records\[\d+\]$/, render: (n, ctx) => (has(n, "name", "file", "when") && oneLine(n.name)
       ? (ctx.files ?? []).filter((f) => globMatch(n.file, f)).map((f) => `${code(f)} is the record declared as: ${n.name}.`) : null) },
+
+  // A value no other template can show, shown as the source has it, so a
+  // place the declaration fills in an unexpected shape is still documented
+  // rather than dropped or called silent.
+  { id: "as-written", render: (n, ctx) => {
+      if (n === undefined || !ctx?.path) return null;
+      const v = JSON.stringify(n);
+      const fence = v.includes("`") ? "``" : "`";
+      return `As written at ${code(ctx.path)}: ${fence}${v}${fence}`;
+    } },
 
   // The platform's run record for an agent.
   { id: "runs", at: /^\.$/, render: (n) => (n && [n.runs, n.completed, n.failed, n.window_days].every(Number.isInteger)
@@ -176,19 +187,19 @@ export function renderAll(node, path, ctx = {}) {
   for (const t of TEMPLATES) {
     if (t.at && !t.at.test(path)) continue;
     let r;
-    try { r = t.render(node, ctx); } catch { r = null; }
+    try { r = t.render(node, { ...ctx, path }); } catch { r = null; }
     for (const line of [r].flat()) if (typeof line === "string" && line) out.push({ id: t.id, line });
   }
   return out;
 }
 
-/** Render one template by id, for the writer. Null when it does not apply. */
-export function render(id, node, path = "") {
+/** Render one template by id, for the writer: the lines it gives, which may
+ *  be none. */
+export function render(id, node, path = "", ctx = {}) {
   const t = TEMPLATES.find((x) => x.id === id);
   if (!t) throw new Error(`there is no template ${id}`);
-  if (t.at && !t.at.test(path)) return null;
-  const r = t.render(node, {});
-  return typeof r === "string" ? r : null;
+  if (t.at && !t.at.test(path)) return [];
+  return [t.render(node, { ...ctx, path })].flat().filter((l) => typeof l === "string" && l);
 }
 
 // ── Silences ───────────────────────────────────────────────────────────────

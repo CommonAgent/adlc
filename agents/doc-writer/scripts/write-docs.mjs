@@ -13,7 +13,7 @@
 //
 //   needs: node >= 22
 //   import { writeDocs, declarationOf, offeringOf } from "./write-docs.mjs"
-import { isEmpty, linesOf, resolvePath } from "./given.mjs";
+import { isEmpty, linesOf, resolvePath, textLines } from "./given.mjs";
 import { CREDENTIAL, GIVEN, LEGEND, globMatch, render, renderAll, silence } from "./templates.mjs";
 
 export const WRITER = "doc-writer 0.1.0";
@@ -50,8 +50,14 @@ export function offeringOf(record, offerings = []) {
   for (const f of ["offering", "offering_id", "skill", "job", "step"]) {
     if (typeof j[f] === "string") { const i = ids.findIndex((l) => l.includes(j[f])); if (i >= 0) return i; }
   }
-  const byName = ids.findIndex((l) => l.some((id) => record.name.toLowerCase().includes(String(id).toLowerCase())));
-  if (byName >= 0) return byName;
+  // A file name names a job when the job's id stands in it whole, between
+  // separators, and the longest id is tried first, so where `make` and
+  // `make-a-quiz` are both jobs, `make-a-quiz.json` is make-a-quiz's.
+  const pairs = ids.flatMap((l, i) => l.map((id) => [String(id).toLowerCase(), i])).sort((a, b) => b[0].length - a[0].length);
+  const lower = record.name.toLowerCase();
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const byName = pairs.find(([id]) => new RegExp(`(^|[^a-z0-9])${esc(id)}([^a-z0-9]|$)`).test(lower));
+  if (byName) return byName[1];
   const quoted = ids.map((l, i) => (l.some((id) => String(record.text).includes(`"${id}"`)) ? i : -1)).filter((i) => i >= 0);
   if (quoted.length === 1) return quoted[0];
   return offerings.length === 1 ? 0 : -1;
@@ -60,8 +66,7 @@ export function offeringOf(record, offerings = []) {
 /** The example lines of a record: its own lines, or its JSON laid out. */
 export function exampleOf(s) {
   const json = s.json !== undefined;
-  const lines = json ? JSON.stringify(s.json, null, 2).split("\n") : String(s.text).split(/\r?\n/);
-  while (!json && lines.length && lines[lines.length - 1] === "") lines.pop();
+  const lines = json ? JSON.stringify(s.json, null, 2).split("\n") : textLines(s.text);
   const to = Math.min(lines.length, EXAMPLE_LINES);
   const fence = lines.slice(0, to).some((l) => /^\s*```/.test(l)) ? "````" : "```";
   return {
@@ -92,11 +97,12 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
     if (!found) return false;
     let said = false;
     for (const id of ids) {
-      const r = render(id, value, path);
-      if (r) { line(r, src, path, bullet); said = true; }
+      for (const r of render(id, value, path, { files })) { line(r, src, path, bullet); said = true; }
     }
     return said;
   };
+  /** Say it with the templates, or, when none can, show the value as written. */
+  const sayOr = (ids, src, path, bullet = "- ") => say(ids, src, path, bullet) || say(["as-written"], src, path, bullet);
   /** The source's own words at a place, a line at a time. */
   const words = (src, path, bullet = "- ") => {
     const { found, value } = resolvePath(src.json, path);
@@ -140,7 +146,7 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   if (!rt) given(GIVEN["no-runtime"]());
 
   section("## What it does", () => {
-    if (!words(decl.src, decl.does, "")) silent(decl.src, decl.does);
+    if (!words(decl.src, decl.does)) silent(decl.src, decl.does);
     if (doc) say(["identity"], doc, "sections.identity");
     if (dsrc) say(["version"], dsrc, "agent_version");
     if (doc) {
@@ -151,7 +157,9 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   });
 
   section("## Where to send it work", () => {
-    if (doc && !say(["access"], doc, "sections.access", "")) silent(doc, "sections.access");
+    if (!doc) return;
+    if (!at(doc, "sections.access").found) silent(doc, "sections.access");
+    else sayOr(["access"], doc, "sections.access");
   });
 
   const offerings = at(decl.src, decl.offerings).value;
@@ -166,20 +174,26 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
     else if (!isRunRecord(r) && !isHeaded(r)) unplaced.push(r);
   }
 
+  /** Take back a `####` heading that nothing was written under. */
+  const dropEmpty = () => {
+    let k = out.length;
+    while (k > 0 && out[k - 1] === "") k--;
+    if (k > 0 && out[k - 1].startsWith("#### ")) out.length = k - 1;
+  };
   section("## How to use it", () => {
     offs.forEach((o, i) => {
       const p = `${decl.offerings}[${i}]`;
       out.push(`### ${o.name ?? o.id}`, "");
-      say(["offering"], decl.src, p, "");
-      if (!words(decl.src, `${p}.does`, "")) silent(decl.src, `${p}.does`);
-      if (o.trial) { say(["trial"], decl.src, `${p}.trial`, ""); if (o.trial.limits) say(["trial-limits"], decl.src, `${p}.trial.limits`, ""); }
+      say(["offering"], decl.src, p);
+      if (!words(decl.src, `${p}.does`)) silent(decl.src, `${p}.does`);
+      if (o.trial) { say(["trial"], decl.src, `${p}.trial`); if (o.trial.limits) sayOr(["trial-limits"], decl.src, `${p}.trial.limits`); }
       out.push("");
 
       out.push("#### What to give it", "");
       if (Array.isArray(o.inputs) && o.inputs.length) {
         o.inputs.forEach((inp, j) => {
           const q = `${p}.inputs[${j}]`;
-          say(["input"], decl.src, q);
+          sayOr(["input"], decl.src, q);
           for (const f of ["description", "about"]) words(decl.src, `${q}.${f}`, "  - ");
           say(["input-one-of", "input-given-by", "input-fields"], decl.src, q, "  - ");
         });
@@ -187,33 +201,40 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
       else silent(decl.src, `${p}.inputs`);
       out.push("");
 
+      dropEmpty();
       out.push("#### What comes back", "");
       if (Array.isArray(o.outputs) && o.outputs.length) {
         o.outputs.forEach((op, j) => {
           const q = `${p}.outputs[${j}]`;
-          say(["output"], decl.src, q);
+          sayOr(["output"], decl.src, q);
           for (const f of ["description", "about"]) words(decl.src, `${q}.${f}`, "  - ");
           say(["output-working"], decl.src, q, "  - ");
         });
-      } else silent(decl.src, `${p}.outputs`);
+      } else if (Array.isArray(o.outputs)) say(["hands-back-nothing"], decl.src, `${p}.outputs`);
+      else silent(decl.src, `${p}.outputs`);
       out.push("");
 
+      dropEmpty();
       out.push("#### How it is done", "");
-      if (!say(["how", "how-words"], decl.src, `${p}.how`, "")) silent(decl.src, `${p}.how`);
+      if (!at(decl.src, `${p}.how`).found) silent(decl.src, `${p}.how`);
+      else sayOr(["how", "how-words"], decl.src, `${p}.how`);
       out.push("");
 
       if (Array.isArray(o.steps) && o.steps.length) {
+        dropEmpty();
         out.push("#### Its steps", "");
-        o.steps.forEach((s, k) => say(["step"], decl.src, `${p}.steps[${k}]`, `${k + 1}. `));
+        o.steps.forEach((s, k) => sayOr(["step"], decl.src, `${p}.steps[${k}]`, `${k + 1}. `));
         out.push("");
       }
 
+      dropEmpty();
       out.push("#### Examples", "");
       if (byOffering[i].length) {
         for (const r of byOffering[i]) {
           const declared = at(decl.src, decl.records).value;
           (Array.isArray(declared) ? declared : []).forEach((d, k) => {
-            if (d && typeof d.file === "string" && globMatch(d.file, r.name)) line(`${code(r.name)} is the record declared as: ${d.name}.`, decl.src, `${decl.records}[${k}]`);
+            const q = `${decl.records}[${k}]`;
+            for (const l of render("record-is", d, q, { files: [r.name] })) line(l, decl.src, q);
           });
           const ex = exampleOf(r);
           out.push(`${ex.intro} [${r.id}: ${ex.mark}]`, "", `${ex.fence}${ex.lang}`, ...ex.lines, ex.fence, "");
@@ -231,36 +252,38 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   section("## What it will not do", () => {
     const { found, value } = at(decl.src, decl.refusals);
     if (found && typeof value === "string" && value.trim()) words(decl.src, decl.refusals);
-    else if (found && Array.isArray(value) && value.length) value.forEach((_, k) => words(decl.src, `${decl.refusals}[${k}]`));
+    else if (found && Array.isArray(value) && value.length) value.forEach((_, k) => words(decl.src, `${decl.refusals}[${k}]`) || say(["as-written"], decl.src, `${decl.refusals}[${k}]`));
     else silent(decl.src, decl.refusals);
   });
 
   section("## When it hands work back to a person", () => {
     const { found, value } = at(decl.src, decl.escalates);
-    if (found && Array.isArray(value) && value.length) value.forEach((_, k) => words(decl.src, `${decl.escalates}[${k}]`));
+    if (found && Array.isArray(value) && value.length) value.forEach((_, k) => words(decl.src, `${decl.escalates}[${k}]`) || say(["as-written"], decl.src, `${decl.escalates}[${k}]`));
     else if (found && Array.isArray(value)) say(["none-handed-back"], decl.src, decl.escalates);
     else silent(decl.src, decl.escalates);
   });
 
   section("## What it reaches", () => {
     const { found, value } = at(decl.src, decl.systems);
-    if (found && Array.isArray(value) && value.length) value.forEach((_, k) => say(["system", "system-leaves"], decl.src, `${decl.systems}[${k}]`));
+    if (found && Array.isArray(value) && value.length) value.forEach((_, k) => sayOr(["system", "system-leaves"], decl.src, `${decl.systems}[${k}]`));
     else if (found && Array.isArray(value)) say(["none-reached"], decl.src, decl.systems);
     else silent(decl.src, decl.systems);
   });
 
   section("## What it costs", () => {
     if (!rt) return;
-    if (!say(["price"], rt, "price.price")) silent(rt, "price");
-    say(["price-covers"], rt, "price");
-    if (!say(["job-seconds"], rt, "job_seconds")) silent(rt, "job_seconds");
+    if (!at(rt, "price").found) silent(rt, "price");
+    else if (at(rt, "price.price").found) { sayOr(["price"], rt, "price.price"); say(["price-covers"], rt, "price"); }
+    else sayOr(["price-covers"], rt, "price");
+    if (!at(rt, "job_seconds").found) silent(rt, "job_seconds");
+    else sayOr(["job-seconds"], rt, "job_seconds");
     const c = at(rt, "ceilings").value;
-    if (Array.isArray(c) && c.length) c.forEach((_, k) => say(["ceiling"], rt, `ceilings[${k}]`));
+    if (Array.isArray(c) && c.length) c.forEach((_, k) => sayOr(["ceiling"], rt, `ceilings[${k}]`));
   });
 
   section("## What it leaves behind", () => {
     const { found, value } = at(decl.src, decl.records);
-    if (found && Array.isArray(value) && value.length) value.forEach((_, k) => say(["record"], decl.src, `${decl.records}[${k}]`));
+    if (found && Array.isArray(value) && value.length) value.forEach((_, k) => sayOr(["record"], decl.src, `${decl.records}[${k}]`));
     else if (found && Array.isArray(value)) say(["none-left"], decl.src, decl.records);
     else silent(decl.src, decl.records);
   });
@@ -290,7 +313,7 @@ export function writeDocs({ sources = [], leftOut = [], unreadable = [], now = n
   if (doc) {
     const ns = at(doc, "not_stated").value;
     (Array.isArray(ns) ? ns : []).forEach((_, k) => {
-      const r = render("not-stated", ns[k], `not_stated[${k}]`);
+      const r = render("not-stated", ns[k], `not_stated[${k}]`)[0] ?? render("as-written", ns[k], `not_stated[${k}]`)[0];
       if (r) notDocumented.push(`- ${r} [${doc.id}: not_stated[${k}]]`);
     });
   }

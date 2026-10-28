@@ -10,6 +10,8 @@ From the files attached to the job and nowhere else: the agent descriptor, the r
 
 Every line that says something about the agent is one template from scripts/templates.mjs filled from one place in one source, and it ends with that place's mark. The template is the only text that is not the source's own. A value is shown as the source has it, or as one of a few fixed words for a fixed value: `required` for `true`, "with each job" for `per_task`, 2.00 for 2000000 micro-units.
 
+Where a place is filled in a shape no template reads (a price model it has no words for, a job time written as text), the line shows the value as written, `As written at <place>: <value>`, rather than dropping it or calling it a silence. A line also has to stand under the heading its place belongs to, and under the job it is about.
+
 This is why there is no model here. The documentation is written for a person, but a person reading it has to be able to check any line against its source, and a sentence a model wrote is a sentence the check would have to take on trust. The templates are the writing, and they are written once, here, where they can be read.
 
 ## Silences show

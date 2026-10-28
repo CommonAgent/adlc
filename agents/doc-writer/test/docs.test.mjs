@@ -74,7 +74,7 @@ test("the role's test: three jobs, records from two, every line traced, the thir
 
 test("a line about behaviour the package does not declare fails the check", () => {
   const { sources, leftOut, markdown } = three();
-  const bad = markdown.replace("## What it will not do\n", "## What it will not do\n\n- It also emails every greeting. [S1: does]\n");
+  const bad = markdown.replace("## What it does\n", "## What it does\n\n- It also emails every greeting. [S1: does]\n");
   const r = checkDocs({ markdown: bad, sources, leftOut });
   assert.equal(r.ok, false);
   assert.ok(r.findings.some((f) => /no template gives this line/.test(f.why)));
@@ -108,7 +108,7 @@ test("a real agent: quiz-maker's descriptor, runtime requirements, AgentDoc and 
   assert.deepEqual(r.findings, []);
   assert.match(markdown, /^# quiz-maker$/m);
   assert.match(markdown, /^agent: quiz-maker\.platform@agentmesh\.ai$/m);
-  assert.match(markdown, /^Send it work at `quiz-maker\.platform@agentmesh\.ai`, over agentmesh\. \[S3: sections\.access\]$/m);
+  assert.match(markdown, /^- Send it work at `quiz-maker\.platform@agentmesh\.ai`, over agentmesh\. \[S3: sections\.access\]$/m);
   assert.match(markdown, /^- Each job costs 2\.00 USD, a flat price\. \[S2: price\.price\]$/m);
   assert.match(markdown, /^- In the 30 days this record covers it ran 28 jobs: 28 completed and 0 failed, taking 88 seconds each on average\. \[S4: \.\]$/m);
   assert.match(markdown, /^- The AgentDoc says `handling\.retention` was not stated\. \[S3: not_stated\[7\]\]$/m);
@@ -208,4 +208,86 @@ test("a line holds only at the kind of place it is about, and the signed AgentDo
   const w = writeDocs({ sources: s.sources, leftOut: s.leftOut, now: NOW });
   assert.deepEqual(checkDocs({ markdown: w.markdown, sources: s.sources, leftOut: s.leftOut }).findings, []);
   assert.match(w.markdown, /^# quiz-maker$/m);
+});
+
+// The review of PR 18 found each of these; each is held here.
+test("review: a text record that ends with a newline is quoted and passes, counted the same way by both", () => {
+  const log = Array.from({ length: 45 }, (_, i) => `line ${i + 1}`).join("\n") + "\n";
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", THREE), file("count.log", log), file("greet.log", "hello\n")]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /^From `count\.log`, lines 1 to 40 of 45: \[S2: L1-L40\]$/m);
+  assert.match(markdown, /^From `greet\.log`: \[S3: L1-L1\]$/m);
+});
+
+test("review: refusals given as a list are each held, and dropping one is a finding", () => {
+  const d = { ...THREE, refusals: ["Greeting strangers.", "Sending anything."] };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", d)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.ok(checkDocs({ markdown, sources, leftOut }).ok);
+  const dropped = markdown.replace(/^- Sending anything\. \[S1: refusals\[1\]\]\n/m, "");
+  assert.notEqual(dropped, markdown);
+  assert.equal(checkDocs({ markdown: dropped, sources, leftOut }).ok, false);
+});
+
+test("review: a job's line moved under another job, or a line under the wrong section, fails", () => {
+  const { sources, leftOut, markdown } = three();
+  const line = "- **names** (text, required). [S1: offerings[1].inputs[0]]\n";
+  assert.ok(markdown.includes(line));
+  const moved = markdown.replace(line, "").replace("#### What to give it\n\n", `#### What to give it\n\n${line}`);
+  assert.equal(checkDocs({ markdown: moved, sources, leftOut }).ok, false);
+  const doesLine = "Turns a list of names into greetings, counts them, and files them. [S1: does]";
+  const wrong = markdown.replace(`- ${doesLine}\n`, "").replace("## What it will not do\n\n", `## What it will not do\n\n- ${doesLine}\n`);
+  assert.equal(checkDocs({ markdown: wrong, sources, leftOut }).ok, false);
+  // A record shown under a job it is not a record of.
+  const swapped = markdown.replace("### Greet\n", "### Greet-x\n");
+  assert.equal(checkDocs({ markdown: swapped, sources, leftOut }).ok, false);
+});
+
+test("review: a json range on a text record is a finding, not a crash", () => {
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", THREE), file("greet.txt", "hello\n")]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  const bad = markdown.replace("[S2: L1-L1]", "[S2: json L1-L1]");
+  assert.notEqual(bad, markdown);
+  let r;
+  assert.doesNotThrow(() => { r = checkDocs({ markdown: bad, sources, leftOut }); });
+  assert.equal(r.ok, false);
+});
+
+test("review: a description with its own bullet and heading lines passes", () => {
+  const d = { ...THREE, does: "Makes greetings.\n- from a list\n# and files them" };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", d)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /^- - from a list \[S1: does\/1\]$/m);
+});
+
+test("review: a price, a job time, an input or an output no template can show is shown as written", () => {
+  const d = JSON.parse(JSON.stringify(THREE));
+  d.offerings[0].outputs[0] = { name: "report", kind: "text/markdown" };
+  d.offerings[0].inputs[0] = { name: "names" };
+  const rt = { format: "agent-runtime-requirements-v1", price: { sku: "default", covers: { offerings: ["greet"] }, price: { model: "metered", per: "call" } }, job_seconds: "600" };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", d), file("agent-runtime-requirements.json", rt)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.match(markdown, /^- As written at `price\.price`: `\{"model":"metered","per":"call"\}` \[S2: price\.price\]$/m);
+  assert.match(markdown, /^- As written at `job_seconds`: `"600"` \[S2: job_seconds\]$/m);
+  assert.match(markdown, /^- As written at `offerings\[0\]\.outputs\[0\]`: .* \[S1: offerings\[0\]\.outputs\[0\]\]$/m);
+  assert.doesNotMatch(markdown, /says nothing about its price/);
+});
+
+test("review: a short job id does not claim a longer job's record", () => {
+  const offs = [{ id: "make", steps: [] }, { id: "make-a-quiz", steps: [] }];
+  const rec = (name) => ({ kind: "record", name, json: {}, text: "{}" });
+  assert.equal(offeringOf(rec("make-a-quiz.json"), offs), 1);
+  assert.equal(offeringOf(rec("make.json"), offs), 0);
+  assert.equal(offeringOf(rec("remake.json"), offs), -1);
+});
+
+test("review: a declared record without `when` gets no hand-made line, and the job still passes", () => {
+  const d = { ...THREE, records: [{ name: "the greetings per job", file: "*/greetings.json" }] };
+  const { sources, leftOut } = sortGiven([file("agent-descriptor.json", d), file("greetings.json", GREET_RECORD)]);
+  const { markdown } = writeDocs({ sources, leftOut, now: NOW });
+  assert.deepEqual(checkDocs({ markdown, sources, leftOut }).findings, []);
+  assert.doesNotMatch(markdown, /is the record declared as/);
 });
