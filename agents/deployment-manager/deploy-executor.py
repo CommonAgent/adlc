@@ -813,7 +813,16 @@ EVAL_USER = "agentevaluator"
 EVAL_HOME = f"/home/{EVAL_USER}"
 EVAL_IDENTITY = f"{EVAL_HOME}/.agentmesh/adapter/identity.json"
 EVAL_CREDS = f"{EVAL_HOME}/.config/fleet/mesh.creds"
+# The connection credential of the fleet's node, for a host where the checker
+# holds none of its own: the checker then connects with it and still signs as
+# itself (its identity key is the envelope's sender, which is what the registry
+# checks). Only root reads it, so the check runs as root over a private copy
+# of the checker's state, and the credential is never copied to another user.
+NODE_CREDS = os.environ.get("DM_EVAL_NODE_CREDS") or f"{FLEET}/node-platform/mesh.creds"
 EVAL_LOCK = f"{EVAL_HOME}/tmp/.after-deploy.lock"
+# How many checks run at once on this host. A check spends most of its time
+# waiting for the agent's answers, so a backfill runs several.
+EVAL_SLOTS = max(1, int(os.environ.get("DM_CONFORMANCE_SLOTS") or 4))
 EVAL_TIMEOUT = int(os.environ.get("DM_CONFORMANCE_SECONDS") or 3600)
 CONFORM_LOG = f"{DM_RECORDS}/conformance.log"
 _CHECKS = []
@@ -876,12 +885,52 @@ def start_conformance(subject):
 
 
 def conform(subject, run=subprocess.run):
-    """One check, under the host's lock. Returns what it came to."""
+    """One check, in one of the host's EVAL_SLOTS. Returns what it came to."""
     import fcntl
     os.makedirs(f"{EVAL_HOME}/tmp", exist_ok=True)
-    with open(EVAL_LOCK, "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        return conform_now(subject, run=run)
+    while True:
+        for i in range(EVAL_SLOTS):
+            with open(f"{EVAL_LOCK}.{i}", "a") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    continue
+                return conform_now(subject, run=run)
+        time.sleep(5)
+
+
+def checker_seat():
+    """How the check reaches the agent: ("own", creds) when the checker holds
+    a connection credential of its own, ("node", creds) when only the fleet's
+    node does, else (None, why)."""
+    own = os.environ.get("DM_EVAL_CREDS") or EVAL_CREDS
+    if os.path.isfile(own):
+        return "own", own
+    if os.path.isfile(NODE_CREDS):
+        return "node", NODE_CREDS
+    return None, f"the checker holds no connection credential ({own}) and this host has no node credential ({NODE_CREDS})"
+
+
+def checker_command(seat, creds, spec_path, handle, records_root):
+    """The command that runs agenteval-run.py, and a private state folder to
+    remove afterwards (or None). As the checker's own user with its own
+    credential; or, with the node's, as root over a copy of the checker's
+    adapter state in a folder only root reads, so nothing of the checker's is
+    rewritten and the node's credential stays root's."""
+    if seat == "own":
+        return (["sudo", "-u", EVAL_USER, "env", f"HOME={EVAL_HOME}", f"EVAL_CREDS={creds}",
+                 "python3", EVAL_RUN, spec_path, handle, records_root, EVAL_IDENTITY], None)
+    import tempfile
+    work = tempfile.mkdtemp(prefix="conform-")
+    os.chmod(work, 0o700)
+    state = os.path.join(work, "adapter")
+    os.makedirs(state, mode=0o700)
+    src = os.path.dirname(EVAL_IDENTITY)
+    for fn in ("identity.json", "named.json", "pins.json"):
+        if os.path.exists(os.path.join(src, fn)):
+            shutil.copyfile(os.path.join(src, fn), os.path.join(state, fn))
+    return (["env", f"HOME={work}", f"MESH_ADAPTER_STATE={state}", f"EVAL_CREDS={creds}",
+             "python3", EVAL_RUN, spec_path, handle, records_root, os.path.join(state, "identity.json")], work)
 
 
 def _owned_by_checker(path):
@@ -924,16 +973,22 @@ def conform_now(s, run=subprocess.run):
     with open(spec_path, "w") as f:
         json.dump(spec, f, indent=2)
     _owned_by_checker(spec_path)
+    seat, creds = checker_seat()
+    if not seat:
+        return said({"ok": False, "why": creds})
     stderr = ""
+    work = None
     try:
-        p = run(["sudo", "-u", EVAL_USER, "env", f"HOME={EVAL_HOME}", f"EVAL_CREDS={EVAL_CREDS}",
-                 "python3", EVAL_RUN, spec_path, s["handle"], f"/home/{s['name']}/work", EVAL_IDENTITY],
-                capture_output=True, text=True, timeout=EVAL_TIMEOUT)
+        cmd, work = checker_command(seat, creds, spec_path, s["handle"], f"/home/{s['name']}/work")
+        p = run(cmd, capture_output=True, text=True, timeout=EVAL_TIMEOUT)
         stderr = p.stderr or ""
         lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip().startswith("{")]
         answer = json.loads(lines[-1]) if lines else {"ok": False, "error": stderr[-300:] or "no output"}
     except Exception as e:  # noqa: BLE001
         answer = {"ok": False, "error": str(e)[:300]}
+    finally:
+        if work:
+            shutil.rmtree(work, ignore_errors=True)
     record = answer.get("record") if isinstance(answer.get("record"), dict) else None
     if record:
         try:
@@ -943,7 +998,7 @@ def conform_now(s, run=subprocess.run):
         except OSError:
             pass
     signed = bool(record and record.get("signatures"))
-    return said({"ok": signed, "conforms": answer.get("conforms"), "verdict": (record or {}).get("verdict"),
+    return said({"ok": signed, "seat": seat, "conforms": answer.get("conforms"), "verdict": (record or {}).get("verdict"),
                  "summary": answer.get("summary"), "signed": signed,
                  "filed": signed and "submitted eval record to the registry" in stderr,
                  **({} if record else {"why": str(answer.get("error") or "the checker returned no record")[:300]})})
@@ -974,7 +1029,7 @@ def file_record(record):
         return {"ok": False, "error": str(e)[:300]}
 
 
-def backfill(names=(), records=True, checks=True, run=subprocess.run, inventory=None):
+def backfill(names=(), records=True, checks=True, run=subprocess.run, inventory=None, _request=None):
     """A signed attest record and a conformance verdict for each running agent
     in the inventory (or the ones named). One JSON line per agent."""
     path = inventory or f"{FLEET}/deploymgr-agents.json"
@@ -986,6 +1041,18 @@ def backfill(names=(), records=True, checks=True, run=subprocess.run, inventory=
         return []
     if names:
         rows = [e for e in rows if e.get("name") in names]
+    if checks and len(rows) > 1 and EVAL_SLOTS > 1:
+        # The attests and records first, one at a time, then the checks in
+        # EVAL_SLOTS at once: one check holds a slot, never the whole run.
+        from concurrent.futures import ThreadPoolExecutor
+        first = backfill([e["name"] for e in rows], records=records, checks=False, run=run, inventory=path) if records else []
+        by_name = {r["name"]: r for r in first}
+
+        def one(e):
+            row = backfill([e["name"]], records=False, checks=True, run=run, inventory=path, _request=(by_name.get(e["name"]) or {}).get("record", {}).get("request"))
+            return {**by_name.get(e["name"], {}), **(row[0] if row else {"name": e["name"]})}
+        with ThreadPoolExecutor(max_workers=EVAL_SLOTS) as pool:
+            return list(pool.map(one, rows))
     done = []
     for e in rows:
         name = e["name"]
@@ -1002,7 +1069,7 @@ def backfill(names=(), records=True, checks=True, run=subprocess.run, inventory=
             print(json.dumps(row), flush=True)
             done.append(row)
             continue
-        request = None
+        request = _request
         if records:
             record = signed_record(res)
             if record and record.get("signatures"):

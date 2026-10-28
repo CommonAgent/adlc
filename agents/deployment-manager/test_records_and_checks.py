@@ -243,6 +243,7 @@ class EachDeployIsFollowedByAConformanceCheck(unittest.TestCase):
         os.makedirs(os.path.join(home, "tmp"))
         real_isdir = os.path.isdir
         with mock.patch.object(ex, "EVAL_HOME", home), mock.patch.object(ex, "DM_RECORDS", os.path.join(home, "rec")), \
+                mock.patch.object(ex, "checker_seat", return_value=("own", "/home/agentevaluator/.config/fleet/mesh.creds")), \
                 mock.patch.object(ex.os.path, "isdir", lambda p: True if p.startswith("/home/") else real_isdir(p)), \
                 mock.patch("builtins.print"):
             out = ex.conform_now(s, run=fake_run)
@@ -253,6 +254,35 @@ class EachDeployIsFollowedByAConformanceCheck(unittest.TestCase):
         run_cmd = calls[1]
         self.assertEqual(run_cmd[:3], ["sudo", "-u", "agentevaluator"])
         self.assertIn("brand-reader.platform@example.com", run_cmd)
+
+    def test_with_only_the_nodes_credential_it_runs_as_root_over_a_private_copy_of_the_checkers_state(self):
+        d = tempfile.mkdtemp(prefix="dm-seat-")
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, "adapter"))
+        for fn in ("identity.json", "named.json"):
+            with open(os.path.join(d, "adapter", fn), "w") as f:
+                f.write("{}")
+        with mock.patch.object(ex, "EVAL_IDENTITY", os.path.join(d, "adapter", "identity.json")):
+            cmd, work = ex.checker_command("node", "/opt/fleet/node-platform/mesh.creds", "/x/spec.json", "a.p@e.com", "/home/a/work")
+        self.addCleanup(shutil.rmtree, work, True)
+        self.assertNotIn("sudo", cmd)
+        self.assertIn("EVAL_CREDS=/opt/fleet/node-platform/mesh.creds", cmd)
+        state = os.path.join(work, "adapter")
+        self.assertIn(f"MESH_ADAPTER_STATE={state}", cmd)
+        self.assertEqual(cmd[-1], os.path.join(state, "identity.json"))
+        self.assertTrue(os.path.exists(os.path.join(state, "identity.json")))
+        self.assertTrue(os.path.exists(os.path.join(d, "adapter", "identity.json")), "the checker's own state is untouched")
+
+    def test_the_seat_is_the_checkers_own_credential_first_then_the_nodes(self):
+        d = tempfile.mkdtemp(prefix="dm-seat2-")
+        self.addCleanup(shutil.rmtree, d, True)
+        own, node = os.path.join(d, "own.creds"), os.path.join(d, "node.creds")
+        with mock.patch.dict(os.environ, {"DM_EVAL_CREDS": own}), mock.patch.object(ex, "NODE_CREDS", node):
+            self.assertIsNone(ex.checker_seat()[0])
+            open(node, "w").close()
+            self.assertEqual(ex.checker_seat(), ("node", node))
+            open(own, "w").close()
+            self.assertEqual(ex.checker_seat(), ("own", own))
 
     def test_a_check_that_cannot_derive_cases_says_why_and_fails_nothing(self):
         s = ex.conformance_subject(self.REQ, self.OUT)
