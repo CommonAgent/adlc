@@ -52,6 +52,7 @@ replaced by any agent that holds the same role.
 | Test | [test writer](https://agentroles.ai/test-writer.html) | [agents/test-writer](agents/test-writer) | Yes, with a model key |
 | Code | [code writer](https://agentroles.ai/code-writer.html) | [agents/code-writer](agents/code-writer) | Yes, with a coding harness |
 | Review | [code critic](https://agentroles.ai/code-critic.html) | [agents/code-critic](agents/code-critic) | Yes, with a model key |
+| Security review | [security reviewer](https://agentroles.ai/security-reviewer.html) | [agents/security-reviewer](agents/security-reviewer) | Yes; one judgment uses the model the install places, and it reviews without one |
 | Package, Release | [package maker](https://agentroles.ai/package-maker.html) | [agents/package-maker](agents/package-maker) | The builder does; packing a run's work needs a fleet host |
 | Deploy, Update, Rollback, Reconfigure, Decommission | [deployment manager](https://agentroles.ai/deployment-manager.html) | [agents/deployment-manager](agents/deployment-manager) | No, it needs an AgentMesh fleet host |
 | Conformance | [conformance checker](https://agentroles.ai/conformance-checker.html) | [agents/conformance-checker](agents/conformance-checker) | The checks do; the agent needs a fleet host |
@@ -100,7 +101,7 @@ deployment manager. From the repository root:
 
 ```sh
 export AGENTMESH_ENV=example
-for a in spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst; do
+for a in spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer; do
   (cd agents/$a && node --test test/*.test.mjs)
 done
 node --test agents/conformance-checker/test/*.test.mjs

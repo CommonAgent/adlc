@@ -1,0 +1,62 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "kind": "service"
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding what was handed over, what the package declares, what its programs reach, the assessment and the review, and the standing list of every review made"
+    },
+    {
+      "name": "work",
+      "purpose": "nothing is unpacked to disk; kept for the host's layout"
+    }
+  ],
+  "job_seconds": 600,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "review-a-package"
+      ]
+    },
+    "price": {
+      "model": "free"
+    }
+  },
+  "run": {
+    "review-a-package": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/review-a-package/scripts/review-package.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}
