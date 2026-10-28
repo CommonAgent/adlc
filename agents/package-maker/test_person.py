@@ -104,7 +104,7 @@ class TheExample(Harness):
     one sentence on what a good result looks like, carried as authored."""
 
     EXAMPLE = {"inputs": {"note": "Our office moves to Leeds on 1 May.",
-                          "reading": {"file": "examples/move.md", "media_type": "text/markdown",
+                          "reading": {"url": "https://example.com/move.md", "media_type": "text/markdown",
                                       "digest": "sha256:" + "a" * 64}},
                "good_result": "A three-line announcement of the move, with the date."}
 
@@ -114,6 +114,14 @@ class TheExample(Harness):
         res, _ = self.build(s)
         self.assertTrue(res["ok"], res)
         self.assertEqual(descriptor(res)["offerings"][0]["example"], self.EXAMPLE)
+
+    def test_an_example_file_the_package_does_not_carry_is_refused(self):
+        s = person_spec()
+        s["jobs"][0]["example"] = {"inputs": {"reading": {"file": "skills/write-it/assets/move.md", "digest": "sha256:" + "a" * 64}},
+                                   "good_result": "An announcement."}
+        res, _ = self.build(s)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("which the package does not carry", res["error"])
 
     def test_an_example_naming_an_input_the_job_does_not_take_is_refused(self):
         s = person_spec()

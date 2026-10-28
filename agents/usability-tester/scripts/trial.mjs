@@ -58,7 +58,7 @@ async function follow(p, id, { deadline, pollMs, sleep, versions = -1, agentKey 
       // job is followed on; any other answer, or one after that reply, is
       // where the job stands.
       const said = trim(rec.answered?.text);
-      const asks = /\?\s*$|\?\s*\n|\breply\b|\banswer\b|\bconfirm\b/i.test(said);
+      const asks = /\?\s*$|\?\s*\n|(?:^|\n|[.!:]\s+)(?:please\s+)?(?:reply|answer|confirm)\b/i.test(said);
       if (answerOnce && !answered && asks) {
         asked = said.slice(0, 600);
         repliedAt = new Date().toISOString();

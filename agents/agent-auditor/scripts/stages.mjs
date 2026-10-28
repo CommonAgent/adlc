@@ -197,14 +197,19 @@ function usabilityLine(facts) {
     const under = (facts.attached.manifests ?? []).filter((m) => (Array.isArray(m.doc?.pieces) ? m.doc.pieces : []).some((p) => trim(p?.digest) === digest));
     const verified = under.filter((m) => verifyManifest(m.doc) && trim(m.doc.agent) !== trim(facts.dev.key));
     const named = hexOf(r.header.package_digest);
-    return { r, digest, under, m: verified[0] ?? null, own: under.some((m) => trim(m.doc.agent) === trim(facts.dev.key)), bound: Boolean(want && named && named === want), named };
+    // Bound by the package that made its runs; a report whose runs named no
+    // package (none delivered) is bound by the audited version and the
+    // Descriptor dev serves, which is what it read.
+    const served = hexOf(facts.dev.descriptor?.door_digest || facts.dev.descriptor?.bytes_digest);
+    const byDescriptor = !named && Boolean(facts.target.version) && trim(r.header.version) === facts.target.version && Boolean(served) && hexOf(r.header.descriptor_digest) === served;
+    return { r, digest, under, m: verified[0] ?? null, own: under.some((m) => trim(m.doc.agent) === trim(facts.dev.key)), bound: Boolean(want && named && named === want) || byDescriptor, byDescriptor, named };
   }).sort((a, b) => Number(b.bound) - Number(a.bound) || Number(Boolean(b.m)) - Number(Boolean(a.m)) || String(b.r.header.tested_at).localeCompare(String(a.r.header.tested_at)));
   const best = judged[0];
   const holderKeys = (facts.holderKeys.usability ?? []).map((k) => k.key);
   const by = best.m ? trim(best.m.doc.agent) : null;
   const parts = { present: true, signed: Boolean(best.m), bound: best.bound, source: best.r.name, by, record_digest: best.digest };
   const signedHow = best.m ? `delivered under ${best.m.name}, a manifest signed by ${by}${holderKeys.includes(by) ? ` (${holderWords(facts, "usability")})` : ", whose signature verifies (any tester counts)"}` : best.own ? "the only manifest listing it is the tested agent's own, and an agent does not test itself" : best.under.length ? "the manifest listing it does not verify" : "no signed delivery manifest given to the audit lists its digest";
-  const boundHow = best.bound ? `names this package, ${short(facts.target.digest)}` : best.named ? `names package ${short(best.r.header.package_digest)}, not the audited ${short(facts.target.digest)}` : "names no package digest";
+  const boundHow = best.byDescriptor ? `names no package (no run delivered), and it tested version ${facts.target.version} through the Descriptor dev serves` : best.bound ? `names this package, ${short(facts.target.digest)}` : best.named ? `names package ${short(best.r.header.package_digest)}, not the audited ${short(facts.target.digest)}` : "names no package digest";
   return line("usability", facts, {
     ...parts, state: stateOf(parts),
     evidence: `${best.r.name}: verdict ${trim(best.r.header.verdict) || "?"} for version ${trim(best.r.header.version) || "?"}, tested ${trim(best.r.header.tested_at) || "at an unstated time"} by ${trim(best.r.header.tested_by) || "an unnamed tester"}; ${signedHow}; it ${boundHow}`,

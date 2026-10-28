@@ -40,7 +40,7 @@ Each finding is labelled. A `descriptor` finding is fixed in the Descriptor, by 
 The verdict is one of three:
 - `not_usable`: an offering a person starts could not be run from an example, its form could not be filled, its run delivered nothing, or nothing it delivered can be read by a person;
 - `usable_with_findings`: every offering ran, delivered and can be read, with at least one finding;
-- `usable`: every offering ran, delivered, can be read and took a change, with no finding.
+- `usable`: every offering ran, delivered and can be read, every change asked came back, and there is no finding. A change not asked (it has a price, or the run config says no) is said under Not checked.
 
 ## A change to a report
 

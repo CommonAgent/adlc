@@ -85,7 +85,9 @@ export function readFiles(files = []) {
   const got = { checklist: null, packages: [], manifests: [], buildRecords: [], deployRecords: [], evalRecords: [], runRecords: [], deliveries: [], usabilityReports: [], appWalks: [], notes: [], unread: [] };
   for (const f of files) {
     const path = trim(f.path);
-    const name = basename(path).replace(/^\d+-[A-Za-z0-9_-]{8}-/, "");
+    let name = basename(path);
+    // A file forwarded through a run carries one staged prefix per hop.
+    while (/^\d+-[A-Za-z0-9_-]{8}-/.test(name)) name = name.replace(/^\d+-[A-Za-z0-9_-]{8}-/, "");
     if (!path || !existsSync(path) || !statSync(path).isFile()) { got.unread.push({ name, why: "the file was not there to read" }); continue; }
     const bytes = readFileSync(path);
     if (isGzip(bytes)) { got.packages.push({ name, bytes }); continue; }

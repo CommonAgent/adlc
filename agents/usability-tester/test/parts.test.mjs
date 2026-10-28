@@ -89,6 +89,12 @@ test("a file in the package comes from what the job was given, and only when its
   assert.match(wrong.problems[0], /hashes to sha256:[0-9a-f]{64}, not the sha256:/);
 });
 
+test("an input only agents give is not asked of the example, and a page has no field for it", async () => {
+  const o = { id: "x", name: "X", inputs: [{ name: "page", kind: "url", required: true, given_by: "person" }, { name: "plan", kind: "application/vnd.x.plan+json", required: true, given_by: "agent" }] };
+  const f = await fillForm(o, { inputs: { page: "https://e.com/a" }, good_result: "x" }, {});
+  assert.equal(f.ok, true, f.problems.join("; "));
+});
+
 test("which files an input takes", () => {
   assert.equal(takes({ kind: "document", accepts: ["application/pdf"] }, "application/pdf"), true);
   assert.equal(takes({ kind: "document", accepts: ["application/pdf"] }, "text/markdown"), false);

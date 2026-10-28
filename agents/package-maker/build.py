@@ -3052,6 +3052,22 @@ def build(spec, src_base, out_dir, authored):
         if not authored:
             open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8", newline="\n").write(skill_md(j, name, copied))
 
+    # An example's file in the package (Common Agent 6.13.8) is checked against
+    # the package as it now stands: it is there, and its bytes are its digest.
+    # A wrong path or a stale digest would otherwise ship and fail every run
+    # of the example after release.
+    for j in jobs:
+        if j.get("example") is None:
+            continue
+        for ex_input, v in example_declaration(j)["inputs"].items():
+            if not (isinstance(v, dict) and v.get("file")):
+                continue
+            at = os.path.join(pkg, *v["file"].split("/"))
+            if not os.path.isfile(at):
+                fail(f"job {j['slug']}: example.inputs.{ex_input} names {v['file']}, which the package does not carry; copy it in under a skill's scripts, references or assets")
+            if "sha256:" + sha256_of(open(at, "rb").read()) != v.get("digest"):
+                fail(f"job {j['slug']}: example.inputs.{ex_input}: {v['file']} in the package is not the file its digest names")
+
     # The two authored files, then the manifest that points at them.
     desc = draft_descriptor(spec, jobs, systems, refuses, escalates, records)
     inst = install_file(spec, jobs, systems, lockfiles)

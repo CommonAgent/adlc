@@ -112,7 +112,9 @@ export async function test({ asked, attached, p, signIn, settings, fetchFile, no
         const deadline = Math.min(deadlineAll, clock() + settings.wait_minutes * 60_000);
         log?.(`running ${o.id}`);
         t.run = await runOffering(p, { key, o, message: t.form.message, deadline, sleep, pollMs, log, clock });
-        if (t.run.package_digest && !packageDigest) { packageDigest = t.run.package_digest; ranVersion = t.run.agent_version; }
+        if (t.run.agent_version && !ranVersion) ranVersion = t.run.agent_version;
+        // The package that made the run binds the report only when it is the version the Descriptor read says.
+        if (t.run.package_digest && !packageDigest && (!t.run.agent_version || t.run.agent_version === trim(doc.agent_version))) packageDigest = t.run.package_digest;
         if (t.run.delivers) {
           if (settings.ask_for_a_change !== "yes") t.change = { not: "the run config's ask_for_a_change setting is no" };
           else if (!takesChanges(o)) t.change = { not: "the offering does not say a change can be asked for", declared: false };

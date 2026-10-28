@@ -10,8 +10,10 @@
 //                         read by a person
 //   usable_with_findings  every offering ran, delivered and can be read, and
 //                         there is at least one finding
-//   usable                every offering ran, delivered, can be read and took
-//                         a change, with no finding
+//   usable                every offering ran, delivered and can be read, with
+//                         no finding (a change not asked, because it has a
+//                         price or the run config says no, is said under Not
+//                         checked)
 //
 //   needs: node >= 22
 //   import { trialFindings, verdictOf, writeReport, readHeader, ABOUT } from "./report.mjs"
@@ -93,7 +95,7 @@ export function readHeader(text) {
 
 const cell = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\n+/g, " ");
 const VERDICT_WORDS = {
-  usable: "A person can run every offering they start from its example, get a result in its declared form, read it and get a change back.",
+  usable: "A person can run every offering they start from its example, get a result in its declared form and read it, and every change asked came back.",
   usable_with_findings: "A person can run every offering they start from its example, get a result and read it; the findings below say what still gets in their way.",
   not_usable: "A person cannot get through at least one offering they start: the offering below that says no shows where they are stopped.",
 };

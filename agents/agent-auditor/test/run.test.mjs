@@ -78,12 +78,13 @@ function lifecycleRecords(w) {
 }
 
 /** A usability report for the package, the manifest it came under, and the App walk's record. */
-function usabilityRecords(w, { digest = w.digest, signer = "usability-tester.platform@agentmesh.ai", verdict = "ready", version = "1.0.0", walkDigest = w.digest } = {}) {
+function usabilityRecords(w, { digest = w.digest, signer = "usability-tester.platform@agentmesh.ai", verdict = "ready", version = "1.0.0", walkDigest = w.digest, descriptorDigest = sha256(Buffer.from(JSON.stringify(w.served, null, 2))) } = {}) {
   const report = `---
 usability_report: v1
 agent: ${HANDLE}
 version: 1.0.0
-package_digest: "${digest}"
+package_digest: ${digest ? `"${digest}"` : "null"}
+descriptor_digest: "${descriptorDigest}"
 verdict: usable
 tested_at: "2026-10-31T10:00:00Z"
 tested_by: usability-tester 0.1.0
@@ -418,6 +419,10 @@ package_digest: ${w.digest}
   assert.equal(check(good, "usability-report").result, "pass");
   const stale = await ask(usabilityRecords(w, { digest: `sha256:${"e".repeat(64)}` }));
   assert.equal(line(stale), "stale");
+  const noRun = await ask(usabilityRecords(w, { digest: null }));
+  assert.equal(line(noRun), "present", "a report whose runs named no package is bound by the version and the Descriptor dev serves");
+  const otherDescriptor = await ask(usabilityRecords(w, { digest: null, descriptorDigest: `sha256:${"d".repeat(64)}` }));
+  assert.equal(line(otherDescriptor), "stale");
   const own = await ask(usabilityRecords(w, { signer: "agent" }));
   assert.equal(line(own), "unsigned");
   const stranger = await ask(usabilityRecords(w, { signer: "stranger" }));
