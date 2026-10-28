@@ -22,6 +22,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Standards
+        run: node --test standards/test/*.test.mjs
+
       - name: The lifecycle packages
         run: |
           for a in solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher; do
