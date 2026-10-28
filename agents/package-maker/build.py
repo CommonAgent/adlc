@@ -1541,9 +1541,9 @@ def standing_findings(spec, jobs, src_base, table):
 #   rule); a label for each allowed value; and min, max and step for a
 #   number.
 OPTION_RULES_CUTOVER = "2026-10-28"
-OPTION_WORDS = re.compile(r"\b(voice|tone|sounds?|style|length|word[ -]?count|format|theme|duration|pace|speed|level|"
+OPTION_WORDS = re.compile(r"\b(voice|tone|sounds?|style|length|word[ -]?count|format|duration|pace|speed|level|"
                           r"mode|size|register|formality|persona)\b", re.I)
-LIBRARY_WORDS = re.compile(r"\b(brand|palette|colou?rs?|logo|fonts?|typefaces?|style[ -]guide|glossary|template)\b", re.I)
+LIBRARY_WORDS = re.compile(r"\b(brand|palette|colou?rs?|logo|fonts?|typefaces?|style[ -]guide|glossary)\b", re.I)
 VALUE_INPUT_KINDS = ("text", "identifier")
 OPTION_LEVELS = {"options-are-settings": "refuse", "settings-declared-fully": "refuse"}
 

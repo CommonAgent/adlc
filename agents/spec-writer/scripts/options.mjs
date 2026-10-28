@@ -18,8 +18,8 @@
 
 const trim = (s) => String(s ?? "").trim();
 
-export const OPTION_WORDS = /\b(voice|tone|sounds?|style|length|word[ -]?count|format|theme|duration|pace|speed|level|mode|size|register|formality|persona)\b/i;
-export const LIBRARY_WORDS = /\b(brand|palette|colou?rs?|logo|fonts?|typefaces?|style[ -]guide|glossary|template)\b/i;
+export const OPTION_WORDS = /\b(voice|tone|sounds?|style|length|word[ -]?count|format|duration|pace|speed|level|mode|size|register|formality|persona)\b/i;
+export const LIBRARY_WORDS = /\b(brand|palette|colou?rs?|logo|fonts?|typefaces?|style[ -]guide|glossary)\b/i;
 export const VALUE_INPUT_KINDS = ["text", "identifier"];
 
 export const wordsOf = (name) => String(name ?? "").replace(/[-_]+/g, " ");

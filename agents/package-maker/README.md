@@ -167,7 +167,7 @@ an existing one):
    whose name says it only shapes how the job runs (a voice, a tone, a
    length, a style, a format) and whose kind is `text` or `identifier` is a
    finding: it belongs in `run_config.settings`. One whose name says brand,
-   palette, colours, logo, font, style guide, glossary or template is a
+   palette, colours, logo, font, style guide or glossary is a
    finding of any kind: it is a `can_use` standing asset. Explainer maker
    declared Voice, How it sounds, Target length and Palette as inputs.
 2. **Settings declared in full.** Every run-config setting has `label`,
