@@ -21,7 +21,10 @@ runs the conformance check published with the role the agent claims.
   reads the draft Descriptor from `agent-descriptor.json`, or from
   `descriptor.json` in a package built before Common Agent 0.30.0-draft.
 - `eval-run.py` sends the cases to the agent over the mesh, audits its records
-  and signs the verdict.
+  and signs the verdict: `conforms`, `does-not-conform` or `inconclusive`.
+  When the spec carries `package_sha256` and `package_version`, as the
+  deployment manager's spec does after each deploy, the verdict names the
+  package's digest, which binds it to that version.
 - `role-check.mjs` runs a role's own conformance check against a container
   agent's image, in Cloud Build.
 - `input-cases.mjs`, `input-check.mjs`, `trial-cases.mjs` and `trial-check.mjs`
@@ -43,7 +46,7 @@ runs the conformance check published with the role the agent claims.
 ```sh
 python3 ../package-maker/build.py ../publisher /tmp/pkg
 python3 eval-gen.py /tmp/pkg/publisher          # the cases it would run
-node --test test/*.test.mjs                     # 29 tests
+node --test test/*.test.mjs
 ```
 
 ## What runs only inside AgentMesh today

@@ -14,6 +14,9 @@ changes the agent or its records (contract §13.2 rule 4).
 
 Usage: eval-run.py <evalspec.json> <handle> <records_root> <identity.json>
   records_root: the directory holding the agent's write dirs (its ~/work)
+  The spec may carry package_sha256 and package_version (the deployment
+  manager adds them after a deploy): the record then names the archive's
+  digest, which binds the verdict to that version.
   JOB_DIR=<job folder>: when set, the signed record is placed under the job
   folder's out/ and listed in pieces.json, so the reply to a run carries the
   verdict as a file the next phase can read and not only as words.
@@ -241,6 +244,12 @@ def audit_records(required, records_root, patterns=None):
             "exact": len(required) - len(unpatterned)}
 
 
+def verdict_of(nfail, ninc, audit):
+    if nfail or audit.get("missing"):
+        return "does-not-conform"
+    return "inconclusive" if ninc else "conforms"
+
+
 def main():
     if len(sys.argv) != 5:
         out({"ok": False, "error": "usage: eval-run.py <evalspec.json> <handle> <records_root> <identity.json>"})
@@ -313,11 +322,21 @@ def main():
         "record": "v1", "role": "agent-evaluator", "act": "evaluate",
         "requested_by": spec.get("requested_by", "the requester"),
         "subject": {"agent_key": subject_key, "handle": handle},
-        "package": {"name": spec["agent"], "tree_sha256": spec.get("package_tree_sha256")},
+        # The archive's digest and version, where the caller knows them (the
+        # deployment manager does: it verified them at the deploy). They are
+        # what binds this verdict to one version of the agent; the tree digest
+        # is over the unpacked files and names no archive.
+        "package": {"name": spec["agent"], "tree_sha256": spec.get("package_tree_sha256"),
+                    **({"sha256": spec["package_sha256"]} if spec.get("package_sha256") else {}),
+                    **({"version": spec["package_version"]} if spec.get("package_version") else {})},
         "cases": cases_out,
         "records_audit": audit,
         "summary": {"pass": npass, "fail": nfail, "inconclusive": ninc, "flagged_for_review": nflag},
         "conforms": conforms,
+        # The verdict in the role's own words: conforms, does-not-conform (a
+        # case failed or a promised record is missing), or inconclusive (no
+        # case failed, but one could not be judged). Never rounded up.
+        "verdict": verdict_of(nfail, ninc, audit),
         "produced_at": now, "by": by, "signatures": [],
     }
     message = TAG + "\n" + canonical({k: v for k, v in doc.items() if k != "signatures"})

@@ -347,7 +347,9 @@ next phase of a run can read.
 
 The recorder signs the record with your identity, the same key you are
 known by on the mesh, so anyone can confirm the record came from you.
-Every act leaves one record, refusals included. You do not need to read
+Every act leaves one record, refusals included: a model change, a jobs
+at once change and a rebind are recorded as a `reconfigure` naming the
+package the agent runs. You do not need to read
 or change it; you produce it and keep it.
 
 ## What is deployed
