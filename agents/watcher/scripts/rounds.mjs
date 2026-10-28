@@ -140,8 +140,11 @@ export function askedAt(agent, round, sent = sentLines(round)) {
     return { handle: agent.handle, sent_at: q.sent_at, answered_at: agent.answer.at, seconds, outcome: "answered", reply: agent.answer.reply };
   }
   const s = sent.get(q.ref);
-  // The host's word on the send: a question that never reached the agent is a
-  // gap in the watch, not the agent's silence.
+  // The host's word on the send: a question it never said it sent, or could
+  // not send, never reached the agent, and that is a gap in the watch, not the
+  // agent's silence. (A deployment's own check runs a job no host drains, so
+  // its questions are never sent; that must not read as every agent silent.)
+  if (!s) return { handle: agent.handle, sent_at: q.sent_at, gave_up_at: q.sent_at, outcome: "unsent", why: "the host never said it sent the question" };
   if (s?.error && !s?.retrying && !s?.unconfirmed) return { handle: agent.handle, sent_at: q.sent_at, gave_up_at: q.sent_at, outcome: "refused", why: `the host could not send it: ${s.error}` };
   // Silence is established at the end of the wait, which is when the alarm
   // dates it: what was seen falls before it, inside the incident recorder's

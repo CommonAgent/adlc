@@ -110,12 +110,12 @@ test("the spend's arithmetic is checked again, and a report that says it reconci
 
 test("an alarm is the recorder's two lines and a file named for the platform", () => {
   const c = checkAgent({ named: A, card: read(storefront(A)), record: read({ runs: 0 }), agentdoc: read(agentdoc(A)), asked: { handle: A, sent_at: "2026-10-28T06:00:00.000Z", gave_up_at: "2026-10-28T06:01:00.000Z", outcome: "silent", why: "no answer" }, waitSeconds: 60 });
-  const al = alarmFor(c, { watcher: "watcher 0.1.1" });
+  const al = alarmFor(c, { watcher: "watcher 0.1.2" });
   assert.match(al.text, /^agent: alpha\.platform@agentmesh\.ai\ntime: 2026-10-28T06:01:00\.000Z\n/);
   assert.equal(al.file, alarmFileName(A));
   assert.match(al.file, /platform/);
   const lines = al.jsonl.trim().split("\n").map((l) => JSON.parse(l));
-  assert.ok(lines.every((l) => l.time && l.event && l.agent === A && l.seen_by === "watcher 0.1.1"));
+  assert.ok(lines.every((l) => l.time && l.event && l.agent === A && l.seen_by === "watcher 0.1.2"));
   assert.deepEqual(lines.map((l) => l.time), [...lines.map((l) => l.time)].sort());
   assert.ok(lines.every((l) => l.time <= "2026-10-28T06:01:00.000Z"));
 });
@@ -184,7 +184,11 @@ test("a round keeps who was asked and who answered, by handle or agent id, and d
   assert.equal(recordAnswer(round, { from: key, at: "later", text: STATUS_JSON }), null, "an agent answers a round once");
   assert.equal(allAnswered(round), false);
   assert.deepEqual(askedAt(round.agents[0], round), { handle: A, sent_at: "2026-10-28T06:00:00.000Z", answered_at: "2026-10-28T06:00:03.500Z", seconds: 3.5, outcome: "answered", reply: STATUS_JSON });
-  assert.deepEqual(askedAt(round.agents[2], round), { handle: "c.x@y.com", sent_at: "2026-10-28T06:00:00.000Z", gave_up_at: "2026-10-28T06:01:00.000Z", outcome: "silent", why: "no answer within 60s" });
+  // Not sent, by the host's word, is a gap; sent and unanswered is silence, dated at the end of the wait.
+  assert.equal(askedAt(round.agents[2], round).outcome, "unsent");
+  round.agents[2].asked.ref = "r-c";
+  assert.deepEqual(askedAt(round.agents[2], round, new Map([["r-c", { ref: "r-c", message_id: "m-c" }]])), { handle: "c.x@y.com", sent_at: "2026-10-28T06:00:00.000Z", gave_up_at: "2026-10-28T06:01:00.000Z", outcome: "silent", why: "no answer within 60s", message_id: "m-c" });
+  assert.match(askedAt(round.agents[2], round, new Map([["r-c", { ref: "r-c", message_id: "m-c", held: true }]])).why, /nobody serving its inbox/);
   assert.equal(askedAt(round.agents[1], round).outcome, "not-sent");
   round.status = "closed";
   saveRound(records, round);

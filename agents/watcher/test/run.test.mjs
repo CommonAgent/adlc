@@ -61,7 +61,7 @@ async function answer(h, outbox, env, answers) {
   for (const line of outbox.filter((l) => l.text === STATUS_TEXT)) {
     const said = answers(line.handle);
     if (said === null) continue;
-    out.push(await runJob(h, { from: line.handle, inReplyTo: `req-${line.ref}`, message: said, env }));
+    out.push(await runJob(h, { from: line.handle, inReplyTo: `m-${line.ref}`, message: said, env }));
   }
   return out;
 }
@@ -90,7 +90,7 @@ test("the role's check: the quiet one is not answering, the crossed ceiling is n
     const r = await runJob(h, { from: OWNER, env });
     assert.equal(r.status, 0, JSON.stringify(r.doc));
     const md = readFileSync(join(r.jobDir, "out", "watch-report.md"), "utf8");
-    assert.match(md, /^# Watch report\n\nwatched_by: watcher 0\.1\.1\n/);
+    assert.match(md, /^# Watch report\n\nwatched_by: watcher 0\.1\.2\n/);
     assert.match(md, /^agents: 3$/m);
     assert.match(md, /^answering: 2$/m);
     assert.match(md, /^open_alerts: 2$/m);
@@ -390,5 +390,20 @@ test("a round another requester closes still reports to whoever asked for it", a
     const r = await runJob(h, { from: OTHER, env });
     assert.ok(r.outbox.some((l) => l.to === keyFor(OWNER) && l.files?.length === 2), JSON.stringify(r.outbox));
     assert.ok(existsSync(join(r.jobDir, "pieces.json")));
+  } finally { await p.close(); }
+});
+
+test("a round whose questions the host never sent (a deployment's own check) reports a gap, not every agent silent", async () => {
+  const p = await fakePlatform(threeAgents());
+  try {
+    const h = host();
+    const env = envOf(p, { WATCH_AGENTS: `${A},${B}` });
+    await runJob(h, { from: "deployment-manager", env, hostSends: false });
+    ageOpenRound(h, 61);
+    const r = await runJob(h, { from: OWNER, env });
+    const rec = json(join(r.recordsDir, "watch-record.json"));
+    for (const a of rec.agents) assert.equal(a.answering.state, "unknown", a.handle);
+    assert.match(rec.agents[0].answering.why, /the question was never sent: the host never said it sent the question/);
+    assert.equal(r.outbox.filter((l) => l.to === keyFor(RECORDER)).length, 0);
   } finally { await p.close(); }
 });
