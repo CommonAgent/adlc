@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { agentFilesAmong, layOutAgentFiles, skillSlugOf, specOfFolder } from "./agent-folder.mjs";
+import { parseRecord } from "./architecture-record.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -54,7 +55,7 @@ export const ASKED_OF_PERSON = NEEDS.filter((n) => n.settled_by === "the person"
  *  drafting step. The one kind worth telling apart with real care is a spec:
  *  somebody who attaches one is revising or copying it, and that changes what
  *  the draft should be far more than any other attachment. */
-export const KINDS = ["a spec", "an agent's own file", "a descriptor", "a script", "a document", "data", "an image", "something else"];
+export const KINDS = ["a spec", "an agent's own file", "an architecture record", "a descriptor", "a script", "a document", "data", "an image", "something else"];
 
 /** One of the files this agent delivers, the layout a package is authored in:
  *  a draft descriptor or runtime requirements (told by their format), a
@@ -124,6 +125,10 @@ export function kindOf(path, mediaType = "", body = null) {
     return "data";
   }
   if (body != null && looksLikeSkill(body)) return "an agent's own file";
+  // The Architecture stage's record (agents/solution-architect): the systems
+  // this agent may reach and the products bound to them. Told by its own
+  // header, never by its name.
+  if (body != null && parseRecord(body)) return "an architecture record";
   if (DOC_EXT.has(ext) || String(mediaType).startsWith("text/")) return "a document";
   return "something else";
 }
@@ -253,9 +258,22 @@ export function readingOf({ text = "", files = [], io = {} } = {}) {
     // The files this agent delivers, sent back: a revision of the draft they
     // describe, read whole by the drafting step like any other attachment.
     files_attached: attached.filter((a) => a.kind === "an agent's own file").map((a) => a.name),
+    // The architecture record the Design starts from: the systems it names
+    // are the only systems the draft may declare (references/
+    // what-a-good-spec-carries.md, "Design starts from the architecture").
+    ...architectureOf(attached),
     needs: NEEDS.map((n) => ({ key: n.key, what: n.what, settled_by: n.settled_by })),
     to_ask: ASKED_OF_PERSON,
   };
+}
+
+/** The architecture record among the attachments, read: the file's name and
+ *  its header (systems, environments, kind, whether it is finished, how many
+ *  questions it leaves open). Empty when none came. */
+export function architectureOf(attached = []) {
+  const a = attached.find((x) => x.kind === "an architecture record" && typeof x.text === "string");
+  const h = a ? parseRecord(a.text) : null;
+  return h ? { architecture: { from: a.name, systems: h.systems, environments: h.environments, kind: h.kind, done: h.done, questions: h.questions, bindings: h.bindings } } : {};
 }
 
 /** What this step says out loud. Not the reply to the buyer, which the last
@@ -268,6 +286,7 @@ export function summary(reading) {
   else bits.push("nothing attached");
   if (reading.missing_files.length) bits.push(`${reading.missing_files.length} named and not there: ${reading.missing_files.join(", ")}`);
   if (reading.spec_attached.length) bits.push(`a spec came with it: ${reading.spec_attached.join(", ")}`);
+  if (reading.architecture) bits.push(`an architecture record came with it: ${reading.architecture.from} (${reading.architecture.systems.join(", ") || "no systems"}${reading.architecture.done ? "" : ", not finished"})`);
   if (reading.files_attached?.length) bits.push(`the agent's own files came with it: ${reading.files_attached.join(", ")}`);
   return bits.join("; ");
 }

@@ -16,6 +16,11 @@ system), and it hands back the questions it could not settle instead of
 guessing. The package maker's own check runs over every draft, so a draft that
 will not build is caught here, and no files are delivered for it.
 
+It holds the Design part of the Architecture and Design stage, after the
+[solution architect](../solution-architect). Given the architecture record,
+the draft declares exactly the systems the record names; a step that needs
+another goes back to the architect as a question instead of into the draft.
+
 ## What it needs
 
 - Node 22 or later. The scripts use only node's own modules.
@@ -37,7 +42,7 @@ instructions are in `skills/<slug>/SKILL.md`, the scripts are in `scripts/`, and
 works under are in `rules.md` and `references/`.
 
 ```sh
-node --test test/*.test.mjs                                   # 131 tests
+node --test test/*.test.mjs                                   # 139 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

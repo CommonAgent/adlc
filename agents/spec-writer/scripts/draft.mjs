@@ -167,8 +167,11 @@ export function requestParts({ asked = null, reference = "", worked = "", answer
   // document says is part of what they asked for and a draft written from
   // its filename has not read it.
   const sentBack = attached.find((a) => a.kind === "a spec" && typeof a.text === "string") ?? null;
+  // The architecture record is handed over on its own below, with what the
+  // Design owes it, rather than as one more document.
+  const record = attached.find((a) => a.kind === "an architecture record" && typeof a.text === "string") ?? null;
   for (const a of attached) {
-    if (a === sentBack || typeof a.text !== "string" || !trim(a.text)) continue;
+    if (a === sentBack || a === record || typeof a.text !== "string" || !trim(a.text)) continue;
     parts.push(`--- ${a.name.toUpperCase()}, ${a.kind.toUpperCase()}, AS ATTACHED ---\n${trim(a.text)}${a.cut ? `\n(cut here; the whole file is ${a.text_chars} characters)` : ""}`);
   }
   if ((asked?.missing_files ?? []).length) {
@@ -196,12 +199,52 @@ export function requestParts({ asked = null, reference = "", worked = "", answer
       + "Read what they asked for to tell whether they are revising this spec or copying its shape for something new. "
       + "If they are revising it, keep everything they did not ask to change, and change only what their words and their answers touch.");
   }
+  if (record) parts.push(architecturePart(record, asked?.architecture));
   if (trim(reference)) parts.push(`--- WHAT A GOOD SPEC CARRIES ---\n${trim(reference)}`);
   if (trim(worked)) parts.push(`--- A WHOLE SPEC THAT WORKS ---\n${trim(worked)}`);
   if (findings.length) {
     parts.push(`--- WHAT WAS WRONG WITH YOUR LAST DRAFT ---\n${findings.map((f) => `- ${f}`).join("\n")}\nWrite it again with these fixed. Change nothing else.`);
   }
   return parts;
+}
+
+/** The architecture record, as the Design is given it (Agent Roles, the
+ *  solution architect; the stage's standard is agents/solution-architect/
+ *  references/architecture-standard.md). The Design designs within it: the
+ *  record's systems and no other, its kind, its formats and its settings. */
+export const ARCHITECTURE_RULE = "Design within this record. It was written by the Architecture stage, which comes before the Design, "
+  + "and it settles what the agent stands on. Declare exactly the systems it names, under the same names and with the access it gives each, and no other; "
+  + "a model system is declared as the record states its capability, and no model is named. The agent's kind is the record's kind. "
+  + "The formats at the agent's edge, and the settings with their defaults, are the record's. The record's products and bindings are for the install: "
+  + "the spec names no product, address or credential. Where a step of your design needs a system the record does not name, do not declare it: "
+  + "put \"architecture\" in \"blanks\" with the question for the architect, naming the step and the system it needs.";
+
+export function architecturePart(record, architecture = null) {
+  const n = Number(architecture?.questions) || 0;
+  const open = architecture && !architecture.done
+    ? `\nThe record is not finished: ${n === 1 ? "one question is" : `${n} questions are`} still open in it. Leave them open; they are the architect's and the person's, not yours.`
+    : "";
+  return `--- THE ARCHITECTURE RECORD: ${record.name} ---\n${trim(record.text)}\n${ARCHITECTURE_RULE}${open}`;
+}
+
+/** The draft fitted to the record after the last go: a system the record does
+ *  not name is taken out of the draft and asked of the architect, never kept
+ *  on the Design's word. Returns the draft and the blank to add, if any. */
+export function fitToArchitecture(spec, architecture = null) {
+  if (!architecture || !Array.isArray(architecture.systems) || !Array.isArray(spec?.systems)) return { spec, blank: null };
+  const named = new Set(architecture.systems);
+  const nameOf = (s) => trim(s?.name ?? s?.role);
+  const extra = spec.systems.filter((s) => !named.has(nameOf(s)));
+  if (!extra.length) return { spec, blank: null };
+  const names = extra.map(nameOf);
+  return {
+    spec: { ...spec, systems: spec.systems.filter((s) => named.has(nameOf(s))) },
+    blank: {
+      key: "architecture",
+      question: `The design needs ${names.join(" and ")}, which the architecture record does not name, so ${names.length === 1 ? "it was" : "they were"} left out of the draft. `
+        + `This goes back to the solution architect: should the agent reach ${names.join(" and ")}? The record is revised first, and then the design.`,
+    },
+  };
 }
 
 export function draftRequest(opts = {}) {
@@ -371,7 +414,8 @@ export async function askForSpec({ call, check = null, tries = TRIES, ...opts } 
   // them only for the pieces it adds: what an earlier spec already sent as
   // bare JSON is kept, and named in the notes.
   const earlier = earlierBareJson(opts.asked);
-  check ??= (spec) => checkDraft(spec, { earlier });
+  const architecture = opts.asked?.architecture ?? null;
+  check ??= (spec) => checkDraft(spec, { earlier, architecture });
   let findings = [];
   let last = null;
   let calls = 0;
@@ -388,11 +432,15 @@ export async function askForSpec({ call, check = null, tries = TRIES, ...opts } 
     findings = check(last.spec);
     if (!findings.length) break;
   }
+  // A system the record does not name never stays in the draft.
+  const fitted = fitToArchitecture(last.spec, architecture);
+  const blanks = blanksOf(fitted.spec, last.blanks);
+  if (fitted.blank && !blanks.some((b) => b.key === "architecture")) blanks.push(fitted.blank);
   return {
-    spec: last.spec,
-    blanks: blanksOf(last.spec, last.blanks),
+    spec: fitted.spec,
+    blanks,
     notes: last.notes,
-    findings,
+    findings: fitted.blank ? findings.filter((f) => !/which the architecture record does not name/.test(f)) : findings,
     calls,
     used,
     tried_again: calls > 1,
@@ -406,6 +454,14 @@ export async function askForSpec({ call, check = null, tries = TRIES, ...opts } 
  *  all of it. Pure; the caller writes them to the record. */
 export function wentWithoutOf(asked = null) {
   const out = [];
+  // The Design comes after the Architecture. A new draft written without a
+  // record chose its systems itself, which is the architect's decision.
+  if (asked && !asked.architecture && !asked.revision) {
+    out.push({
+      wanted: "an architecture record",
+      did: "chose the systems in the design itself, which is the Architecture stage's decision; send the statement to the solution architect first and attach its record, so the Design starts from systems already named and bound",
+    });
+  }
   for (const name of asked?.missing_files ?? []) {
     out.push({ wanted: name, did: "wrote the spec from what did arrive, and not as though it had" });
   }

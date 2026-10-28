@@ -1,0 +1,116 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "solution-architect",
+  "version": "0.1.3",
+  "description": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks what only a person can commit to, and designs nothing.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "architecture",
+    "write-the-architecture",
+    "revise-the-architecture",
+    "read-what-was-asked",
+    "name-the-systems",
+    "bind-each-environment",
+    "check-the-record",
+    "write-the-reply"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "write-the-architecture": {
+            "scripts": [
+              "scripts/asked.mjs",
+              "scripts/name.mjs",
+              "scripts/caller.mjs",
+              "scripts/standard.mjs",
+              "scripts/bind.mjs",
+              "scripts/architecture-record.mjs",
+              "scripts/check-record.mjs",
+              "scripts/reply.mjs",
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/architecture-standard.md",
+              "references/house-stack.json",
+              "references/a-record-that-works.md",
+              "rules.md"
+            ]
+          },
+          "revise-the-architecture": {
+            "scripts": [
+              "scripts/asked.mjs",
+              "scripts/name.mjs",
+              "scripts/caller.mjs",
+              "scripts/standard.mjs",
+              "scripts/bind.mjs",
+              "scripts/architecture-record.mjs",
+              "scripts/check-record.mjs",
+              "scripts/reply.mjs",
+              "scripts/pieces.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/architecture-standard.md",
+              "references/house-stack.json",
+              "references/a-record-that-works.md",
+              "rules.md"
+            ]
+          },
+          "read-what-was-asked": {
+            "scripts": [
+              "scripts/asked.mjs",
+              "scripts/architecture-record.mjs",
+              "scripts/bind.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/house-stack.json"
+            ]
+          },
+          "name-the-systems": {
+            "scripts": [
+              "scripts/name.mjs",
+              "scripts/caller.mjs",
+              "scripts/standard.mjs",
+              "scripts/architecture-record.mjs"
+            ],
+            "references": [
+              "references/architecture-standard.md",
+              "references/a-record-that-works.md"
+            ]
+          },
+          "bind-each-environment": {
+            "scripts": [
+              "scripts/bind.mjs",
+              "scripts/architecture-record.mjs"
+            ],
+            "references": [
+              "references/house-stack.json"
+            ]
+          },
+          "check-the-record": {
+            "scripts": [
+              "scripts/check-record.mjs",
+              "scripts/architecture-record.mjs",
+              "scripts/standard.mjs"
+            ]
+          },
+          "write-the-reply": {
+            "scripts": [
+              "scripts/reply.mjs",
+              "scripts/pieces.mjs",
+              "scripts/architecture-record.mjs",
+              "scripts/went-without.mjs"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

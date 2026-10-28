@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "spec-writer",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
   "license": "Apache-2.0",
   "author": {
@@ -30,7 +30,8 @@
               "scripts/ask.mjs",
               "scripts/went-without.mjs",
               "scripts/pieces.mjs",
-              "scripts/agent-folder.mjs"
+              "scripts/agent-folder.mjs",
+              "scripts/architecture-record.mjs"
             ],
             "references": [
               "references/what-a-good-spec-carries.md",
@@ -41,7 +42,8 @@
           "read-what-was-asked": {
             "scripts": [
               "scripts/asked.mjs",
-              "scripts/agent-folder.mjs"
+              "scripts/agent-folder.mjs",
+              "scripts/architecture-record.mjs"
             ]
           },
           "draft-the-spec": {
@@ -49,7 +51,8 @@
               "scripts/draft.mjs",
               "scripts/check-spec.mjs",
               "scripts/asked.mjs",
-              "scripts/agent-folder.mjs"
+              "scripts/agent-folder.mjs",
+              "scripts/architecture-record.mjs"
             ],
             "references": [
               "references/what-a-good-spec-carries.md",

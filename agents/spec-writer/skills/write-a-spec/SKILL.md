@@ -14,13 +14,14 @@ when somebody wants an agent built and has said what it should do, in their own 
 ## What this needs
 
 - what it should do (text, required)
+- the architecture record (text/markdown, optional)
 - an existing spec (application/json, optional)
 - notes or a document (document, optional)
 - answers to earlier questions (text, optional)
 
 ## What a good result looks like
 
-The agent's own files, the layout a package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), the same bytes the builder writes for the draft, carrying the four sentences on every job, a how declaration on each, a specific kind on every input and output (Markdown with a convention for what agents hand each other or a person reviews, a vendor JSON kind for typed data only code reads, never a bare application/json), who gives each input, a model reached only as a bound system and never named, at least four refusals written as acts, and the records an agent is audited by. Beside it, the questions it could not answer itself, each one something nobody else could have answered.
+The agent's own files, the layout a package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), the same bytes the builder writes for the draft, carrying the four sentences on every job, a how declaration on each, a specific kind on every input and output (Markdown with a convention for what agents hand each other or a person reviews, a vendor JSON kind for typed data only code reads, never a bare application/json), who gives each input, a model reached only as a bound system and never named, exactly the systems the architecture record names when one came with the request, at least four refusals written as acts, and the records an agent is audited by. Beside it, the questions it could not answer itself, each one something nobody else could have answered.
 
 ## What it produces
 
@@ -70,6 +71,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/went-without.mjs
 - scripts/pieces.mjs
 - scripts/agent-folder.mjs
+- scripts/architecture-record.mjs
 
 ## References
 

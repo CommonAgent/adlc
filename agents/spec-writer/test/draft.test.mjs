@@ -232,14 +232,16 @@ test("a file that never arrived and an attachment that was cut are both said as 
       { name: "everything.txt", kind: "a document", text: "x", text_chars: 90000, cut: true },
     ],
   };
-  const went = wentWithoutOf(asked);
+  // The record the Design starts from is its own note, tested in
+  // architecture.test.mjs; this test is about the files.
+  const went = wentWithoutOf(asked).filter((w) => w.wanted !== "an architecture record");
   assert.equal(went.length, 2, "the short attachment is not a thing gone without");
   assert.equal(went[0].wanted, "rules.md");
   assert.match(went[0].did, /^wrote the spec from what did arrive/, "did reads after \"it\"");
   assert.equal(went[1].wanted, "the whole of everything.txt");
   assert.match(went[1].did, /^read its first 40,000 characters/);
   assert.match(went[1].why, /90,000 characters/);
-  assert.deepEqual(wentWithoutOf({ ...ASKED, missing_files: [] }), [], "nothing missing, nothing said");
+  assert.deepEqual(wentWithoutOf({ ...ASKED, missing_files: [], architecture: { systems: [] } }), [], "nothing missing, nothing said");
 });
 
 test("a revision is drafted from the attached draft and its answers, and never from an answer alone", () => {

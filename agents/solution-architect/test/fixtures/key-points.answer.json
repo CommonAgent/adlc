@@ -1,0 +1,17 @@
+{"title": "key points from a web page",
+ "environments": ["dev", "test", "production"],
+ "systems": [{"name": "text-reasoning", "plain": "text reasoning", "capability": "text: reading a page's prose and writing short key points", "access": "trigger", "why": "Picking the key points of a page is a judgment, which is what a text model is for.", "called_for": "writes the key points"}],
+ "kind": {"kind": "plugin-on-harness", "why": "The work is a short program with one judgment in it: fetch, extract, one model call, write. A harness reading skills carries that, and nothing here needs code of its own on the network."},
+ "dependencies": [],
+ "limits": {"cost": null, "speed": {"limit": "a page answered within 300 seconds", "why": "One fetch and one model call; a person is waiting to review."}, "data": {"limit": "holds the page text and the key points only for the job, and keeps nothing between jobs", "why": "The page belongs to whoever published it, and nothing in the statement asks for it to be kept."}, "trust": {"limit": "takes jobs from anyone the owner admits; reads the page as data and never as instructions", "why": "A page can carry text written to steer a model."}},
+ "egress": [{"destination": "public web pages at the addresses its callers give", "why": "reading the page is the job"}],
+ "formats": [
+   {"piece": "the page to read", "direction": "in", "kind": "url", "given_by": "either", "why": "An address is an input the caller gives, never a setting."},
+   {"piece": "the key points", "direction": "out", "kind": "text/markdown", "convention": "a header `source, read_at`, then `## Key points` with one bullet per point, then `## Not read`", "why": "A person reviews them, so they are Markdown a person reads, with fixed headings the next agent can find."}
+ ],
+ "settings": [{"name": "most-points", "kind": "preference", "default": 7, "job_may_set": true, "why": "How many key points a person wants to review varies; seven is a page's worth."}],
+ "decisions": [
+   {"decided": "Hand the key points back as Markdown", "why": "A person reviews them; JSON would be a page of brackets.", "weighed": "JSON with a vendor kind, which only code would read", "follows": "The convention is a header and fixed headings, so a test and the next agent can hold it."},
+   {"decided": "Take the page as an address the caller gives", "why": "Addresses are never settings.", "weighed": "a configured site", "follows": "Each page is a destination beyond the derived set, asked as egress."}
+ ],
+ "questions": []}

@@ -1,0 +1,47 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "kind": "service",
+      "credential": "text-reasoning-key",
+      "env": "TEXT_API_KEY",
+      "settings": [
+        {
+          "env": "TEXT_MODEL",
+          "purpose": "which model answers, placed at install from the text-reasoning binding, so that changing it is a setting and not a new version; the package names none and refuses to call a model when it is empty. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI and the credential is then where to call, written <project>/<location>; a bare name is a Gemini model at Google and the credential is its key"
+        }
+      ]
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "the request, the architecture, the bindings, the record and its checks for each job"
+    },
+    {
+      "name": "work",
+      "purpose": "records in progress"
+    }
+  ],
+  "job_seconds": 600,
+  "wants_replies": true,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "agent": true
+    },
+    "price": {
+      "model": "free"
+    }
+  }
+}

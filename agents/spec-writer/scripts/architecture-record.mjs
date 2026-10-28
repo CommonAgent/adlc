@@ -1,0 +1,290 @@
+// The architecture record's form: a Markdown document for the person, with a
+// structured header for the bindings, so the next stage and a test can read
+// what is bound where without parsing prose.
+//
+// The header is front matter, written as YAML: `field: value` lines, the lists
+// as flow sequences, the statement quoted, and one nested block for the
+// bindings. This file reads it back without a YAML library, and reads the
+// plain forms a person writes by hand too (a block list, a quoted scalar). It
+// is written from the same facts as the body, by renderRecord, so the two
+// cannot disagree.
+//
+// The spec writer carries a copy of this file (agents/spec-writer/scripts/
+// architecture-record.mjs) to read a record its Design is given, and a test
+// there holds the two copies equal. Change them together.
+//
+//   needs: node >= 22. Nothing here reads or writes a file.
+
+/** The record's format word, the first line of every header. */
+export const RECORD = "architecture-record-v1";
+
+/** The header's fields, in order, and the body's fixed headings, in order.
+ *  The architecture standard (references/architecture-standard.md, section 9)
+ *  names the same lists. */
+export const HEADER_FIELDS = ["record", "statement", "environments", "kind", "done", "questions", "systems", "bindings"];
+export const HEADINGS = ["Statement", "Systems", "Bindings", "Dependencies", "Kind", "Limits", "Egress", "Formats", "Settings", "Decisions", "Questions"];
+
+/** The environments a record may bind, in the words the deploy into each uses
+ *  (Common Agent 8.3), and the stack's word for each. */
+export const ENVIRONMENTS = ["dev", "test", "staging", "production"];
+export const STACK_WORD = { dev: "development", test: "staging", staging: "staging", production: "production" };
+
+const trim = (s) => String(s ?? "").trim();
+const oneLine = (s) => trim(s).replace(/\s+/g, " ");
+
+/** A binding as the header spells it: the product and who provides it, or
+ *  `unbound (asked)` where the record asks instead of binding. */
+export function bindingWord(b) {
+  if (!b || b.unbound) return "unbound (asked)";
+  return `${trim(b.product)} (${b.provided_by === "customer" ? "customer" : "platform"})`;
+}
+
+/** The header, as text between the two `---` lines. */
+export function headerOf(rec) {
+  const systems = (rec.systems ?? []).map((s) => s.name);
+  const lines = [
+    `record: ${RECORD}`,
+    // Quoted, so a colon or a hash in the person's words stays their words.
+    `statement: ${JSON.stringify(oneLine(rec.statement).slice(0, 240) || "(none given)")}`,
+    `environments: [${(rec.environments ?? []).join(", ")}]`,
+    `kind: ${trim(rec.kind?.kind) || "not settled"}`,
+    `done: ${rec.done ? "yes" : "no"}`,
+    `questions: ${(rec.questions ?? []).length}`,
+    `systems: [${systems.join(", ")}]`,
+  ];
+  if (systems.length) {
+    lines.push("bindings:");
+    for (const s of rec.systems) {
+      lines.push(`  ${s.name}:`);
+      for (const env of rec.environments ?? []) lines.push(`    ${env}: ${bindingWord(s.bindings?.[env])}`);
+    }
+  } else {
+    lines.push("bindings: none");
+  }
+  return lines.join("\n");
+}
+
+const noStop = (s) => oneLine(s).replace(/[.\s]+$/, "");
+const COUNT = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+const bullet = (s) => `- ${oneLine(s)}`;
+const sentence = (s) => { let t = oneLine(s); if (t) t = t[0].toUpperCase() + t.slice(1); return !t ? "" : /[.!?]$/.test(t) ? t : `${t}.`; };
+
+/** The statement the record was written from, quoted whole, so a revision
+ *  and the Design read the same words the architecture answered. */
+function statementSection(rec) {
+  const t = trim(rec.statement);
+  return t ? t.split(/\r?\n/).map((l) => `> ${l}`.trimEnd()).join("\n") : "> (no statement was given)";
+}
+
+/** The statement a record quotes, read back from its body. */
+export function statementIn(text) {
+  const body = bodyOf(text);
+  const at = body.search(/^## Statement\s*$/m);
+  if (at < 0) return "";
+  const out = [];
+  for (const line of body.slice(at).split(/\r?\n/).slice(1)) {
+    if (/^## /.test(line)) break;
+    if (/^>/.test(line)) out.push(line.replace(/^> ?/, ""));
+  }
+  return out.join("\n").trim();
+}
+
+function systemsSection(rec) {
+  if (!(rec.systems ?? []).length) return "This agent reaches no system outside its own folder.";
+  return rec.systems.map((s) => {
+    const bits = [`\`${s.name}\` (${oneLine(s.plain || s.name)}), ${s.access}`];
+    if (trim(s.capability)) bits.push(`for ${oneLine(s.capability)}`);
+    return `${bits.join(", ")}: ${sentence(s.why)}`;
+  }).map(bullet).join("\n");
+}
+
+function bindingsSection(rec) {
+  if (!(rec.systems ?? []).length) return "Nothing to bind.";
+  const envs = rec.environments ?? [];
+  const head = `| System | ${envs.join(" | ")} |\n|---|${envs.map(() => "---").join("|")}|`;
+  const rows = rec.systems.map((s) => `| ${s.name} | ${envs.map((e) => {
+    const b = s.bindings?.[e];
+    if (!b || b.unbound) return "unbound: asked";
+    const who = b.provided_by === "customer" ? "the organization's choice" : "platform default";
+    return `${trim(b.label) && b.label !== b.product ? `${b.product} (${b.label})` : b.product}, ${who}`;
+  }).join(" | ")} |`);
+  return [head, ...rows].join("\n");
+}
+
+function listOr(items, empty, render) {
+  return (items ?? []).length ? items.map(render).map(bullet).join("\n") : empty;
+}
+
+function limitsSection(rec) {
+  const l = rec.limits ?? {};
+  const one = (word, x, open) => {
+    if (!x || (!trim(x.limit) && !trim(x.said))) return `**${word}**: ${open}`;
+    return `**${word}**: ${oneLine(x.limit || x.said)}${trim(x.why) ? `. ${sentence(x.why)}` : ""}`;
+  };
+  return [
+    one("Cost", l.cost, "not set; asked, because a spending limit is a commitment."),
+    one("Speed", l.speed, "not set."),
+    one("Data", l.data, "not set."),
+    one("Trust", l.trust, "not set."),
+  ].map(bullet).join("\n");
+}
+
+function egressSection(rec) {
+  const out = [];
+  for (const env of rec.environments ?? []) {
+    const policy = rec.egress_policy?.[env] ?? "not known";
+    out.push(`${env}: the target runs the agent ${policy === "allowlist" ? "behind an allowlist" : policy === "open" ? "open (it enforces no allowlist today)" : `${policy}`}.`);
+  }
+  const dests = rec.egress ?? [];
+  out.push(dests.length
+    ? `Beyond the derived set (its systems, the network, the registrar, the model it is given): ${dests.map((d) => `${oneLine(d.destination)}${d.granted ? " (granted by the person)" : " (asked)"}, ${noStop(d.why)}`).join("; ")}.`
+    : "None beyond the derived set (its systems, the network, the registrar, the model it is given).");
+  return out.map(bullet).join("\n");
+}
+
+function formatsSection(rec) {
+  return listOr(rec.formats, "Nothing passes in or out beyond the reply.", (f) => {
+    const dir = f.direction === "in" ? "takes" : "hands back";
+    const who = f.direction === "in" && trim(f.given_by) ? `, given by ${f.given_by === "either" ? "a person or an agent" : `a ${f.given_by}`}` : "";
+    const conv = trim(f.convention) ? `; ${noStop(f.convention)}` : "";
+    return `It ${dir} ${oneLine(f.piece)} as \`${trim(f.kind)}\`${who}${conv}. ${sentence(f.why)}`;
+  });
+}
+
+function settingsSection(rec) {
+  const lines = (rec.settings ?? []).map((s) => `\`${trim(s.name)}\`, a ${s.kind === "rule" ? "rule" : "preference"} with the default ${JSON.stringify(s.default)}${s.job_may_set ? ", which a sender may set for one job" : ""}: ${sentence(s.why)}`);
+  return lines.length ? lines.map(bullet).join("\n") : "No setting beyond the bindings' own.";
+}
+
+function decisionsSection(rec) {
+  if (!(rec.decisions ?? []).length) return "No decision was made.";
+  return rec.decisions.map((d, i) => [
+    `### Decision ${i + 1}. ${oneLine(d.decided)}`,
+    "",
+    `Why: ${sentence(d.why) || "no reason given."}`,
+    ...(trim(d.weighed) ? ["", `Weighed: ${sentence(d.weighed)}`] : []),
+    ...(trim(d.follows) ? ["", `What follows: ${sentence(d.follows)}`] : []),
+  ].join("\n")).join("\n\n");
+}
+
+function questionsSection(rec) {
+  return (rec.questions ?? []).length
+    ? rec.questions.map((q) => `- ${q.key}: ${oneLine(q.question)}`).join("\n")
+    : "None. Every system is named and bound in each environment, and every decision has its reason.";
+}
+
+/** The whole record, header and body. */
+export function renderRecord(rec) {
+  const title = oneLine(rec.title) || "an agent";
+  const body = [
+    `# Architecture record: ${title}`,
+    "",
+    rec.done
+      ? "This record is finished: every system is named and bound in each environment, and every decision has its reason."
+      : `This record is not finished: ${(rec.questions ?? []).length === 1 ? "one question is" : `${COUNT[(rec.questions ?? []).length] ?? (rec.questions ?? []).length} questions are`} still open, under Questions.`,
+    "",
+    "## Statement", "", statementSection(rec), "",
+    "## Systems", "", systemsSection(rec), "",
+    "## Bindings", "", bindingsSection(rec), "",
+    "## Dependencies", "", listOr(rec.dependencies, "None.", (d) => `**${oneLine(d.name)}** (${d.what === "agent" ? "an agent" : "a service"}): ${sentence(d.why)}`), "",
+    "## Kind", "", `**${trim(rec.kind?.kind) || "not settled"}**: ${sentence(rec.kind?.why) || "no reason given."}`, "",
+    "## Limits", "", limitsSection(rec), "",
+    "## Egress", "", egressSection(rec), "",
+    "## Formats", "", formatsSection(rec), "",
+    "## Settings", "", settingsSection(rec), "",
+    "## Decisions", "", decisionsSection(rec), "",
+    "## Questions", "", questionsSection(rec), "",
+  ].join("\n");
+  return `---\n${headerOf(rec)}\n---\n\n${body}`;
+}
+
+/** The body alone, without the header: what a reader compares between two
+ *  versions of one record. */
+export function bodyOf(text) {
+  const m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(String(text ?? ""));
+  return m ? String(text).slice(m[0].length) : String(text ?? "");
+}
+
+/** Read a record's header back, or null when the text is not an architecture
+ *  record. Returns the fields, with `environments` and `systems` as lists,
+ *  `done` as a boolean, `questions` as a number, and `bindings` as
+ *  {system: {environment: {product, provided_by} | {unbound: true}}}. */
+/** A scalar as YAML would read it: a double-quoted one as JSON, a single-quoted
+ *  one with its quotes taken off, anything else trimmed. */
+function unquote(v) {
+  const t = trim(v);
+  if (/^"(?:[^"\\]|\\.)*"$/.test(t)) { try { return JSON.parse(t); } catch { return t.slice(1, -1); } }
+  if (/^'.*'$/.test(t)) return t.slice(1, -1).replace(/''/g, "'");
+  return t;
+}
+
+const BOM = new RegExp("^" + String.fromCharCode(0xfeff));
+export function parseRecord(text) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(String(text ?? "").replace(BOM, ""));
+  if (!m) return null;
+  const out = { bindings: {} };
+  let inBindings = false;
+  let system = null;
+  let listing = null;
+  for (const raw of m[1].split(/\r?\n/)) {
+    if (!raw.trim() || /^\s*#/.test(raw)) continue;
+    const indent = raw.length - raw.trimStart().length;
+    const line = raw.trim();
+    // A block list under a top-level key, as a person writes YAML by hand.
+    const item = /^-\s+(.+)$/.exec(line);
+    if (item && listing) { out[listing].push(unquote(item[1])); continue; }
+    const at = line.indexOf(":");
+    if (at < 0) continue;
+    const key = line.slice(0, at).trim();
+    const value = line.slice(at + 1).trim();
+    if (indent === 0) {
+      inBindings = key === "bindings" && !value;
+      system = null;
+      listing = null;
+      if (key === "bindings") continue;
+      if (!value && (key === "systems" || key === "environments")) { out[key] = []; listing = key; continue; }
+      out[key] = value;
+      continue;
+    }
+    if (!inBindings) continue;
+    if (indent <= 2 && !value) { system = key; out.bindings[system] = {}; continue; }
+    if (system) {
+      const b = /^(.+?)\s*\((customer|platform|asked)\)$/.exec(value);
+      out.bindings[system][key] = !b || b[2] === "asked" || /^unbound\b/.test(value)
+        ? { unbound: true }
+        : { product: b[1].trim(), provided_by: b[2] };
+    }
+  }
+  if (unquote(out.record) !== RECORD) return null;
+  const list = (v) => {
+    if (Array.isArray(v)) return v.filter(Boolean);
+    const t = trim(v).replace(/^\[/, "").replace(/\]$/, "");
+    return !t || t === "none" ? [] : t.split(",").map(unquote).filter(Boolean);
+  };
+  return {
+    record: unquote(out.record),
+    statement: unquote(out.statement),
+    environments: list(out.environments),
+    kind: trim(out.kind),
+    done: trim(out.done) === "yes",
+    questions: Number(out.questions) || 0,
+    systems: list(out.systems),
+    bindings: typeof out.bindings === "object" ? out.bindings : {},
+  };
+}
+
+/** The open questions a record carries under its Questions heading, as
+ *  {key, question}, so a later message can be matched to the one it answers. */
+export function questionsIn(text) {
+  const body = bodyOf(text);
+  const at = body.search(/^## Questions\s*$/m);
+  if (at < 0) return [];
+  const rest = body.slice(at).split(/\r?\n/).slice(1);
+  const out = [];
+  for (const line of rest) {
+    if (/^## /.test(line)) break;
+    const q = /^- ([a-z][a-z0-9-]*): (.+)$/.exec(line.trim());
+    if (q) out.push({ key: q[1], question: q[2] });
+  }
+  return out;
+}
