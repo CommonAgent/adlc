@@ -85,18 +85,22 @@ export function readChecklist(bytes) {
   };
 }
 
-/** The two dates of `applies`: {newFrom, existingFrom}, each an ISO date or null ("not set"). */
+/** What `applies` says: {every} for `every agent`, else the two dates
+ *  {newFrom, existingFrom}, each an ISO date or null ("not set"), as a
+ *  checklist written before every agent was held alike still says them. */
 export function appliesDates(applies) {
+  if (/^\s*every agent\s*$/i.test(String(applies ?? ""))) return { every: true, newFrom: null, existingFrom: null };
   const date = (re) => {
     const m = re.exec(String(applies ?? ""));
     return m && /^\d{4}-\d{2}-\d{2}$/.test(m[1]) ? m[1] : null;
   };
-  return { newFrom: date(/new agents from\s+(\S+?)[;,.]?(?:\s|$)/i), existingFrom: date(/existing agents from\s+(\S+?)[;,.]?(?:\s|$)/i) };
+  return { every: false, newFrom: date(/new agents from\s+(\S+?)[;,.]?(?:\s|$)/i), existingFrom: date(/existing agents from\s+(\S+?)[;,.]?(?:\s|$)/i) };
 }
 
 /**
  * The level a finding has for this agent, by the check's `applies`. An
- * `info` check stays info whatever the dates.
+ * `info` check stays info whatever the dates. `every agent` gives every
+ * agent the check's level.
  * A new agent is one first released on or after the first date; its
  * findings have the check's level. An existing agent's findings are warnings
  * until the second date, and then have the check's level. A check that does
@@ -111,7 +115,8 @@ export function levelFor(check, { firstReleased = null, now = new Date() } = {})
   // checklist.
   if (check.level === "info") return { level: "info", why: "an info check: shown as evidence, not counted toward the verdict and never filed" };
   if (check.level !== "refuse") return { level: "warn", why: "" };
-  const { newFrom, existingFrom } = appliesDates(check.applies);
+  const { every, newFrom, existingFrom } = appliesDates(check.applies);
+  if (every) return { level: "refuse", why: "the check applies to every agent, whenever it was first released" };
   const day = (iso) => String(iso).slice(0, 10);
   const today = day(now.toISOString());
   const isNew = Boolean(firstReleased && newFrom && day(firstReleased) >= newFrom);

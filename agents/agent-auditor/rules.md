@@ -20,7 +20,7 @@ Each checklist entry is run through the test registered for its `check`. Where a
 
 ## Levels and the verdict
 
-A finding has the check's level for a new agent, one first released on or after the check's first `applies` date. For an existing agent, a finding is a warning until the second date, which the owner sets; until then it reads "not set". An agent with no release on record is read as existing.
+A finding has the check's level for every agent when the check `applies` to `every agent`, whenever the agent was first released. A checklist that still gives two dates is read as it says: the check's level for a new agent, one first released on or after the first date, and a warning for an existing agent until the second date, which reads "not set" until the owner sets it; an agent with no release on record is read as existing.
 
 A check at level `info` is shown in the report as evidence on file, whatever the dates. It never counts toward the verdict and is never filed. An organization may raise an info check to warn or refuse in its own checklist.
 
