@@ -823,6 +823,8 @@ EVAL_LOCK = f"{EVAL_HOME}/tmp/.after-deploy.lock"
 # How many checks run at once on this host. A check spends most of its time
 # waiting for the agent's answers, so a backfill runs several.
 EVAL_SLOTS = max(1, int(os.environ.get("DM_CONFORMANCE_SLOTS") or 4))
+# How long a check waits for a slot before it gives up and says so.
+EVAL_WAIT_SECONDS = int(os.environ.get("DM_CONFORMANCE_WAIT_SECONDS") or 3 * 3600)
 EVAL_TIMEOUT = int(os.environ.get("DM_CONFORMANCE_SECONDS") or 3600)
 CONFORM_LOG = f"{DM_RECORDS}/conformance.log"
 _CHECKS = []
@@ -884,19 +886,39 @@ def start_conformance(subject):
         print(f"[deploy-executor] {subject.get('request')}: the conformance check did not start: {e}", flush=True)
 
 
-def conform(subject, run=subprocess.run):
-    """One check, in one of the host's EVAL_SLOTS. Returns what it came to."""
+def conform(subject, run=subprocess.run, pool="deploy", wait_seconds=None, now=time.time, sleep=time.sleep):
+    """One check, in one of the host's EVAL_SLOTS for its pool. Returns what it
+    came to, and always says so in one line, even when it never ran.
+
+    The checks after a deploy and the backfill's have slots of their own
+    (pool "deploy" and "backfill"), so a backfill holding every slot for hours
+    never leaves a deploy's check waiting unseen (2026-10-28: ten checks
+    started after deploys waited behind a backfill and logged nothing). A
+    check that waits says so once, and one that cannot get a slot within
+    EVAL_WAIT_SECONDS gives up and says that."""
     import fcntl
     os.makedirs(f"{EVAL_HOME}/tmp", exist_ok=True)
+    wait_seconds = EVAL_WAIT_SECONDS if wait_seconds is None else wait_seconds
+    started, said_waiting = now(), False
     while True:
         for i in range(EVAL_SLOTS):
-            with open(f"{EVAL_LOCK}.{i}", "a") as lock:
+            with open(f"{EVAL_LOCK}.{pool}.{i}", "a") as lock:
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
                     continue
                 return conform_now(subject, run=run)
-        time.sleep(5)
+        if not said_waiting:
+            said_waiting = True
+            print(json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "request": subject.get("request"),
+                              "handle": subject.get("handle"), "version": subject.get("version"),
+                              "waiting": f"all {EVAL_SLOTS} {pool} slots are taken; this check starts when one frees"}), flush=True)
+        if now() - started > wait_seconds:
+            out = {"ok": False, "why": f"no {pool} slot came free within {wait_seconds} seconds; the check did not run"}
+            print(json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "request": subject.get("request"),
+                              "handle": subject.get("handle"), "version": subject.get("version"), **out}), flush=True)
+            return out
+        sleep(5)
 
 
 def checker_seat():
@@ -1102,7 +1124,7 @@ def backfill(names=(), records=True, checks=True, run=subprocess.run, inventory=
             subject = {"request": request or f"dr_backfill-{res['sha256'][:12]}", "name": name,
                        "package": res["package"], "version": res.get("version"), "sha256": res["sha256"],
                        "agent_key": res.get("agent_key"), "handle": res.get("handle")}
-            row["check"] = (conform(subject, run=run) if subject["handle"]
+            row["check"] = (conform(subject, run=run, pool="backfill") if subject["handle"]
                             else {"ok": False, "why": "no handle in the inventory"})
         print(json.dumps(row), flush=True)
         done.append(row)
@@ -1351,7 +1373,13 @@ if __name__ == "__main__":
                 os.remove(sys.argv[2])
             except OSError:
                 pass
-            sys.exit(0 if conform(_subject).get("ok") else 1)
+            try:
+                _out = conform(_subject)
+            except Exception as _e:  # noqa: BLE001 - a started check always ends with a line
+                _out = {"ok": False, "why": f"the check stopped: {str(_e)[:300]}"}
+                print(json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "request": _subject.get("request"),
+                                  "handle": _subject.get("handle"), "version": _subject.get("version"), **_out}), flush=True)
+            sys.exit(0 if _out.get("ok") else 1)
         if len(sys.argv) >= 2 and sys.argv[1] == "backfill":
             _rest = sys.argv[2:]
             backfill([a for a in _rest if not a.startswith("--")],
