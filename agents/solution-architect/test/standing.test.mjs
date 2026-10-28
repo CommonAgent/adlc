@@ -94,5 +94,26 @@ test("a record that says none reads back as an empty list, and one written befor
   assert.deepEqual(parseRecord(none).standing_assets, []);
   const before = renderRecord({ title: "t", statement: "s", environments: [], systems: [], decisions: [], questions: [], kind: { kind: "k", why: "w" } });
   assert.equal(parseRecord(before).standing_assets, null);
-  assert.match(before, /## Standing assets\n\nNot decided\./);
+  assert.match(before, /## Standing assets\n\nNot decided: the list of standing-asset kinds was not read/);
+});
+
+test("without the list, nothing is decided and the record is not done, rather than a false none", () => {
+  assert.equal(standingAssetsOf([out("the film", "video/mp4")], null), null);
+  const rec = recordOf({
+    asked: { statement: "an agent that makes a film", answers: {} },
+    named: { architecture: { title: "film", kind: { kind: "plugin-on-harness", why: "default" }, formats: [out("the film", "video/mp4")], decisions: [] } },
+    bound: { environments: ["dev"], systems: [] },
+    table: null,
+  });
+  assert.equal(rec.standing_assets, null);
+  assert.ok(doneOf(rec, [], null).problems.includes("the standing assets are not decided"));
+  assert.doesNotMatch(renderRecord(rec), /None, because/);
+});
+
+test("a person's answer that is not a none is said in the record, and the house rule stands", () => {
+  const sa = standingAssetsOf([out("the announcement", "text/markdown")], table, "brand only, no style guide");
+  assert.deepEqual(sa.schemas, [BRAND, STYLE]);
+  assert.match(sa.note, /only "none, because \.\.\." changes this section/);
+  const text = renderRecord({ title: "t", statement: "s", environments: [], systems: [], decisions: [], questions: [], kind: { kind: "k", why: "w" }, standing_assets: sa });
+  assert.match(text, /- Note: the person answered "brand only, no style guide"/);
 });

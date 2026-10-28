@@ -81,7 +81,8 @@ export function doneOf(rec, vocabulary = [], table = loadSchemas()) {
     }
   }
   for (const d of rec.decisions ?? []) if (!trim(d.why)) problems.push(`the decision "${trim(d.decided)}" has no reason`);
-  if (rec.standing_assets) problems.push(...standingProblems(rec.standing_assets, table));
+  // A record that could not decide them (the list was not read) is not done.
+  problems.push(...standingProblems(rec.standing_assets, table));
   if (!trim(rec.kind?.kind)) problems.push("the kind is not settled");
   if ((rec.questions ?? []).length) problems.push(`${rec.questions.length} question${rec.questions.length === 1 ? " is" : "s are"} open`);
   return { done: problems.length === 0, problems };
@@ -97,7 +98,9 @@ export function standardsCited() {
     const bytes = readFileSync(p);
     const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(bytes.toString("utf8"))?.[1] ?? "";
     const field = (k) => new RegExp(`^${k}:\\s*(.+)$`, "m").exec(head)?.[1]?.trim() ?? null;
-    out.push({ file: name, schema: field("schema"), version_digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, layer: field("layer") ?? "publisher" });
+    // The JSON list has no front matter; its own format word stands in.
+    const format = name.endsWith(".json") ? (() => { try { const j = JSON.parse(bytes.toString("utf8")); return j.standing_asset_schemas ? `standing_asset_schemas ${j.standing_asset_schemas}` : null; } catch { return null; } })() : null;
+    out.push({ file: name, schema: field("schema"), ...(format ? { format } : {}), version_digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, layer: field("layer") ?? "publisher" });
   }
   return out;
 }

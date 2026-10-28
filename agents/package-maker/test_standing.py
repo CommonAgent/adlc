@@ -156,6 +156,15 @@ class APersonFacingOutputWithNoLibrary(Harness):
         self.assertEqual(res["standing_rules"]["warnings"], [])
         self.assertEqual(res["standing_rules"]["none_because"], "the person said none apply, because it is an internal note")
 
+    def test_a_record_that_says_no_output_is_read_by_a_person_does_not_answer_it(self):
+        record = os.path.join(self.tmp, "architecture-record.md")
+        with open(record, "w", encoding="utf-8", newline="\n") as f:
+            f.write("---\nrecord: architecture-record-v1\nstanding_assets: none\n---\n\n## Standing assets\n\n"
+                    "- None, because no output is read by a person: the agent hands back only data that code reads.\n")
+        res, _ = self.build(announcement_spec(), env={"ARCHITECTURE_RECORD": record})
+        self.assertEqual(len(res["standing_rules"]["warnings"]), 1)
+        self.assertNotIn("none_because", res["standing_rules"])
+
     def test_a_record_that_decides_assets_does_not_excuse_a_draft_that_declares_none(self):
         record = os.path.join(self.tmp, "architecture-record.md")
         with open(record, "w", encoding="utf-8", newline="\n") as f:
@@ -175,7 +184,7 @@ class TheListIsPinned(unittest.TestCase):
         self.assertEqual(mod.STANDING_SCHEMAS_PIN, have,
                          "standards/standing-asset-schemas.json changed: re-pin STANDING_SCHEMAS_PIN in build.py, run the tests, and release")
 
-    def test_a_list_that_is_not_the_pinned_version_is_refused(self):
+    def test_a_list_that_is_not_the_pinned_version_is_not_read_and_says_so(self):
         tmp = tempfile.mkdtemp(prefix="standing-pin-")
         try:
             shutil.copy(BUILD, os.path.join(tmp, "build.py"))
@@ -187,14 +196,66 @@ class TheListIsPinned(unittest.TestCase):
             doc["schemas"].append({"schema": "https://schemas.example/x/v1", "kind": "x", "for": "x", "published": None})
             with open(os.path.join(tmp, "agentbuilder-standing-asset-schemas.json"), "w", encoding="utf-8") as f:
                 json.dump(doc, f)
+            for rel in ("scripts/read.mjs", "scripts/shared.mjs", "scripts/package-lock.json", "notes/style.md"):
+                os.makedirs(os.path.dirname(os.path.join(tmp, rel)), exist_ok=True)
+                with open(os.path.join(tmp, rel), "w", encoding="utf-8") as f:
+                    f.write("{}\n" if rel.endswith(".json") else "// x\n")
             src = os.path.join(tmp, "spec.json")
             with open(src, "w", encoding="utf-8") as f:
                 json.dump(announcement_spec(GOOD), f)
             p = subprocess.run([sys.executable, os.path.join(tmp, "build.py"), src, os.path.join(tmp, "out")],
                                capture_output=True, text=True, encoding="utf-8", env={**os.environ, "AGENTMESH_ENV": "example"})
             res = json.loads(p.stdout.strip().splitlines()[-1])
-            self.assertFalse(res["ok"], res)
-            self.assertIn("not the version this builder pins", res["error"])
+            self.assertTrue(res["ok"], res)
+            self.assertIn("not the version this builder pins", res["standing_rules"]["not_checked"][0])
+            self.assertTrue(any("not the version this builder pins" in w for w in res["warnings"]))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class ABuilderLaidOutFromSentFiles(unittest.TestCase):
+    """A Builder names the shared standards as ../../standards/<file>. Sent as
+    a run's files, each is laid out at standards/<file> beside the agent's own
+    files, and the build reads it there."""
+
+    def test_the_solution_architect_sent_as_files_lays_out_and_builds(self):
+        import importlib.util
+        sp = importlib.util.spec_from_file_location("pack_mod", os.path.join(HERE, "pack.py"))
+        pack = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(pack)
+        tmp = tempfile.mkdtemp(prefix="standing-sent-")
+        try:
+            pack.HOME = tmp
+            agent = os.path.join(HERE, "..", "solution-architect")
+            sent = os.path.join(tmp, "sent")
+            os.makedirs(sent)
+            files = []
+            for d, _, ns in os.walk(agent):
+                if os.sep + "test" in d or os.sep + "records" in d:
+                    continue
+                for n in ns:
+                    rel = os.path.relpath(os.path.join(d, n), agent).replace(os.sep, "/")
+                    flat = os.path.join(sent, rel.replace("/", "__"))
+                    shutil.copy(os.path.join(d, n), flat)
+                    files.append((flat, rel))
+            for n in ("architecture-standard.md", "standing-asset-schemas.json"):
+                flat = os.path.join(sent, "standards__" + n)
+                shutil.copy(os.path.join(HERE, "..", "..", "standards", n), flat)
+                files.append((flat, n))
+            # Each file is sent under its own name, as a run hands it over.
+            names = {flat: os.path.basename(rel) for flat, rel in files}
+            pack.sent_name = lambda path: names.get(path, os.path.basename(path))
+            found = pack.agent_files_among([f for f, _ in files])
+            self.assertIsNotNone(found)
+            root, laid = pack.lay_out_folder(found, [f for f, _ in files])
+            self.assertEqual(laid["missing"], [], laid)
+            self.assertIn("standards/architecture-standard.md", laid["placed"])
+            p = subprocess.run([sys.executable, BUILD, root, os.path.join(tmp, "out")], capture_output=True, text=True,
+                               encoding="utf-8", env={**os.environ, "AGENTMESH_ENV": "example"})
+            res = json.loads(p.stdout.strip().splitlines()[-1])
+            self.assertTrue(res["ok"], res)
+            ref = os.path.join(res["path"], "skills", "write-the-architecture", "references", "architecture-standard.md")
+            self.assertTrue(os.path.isfile(ref))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

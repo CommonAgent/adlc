@@ -1379,9 +1379,11 @@ def apply_format_rules(name, jobs, src_base, authored=None):
 # The list is read at the version this builder pins, STANDING_SCHEMAS_PIN, the
 # sha256 of its bytes. On a fleet host it sits beside this file as
 # agentbuilder-standing-asset-schemas.json; in the repository it is read from
-# standards/. A list whose bytes are not the pinned version is refused: a
-# changed list is adopted on purpose, by re-pinning here and releasing. With
-# no list at all, rule 1 is not run, and the result says so.
+# standards/. A list whose bytes are not the pinned version is not read: rule
+# 1 is not run, the build is warned and the result says so under not_checked,
+# because a changed list is adopted on purpose, by re-pinning here and
+# releasing. With no list at all, rule 1 is not run either, and the result
+# says so.
 STANDING_CUTOVER = "2026-10-28"
 STANDING_SCHEMAS_PIN = "sha256:c4b89a0b7a10d82a9788f5072a5805149372f818ba866566a622d3c01ead3328"
 STANDING_SCHEMAS_FILES = (os.path.join(HERE, "agentbuilder-standing-asset-schemas.json"),
@@ -1391,20 +1393,25 @@ STANDING_LEVELS = {"can-use-known-schema": "refuse", "can-use-without": "refuse"
 
 
 def standing_schemas():
-    """The list of known standing-asset kinds, at the pinned version, and its
-    digest; (None, None) when it is not beside this builder."""
+    """The list of known standing-asset kinds at the pinned version, its
+    digest, and why it was not read: (table, digest, None), or (None, digest
+    or None, reason) when it is not beside this builder, is not the pinned
+    version, or is not JSON."""
     path = next((p for p in STANDING_SCHEMAS_FILES if os.path.isfile(p)), None)
     if not path:
-        return None, None
+        return None, None, "the standing-asset schema list is not beside this builder"
     data = open(path, "rb").read()
     digest = "sha256:" + hashlib.sha256(data).hexdigest()
     if digest != STANDING_SCHEMAS_PIN:
-        fail(f"the standing-asset schema list at {path} is {digest}, not the version this builder pins "
-             f"({STANDING_SCHEMAS_PIN}); re-pin STANDING_SCHEMAS_PIN in build.py to adopt the new list")
+        why = (f"the standing-asset schema list at {path} is {digest}, not the version this builder pins "
+               f"({STANDING_SCHEMAS_PIN}); re-pin STANDING_SCHEMAS_PIN in build.py to adopt it")
+        warn(f"standing assets: {why}")
+        return None, digest, why
     try:
-        return json.loads(data.decode("utf-8")), digest
+        return json.loads(data.decode("utf-8")), digest, None
     except ValueError:
-        fail(f"the standing-asset schema list at {path} is not JSON")
+        warn(f"standing assets: the standing-asset schema list at {path} is not JSON")
+        return None, digest, f"the standing-asset schema list at {path} is not JSON"
 
 
 def kind_matches(kind, pattern):
@@ -1429,8 +1436,11 @@ def person_facing_outputs(jobs, table):
 
 
 def record_says_none(src_base):
-    """The reason an architecture record gives for declaring no standing
-    asset, or None when there is no record or it does not say none."""
+    """The reason a person gave, in the architecture record, for declaring no
+    standing asset, or None. Only a person's own reason counts ("the person
+    said none apply"): a record that says no output is read by a person was
+    written from its formats, and an agent whose jobs hand a person something
+    shows that record was wrong, which is what the warning is for."""
     paths = [p for p in (os.environ.get("ARCHITECTURE_RECORD", "").strip(),
                          os.path.join(src_base, "architecture-record.md") if src_base else "") if p]
     for p in paths:
@@ -1443,7 +1453,7 @@ def record_says_none(src_base):
             continue
         sec = re.search(r"^## Standing assets\s*\n([\s\S]*?)(?=^## |\Z)", text, re.M)
         why = re.search(r"None, because (.+)", sec.group(1)) if sec else None
-        if why and why.group(1).strip():
+        if why and why.group(1).strip().startswith("the person said none apply"):
             return why.group(1).strip().rstrip(".")
     return None
 
@@ -1481,7 +1491,7 @@ def standing_findings(spec, jobs, src_base, table):
 def apply_standing_rules(name, spec, jobs, src_base):
     """Warn or refuse on the standing-asset rules, by the cut-over, and return
     what the result and the build record carry about it."""
-    table, digest = standing_schemas()
+    table, digest, unread = standing_schemas()
     existing = format_existing(name)
     mode = format_mode(existing)
     found, facing = standing_findings(spec, jobs, src_base, table)
@@ -1503,7 +1513,7 @@ def apply_standing_rules(name, spec, jobs, src_base):
     out = {"existing": existing, "mode": mode, "since": STANDING_CUTOVER, "findings": found, "warnings": warnings,
            "schemas_digest": digest, "levels": dict(STANDING_LEVELS)}
     if table is None:
-        out["not_checked"] = ["can-use-known-schema: the standing-asset schema list is not beside this builder"]
+        out["not_checked"] = [f"can-use-known-schema: {unread}"]
     if none_because:
         out["none_because"] = none_because
     return out
@@ -2179,10 +2189,21 @@ def check_hidden(pkg):
                     fail(f"{os.path.relpath(p, pkg)} carries a hidden character U+{ord(ch):04X} at offset {i}; a package must not")
 
 
+# A reference to a file in the repository's shared standards/ folder, as the
+# Builders name them from their own folders: ../../standards/<file>.
+STANDARDS_REF = re.compile(r"^(?:\.\./)+standards/([^/]+)$")
+
+
 def copy_into(src_base, rel, dest_dir):
     """Copy a file or directory named in the spec under a skill folder.
     Returns the names placed, for the SKILL.md to list."""
     src = os.path.normpath(os.path.join(src_base, rel))
+    shared = STANDARDS_REF.match(str(rel).replace(os.sep, "/"))
+    if not os.path.exists(src) and shared:
+        # A Builder reads the repository's shared standards/ (../../standards/
+        # <file>). Laid out from sent files, that file is placed at
+        # standards/<file> beside the agent's own files instead (pack.py).
+        src = os.path.join(src_base, "standards", shared.group(1))
     if not os.path.exists(src):
         fail(f"file named in the spec does not exist: {rel}")
     os.makedirs(dest_dir, exist_ok=True)

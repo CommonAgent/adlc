@@ -50,6 +50,10 @@ import sys
 import tarfile
 import time
 
+# A reference to a file in the repository's shared standards/ folder, as the
+# Builders name them: ../../standards/<file> (build.py reads the same pattern).
+STANDARDS_REF = re.compile(r"^(?:\.\./)+standards/[^/]+$")
+
 HOME = os.path.expanduser("~")
 BUILT = os.path.join(HOME, "built")
 DIST = os.path.join(HOME, "dist")
@@ -196,7 +200,11 @@ def lay_out(spec_path, files):
     for j in spec.get("jobs") or []:
         for kind in ("scripts", "references", "assets"):
             for rel in j.get(kind) or []:
-                if isinstance(rel, str) and rel and ".." not in rel.split("/") and not rel.startswith("/"):
+                if isinstance(rel, str) and STANDARDS_REF.match(rel):
+                    # A shared standard is laid out at standards/<file>, where
+                    # the builder looks for it when ../../standards is not there.
+                    wanted.setdefault(os.path.basename(rel), "standards/" + os.path.basename(rel))
+                elif isinstance(rel, str) and rel and ".." not in rel.split("/") and not rel.startswith("/"):
                     wanted.setdefault(os.path.basename(rel), rel)
     placed, left = [], []
     manifest = None
@@ -369,7 +377,9 @@ def lay_out_folder(found, files):
     for entry in (build.get("skills") or {}).values():
         for kind in ("scripts", "references", "assets"):
             for rel in (entry or {}).get(kind) or []:
-                if isinstance(rel, str) and rel and ".." not in rel.split("/") and not rel.startswith("/"):
+                if isinstance(rel, str) and STANDARDS_REF.match(rel):
+                    wanted.setdefault(os.path.basename(rel), "standards/" + os.path.basename(rel))
+                elif isinstance(rel, str) and rel and ".." not in rel.split("/") and not rel.startswith("/"):
                     wanted.setdefault(os.path.basename(rel), rel)
     placed, left = [], []
     manifest_path = None

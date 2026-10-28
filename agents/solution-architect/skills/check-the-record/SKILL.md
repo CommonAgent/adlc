@@ -36,4 +36,5 @@ Run these from this skill's folder; each one says what it needs at the top.
 
 ## References
 
+- references/architecture-standard.md
 - references/standing-asset-schemas.json

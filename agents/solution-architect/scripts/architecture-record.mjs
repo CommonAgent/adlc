@@ -158,13 +158,14 @@ function formatsSection(rec) {
  *  why, or none and why (the architecture standard, section 10). */
 function standingSection(rec) {
   const sa = rec.standing_assets;
-  if (!sa) return "Not decided.";
+  if (!sa) return "Not decided: the list of standing-asset kinds was not read, so this record does not say which apply.";
   const lines = [];
   for (const o of sa.outputs ?? []) {
     const what = `**${oneLine(o.piece)}** (\`${trim(o.kind)}\`${o.classes?.length ? `, ${o.classes.join(" and ")}` : ""})`;
     if (!(o.assets ?? []).length) { lines.push(bullet(`${what}: none.`)); continue; }
     lines.push(bullet(`${what}: ${o.assets.map((a) => `the ${oneLine(a.word || a.schema)} (\`${a.schema}\`), because ${noStop(a.why)}`).join("; ")}.`));
   }
+  if (trim(sa.note)) lines.push(bullet(`Note: ${noStop(sa.note)}.`));
   if (trim(sa.none)) lines.push(bullet(`None, because ${noStop(sa.none)}.`));
   else lines.push(bullet(`The Design declares exactly these as \`can_use\`, each with what it reads, what it does with it and what it does \`without\` it: ${(sa.schemas ?? []).map((x) => `\`${x}\``).join(", ")}.`));
   return lines.join("\n");

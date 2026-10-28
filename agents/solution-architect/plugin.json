@@ -106,6 +106,7 @@
               "scripts/standard.mjs"
             ],
             "references": [
+              "../../standards/architecture-standard.md",
               "../../standards/standing-asset-schemas.json"
             ]
           },

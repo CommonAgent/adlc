@@ -135,7 +135,7 @@ every package to three rules, the audit checklist's `can-use-known-schema`,
 3. **Person-facing output declares its library.** A new agent whose offered
    jobs hand a person `text/markdown`, `text/html`, an image, video or audio,
    and that declares no `can_use`, is warned, unless its architecture record
-   says why none apply: `architecture-record.md` at the top of the agent's
+   says why none apply, in the person's own words: `architecture-record.md` at the top of the agent's
    folder, or the file `ARCHITECTURE_RECORD` names, whose header says
    `standing_assets: none` and whose `## Standing assets` section gives the
    reason.
@@ -152,8 +152,8 @@ The list is read at the version `build.py` pins, `STANDING_SCHEMAS_PIN` (the
 sha256 of its bytes): on a fleet host from
 `/opt/fleet/agentbuilder-standing-asset-schemas.json`, beside the builder,
 and in this repository from `standards/`. A list that is not the pinned
-version is refused; with no list, rule 1 is not run and `standing_rules`
-says so under `not_checked`. To adopt a changed list, re-pin, run
+version, or no list at all, is not read: rule 1 is not run, the build is
+warned, and `standing_rules` says why under `not_checked`. To adopt a changed list, re-pin, run
 `test_standing.py` and release both files together. `test_standing.py` pins
 the rules and the pin.
 

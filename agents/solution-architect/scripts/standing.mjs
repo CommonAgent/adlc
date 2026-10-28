@@ -52,9 +52,17 @@ export function kindWord(schema, table) {
  *  Returns {outputs: [{piece, kind, classes, assets: [{schema, why}]}],
  *  schemas: [schema...], none: reason | null}. `none` is set when no output
  *  is read by a person, or when the person answered that none apply; then
- *  `schemas` is empty. architecture-record.mjs renders it. */
+ *  `schemas` is empty. `note` says when a person's answer was not a none,
+ *  which is the only answer that changes this. Null when the list of kinds
+ *  and the house rule (table) was not read: then nothing is decided, and the
+ *  record says so rather than a false "none". architecture-record.mjs renders
+ *  it. */
 export function standingAssetsOf(formats = [], table = null, answer = "") {
   const said = oneLine(answer);
+  if (!table && !/^none\b/i.test(said)) return null;
+  const note = said && !/^none\b/i.test(said)
+    ? `the person answered "${said}"; only "none, because ..." changes this section, so the house rule stands, and what applies follows the formats`
+    : null;
   const outs = (formats ?? []).filter((f) => f?.direction !== "in" && isPersonFacing(f?.kind, table));
   if (/^none\b/i.test(said)) {
     const because = said.replace(/^none[,:;.\s]*(because\s*)?/i, "").replace(/[.\s]+$/, "");
@@ -62,7 +70,7 @@ export function standingAssetsOf(formats = [], table = null, answer = "") {
       none: `the person said none apply${because ? `, because ${because}` : ""}` };
   }
   if (!outs.length) {
-    return { outputs: [], schemas: [], none: "no output is read by a person: the agent hands back only data that code reads, or nothing beyond the reply" };
+    return { outputs: [], schemas: [], none: "no output is read by a person: the agent hands back only data that code reads, or nothing beyond the reply", ...(note ? { note } : {}) };
   }
   const outputs = outs.map((f) => {
     const classes = [];
@@ -79,7 +87,7 @@ export function standingAssetsOf(formats = [], table = null, answer = "") {
     return { piece: oneLine(f.piece), kind: trim(f.kind), classes, assets };
   });
   const schemas = [...new Set(outputs.flatMap((o) => o.assets.map((a) => a.schema)))].sort();
-  return { outputs, schemas, none: schemas.length ? null : "no rule in the house list applies to these outputs' kinds" };
+  return { outputs, schemas, none: schemas.length ? null : "no rule in the house list applies to these outputs' kinds", ...(note ? { note } : {}) };
 }
 
 /** What is wrong with a record's standing assets, by the standard (section
