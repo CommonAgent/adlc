@@ -917,8 +917,12 @@ def checker_command(seat, creds, spec_path, handle, records_root):
     credential; or, with the node's, as root over a copy of the checker's
     adapter state in a folder only root reads, so nothing of the checker's is
     rewritten and the node's credential stays root's."""
+    # sudo starts from a clean environment, and the checker's scripts read
+    # which mesh they are on from AGENTMESH_ENV: without it they file with the
+    # default (prod) broker, and a dev verdict was never stored.
+    am_env = f"AGENTMESH_ENV={(os.environ.get('AGENTMESH_ENV') or 'prod').strip()}"
     if seat == "own":
-        return (["sudo", "-u", EVAL_USER, "env", f"HOME={EVAL_HOME}", f"EVAL_CREDS={creds}",
+        return (["sudo", "-u", EVAL_USER, "env", f"HOME={EVAL_HOME}", am_env, f"EVAL_CREDS={creds}",
                  "python3", EVAL_RUN, spec_path, handle, records_root, EVAL_IDENTITY], None)
     import tempfile
     work = tempfile.mkdtemp(prefix="conform-")
@@ -929,7 +933,7 @@ def checker_command(seat, creds, spec_path, handle, records_root):
     for fn in ("identity.json", "named.json", "pins.json"):
         if os.path.exists(os.path.join(src, fn)):
             shutil.copyfile(os.path.join(src, fn), os.path.join(state, fn))
-    return (["env", f"HOME={work}", f"MESH_ADAPTER_STATE={state}", f"EVAL_CREDS={creds}",
+    return (["env", f"HOME={work}", am_env, f"MESH_ADAPTER_STATE={state}", f"EVAL_CREDS={creds}",
              "python3", EVAL_RUN, spec_path, handle, records_root, os.path.join(state, "identity.json")], work)
 
 
