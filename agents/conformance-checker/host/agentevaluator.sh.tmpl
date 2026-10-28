@@ -15,6 +15,11 @@
 VERTEX=(-c 'model="claude-sonnet-5-5"' -c 'model_provider="vertex"'
   -c 'model_providers.vertex={ name = "Claude on Vertex AI (fleet bridge)", base_url = "http://127.0.0.1:8788/v1", wire_api = "responses" }')
 cd "$HOME" || exit 1
+# derive-test (its Descriptor's second offering): the test, shown and never
+# run. Deterministic, so no model is woken for it.
+case "$1" in
+  *derive-test*|*"derive the test"*|*"Show the test"*) exec python3 /opt/fleet/agenteval-derive-test.py --prompt "$1" ;;
+esac
 out=$(mktemp)
 /usr/bin/codex exec "${VERTEX[@]}" --skip-git-repo-check --sandbox workspace-write -c sandbox_workspace_write.network_access=true \
   --output-last-message "$out" "$1" >/dev/null 2>&1 </dev/null

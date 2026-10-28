@@ -25,6 +25,10 @@ runs the conformance check published with the role the agent claims.
   When the spec carries `package_sha256` and `package_version`, as the
   deployment manager's spec does after each deploy, the verdict names the
   package's digest, which binds it to that version.
+- `derive-test.py` answers the `derive-test` offering: the cases a package
+  gives rise to, shown and never run (with no package, from the Descriptor the
+  registry serves for a named agent). The brain hands it any request that
+  names `derive-test`, without waking a model.
 - `role-check.mjs` runs a role's own conformance check against a container
   agent's image, in Cloud Build.
 - `input-cases.mjs`, `input-check.mjs`, `trial-cases.mjs` and `trial-check.mjs`
