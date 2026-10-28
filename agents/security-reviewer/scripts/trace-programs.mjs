@@ -193,18 +193,19 @@ export function traceOne(path, text) {
   const open = [];
   const vars = new Set();
   const commands = [];
-  // Addresses are read off the RAW text, never off the stripped text, so no
-  // trick of quotes and slashes can make stripping drop one. An address is
-  // left out only where its raw line is plainly a comment there: the line
-  // opens with a comment mark, or a // or # with a space before it comes
-  // ahead of the address. Every other address counts, whether or not a call
-  // is seen beside it: a list of call shapes always misses one.
+  // Addresses are read off the RAW text, so no trick of quotes and slashes
+  // can make stripping drop one. An address is left out only on a line that
+  // is a comment and nothing else, by both readings: the raw line opens with
+  // a comment mark, AND the stripped line is empty. A trailing comment's
+  // address counts (a false refusal, said in words, is the cheaper mistake),
+  // and so does every address on a line that holds any code at all, whether
+  // or not a call is seen beside it: a list of call shapes always misses one.
   const hashy = /\.(?:py|sh|bash|zsh|rb|ps1|pl)$/i.test(path) || (!CODE.test(path) && text.startsWith("#!"));
+  const opensComment = hashy ? /^\s*#/ : /^\s*(?:\/\/|\/\*|\*|<!--)/;
   text.split("\n").forEach((raw, at) => {
+    const onlyComment = opensComment.test(raw) && !trim(lines[at] ?? "");
     for (const m of raw.matchAll(URL_RE)) {
-      const before = raw.slice(0, m.index);
-      const commented = /^\s*(?:\/\/|\/\*|\*|<!--)/.test(raw) || /(?:^|\s)\/\/(?!\/)/.test(before) || (hashy && /^\s*#|\s#/.test(before));
-      if (commented) continue;
+      if (onlyComment) continue;
       const host = hostOf(m[2]);
       if (!host || NOT_REACHED.some((r) => r.test(host))) continue;
       const list = CALLS.test(raw) || DOOR.test(raw) ? hosts : written;

@@ -100,7 +100,7 @@ delivered. With no package it exits 3 and says what it needs.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 66 tests
+node --test test/*.test.mjs                                   # 71 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
