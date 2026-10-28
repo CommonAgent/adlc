@@ -50,6 +50,7 @@ import { checkAgent, spendEntryFor } from "./checks.mjs";
 import { moneyWords, readSpend } from "./spend.mjs";
 import { writeReport, WATCHER } from "./write-report.mjs";
 import { alarmFor } from "./alarms.mjs";
+import { declineFor, declineReply } from "./declines.mjs";
 import { AGENT_ID, leave, outboxDir, startOutbox } from "./outbox.mjs";
 import { allAnswered, askedAt, loadRound, newRoundId, openRound, recordAnswer, saveRound, sentLines, withLock, writeWhole } from "./rounds.mjs";
 import { fill, plan } from "./pieces.mjs";
@@ -399,6 +400,13 @@ export async function runWatch(argv = [], { env = process.env, fetchImpl, now = 
       flush();
       return { ok: true, code: 0, reply: `Recorded the answer from ${agent.handle}; every agent asked in watch ${open.id} has answered, so it is closed.${handed}`, open_alerts: c.open, reconciles: c.reconciles };
     });
+  }
+
+  // A REQUEST for something the watcher never does is declined in words,
+  // before any watch is opened (scripts/declines.mjs).
+  const declined = declineFor(text);
+  if (declined) {
+    return { ok: true, code: 0, declined: declined.id, reply: declineReply(declined) };
   }
 
   // A REQUEST for a watch.

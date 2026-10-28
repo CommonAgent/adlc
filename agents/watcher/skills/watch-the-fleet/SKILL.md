@@ -38,6 +38,7 @@ Run `node scripts/watch.mjs --job <job folder> --records <records folder> --work
 
 Run these from this skill's folder; each one says what it needs at the top.
 
+- scripts/declines.mjs
 - scripts/watch.mjs
 - scripts/watch-list.mjs
 - scripts/ask.mjs
