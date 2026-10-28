@@ -73,6 +73,29 @@ function lifecycleRecords(w) {
     "review.manifest.json": signManifest([{ name: "review", digest: sha256(Buffer.from("rev")) }], k("code-critic.platform@agentmesh.ai"), names()),
     "security.manifest.json": signManifest([{ name: "security statement", digest: sha256(Buffer.from("sec")) }], k("security-reviewer.platform@agentmesh.ai"), names()),
     "run-record.json": { run_record: "v1", standing_assets: [{ schema: "https://schemas.agentmesh.ai/style-guide/v1", version_digest: sha256(Buffer.from("style")), layer: "organization" }] },
+    ...usabilityRecords(w),
+  };
+}
+
+/** A usability report for the package, the manifest it came under, and the App walk's record. */
+function usabilityRecords(w, { digest = w.digest, signer = "usability-tester.platform@agentmesh.ai", verdict = "ready", version = "1.0.0", walkDigest = w.digest } = {}) {
+  const report = `---
+usability_report: v1
+agent: ${HANDLE}
+version: 1.0.0
+package_digest: "${digest}"
+verdict: usable
+tested_at: "2026-10-31T10:00:00Z"
+tested_by: usability-tester 0.1.0
+---
+
+# Usability report: Summarizer
+`;
+  const seed = signer === "agent" ? w.keys.agent.seed : w.keys[signer].seed;
+  return {
+    "usability-report.md": report,
+    "usability.manifest.json": signManifest([{ name: "usability report", digest: sha256(Buffer.from(report)) }], seed),
+    "app-walk.json": { app_walk: "v1", agent: HANDLE, version, package_digest: walkDigest, verdict, reason: verdict === "ready" ? "It delivered 1 piece." : "It answered in words but delivered nothing.", job: "J9", walked_at: "2026-10-31T11:00:00Z" },
   };
 }
 
@@ -140,7 +163,8 @@ test("an agent that came through every stage passes its stage records", async ()
   const j = jobWith(`agent: ${HANDLE}\npackage_digest: ${w.digest}\n`, lifecycleRecords(w));
   const out = await runJob(j.argv, env(w), { fetchImpl: p.fetchImpl, now: NOW });
   const st = Object.fromEntries(out.stages.map((s) => [s.stage, s.state]));
-  for (const s of ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "docs"]) assert.equal(st[s], "present", `${s}: ${st[s]}`);
+  for (const s of ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "usability", "docs"]) assert.equal(st[s], "present", `${s}: ${st[s]}`);
+  assert.equal(out.checks.find((c) => c.id === "usable-in-app").result, "pass");
   const failed = out.checks.filter((c) => c.result === "fail").map((c) => c.id);
   assert.deepEqual(failed, ["descriptor-person-members"], "only the proposed person members are missing");
   // The checklist is not approved by a person, so the best verdict is a pass with findings.
@@ -376,4 +400,39 @@ test("the conformance line says the verdict, or whether the agent conforms when 
   const out = await runJob(j.argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
   assert.equal(out.stages.find((s) => s.stage === "conformance").state, "present");
   assert.match(reportOf(j), /verdict does not conform \(2 pass, 0 fail, 1 inconclusive, 1 flagged for review\), signed by/);
+});
+
+test("the Usability stage: a report bound to the package under a tester's signed manifest is present; others are stale or unsigned", async () => {
+  const w = world();
+  const ask = (attach) => runJob(jobWith(`agent: ${HANDLE}
+package_digest: ${w.digest}
+`, attach).argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
+  const line = (out) => out.stages.find((x) => x.stage === "usability").state;
+  const check = (out, id) => out.checks.find((c) => c.id === id);
+  const none = await ask({});
+  assert.equal(line(none), "missing");
+  assert.deepEqual([check(none, "usability-report").result, check(none, "usability-report").level], ["fail", "info"]);
+  assert.equal(check(none, "usable-in-app").result, "not checked");
+  const good = await ask(usabilityRecords(w));
+  assert.equal(line(good), "present");
+  assert.equal(check(good, "usability-report").result, "pass");
+  const stale = await ask(usabilityRecords(w, { digest: `sha256:${"e".repeat(64)}` }));
+  assert.equal(line(stale), "stale");
+  const own = await ask(usabilityRecords(w, { signer: "agent" }));
+  assert.equal(line(own), "unsigned");
+  const stranger = await ask(usabilityRecords(w, { signer: "stranger" }));
+  assert.equal(line(stranger), "present", "any tester's signed manifest counts");
+});
+
+test("usable-in-app: the App walk's verdict for this version; broken refuses a new agent, and a walk of another version is not checked", async () => {
+  const w = world();
+  const ask = (attach) => runJob(jobWith(`agent: ${HANDLE}
+package_digest: ${w.digest}
+`, attach).argv, env(w), { fetchImpl: fakePlatform(w.routes).fetchImpl, now: NOW });
+  const broken = await ask({ ...lifecycleRecords(w), ...usabilityRecords(w, { verdict: "broken" }) });
+  const c = broken.checks.find((x) => x.id === "usable-in-app");
+  assert.deepEqual([c.result, c.level], ["fail", "refuse"]);
+  assert.equal(broken.verdict, "fail");
+  const other = await ask({ ...lifecycleRecords(w), ...usabilityRecords(w, { version: "0.9.0", walkDigest: `sha256:${"f".repeat(64)}` }) });
+  assert.equal(other.checks.find((x) => x.id === "usable-in-app").result, "not checked");
 });

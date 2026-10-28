@@ -53,6 +53,8 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
       "offered": true,                     # ? what a caller orders; until one job says so, every job is offered
       "started_by": ["person", "agent"],   # ? offered jobs only: who starts it (6.13.2)
       "works_as": "job",                   # ? offered jobs only: conversation or job (6.13.2)
+      "example": { "inputs": { "invoice": { "url": "https://example.com/invoice.pdf" } },   # ? offered jobs only:
+                   "good_result": "The invoice's number, date, lines and total." },     #   sample inputs, and what a good result looks like
       "steps": ["find-the-total"],         # ? the jobs this one runs, in order, to deliver (one level deep)
       "revisions": {                       # ? what a change to delivered work costs (offered jobs only):
         "included": { "count": 1, "window_days": 14 },     #   this many free within the window, then
@@ -1194,6 +1196,50 @@ STARTED_BY = ("person", "agent")
 WORKS_AS = ("conversation", "job")
 #: How a person views or gives an input or output (6.13.5).
 PRESENTATIONS = ("quiz", "document", "facts", "table", "media", "audio", "package")
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def example_declaration(j):
+    """An offering's `example` (Common Agent 6.13.8, proposed): the sample
+    inputs a person or a tester can run it with, and one sentence on what a
+    good result looks like. `inputs` maps a declared input's name to a
+    string, as a person would type it, or to a file: one the package carries,
+    `{file, digest, media_type, name}`, or one at a public address,
+    `{url, media_type, digest, name}`. Returned as authored, once its shape
+    is right."""
+    ex = j["example"]
+    where = f"job {j['slug']}: example"
+    if not isinstance(ex, dict) or set(ex) - {"inputs", "good_result"}:
+        fail(f"{where} is {{inputs, good_result}}: the sample inputs and one sentence on what a good result looks like")
+    good = ex.get("good_result")
+    if not (isinstance(good, str) and good.strip() and len(good.strip().splitlines()) == 1 and len(good.strip()) <= 300):
+        fail(f"{where}.good_result is one sentence of at most 300 characters on what a good result looks like")
+    ins = ex.get("inputs")
+    if not (isinstance(ins, dict) and ins):
+        fail(f"{where}.inputs names at least one input and the value to give it")
+    declared = [e.get("name") for e in (j.get("inputs") or []) if isinstance(e, dict)]
+    for name, v in ins.items():
+        if declared and name not in declared:
+            fail(f"{where}.inputs names {name!r}, which is not one of this job's inputs ({', '.join(declared)})")
+        if isinstance(v, str) and v.strip():
+            continue
+        if not isinstance(v, dict) or set(v) - {"file", "digest", "url", "media_type", "name"} or not (v.get("file") or v.get("url")):
+            fail(f"{where}.inputs.{name} is a string as a person would type it, or a file: in the package as {{file, digest, media_type, name}}, or at a public address as {{url, media_type, digest, name}}")
+        if v.get("file") is not None:
+            f = v["file"]
+            if not (isinstance(f, str) and f.strip() and not f.startswith("/") and "\\" not in f and ".." not in f.split("/") and "://" not in f):
+                fail(f"{where}.inputs.{name}.file is a path in the package, relative, with forward slashes and no .. segment")
+            if not v.get("digest"):
+                fail(f"{where}.inputs.{name} names a file in the package and needs its digest")
+        if v.get("digest") is not None and not (isinstance(v["digest"], str) and DIGEST_RE.match(v["digest"])):
+            fail(f"{where}.inputs.{name}.digest is sha256: and 64 lowercase hex characters")
+        if v.get("url") is not None and not (isinstance(v["url"], str) and re.match(r"^https://[^\s]+$", v["url"])):
+            fail(f"{where}.inputs.{name}.url is a public https address")
+        if v.get("media_type") is not None and not (isinstance(v["media_type"], str) and MEDIA_RE.match(v["media_type"])):
+            fail(f"{where}.inputs.{name}.media_type is a media type")
+        if v.get("name") is not None and not (isinstance(v["name"], str) and v["name"].strip()):
+            fail(f"{where}.inputs.{name}.name is the file's name")
+    return {"inputs": ins, "good_result": good.strip()}
 
 
 def person_members(spec):
@@ -1803,7 +1849,7 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
         offered = j["slug"] in can_order
         if "revisions" in j and not offered:
             fail(f"job {j['slug']}: revisions belong to an offered job; a step is not revised on its own")
-        for k in ("started_by", "works_as"):
+        for k in ("started_by", "works_as", "example"):
             if k in j and not offered:
                 fail(f"job {j['slug']}: {k} belongs to an offered job; a step is started by the offering it is part of")
         if "scopes" in j and not offered:
@@ -1825,6 +1871,11 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
             if j["works_as"] not in WORKS_AS:
                 fail(f"job {j['slug']}: works_as is one of {', '.join(WORKS_AS)}; bad: {j['works_as']!r}")
             o["works_as"] = j["works_as"]
+        # The sample inputs it can be run with, and what a good result looks
+        # like (Common Agent 6.13, proposed): what a page offers to fill the
+        # form with, and what a usability tester runs.
+        if "example" in j:
+            o["example"] = example_declaration(j)
         # The trial as declared (7.7), checked in trial_declarations before
         # any file was written; the counts travel, the money does not.
         if "trial" in j:
@@ -2621,7 +2672,7 @@ def read_folder(folder):
             o = by_offering[slug]
             if o.get("steps"):
                 j["steps"] = [s.get("id") for s in o["steps"] if isinstance(s, dict)]
-            for k in ("revisions", "trial", "scopes", "started_by", "works_as"):
+            for k in ("revisions", "trial", "scopes", "started_by", "works_as", "example"):
                 if k in o:
                     j[k] = o[k]
         if isinstance(runs, dict) and slug in runs:

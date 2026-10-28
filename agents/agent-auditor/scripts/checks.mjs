@@ -12,6 +12,7 @@
 //   delivered-formats    the test writer's checkDelivered rule (formats.mjs)
 //   descriptor-signed    the family's signature rule over the registry's bytes
 //   descriptor-floor     the minimal Descriptor's members (Common Agent 4.9, 6.2)
+//   app-walk             the App walk's recorded verdict for this version
 //   stage-record:<asset> the stage's line (stages.mjs)
 //
 //   needs: node >= 22
@@ -249,6 +250,29 @@ export const REGISTERED = {
     return missing.length ? FAIL(`${ev}; never cited with schema, version_digest and layer: ${missing.map((c) => trim(c?.schema)).join(", ")}`, "the run records") : PASS(ev);
   },
 
+  // usable-in-app: the App walk's recorded verdict for this version. The walk
+  // is the AgentMesh App add-on to the Usability stage; its records are given
+  // to the audit, and one for another version is stale, never a finding.
+  "app-walk": (entry, ctx) => {
+    const f = ctx.facts;
+    const walks = (f.attached.appWalks ?? []).filter((w) => trim(w.doc?.agent).toLowerCase() === f.handle);
+    if (!walks.length) return NOT(`no App walk record for ${f.handle} was given to the audit; the App walk (the robot pass that runs each agent from its page in the App) records one per agent`);
+    const hex = (d) => trim(d).toLowerCase().replace(/^sha256:/, "");
+    const served = hex(f.dev.descriptor?.door_digest || f.dev.descriptor?.bytes_digest);
+    const how = (d) => {
+      if (f.target.digest && hex(d.package_digest) && hex(d.package_digest) === hex(f.target.digest)) return "its run was made by this package";
+      if (f.target.version && trim(d.version) === f.target.version && served && hex(d.descriptor_digest) === served) return `it walked version ${d.version} and the Descriptor dev serves`;
+      if (f.target.version && trim(d.version) === f.target.version) return `it walked version ${d.version}`;
+      return null;
+    };
+    const bound = walks.map((w) => ({ w, how: how(w.doc) })).filter((x) => x.how).sort((a, b) => String(b.w.doc.walked_at).localeCompare(String(a.w.doc.walked_at)));
+    if (!bound.length) return NOT(`the App walk records given to the audit are for ${[...new Set(walks.map((w) => trim(w.doc.version) || "an unstated version"))].join(", ")}, not the audited ${f.target.version ?? "version"}; walk the agent again`);
+    const { w, how: h } = bound[0];
+    const d = w.doc;
+    const ev = `${w.name}: the App walk of ${trim(d.walked_at) || "an unstated time"} (${h}) says ${trim(d.verdict) || "nothing"}: ${trim(d.reason) || "no reason given"}${d.job ? ` (job ${trim(d.job)})` : ""}`;
+    return trim(d.verdict) === "ready" ? PASS(ev) : FAIL(ev, "the agent's page in the App");
+  },
+
   "versions-dev-prod": (entry, ctx) => {
     const f = ctx.facts;
     const want = f.target.version;
@@ -264,7 +288,7 @@ export const REGISTERED = {
     return problems.length ? FAIL(`${ev}. ${problems.join("; ")}`, "the deploys on dev and prod") : PASS(ev);
   },
 };
-for (const s of ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "docs"]) {
+for (const s of ["requirements", "architecture", "design", "impact", "test", "code", "review", "security", "build-record", "descriptor", "deployment-record", "conformance", "usability", "docs"]) {
   REGISTERED[`stage-record:${s}`] = stageCheck(s);
 }
 

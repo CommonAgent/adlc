@@ -1,0 +1,70 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "the-platform",
+      "kind": "service",
+      "credential": "agentmesh-operator-key-test",
+      "env": "TEST_ACCOUNT_KEY",
+      "settings": [
+        {
+          "env": "MESH_API_BASE",
+          "purpose": "the platform's origin, with no path, where the tested agent is read and run the way its page runs it. Without it nothing can be tested"
+        },
+        {
+          "env": "TEST_ACCOUNT_DOMAIN",
+          "purpose": "the platform's test-account domain, under which each job's fresh test account is made; agentmesh.test when it is not set"
+        }
+      ]
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the test (each offering's example, form, run, pieces, change and findings) and what the job went without"
+    }
+  ],
+  "job_seconds": 3600,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "test-usability"
+      ]
+    },
+    "price": {
+      "model": "free"
+    }
+  },
+  "run": {
+    "test-usability": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/test-usability/scripts/test-usability.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}

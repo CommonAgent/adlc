@@ -14,6 +14,7 @@
     "descriptor": { "asset": "Signed Descriptor and registration", "made_at": "Deploy", "holders": [] },
     "deployment-record": { "asset": "Signed deployment record", "made_at": "Deploy", "holders": ["deployment-manager.platform@agentmesh.ai", "deploymgr.platform@agentmesh.ai"] },
     "conformance": { "asset": "Conformance verdict", "made_at": "Conformance", "holders": ["conformance-checker.platform@agentmesh.ai", "agentevaluator.platform@agentmesh.ai", "evaluator.system@agentmesh.ai"] },
+    "usability": { "asset": "Usability report", "made_at": "Usability", "holders": ["usability-tester.platform@agentmesh.ai"] },
     "docs": { "asset": "AgentDoc", "made_at": "Docs", "holders": ["documenter.system@agentmesh.ai"] }
   }
 }

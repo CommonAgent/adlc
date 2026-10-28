@@ -99,6 +99,52 @@ class ThePersonMembers(Harness):
         self.assertIn("presentation is how a person meets it", res["error"])
 
 
+class TheExample(Harness):
+    """An offering's example (Common Agent 6.13, proposed): sample inputs and
+    one sentence on what a good result looks like, carried as authored."""
+
+    EXAMPLE = {"inputs": {"note": "Our office moves to Leeds on 1 May.",
+                          "reading": {"file": "examples/move.md", "media_type": "text/markdown",
+                                      "digest": "sha256:" + "a" * 64}},
+               "good_result": "A three-line announcement of the move, with the date."}
+
+    def test_an_example_builds_and_the_descriptor_carries_it(self):
+        s = person_spec()
+        s["jobs"][0]["example"] = self.EXAMPLE
+        res, _ = self.build(s)
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(descriptor(res)["offerings"][0]["example"], self.EXAMPLE)
+
+    def test_an_example_naming_an_input_the_job_does_not_take_is_refused(self):
+        s = person_spec()
+        s["jobs"][0]["example"] = {"inputs": {"voice": "calm"}, "good_result": "An announcement."}
+        res, _ = self.build(s)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("which is not one of this job's inputs", res["error"])
+
+    def test_an_example_needs_its_good_result_and_a_file_its_digest_or_address(self):
+        s = person_spec()
+        s["jobs"][0]["example"] = {"inputs": {"note": "Moving."}}
+        res, _ = self.build(s)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("good_result is one sentence", res["error"])
+        s = person_spec()
+        s["jobs"][0]["example"] = {"inputs": {"reading": {"media_type": "text/markdown"}}, "good_result": "An announcement."}
+        res, _ = self.build(s)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("in the package as {file, digest, media_type, name}", res["error"])
+        s = person_spec()
+        s["jobs"][0]["example"] = {"inputs": {"reading": {"file": "../move.md", "digest": "sha256:" + "b" * 64}}, "good_result": "An announcement."}
+        res, _ = self.build(s)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("no .. segment", res["error"])
+        s = person_spec()
+        s["jobs"][0]["example"] = {"inputs": {"reading": {"url": "http://example.com/x"}}, "good_result": "An announcement."}
+        res, _ = self.build(s)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("is a public https address", res["error"])
+
+
 class AFolderThatStatesThem(FolderHarness):
     def test_the_folder_builds_and_its_descriptor_is_carried_as_authored(self):
         self.convert()
@@ -109,6 +155,8 @@ class AFolderThatStatesThem(FolderHarness):
             doc["will_not"] = ["It will not change the folder."]
             doc["offerings"][0]["started_by"] = ["person"]
             doc["offerings"][0]["works_as"] = "job"
+            doc["offerings"][0]["example"] = {"inputs": {i["name"]: "a sample" for i in doc["offerings"][0].get("inputs", [])[:1]} or {"x": "y"},
+                                              "good_result": "A check of the folder."}
         self.edit("agent-descriptor.json", add)
         res, _ = self.build(self.src, "out")
         self.assertTrue(res["ok"], res)
@@ -116,6 +164,7 @@ class AFolderThatStatesThem(FolderHarness):
         self.assertEqual((d["name"], d["summary"], d["will_not"]),
                          ("Folder check", "Checks a folder for you.", ["It will not change the folder."]))
         self.assertEqual((d["offerings"][0]["started_by"], d["offerings"][0]["works_as"]), (["person"], "job"))
+        self.assertEqual(d["offerings"][0]["example"]["good_result"], "A check of the folder.")
 
 
 if __name__ == "__main__":

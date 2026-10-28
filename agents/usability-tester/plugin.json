@@ -1,0 +1,97 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "usability-tester",
+  "version": "0.1.0",
+  "description": "Tests whether a person can use an agent, without a page: it reads the agent's Descriptor the way a page does, checks that each input a person gives maps to a control, that options are settings with choices and defaults, that outputs say how a person views them, that the agent has a summary and that every offering a person starts declares an example. It then runs each example through the same calls the platform's agent page makes, as a signed-in account, checks that a real result arrives in its declared form and can be read, asks for one change and checks that a new version comes back. It hands back a Markdown usability report with a header an auditor reads, each finding labelled descriptor or agent with the stage that fixes it, and room for a person's judgment. It calls no model. It holds the usability tester role for the Usability stage of the Prove phase of the Agent Development Lifecycle.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Agent Builder"
+  },
+  "keywords": [
+    "built-agent",
+    "test-usability",
+    "read-the-request",
+    "check-the-descriptor",
+    "run-the-examples",
+    "ask-for-a-change",
+    "write-the-report"
+  ],
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "test-usability": {
+            "scripts": [
+              "scripts/test-usability.mjs",
+              "scripts/read-request.mjs",
+              "scripts/descriptor-checks.mjs",
+              "scripts/form.mjs",
+              "scripts/platform.mjs",
+              "scripts/retry.mjs",
+              "scripts/trial.mjs",
+              "scripts/readable.mjs",
+              "scripts/report.mjs",
+              "scripts/revision.mjs",
+              "scripts/run-config.mjs",
+              "scripts/pieces.mjs",
+              "scripts/tar.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/what-a-person-meets.md",
+              "rules.md"
+            ]
+          },
+          "read-the-request": {
+            "scripts": [
+              "scripts/read-request.mjs",
+              "scripts/platform.mjs",
+              "scripts/retry.mjs",
+              "scripts/tar.mjs"
+            ]
+          },
+          "check-the-descriptor": {
+            "scripts": [
+              "scripts/descriptor-checks.mjs"
+            ],
+            "references": [
+              "references/what-a-person-meets.md"
+            ]
+          },
+          "run-the-examples": {
+            "scripts": [
+              "scripts/form.mjs",
+              "scripts/trial.mjs",
+              "scripts/readable.mjs",
+              "scripts/platform.mjs",
+              "scripts/retry.mjs",
+              "scripts/descriptor-checks.mjs"
+            ],
+            "references": [
+              "references/what-a-person-meets.md"
+            ]
+          },
+          "ask-for-a-change": {
+            "scripts": [
+              "scripts/trial.mjs",
+              "scripts/readable.mjs",
+              "scripts/platform.mjs",
+              "scripts/retry.mjs",
+              "scripts/descriptor-checks.mjs"
+            ]
+          },
+          "write-the-report": {
+            "scripts": [
+              "scripts/report.mjs",
+              "scripts/pieces.mjs",
+              "scripts/revision.mjs",
+              "scripts/read-request.mjs",
+              "scripts/tar.mjs",
+              "scripts/went-without.mjs"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -20,6 +20,8 @@ When a built agent version is to go to prod or into the catalog, or when a sweep
 - signed records (application/vnd.agentmesh.signed-record+json, optional)
 - package (application/gzip, optional)
 - run records (application/vnd.agentmesh.run-record+json, optional)
+- usability reports (text/markdown, optional)
+- App walk records (application/vnd.agentmesh.app-walk+json, optional)
 
 ## What a good result looks like
 

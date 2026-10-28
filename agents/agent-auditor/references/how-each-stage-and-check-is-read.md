@@ -33,6 +33,7 @@ those keys.
 | Deploy | the registry's stored Descriptor, signed by the agent's own key (`descriptor-statement-v1`), and its registration | `GET /v1/agents/<key>/descriptor` | the deployment record for this package names its digest; failing that, it states the audited version |
 | Deploy | `agent-deployment-record-v1` (act deploy, update, alongside, reconfigure or attest), signed (usually by the deployment manager) | the deploy queue (a request's `deploy_record`, or one of its `later_records`, filed after its result) or attached | its `package.sha256` is the digest |
 | Conformance | `agent-eval-record-v1`, signed (usually by the conformance checker) | `GET /v1/agents/<key>/eval-record` or attached | it names the package digest, or the image the deployment record started |
+| Usability | a usability report (`usability_report: v1`), and the signed delivery manifest it came under | attached to the audit; the platform keeps no store of them | the report's header names the package digest; signed when a verified job manifest that is not the tested agent's own lists the report's bytes (any tester counts) |
 | Docs | the AgentDoc | `GET /a/<handle>/agentdoc.json` | the Descriptor it was read from states the audited version |
 
 A record bound to another digest is **stale**. A record with no signature, or one whose
@@ -56,6 +57,7 @@ person's account and carries no signature; it is never a stage's record.
 | `can-use-declared` | the package maker's `standing_rules` when its build.py runs here; otherwise, the same three rules over the Descriptor: each `can_use` schema on `standards/standing-asset-schemas.json`, each with `without`, and person-facing output with a `can_use` |
 | `standing-assets-cited` | an agent with no `can_use` passes; otherwise the attached run records must cite `{schema, version_digest, layer}` for each declared kind |
 | `versions-dev-prod` | dev serves the audited version; prod, where it serves the agent, runs no newer version |
+| `app-walk` | the App walk's record for the agent (`app_walk: v1`), attached: bound when it names this package, or the audited version (and the Descriptor dev serves); `ready` passes, `rough` or `broken` fails, and a record for another version, or none, is not checked |
 | `stage-record:<stage>` | the stage's line above: present, signed and bound (for `docs`, present and naming the version). At `level: info` the result is shown as on file or not on file, and never counted |
 
 Any other `check` name is reported as not checked.

@@ -40,6 +40,8 @@ The attached files are known by what they hold:
 | signed records | `application/vnd.agentmesh.signed-record+json` | optional: a build record, deployment record or conformance verdict, when the platform's own copy is not to be read |
 | package | `application/gzip` | optional: the package, when it is not to be fetched from its deploy request |
 | run records | `application/vnd.agentmesh.run-record+json` | optional: runs that were given a standing asset, citing `{schema, version_digest, layer}` |
+| usability reports | `text/markdown` | optional: a usability report (agents/usability-tester), with the signed delivery manifest it came under, for the Usability stage's line |
+| App walk records | `application/vnd.agentmesh.app-walk+json` | optional: the App walk's recorded verdict for the agent (`app_walk: v1`), for the `usable-in-app` check |
 
 ## What it reads
 
