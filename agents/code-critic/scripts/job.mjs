@@ -30,6 +30,7 @@ import { checkFindings } from "./check-findings.mjs";
 import { answerAgainst, earlierFindings, findingsDocument, replyText } from "./write-findings.mjs";
 import { fill } from "./pieces.mjs";
 import { note, paragraph } from "./went-without.mjs";
+import { declineFor, declineReply } from "./declines.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -73,8 +74,13 @@ export async function runJob({ job, records, work, files = [], textFile = "", en
   mkdirSync(RECORDS, { recursive: true });
   mkdirSync(join(work, id), { recursive: true });
 
-  // 1. Read the change.
+  // A request for something the critic never does is declined in words,
+  // before anything is read (scripts/declines.mjs).
   const asked = readIf(textFile);
+  const declined = declineFor(asked);
+  if (declined) return { ok: true, code: 0, declined: declined.id, reply: declineReply(declined) };
+
+  // 1. Read the change.
   const r = readChange(files, { asked });
   writeRead(RECORDS, r);
   const read = JSON.parse(readFileSync(join(RECORDS, "read.json"), "utf8"));

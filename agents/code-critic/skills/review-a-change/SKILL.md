@@ -53,6 +53,7 @@ Never change a file of the package under review, never run it, and never write a
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/job.mjs
+- scripts/declines.mjs
 - scripts/read-change.mjs
 - scripts/house-rules.mjs
 - scripts/review.mjs

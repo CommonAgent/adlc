@@ -44,7 +44,7 @@ test("a used-up ceiling names the last failures and how to go on, and a broken f
   const ceiling = replyText({ workspace: WS, runs: RUNS.slice(0, 1), verdict: { done: false, stop: "ceiling", said: "x" } });
   assert.match(ceiling, /^Stopped after 1 round without delivering: the rounds are used up and the suite still fails, 3 of 9\./);
   assert.match(ceiling, /Still failing: a; b; c\./);
-  assert.match(ceiling, /Raise the ceiling and send it again/);
+  assert.match(ceiling, /This goes to the owner: raise the ceiling and send it again/);
   const fence = replyText({ workspace: WS, runs: RUNS, verdict: { done: false, stop: "fence", said: "The fence was broken: test/add.test.mjs changed. Put it back; nothing is delivered until the check passes with the fence whole." } });
   assert.match(fence, /^Stopped without delivering: The fence was broken: test\/add\.test\.mjs changed\./);
   const none = replyText({ workspace: WS, runs: [], verdict: null });

@@ -34,6 +34,7 @@ import { buildTimeline } from "./build-timeline.mjs";
 import { formatIncidentRecord, updateStandingIndex } from "./write-incident.mjs";
 import { note, read as wentWithout } from "./went-without.mjs";
 import { fill, plan as piecesPlan } from "./pieces.mjs";
+import { declineFor, declineReply } from "./declines.mjs";
 
 export const EMPTY_REPLY = "notes the complete absence of records and delivers the empty timeline without guessing what occurred";
 
@@ -300,6 +301,10 @@ export async function runJob(argv = [], env = process.env) {
     return { ok: false, code: 2, reply: "This job needs --job <job folder> and --records <records folder>." };
   }
   const text = args.textFile && existsSync(args.textFile) ? readFileSync(args.textFile, "utf8") : "";
+  // A request for something the recorder never does is declined in words,
+  // before any record is read (scripts/declines.mjs).
+  const declined = declineFor(text);
+  if (declined) return { ok: true, code: 0, declined: declined.id, reply: declineReply(declined) };
   const said = fromText(text);
   const agent = trim(args.agent) || said.agent;
   const time = trim(args.time) || said.time;

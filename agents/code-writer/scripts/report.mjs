@@ -35,7 +35,7 @@ export function replyText({ workspace = null, runs = [], verdict = null, account
   } else if (verdict?.stop === "ceiling") {
     lines.push(`Stopped after ${plural(rounds, "round")} without delivering: the rounds are used up and the suite still fails${last ? `, ${last.fail} of ${last.tests}` : ""}.`);
     if (last?.failing?.length) lines.push(`Still failing: ${last.failing.slice(0, 8).join("; ")}${last.failing.length > 8 ? `; and ${last.failing.length - 8} more` : ""}.`);
-    lines.push("Raise the ceiling and send it again, or read the account for where it got to.");
+    lines.push("This goes to the owner: raise the ceiling and send it again, or read the account for where it got to.");
   } else if (verdict?.stop === "fence") {
     lines.push(`Stopped without delivering: ${trim(verdict.said)}`);
   } else if (rounds) {

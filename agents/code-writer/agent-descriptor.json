@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.4",
+  "agent_version": "0.2.5",
   "name": "Code writer",
   "summary": "Writes the scripts a spec names until the test suite passes, and hands back the scripts with an account of how it got there.",
   "will_not": [
@@ -123,8 +123,7 @@
   "refusals": "Editing a test. The suite is the test-writer's and it is the contract; every test file's digest is recorded when the workspace is laid out and compared on every round, and a round with a changed test is refused and names the file. A test that cannot pass without breaking what the spec says is reported as a conflict and stops the job.\nEditing the spec. The spec is the person's and the spec-writer's, its digest is checked every round, and nothing written here changes what was asked for; anything the prototype did that the spec never said does not survive the rewrite.\nDelivering scripts the suite fails. A pass is the only exit that files pieces; a job that stops at the ceiling, at the fence or on a conflict delivers nothing, and the reply says which.\nWriting outside scripts/. The account and the conflict note are the only other files; anything else added or changed in the workspace, including the prototype, is a broken fence and the round is refused until it is put back.\nInstalling anything or reaching a network. A package depends on nothing outside node, the suite hands in every function that would reach the world, and there is no credential in the workspace; a script that needs more than node is asking for a spec change, which is not this job's to make.\nSettling a question the spec left open when a test depends on the answer. Where the answer does not change what the suite asserts it is written in the account for the critic; where it does, the job stops and names the conflict, because the answer is a person's to give.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every script, every record and every line of the reply.",
   "escalates": [
     "A test that cannot pass without breaking what the spec says. The job stops with the conflict named and nothing delivered; which of the two is wrong is decided at the review gate.",
-    "The rounds used up with the suite still failing. Nothing is delivered; the owner can raise the ceiling and send the run again.",
-    "A script blanked in turn that the suite did not notice. Delivery goes ahead; it is said in the reply for the critic, because the missing test is the test-writer's to write."
+    "The rounds used up with the suite still failing. Nothing is delivered; the owner can raise the ceiling and send the run again."
   ],
   "records": [
     {
