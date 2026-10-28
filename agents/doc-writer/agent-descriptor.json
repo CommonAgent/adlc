@@ -1,0 +1,259 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "does": "Writes the documentation a person reads to use an agent: what it does, where to send it work, what each job takes and hands back, what it will not do, reaches, costs and leaves behind, with examples from its records. It writes only from the agent's descriptor, its AgentDoc, its records and the verdicts about it, marks every line with the place it came from, and lists everything those sources are silent on.",
+  "offerings": [
+    {
+      "id": "document-a-package",
+      "name": "Document a package",
+      "does": "Writes the documentation for whoever has to use an agent, from its declaration, its AgentDoc, its records and its verdicts, with every line traced to its source.",
+      "inputs": [
+        {
+          "name": "agent descriptor",
+          "kind": "application/vnd.agentmesh.agent-descriptor+json",
+          "required": false,
+          "one_of": "declaration",
+          "given_by": "either",
+          "about": "The agent's agent-descriptor.json, `{format, agent_version, does, offerings, refusals, escalates, records, systems}`. When it is given it is the declaration the documentation is written from."
+        },
+        {
+          "name": "AgentDoc",
+          "kind": "application/vnd.agentmesh.agentdoc+json",
+          "required": false,
+          "one_of": "declaration",
+          "given_by": "either",
+          "about": "The agent's AgentDoc, agentdoc.json or agentdoc.signed.json, `{agentdoc, subject, sources, sections, not_stated}`. Its identity, its address and what it says was not stated are documented; with no descriptor, its copy of the descriptor's words is the declaration."
+        },
+        {
+          "name": "runtime requirements",
+          "kind": "application/vnd.agentmesh.agent-runtime-requirements+json",
+          "required": false,
+          "given_by": "either",
+          "about": "The package's agent-runtime-requirements.json, `{format, price, job_seconds, ceilings}`, for what a job costs and how long it may run."
+        },
+        {
+          "name": "verdicts",
+          "kind": "application/vnd.agentmesh.eval-record+json",
+          "required": false,
+          "given_by": "either",
+          "about": "Verdicts other roles signed about the agent, each an agent-eval-record-v1, `{record, act, subject, cases, summary, conforms, signatures}`."
+        },
+        {
+          "name": "records",
+          "kind": "document",
+          "required": false,
+          "given_by": "either",
+          "about": "Records the agent or the platform left: a job's own records, which become that job's examples, the platform's run record, and build records headed `# <version>: ...`."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "documentation",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: a header `agent, version, written_by, written_at`, then `## What it does`, `## Where to send it work`, `## How to use it` with a `### <job>` per job (`#### What to give it`, `#### What comes back`, `#### How it is done`, `#### Its steps`, `#### Examples`), `## What it will not do`, `## When it hands work back to a person`, `## What it reaches`, `## What it costs`, `## What it leaves behind`, `## Verdicts`, `## How it has run`, `## Versions`, `## Not documented` and `## Sources`. Every line that says something ends with `[S<n>: <place>]`, `[S<n>: <place> absent]` or `[given]`."
+        },
+        {
+          "name": "trace",
+          "kind": "application/vnd.agentmesh.doc-trace+json",
+          "when": "per_task",
+          "working": true,
+          "about": "`{trace, ok, findings, lines}`: one entry in `lines` per line that says something, `{line, source, place, template, verdict}`."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-what-was-given",
+          "name": "Read what was given",
+          "does": "Tells the attached files apart by what is in them, numbers them as sources and records the digest of each, and judges none of them.",
+          "inputs": [
+            {
+              "name": "agent descriptor",
+              "kind": "application/vnd.agentmesh.agent-descriptor+json",
+              "required": false,
+              "one_of": "declaration",
+              "given_by": "either"
+            },
+            {
+              "name": "AgentDoc",
+              "kind": "application/vnd.agentmesh.agentdoc+json",
+              "required": false,
+              "one_of": "declaration",
+              "given_by": "either"
+            },
+            {
+              "name": "runtime requirements",
+              "kind": "application/vnd.agentmesh.agent-runtime-requirements+json",
+              "required": false,
+              "given_by": "either"
+            },
+            {
+              "name": "verdicts",
+              "kind": "application/vnd.agentmesh.eval-record+json",
+              "required": false,
+              "given_by": "either"
+            },
+            {
+              "name": "records",
+              "kind": "document",
+              "required": false,
+              "given_by": "either"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "what was given",
+              "kind": "application/vnd.agentmesh.doc-sources+json",
+              "when": "per_task",
+              "working": true,
+              "about": "`{given, sources, left_out, unreadable}`: each source as `{id, file, kind, bytes, sha256}`."
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-documentation",
+          "name": "Write the documentation",
+          "does": "Writes each line from one fixed template filled from one place in one source, marks it with that place, and gathers every silence under Not documented.",
+          "inputs": [
+            {
+              "name": "what was given",
+              "kind": "application/vnd.agentmesh.doc-sources+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "documentation",
+              "kind": "text/markdown",
+              "when": "per_task",
+              "about": "The documentation, as the offering hands it back."
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-every-line",
+          "name": "Check every line",
+          "does": "Re-derives every line from the place its mark names, and refuses the documentation when a line says what that place does not, or when a job, an input, an output, a refusal or a verdict is left out.",
+          "inputs": [
+            {
+              "name": "documentation",
+              "kind": "text/markdown",
+              "required": true,
+              "given_by": "agent"
+            },
+            {
+              "name": "what was given",
+              "kind": "application/vnd.agentmesh.doc-sources+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "trace",
+              "kind": "application/vnd.agentmesh.doc-trace+json",
+              "when": "per_task",
+              "working": true,
+              "about": "`{trace, ok, findings, lines}`."
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "hand-it-over",
+          "name": "Hand it over",
+          "does": "Files the documentation and its trace as the job's pieces and writes the reply, saying first what the job went without.",
+          "inputs": [
+            {
+              "name": "documentation",
+              "kind": "text/markdown",
+              "required": true,
+              "given_by": "agent"
+            },
+            {
+              "name": "trace",
+              "kind": "application/vnd.agentmesh.doc-trace+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "documentation",
+              "kind": "text/markdown",
+              "when": "per_task",
+              "about": "The documentation, as the offering hands it back."
+            },
+            {
+              "name": "trace",
+              "kind": "application/vnd.agentmesh.doc-trace+json",
+              "when": "per_task",
+              "working": true,
+              "about": "`{trace, ok, findings, lines}`."
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Writing a sentence no source carries. Every line is a fixed template filled from one place in one source, and the check refuses any line it cannot re-derive from the place its mark names, so the documentation says only what the agent's own records say.\nFilling a silence. Where the sources say nothing, the line says that they say nothing and is gathered under Not documented, rather than guessed at from what agents like it usually do.\nDescribing behaviour the declaration does not declare. Nothing is read from the agent's scripts, its name or its reputation, so a job, a refusal or a system appears only when the declaration names it.\nChanging anything it documents. The descriptor, the AgentDoc, the records and the verdicts are read and never written; an owner who wants the documentation to say something different changes the record it is written from.\nFetching a source from an address. It reads only the files attached to the job and reaches no network, so nothing can be documented by naming it.\nDelivering documentation that failed its check. A finding stops the delivery, the reply names it, and nothing is changed to make it pass.\nQuoting a record that looks like it holds a credential. That record is named under Not documented and none of its lines are shown.\nGrading the agent. Whether its work is any good is the agent critic's judgment, and whether it keeps its promises is the conformance checker's; this documents what the records say.\nSigning or publishing the documentation. The AgentDoc is signed by the documenter, and putting documentation in front of the public is the publisher's act.",
+  "escalates": [
+    "A job with neither an agent descriptor nor an AgentDoc. Nothing is written, and the reply asks for one of them by name."
+  ],
+  "records": [
+    {
+      "name": "what was given, per job: each source with its digest, and what was left out or could not be read",
+      "when": "per_task",
+      "file": "*/given.json"
+    },
+    {
+      "name": "the documentation as it was written, per job, delivered or not",
+      "when": "per_task",
+      "file": "*/documentation.md"
+    },
+    {
+      "name": "the check of every line, per job: the source, the place and the template of each line, and every finding",
+      "when": "per_task",
+      "file": "*/check.json"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ]
+}

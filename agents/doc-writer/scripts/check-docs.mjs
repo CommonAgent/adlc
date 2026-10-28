@@ -1,0 +1,217 @@
+// Check every line: the step that stands between the writer and the reader.
+//
+// It is given the documentation as text and the sources as they were read,
+// and it does not trust the writer at all. Every line that says something
+// about the agent must end with a mark naming one place in one source, and it
+// passes only when one of the templates in templates.mjs, filled from exactly
+// that place, gives exactly that line. A silence passes only when the place is
+// absent or empty. A line about what was given passes only when the job's
+// inventory says so. An example passes only when its lines are the record's
+// lines. Then it checks coverage, the role's own test: every job is
+// documented, every input and output of it is listed, every refusal is there,
+// and every job either has an example from a record or says it has none.
+//
+// Any finding stops the delivery. Documentation with one invented line in it
+// is not documentation with a small fault, because a reader cannot tell which
+// line it is.
+//
+//   needs: node >= 22
+//   import { checkDocs } from "./check-docs.mjs"
+//   or: DOCS=<documentation.md> GIVEN=<file>... node check-docs.mjs
+import { readFileSync } from "node:fs";
+import { isEmpty, linesOf, rangeOf, resolvePath, sha256 } from "./given.mjs";
+import { CREDENTIAL, GIVEN, LEGEND, SECTIONS, SUBSECTIONS, renderAll, silence } from "./templates.mjs";
+import { WRITER, declarationOf, hasCredential, isHeaded, isRunRecord, KIND_LABEL, offeringOf } from "./write-docs.mjs";
+
+const code = (s) => `\`${s}\``;
+const MARK = /\s\[(?:(S\d+): (.+?)|given)\]$/;
+const LIST = /^(?:\s*-\s+|\d+\.\s+)/;
+
+/** The lines about what was given that this job's inventory allows. */
+function allowedGiven({ sources, leftOut, unreadable, decl, offs }) {
+  const has = (k) => sources.some((s) => s.kind === k);
+  const records = sources.filter((s) => s.kind === "record");
+  const ok = new Set();
+  if (!has("descriptor")) ok.add(GIVEN["no-descriptor"]());
+  if (!has("agentdoc")) ok.add(GIVEN["no-agentdoc"]());
+  if (!has("runtime")) ok.add(GIVEN["no-runtime"]());
+  if (!has("verdict")) ok.add(GIVEN["no-verdict"]());
+  if (!records.length) ok.add(GIVEN["no-records"]());
+  const placed = new Set();
+  for (const r of records) {
+    if (hasCredential(r)) { ok.add(GIVEN.credential(r.name)); continue; }
+    const i = offeringOf(r, offs);
+    if (i >= 0) placed.add(i);
+    else if (!isRunRecord(r) && !isHeaded(r)) ok.add(GIVEN["no-offering"](r.name));
+  }
+  offs.forEach((o, i) => { if (!placed.has(i)) ok.add(GIVEN["no-example"](o.id)); });
+  for (const u of unreadable) ok.add(GIVEN.unreadable(u.file, u.why));
+  for (const l of leftOut) ok.add(GIVEN["left-out"](l.file, l.why));
+  if (!offs.length) {
+    ok.add(silence(decl.src.kind, decl.root, decl.offerings) ?? `The ${decl.src.kind === "agentdoc" ? "AgentDoc" : "agent descriptor"} declares no job.`);
+  }
+  return ok;
+}
+
+/** Check documentation against its sources. Pure. Returns { ok, findings,
+ *  trace }, where trace is one entry per line that says something. */
+export function checkDocs({ markdown = "", sources = [], leftOut = [], unreadable = [] } = {}) {
+  const findings = [];
+  const trace = [];
+  const find = (n, text, why) => findings.push({ line: n + 1, text, why });
+  const decl = declarationOf(sources);
+  if (!decl) return { ok: false, findings: [{ line: 0, text: "", why: "there is no agent descriptor and no AgentDoc, so nothing can be checked" }], trace };
+  const byId = new Map(sources.map((s) => [s.id, s]));
+  const offsV = resolvePath(decl.root, decl.offerings).value;
+  const offs = Array.isArray(offsV) ? offsV : [];
+  const files = sources.filter((s) => s.kind === "record").map((s) => s.name);
+  const given = allowedGiven({ sources, leftOut, unreadable, decl, offs });
+  const doc = sources.find((s) => s.kind === "agentdoc");
+  const dsrc = sources.find((s) => s.kind === "descriptor");
+  const lines = String(markdown).split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  const marks = new Set();
+  const marked = (id, path) => marks.add(`${id}: ${path}`);
+
+  // The title and the header.
+  const name = doc ? resolvePath(doc.json, "sections.identity.name").value : undefined;
+  const title = `# ${typeof name === "string" && name.trim() ? name.trim() : "The agent"}`;
+  if (lines[0] !== title) find(0, lines[0] ?? "", `the title must be "${title}", from the AgentDoc's identity`);
+  const handle = doc ? resolvePath(doc.json, "subject.handle").value : undefined;
+  const version = dsrc?.json?.agent_version ?? (doc?.json?.sources ?? []).find((s) => s.id === "descriptor")?.agent_version;
+  const header = [
+    `agent: ${typeof handle === "string" ? handle : "not given"}`,
+    `version: ${typeof version === "string" ? version : "not given"}`,
+    `written_by: ${WRITER}`,
+  ];
+  let n = 1;
+  if (lines[n] === "") n++;
+  for (const h of header) { if (lines[n] !== h) find(n, lines[n] ?? "", `the header line must be "${h}"`); n++; }
+  if (!/^written_at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(lines[n] ?? "")) find(n, lines[n] ?? "", "the header must end with written_at and a time"); n++;
+  if (lines[n] === "") n++;
+  for (const l of LEGEND) { if (lines[n] !== l) find(n, lines[n] ?? "", "the legend is not the fixed one"); n++; }
+
+  let section = -1;
+  let inOffering = -1;
+  const offeringHeads = new Set();
+  const examples = new Set();
+  const listedSources = new Set();
+  for (; n < lines.length; n++) {
+    const raw = lines[n];
+    if (raw.trim() === "") continue;
+    if (raw.startsWith("## ")) {
+      const i = SECTIONS.indexOf(raw);
+      if (i < 0) find(n, raw, "a section this agent does not write");
+      else if (i <= section) find(n, raw, "a section out of order or twice");
+      else section = i;
+      inOffering = -1;
+      continue;
+    }
+    if (raw.startsWith("### ")) {
+      const i = offs.findIndex((o) => `### ${o.name ?? o.id}` === raw && !offeringHeads.has(o.id));
+      if (SECTIONS[section] !== "## How to use it" || i < 0) find(n, raw, "a heading that is not a job the declaration names");
+      else { offeringHeads.add(offs[i].id); inOffering = i; }
+      continue;
+    }
+    if (raw.startsWith("#### ")) {
+      if (!SUBSECTIONS.includes(raw) || inOffering < 0) find(n, raw, "a heading this agent does not write");
+      continue;
+    }
+    if (/^(`{3,}|~{3,})/.test(raw)) { find(n, raw, "an example block with no line saying which record it is from"); continue; }
+
+    if (SECTIONS[section] === "## Sources") {
+      const m = /^- (S\d+): `(.+)`, (.+), sha256 `([0-9a-f]{64})`$/.exec(raw);
+      const s = m && byId.get(m[1]);
+      const digest = s ? (s.path ? safeDigest(s.path) : sha256(Buffer.from(s.text))) : null;
+      if (!s || s.name !== m[2] || KIND_LABEL[s.kind] !== m[3] || digest !== m[4]) find(n, raw, "a source line that does not match the file read: its name, its kind or its digest");
+      else listedSources.add(m[1]);
+      continue;
+    }
+
+    const text = raw.replace(LIST, "");
+    const mm = MARK.exec(text);
+    if (!mm) { find(n, raw, "a line with no mark saying where it came from"); continue; }
+    const said = text.slice(0, mm.index);
+    if (!mm[1]) {
+      if (given.has(said)) trace.push({ line: n + 1, source: "given", verdict: "pass" });
+      else find(n, raw, "a line about what was given that the job's inventory does not bear out");
+      continue;
+    }
+    const src = byId.get(mm[1]);
+    if (!src) { find(n, raw, `${mm[1]} is not a source of this job`); continue; }
+    let place = mm[2];
+
+    if (/ absent$/.test(place)) {
+      place = place.replace(/ absent$/, "");
+      const r = src.json === undefined ? { found: false } : resolvePath(src.json, place);
+      const expect = silence(src.kind, src.json, place);
+      if (r.found && !isEmpty(r.value)) find(n, raw, `${src.id} does say something at ${place}, so it is not a silence`);
+      else if (said !== expect) find(n, raw, "a silence that is not in the words this agent says a silence in");
+      else trace.push({ line: n + 1, source: src.id, place, template: "silence", verdict: "pass" });
+      continue;
+    }
+
+    if (/^(json )?L\d+(-L\d+)?$/.test(place)) {
+      const r = rangeOf(src, place);
+      if (!r) { find(n, raw, `${place} is not a range of lines in ${src.id}`); continue; }
+      if (CREDENTIAL.test(String(src.text))) { find(n, raw, `${src.name} looks like it holds a credential and is quoted`); continue; }
+      let k = n + 1;
+      while (k < lines.length && lines[k].trim() === "") k++;
+      const fence = /^(`{3,}|~{3,})(json|text)$/.exec(lines[k] ?? "");
+      if (fence) {
+        const intro = r.from === 1 && r.to === r.of ? `From ${code(src.name)}:` : `From ${code(src.name)}, lines ${r.from} to ${r.to} of ${r.of}:`;
+        const end = lines.indexOf(fence[1], k + 1);
+        const body = end < 0 ? null : lines.slice(k + 1, end);
+        if (said !== intro) find(n, raw, `an example must be introduced as "${intro}"`);
+        else if (!body || body.length !== r.lines.length || body.some((l, i) => l !== r.lines[i])) find(n, raw, `the example's lines are not ${src.name}'s lines ${r.from} to ${r.to}`);
+        else {
+          trace.push({ line: n + 1, source: src.id, place, template: "example", verdict: "pass" });
+          if (inOffering >= 0) examples.add(inOffering);
+        }
+        n = end < 0 ? lines.length : end;
+        continue;
+      }
+      const heading = r.from === r.to && /^#+\s+/.test(r.lines[0]) ? `${code(src.name)}: ${r.lines[0].replace(/^#+\s+/, "").trim()}` : null;
+      if (said !== heading) find(n, raw, `a line marked ${place} must be ${src.name}'s heading as it stands`);
+      else trace.push({ line: n + 1, source: src.id, place, template: "heading", verdict: "pass" });
+      continue;
+    }
+
+    if (src.json === undefined) { find(n, raw, `${src.id} is not JSON, so ${place} is no place in it`); continue; }
+    const r = resolvePath(src.json, place);
+    if (!r.found) { find(n, raw, `${place} is not in ${src.id}`); continue; }
+    const hit = renderAll(r.value, place.split("/")[0] === place ? place : place, { files }).find((c) => c.line === said);
+    if (!hit) { find(n, raw, `no template gives this line from ${src.id} at ${place}: it says something that place does not`); continue; }
+    marked(src.id, place);
+    trace.push({ line: n + 1, source: src.id, place, template: hit.id, verdict: "pass" });
+  }
+
+  // Coverage: the role's own test.
+  const d = decl.src.id;
+  offs.forEach((o, i) => {
+    const p = `${decl.offerings}[${i}]`;
+    if (!offeringHeads.has(o.id)) findings.push({ line: 0, text: "", why: `the job ${o.id} is declared and not documented` });
+    (Array.isArray(o.inputs) ? o.inputs : []).forEach((_, j) => { if (!marks.has(`${d}: ${p}.inputs[${j}]`)) findings.push({ line: 0, text: "", why: `input ${j + 1} of ${o.id} is declared and not documented` }); });
+    (Array.isArray(o.outputs) ? o.outputs : []).forEach((_, j) => { if (!marks.has(`${d}: ${p}.outputs[${j}]`)) findings.push({ line: 0, text: "", why: `output ${j + 1} of ${o.id} is declared and not documented` }); });
+    if (!examples.has(i) && !String(markdown).includes(`- ${GIVEN["no-example"](o.id)} [given]`)) findings.push({ line: 0, text: "", why: `the job ${o.id} has no example and does not say it has none` });
+  });
+  const ref = resolvePath(decl.root, decl.refusals).value;
+  if (typeof ref === "string" && ref.trim()) {
+    const ls = linesOf(ref);
+    const ok = ls.length === 1 && ref.trim() === ref ? marks.has(`${d}: ${decl.refusals}`) : ls.every((_, k) => marks.has(`${d}: ${decl.refusals}/${k}`));
+    if (!ok) findings.push({ line: 0, text: "", why: "a refusal the declaration names is not documented" });
+  }
+  for (const s of sources) {
+    if (!listedSources.has(s.id)) findings.push({ line: 0, text: "", why: `${s.id} (${s.name}) is not listed under Sources` });
+    if (s.kind === "verdict" && !trace.some((t) => t.source === s.id)) findings.push({ line: 0, text: "", why: `the verdict ${s.name} was given and is not documented` });
+  }
+  if (doc) {
+    const ns = resolvePath(doc.json, "not_stated").value;
+    (Array.isArray(ns) ? ns : []).forEach((_, k) => { if (!marks.has(`${doc.id}: not_stated[${k}]`)) findings.push({ line: 0, text: "", why: `the AgentDoc's not-stated ${ns[k]} is not shown` }); });
+  }
+  return { ok: findings.length === 0, findings, trace };
+}
+
+function safeDigest(path) {
+  try { return sha256(readFileSync(path)); } catch { return null; }
+}
