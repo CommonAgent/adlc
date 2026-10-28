@@ -28,6 +28,28 @@ export const SECRETS = [
   { what: "a PKCS#12 keystore", find: /-----BEGIN ENCRYPTED PRIVATE KEY-{5}/ },
 ];
 
+const LEFT_OUT = "[left out: it looks like a credential]";
+/** Tokens of the common services' own shapes, left out of what is written
+ *  down even though they do not refuse a package on their own. */
+const TOKENS = /\b(?:sk|pk|rk|ghp|gho|ghu|ghs|xox[abpr])[-_][A-Za-z0-9_-]{16,}\b|\bAIza[0-9A-Za-z_-]{35}\b/g;
+
+/** Text with anything that looks like a credential taken out. */
+export function scrub(text) {
+  let t = String(text ?? "");
+  for (const s of SECRETS) t = t.replace(new RegExp(s.find.source, s.find.flags.includes("g") ? s.find.flags : `${s.find.flags}g`), LEFT_OUT);
+  return t.replace(TOKENS, LEFT_OUT);
+}
+
+/** A copy of a value read from a package, every string in it scrubbed, so
+ *  nothing the package carries reaches a review, a record, a reply or the
+ *  model as a credential. */
+export function deepScrub(v) {
+  if (typeof v === "string") return scrub(v);
+  if (Array.isArray(v)) return v.map(deepScrub);
+  if (v && typeof v === "object" && !Buffer.isBuffer(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deepScrub(x)]));
+  return v;
+}
+
 /** Text, as the publisher reads it: no NUL in the first 8 KB. */
 export function looksLikeText(bytes) {
   const head = bytes.subarray(0, 8192);

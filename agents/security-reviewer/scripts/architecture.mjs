@@ -62,7 +62,7 @@ export function readArchitecture(md) {
   const secs = sections(md);
   const sysLines = under(secs, /\bsystems?\b/);
   const fromRows = rows(sysLines).map((r) => bare(r[0])).filter((n) => /^[a-z][a-z0-9-]*$/.test(n));
-  const fromBullets = bullets(sysLines).map((b) => bare((/^`([^`]+)`/.exec(b)?.[1]) ?? b.split(/[\s:,(—-]/)[0])).filter((n) => /^[a-z][a-z0-9-]*$/.test(n));
+  const fromBullets = bullets(sysLines).map((b) => bare((/^`([^`]+)`/.exec(b)?.[1]) ?? b.split(/[\s:,(—]/)[0])).filter((n) => /^[a-z][a-z0-9-]*$/.test(n));
   const systems = [...new Set([...fromRows, ...fromBullets])];
 
   const egressLines = under(secs, /\begress\b|\bnetwork\b|\bdestinations?\b/);

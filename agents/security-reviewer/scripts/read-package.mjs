@@ -18,9 +18,10 @@
 //   needs: node >= 22
 //   import { readPackage, fromFiles } from "./read-package.mjs"
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { isGzip, packageRoot, readTar } from "./tar.mjs";
+import { isCode } from "./trace-programs.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -29,8 +30,6 @@ const sha = (b) => createHash("sha256").update(b).digest("hex");
 export const DESCRIPTOR_NAMES = ["agent-descriptor.json", "descriptor.json"];
 export const REQUIREMENTS_NAMES = ["agent-runtime-requirements.json", "install.json"];
 
-/** Files that are programs: what runs when the agent works. */
-export const PROGRAM = /\.(?:mjs|cjs|js|ts|mts|cts|py|sh|bash|rb|go|ps1)$/i;
 
 /** A folder on disk, read whole into memory, links left out and named. */
 export function readFolder(dir) {
@@ -38,12 +37,16 @@ export function readFolder(dir) {
   const links = [];
   const walk = (d) => {
     for (const name of readdirSync(d).sort()) {
-      if (name === "node_modules" || name === ".git") continue;
+      if (name === ".git") continue;
       const p = join(d, name);
-      const st = statSync(p, { throwIfNoEntry: false });
-      if (!st) { links.push(relative(dir, p).replace(/\\/g, "/")); continue; }
+      const rel = relative(dir, p).replace(/\\/g, "/");
+      // A node_modules folder is named, not read: fromFiles counts it as bundled.
+      if (name === "node_modules") { files.set(`${rel}/(not read)`, Buffer.alloc(0)); continue; }
+      // A link is named and not followed: it can point anywhere on the machine.
+      const st = lstatSync(p, { throwIfNoEntry: false });
+      if (!st || st.isSymbolicLink()) { links.push(rel); continue; }
       if (st.isDirectory()) walk(p);
-      else if (st.isFile()) files.set(relative(dir, p).replace(/\\/g, "/"), readFileSync(p));
+      else if (st.isFile()) files.set(rel, readFileSync(p));
     }
   };
   walk(dir);
@@ -70,6 +73,7 @@ export function gather(given = []) {
   }
   let links = [];
   let climbing = [];
+  let outside = [];
   if (archives.length > 1) problems.push(`${archives.length} archives were handed over, and a review is of one package; the first, ${basename(archives[0].path)}, is reviewed`);
   if (archives.length) {
     const a = archives[0];
@@ -77,7 +81,7 @@ export function gather(given = []) {
     if (read.error) problems.push(`${basename(a.path)} is not a package this reviewer can read: ${read.error}`);
     const rooted = packageRoot(read.files);
     for (const [p, b] of rooted.files) files.set(p, b);
-    links = read.links; climbing = read.climbing;
+    links = read.links; climbing = read.climbing; outside = rooted.outside;
     digest = sha(a.bytes);
     source = basename(a.path);
   }
@@ -91,7 +95,7 @@ export function gather(given = []) {
     else others.push(name);
   }
   if (!archives.length && files.size) source = "the files handed over";
-  return { files, digest, source, links, climbing, problems, others };
+  return { files, digest, source, links, climbing, outside, problems, others };
 }
 
 const parse = (files, names) => {
@@ -155,7 +159,10 @@ export function fromFiles(files) {
   const refusals = Array.isArray(d.refusals) ? d.refusals.map(trim).filter(Boolean)
     : trim(d.refusals).split("\n").map(trim).filter(Boolean);
 
-  const programs = [...files.keys()].filter((p) => PROGRAM.test(p) && !p.includes("/node_modules/")).sort();
+  const programs = [...files.keys()].filter((p) => !p.includes("node_modules/") && isCode(p, files.get(p))).sort();
+  // A package that ships its own dependencies is a package whose
+  // dependencies nobody verified: the installer refuses one, and so does this.
+  const bundled = [...new Set([...files.keys()].filter((p) => /(?:^|\/)node_modules\//.test(p)).map((p) => p.slice(0, p.indexOf("node_modules/") + "node_modules".length)))];
   const lockfiles = [...files.keys()].filter((p) => /(?:^|\/)(?:package-lock\.json|requirements\.txt|poetry\.lock|pnpm-lock\.yaml|yarn\.lock)$/.test(p)).sort();
 
   return {
@@ -176,7 +183,7 @@ export function fromFiles(files) {
     jobSeconds: Number.isFinite(r.job_seconds) ? r.job_seconds : null,
     wantsReplies: r.wants_replies === true,
     run: r.run && typeof r.run === "object" ? r.run : null,
-    programs, lockfiles,
+    programs, lockfiles, bundled,
     problems,
     found: { descriptor: Boolean(desc.doc), requirements: Boolean(reqs.doc), plugin: Boolean(plugin.doc) },
   };

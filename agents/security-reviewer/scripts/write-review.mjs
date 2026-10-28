@@ -20,7 +20,10 @@
 export const FORMAT = "security-review-v1";
 export const HEADINGS = ["Verdict", "Reaches", "Spends", "Never does", "No reason recorded", "Programs", "Parts", "Accepted knowingly", "Reasons weighed", "Not reviewed"];
 
-const q = (v) => JSON.stringify(String(v ?? ""));
+/** A YAML double-quoted value: JSON's escaping, plus DEL and the C1 controls,
+ *  which JSON leaves as they are and a strict YAML reader refuses. */
+const UNSAFE = new RegExp("[\u007f-\u009f\u2028\u2029]", "g");
+const q = (v) => JSON.stringify(String(v ?? "")).replace(UNSAFE, (c) => "\\u" + `${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
 const cell = (v) => String(v ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 
 /** The YAML front matter. */
@@ -102,6 +105,8 @@ export function reviewMarkdown({ pkg, a, traced, weighed = null, reviewedAt, not
     if (t.unmatchedOpen?.length) L.push(`- **${t.unmatchedOpen.length} call${t.unmatchedOpen.length === 1 ? " goes" : "s go"} to an address the program is handed, and no declared system covers ${t.unmatchedOpen.length === 1 ? "it" : "them"}**: ${t.unmatchedOpen.map((f) => f.file).join(", ")}.`);
     for (const b of t.browsers ?? []) L.push(`- ${b.file} drives a browser${b.routes ? " and routes its requests" : ", and routes none of its requests"}.`);
     for (const c of t.undeclaredCommands ?? []) L.push(`- ${c.file} starts ${c.what}, which the runtime requirements do not declare.`);
+    for (const w of t.written ?? []) L.push(`- ${w.host} is written in ${w.files.join(", ")} where nothing on its line goes to it, and no declared system covers it.`);
+    for (const k of t.meshKeys ?? []) L.push(`- ${k.file} reads ${k.name}, a mesh credential the host places for every job.`);
     for (const k of t.modelKeys ?? []) L.push(`- ${k.file} reads ${k.name}, the model key the deployment manager places beside AGENT_MODEL for the model it gives the agent.`);
     for (const v of t.credentialVars ?? []) L.push(`- **${v.files.join(", ")} read${v.files.length === 1 ? "s" : ""} ${v.name}, a credential no system declares.**`);
     if (!t.reaches.length && !t.unmatched.length && !t.openFetches.length && !t.unmatchedOpen?.length) L.push("- No program reaches the network.");

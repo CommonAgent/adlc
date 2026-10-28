@@ -100,7 +100,7 @@ delivered. With no package it exits 3 and says what it needs.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 42 tests
+node --test test/*.test.mjs                                   # 55 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
@@ -110,7 +110,13 @@ role's own check: one system at read with the owner's limit passes and names
 the system, its access, its reason and the limit; a program changed to reach a
 second system is refused and the system named; no spending limit is refused;
 asked to bind the credential, it declines. It also reviews its own package and
-passes it. `test/parts.test.mjs` checks the parts.
+passes it. `test/bypass.test.mjs` tries the ways a package could reach a host
+it never declared, or carry a credential into the review, and holds each one
+caught: a user name in front of the host, an address built from a value, one
+word of a host in a reason, code in an odd file or a test a program imports,
+a bundled node_modules, an address kept in a list, a stray quote, a package's
+own ARCHITECTURE.md, and an archive that cannot be read whole.
+`test/parts.test.mjs` checks the parts.
 
 ## Replacing it
 

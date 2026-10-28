@@ -33,7 +33,7 @@ import { fromFiles, gather, readFolder } from "./read-package.mjs";
 import { matchReaches, tracePrograms } from "./trace-programs.mjs";
 import { readArchitecture, spendingLimit } from "./architecture.mjs";
 import { assess } from "./assess.mjs";
-import { credentialsIn, SECRETS } from "./secrets.mjs";
+import { credentialsIn, deepScrub, scrub } from "./secrets.mjs";
 import { weigh } from "./weigh.mjs";
 import { reviewMarkdown } from "./write-review.mjs";
 import { note, read as wentWithout, sentence } from "./went-without.mjs";
@@ -62,24 +62,23 @@ export function fromArgv(args = []) {
 }
 
 /** An architecture record among the attached files: Markdown whose name says
- *  so, or whose first heading does. */
+ *  it is the architecture record, or whose first heading does. A package's
+ *  own ARCHITECTURE.md is not one: the record is the solution architect's,
+ *  handed over beside the package, and a package must not bring its own
+ *  egress or spending limit to its own review. So a file inside an archive is
+ *  never taken for it, and a loose file only when it says it is the record. */
 export function isArchitectureRecord(name, text) {
-  if (!/\.(?:md|markdown|txt)$/i.test(name) && !/markdown/.test(name)) return false;
-  if (/architecture/i.test(name)) return true;
+  if (!/\.(?:md|markdown)$/i.test(name)) return false;
+  if (/^architecture[-_ ]record/i.test(name)) return true;
   const first = /^#\s+(.+)$/m.exec(String(text ?? ""))?.[1] ?? "";
-  return /architecture/i.test(first);
+  return /\barchitecture record\b/i.test(first);
 }
 
 /** Asked to grant, bind, place or install: this agent does none of them. */
 export const ASKED_TO_ACT = /\b(?:bind|place|install|deploy|grant|give|attach|set up|provision)\b[^.\n]{0,60}\b(?:credential|key|secret|token|access|permission|package|agent)s?\b/i;
 export const DECLINE = "You asked me to bind, place, grant or install something. I do not: a security review is made before any credential is bound and before the agent is installed, and it grants nothing. Binding the credentials is the deployment manager's act, on the owner's instruction, after this review.";
 
-/** A message with anything that looks like a credential taken out, for the record. */
-export function scrub(text) {
-  let t = String(text ?? "");
-  for (const s of SECRETS) t = t.replace(new RegExp(s.find.source, s.find.flags.includes("g") ? s.find.flags : `${s.find.flags}g`), "[left out: it looks like a credential]");
-  return t.replace(/\b(?:sk|pk|ghp|gho|xox[abp])[-_][A-Za-z0-9_-]{16,}\b/g, "[left out: it looks like a credential]");
-}
+export { scrub };
 
 /** Sort the attached files: the architecture record, and the package's files. */
 export function sortGiven(files = []) {
@@ -127,10 +126,13 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
   let got;
   if (args.package) {
     const st = existsSync(args.package) ? statSync(args.package) : null;
-    got = st?.isDirectory() ? { ...readFolder(args.package), digest: "", source: basename(args.package), problems: [], others: [] } : gather([{ path: args.package }]);
+    got = st?.isDirectory() ? { ...readFolder(args.package), digest: "", source: basename(args.package), outside: [], problems: [], others: [] } : gather([{ path: args.package }]);
   } else got = gather(sorted.package);
   const archText = args.architecture && existsSync(args.architecture) ? readFileSync(args.architecture, "utf8") : sorted.architecture?.text ?? "";
-  const declared = fromFiles(got.files);
+  // Everything read from the package is scrubbed before it is written down,
+  // assessed or put to the model: a credential it carries is found in the
+  // files themselves (credentialsIn) and never repeated.
+  const declared = deepScrub(fromFiles(got.files));
   const asked = ASKED_TO_ACT.test(message);
   writeFileSync(join(RECORDS, "asked.json"), JSON.stringify({
     message: scrub(message), message_sha256: sha(message),
@@ -141,7 +143,8 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
   }, null, 2) + "\n");
 
   if (!got.files.size || (!declared.found.descriptor && !declared.found.requirements)) {
-    const why = got.problems.length ? ` ${got.problems.join("; ")}.` : "";
+    const problems = [...got.problems, ...declared.problems];
+    const why = problems.length ? ` ${problems.join("; ")}.` : "";
     return { ok: false, code: 3, reply: `${asked ? `${DECLINE} ` : ""}There is no package here to review: I need the Agent Package, as the .tar.gz the package maker built or as its own files (agent-descriptor.json and agent-runtime-requirements.json, with plugin.json and the scripts), attached to the message.${why} Attach the architecture record beside it if there is one, and say the owner's spending limit as a line \`spending limit: <amount> per <day|month|job>\`.` };
   }
   writeFileSync(join(RECORDS, "declared.json"), JSON.stringify(declared, null, 2) + "\n");
@@ -149,7 +152,7 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
 
   // ── trace the programs ──
   const arch = readArchitecture(archText);
-  const { traced, tests } = tracePrograms(got.files, declared.programs);
+  const { traced, tests } = deepScrub(tracePrograms(got.files, declared.programs));
   const matched = matchReaches({ traced, systems: declared.systems, binaries: declared.binaries, egressHosts: arch.egress.hosts });
   writeFileSync(join(RECORDS, "traced.json"), JSON.stringify({ traced, tests, ...matched }, null, 2) + "\n");
   if (!arch.given) note(RECORDS, { wanted: "the architecture record", did: "reviewed the package against its own declaration alone, so nothing checks its systems against what the agent was designed to reach" });
@@ -157,7 +160,7 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
   // ── assess ──
   const limit = spendingLimit(message, arch);
   const credentials = credentialsIn(got.files);
-  const a = assess({ declared, traced: matched, arch, limit, found: { credentials, links: got.links, climbing: got.climbing } });
+  const a = assess({ declared, traced: matched, arch, limit, found: { credentials, links: got.links, climbing: got.climbing, outside: got.outside ?? [], bundled: declared.bundled } });
 
   // ── weigh the reasons (never changes the verdict) ──
   const pkg = { name: declared.name, version: declared.version, digest: got.digest };

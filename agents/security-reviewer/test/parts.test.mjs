@@ -72,8 +72,8 @@ test("an address that is a name and not a place is not a reach, and a host built
 });
 
 test("each address is matched by evidence: the platform's own address for a declared system, a reason that names it, the record's egress; nothing else", () => {
-  const traced = [traceOne("a.mjs", "const A = \"https://generativelanguage.googleapis.com/v1\";\nconst B = \"https://api.acme-crm.io/v2\";\nconst C = \"https://up.example-status.io\";\nconst D = \"https://nowhere-declared.io/x\";\n")];
-  const systems = [{ name: "text-reasoning", access: "trigger", needs: "to judge", kind: "service" }, { name: "crm", access: "read", needs: "to read accounts from acme-crm", kind: "service" }];
+  const traced = [traceOne("a.mjs", "const A = \"https://generativelanguage.googleapis.com/v1\";\nconst B = \"https://api.acme-crm.io/v2\";\nconst C = \"https://up.example-status.io\";\nconst D_URL = \"https://nowhere-declared.io/x\";\n")];
+  const systems = [{ name: "text-reasoning", access: "trigger", needs: "to judge", kind: "service" }, { name: "crm", access: "read", needs: "to read accounts from acme-crm.io, the customer list", kind: "service" }];
   const m = matchReaches({ traced, systems, egressHosts: ["example-status.io"] });
   const by = Object.fromEntries(m.reaches.map((r) => [r.host, r.system]));
   assert.equal(by["generativelanguage.googleapis.com"], "text-reasoning");
@@ -81,7 +81,10 @@ test("each address is matched by evidence: the platform's own address for a decl
   assert.equal(by["up.example-status.io"], "(further destination)");
   assert.deepEqual(m.unmatched.map((u) => u.host), ["nowhere-declared.io"]);
   const none = matchReaches({ traced, systems: [] });
-  assert.ok(none.unmatched.some((u) => u.host === "generativelanguage.googleapis.com"), "a model address is the platform's only for a package that declares the model");
+  assert.ok([...none.unmatched, ...none.written].some((u) => u.host === "generativelanguage.googleapis.com"), "a model address is the platform's only for a package that declares the model, or reads the model it is given");
+  const given = matchReaches({ traced: [traceOne("b.mjs", "const MODEL_URL = \"https://generativelanguage.googleapis.com/v1\";\nconst m = process.env.AGENT_MODEL;\n")], systems: [] });
+  assert.equal(given.reaches[0]?.system, "(the model it is given)");
+  assert.equal(given.undeclaredModel, true);
 });
 
 test("a credential variable no system declares is seen; the host's own variables and the model's placed key are not credentials asked for", () => {
@@ -132,7 +135,8 @@ test("the owner's spending limit is a line of its own; a number in passing is no
 
 test("an architecture record is told from the package's own Markdown by its name or first heading", () => {
   assert.ok(isArchitectureRecord("architecture-record.md", "x"));
-  assert.ok(isArchitectureRecord("notes.md", "# Architecture: the weather reader\n"));
+  assert.ok(isArchitectureRecord("notes.md", "# Architecture record: the weather reader\n"));
+  assert.ok(!isArchitectureRecord("ARCHITECTURE.md", "# Architecture\nHow the code is laid out.\n"), "a package's own ARCHITECTURE.md is not the record");
   assert.ok(!isArchitectureRecord("SKILL.md", "# Read the weather\n"));
   assert.ok(!isArchitectureRecord("agent-descriptor.json", "# Architecture"));
 });

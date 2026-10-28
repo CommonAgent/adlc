@@ -39,7 +39,16 @@ the same time) hands one over, and works without it, saying so.
 
 `test/run.test.mjs` (20 tests) runs the job as the runtime requirements start
 it, including the role's four-part behavioral check and a review of its own
-package; `test/parts.test.mjs` (22 tests) checks the parts. 42 tests pass.
+package; `test/bypass.test.mjs` (13 tests) holds every way a review of the
+first draft found to reach an undeclared host and still pass, or to carry a
+credential into the review, caught; `test/parts.test.mjs` (22 tests) checks the
+parts. 55 tests pass.
+
+Swept over eight AgentMesh packages on 2026-10-27: brand-reader, fact-writer
+and site-auditor pass; site-reader, source-reader, web-searcher and hn-reader
+are refused for fetching addresses their declarations name no system for, and
+document-reader for writing down docs.google.com and drive.google.com beside a
+call to an address it is handed, with no reason naming them.
 
 ## Who held each step
 

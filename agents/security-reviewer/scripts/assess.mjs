@@ -59,7 +59,7 @@ function authorityReason(word, d, arch) {
     case "reads-files": case "writes-files": return d.directories.length && d.directories.every((x) => hasReason(x.purpose)) ? `the purpose stated for ${d.directories.map((x) => x.name).join(", ")}` : "";
     case "spends-money": return d.systems.filter((s) => s.spends && hasReason(s.needs)).length ? `the reasons stated for ${d.systems.filter((s) => s.spends).map((s) => s.name).join(", ")}` : "";
     case "reaches-network": return arch?.given && arch.egress.lines.length ? "the architecture record's egress" : "";
-    case "sends-messages": return "";
+    case "sends-messages": return d.wantsReplies ? "the runtime requirements' wants_replies, which says it sends work to other agents and reads their replies" : "";
     default: return "";
   }
 }
@@ -141,13 +141,18 @@ export function assess({ declared: d, traced, arch, limit, found = {} }) {
   const openFiles = (list) => [...new Set(list.map((f) => f.file.replace(/:\d+$/, "")))];
   if (traced.unmatchedOpen?.length) {
     const files = openFiles(traced.unmatchedOpen);
-    refusals.push(`${files.join(", ")} ${files.length === 1 ? "fetches" : "fetch"} addresses ${files.length === 1 ? "it is" : "they are"} handed (${traced.unmatchedOpen.map((f) => f.file).join(", ")}), and the declaration names no system for them, so the package reaches whatever it is handed and says it reaches nothing`);
+    const strays = [...new Set(traced.unmatchedOpen.flatMap((f) => f.strays ?? []))];
+    refusals.push(strays.length
+      ? `${files.join(", ")} ${files.length === 1 ? "calls an address it is" : "call addresses they are"} handed (${traced.unmatchedOpen.map((f) => f.file).join(", ")}) and ${files.length === 1 ? "writes" : "write"} down ${strays.join(", ")}, which no declared system covers, so the call may go there`
+      : `${files.join(", ")} ${files.length === 1 ? "fetches" : "fetch"} addresses ${files.length === 1 ? "it is" : "they are"} handed (${traced.unmatchedOpen.map((f) => f.file).join(", ")}), and the declaration names no system for them, so the package reaches whatever it is handed and says it reaches nothing`);
     unreasoned.push({ said: true, permission: "reaching addresses it is handed", asked_in: files.join(", "), why_flagged: "the programs fetch them and no declared system covers them" });
   }
   if (traced.openFetches.length) {
     const files = openFiles(traced.openFetches);
     accepted.push(`${many(traced.openFetches.length, "call")} in ${files.join(", ")} go${traced.openFetches.length === 1 ? "es" : ""} to an address the program is handed rather than one written down. Each is taken as ${[...new Set(traced.openFetches.map((f) => f.by))].join("; ")}, and nothing on the platform checks the address: ${PLATFORM.enforcement.egress}.`);
   }
+  if (traced.undeclaredModel) accepted.push("The programs call the model the platform gives the agent (AGENT_MODEL) and the package declares no text-reasoning or image-reading system, so a caller is not told that what it hands over may go to a model. Declaring text-reasoning at trigger access, with leaves and a reason, would tell them.");
+  if (traced.meshKeys?.length) accepted.push(`The programs read ${traced.meshKeys.map((k) => k.name).join(", ")}, the mesh credentials the host places for every job, which reach the platform as this agent.`);
   if (traced.modelKeys?.length) accepted.push(`The programs read ${traced.modelKeys.map((k) => k.name).join(" and ")}, the model key the platform places with the model it gives the agent. It is held on the host for as long as the agent is installed, and the kill switch does not revoke it.`);
   for (const b of traced.browsers ?? []) {
     if (!b.routes) accepted.push(`${b.file} ${PLATFORM.browserNote}.`);
@@ -215,6 +220,8 @@ export function assess({ declared: d, traced, arch, limit, found = {} }) {
   }
   for (const l of found.links ?? []) refusals.push(`the package carries a link, ${l}, which can point anywhere on the machine that unpacks it`);
   for (const p of found.climbing ?? []) refusals.push(`the package carries a path that climbs out of it, ${p}`);
+  if (found.outside?.length) refusals.push(`the archive carries ${many(found.outside.length, "file")} outside the package's own folder (${found.outside.slice(0, 5).join(", ")}${found.outside.length > 5 ? ", and more" : ""}), which an install would not lay out and a reader would not look for`); // cut-ok: a sample named in the sentence, the count is the whole
+  for (const b of found.bundled ?? []) refusals.push(`the package ships its own ${b}, so its dependencies are code nobody verified; the installer refuses one, and a lockfile is how a package names what it needs`);
 
   // ── parts ──
   const parts = { lockfiles: d.lockfiles, dependencies: d.dependencies.map((x) => ({ skill: trim(x.skill), lockfile: trim(x.lockfile), sha256: trim(x.sha256) })) };

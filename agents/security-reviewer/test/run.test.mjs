@@ -195,10 +195,13 @@ test("without the architecture record it says so, near the top of the reply and 
 
 test("the package's files handed over one by one read the same as the archive", () => {
   const h = host();
-  const files = Object.entries(filesOf(smallPackage())).filter(([p]) => !p.includes("/")).map(([name, text]) => ({ name, bytes: Buffer.from(text), type: "application/json" }));
+  const files = Object.entries(filesOf(smallPackage())).map(([p, text]) => ({ name: p.split("/").pop(), bytes: Buffer.from(text), type: "application/octet-stream" }));
   const r = run(h, { message: LIMIT, files });
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(frontMatter(r.review).package, "weather-reader");
+  const fm = frontMatter(r.review);
+  assert.equal(fm.package, "weather-reader");
+  assert.equal(fm.verdict, "passed", fm.refused_for.join("\n"));
+  assert.match(r.review, /api\.weather\.example-forecasts\.net: the reason stated for weather-service names it \(read\.mjs:2\)/);
 });
 
 test("nothing to review: exit 3, and the reply says what it needs", () => {

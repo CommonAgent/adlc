@@ -29,17 +29,17 @@ const octal = (buf, at, len) => {
   return s ? parseInt(s, 8) : 0;
 };
 
-/** The pax records of an extended header: "len key=value\n" each. */
+/** The pax records of an extended header: "len key=value\n" each, the length
+ *  counted in bytes. */
 function paxRecords(bytes) {
   const out = {};
-  const text = bytes.toString("utf8");
   let i = 0;
-  while (i < text.length) {
-    const sp = text.indexOf(" ", i);
+  while (i < bytes.length) {
+    const sp = bytes.indexOf(0x20, i);
     if (sp === -1) break;
-    const len = Number(text.slice(i, sp));
-    if (!Number.isFinite(len) || len <= 0) break;
-    const rec = text.slice(sp + 1, i + len - 1);
+    const len = Number(bytes.subarray(i, sp).toString("latin1"));
+    if (!Number.isInteger(len) || len <= 0 || i + len > bytes.length) break;
+    const rec = bytes.subarray(sp + 1, i + len - 1).toString("utf8");
     const eq = rec.indexOf("=");
     if (eq > 0) out[rec.slice(0, eq)] = rec.slice(eq + 1);
     i += len;
@@ -75,6 +75,11 @@ export function readTar(bytes) {
     const head = buf.subarray(at, at + 512);
     if (head.every((b) => b === 0)) break;
     const size = octal(head, 124, 12);
+    // A size that is not a number, or a body that runs past the end, is an
+    // archive that cannot be read whole; reading the part before it would be
+    // a review of part of a package that reads like one of all of it.
+    if (!Number.isInteger(size) || size < 0) return { files: new Map(), links, climbing, error: `an entry at byte ${at} has a size that is not a number, so the archive cannot be read whole` };
+    if (at + 512 + size > buf.length) return { files: new Map(), links, climbing, error: `an entry at byte ${at} runs past the end of the archive, so it was cut short` };
     const type = String.fromCharCode(head[156] || 48);
     const magic = field(head, 257, 6);
     let name = field(head, 0, 100);
@@ -101,17 +106,23 @@ export function readTar(bytes) {
 
 /** The package's own files, with the one top folder a packer puts them in
  *  taken off, so `brand-reader/agent-descriptor.json` reads as
- *  `agent-descriptor.json`. Returns { files, top }. */
+ *  `agent-descriptor.json`. A file outside that folder is kept under its own
+ *  path and named in `outside`, never dropped: a review that leaves out part
+ *  of what was handed over is not a review of it. Returns { files, top, outside }. */
 export function packageRoot(files) {
   const has = (p) => files.has(p);
-  if (has("agent-descriptor.json") || has("plugin.json") || has("descriptor.json")) return { files, top: "" };
+  if (has("agent-descriptor.json") || has("plugin.json") || has("descriptor.json")) return { files, top: "", outside: [] };
   const tops = new Set([...files.keys()].map((p) => p.split("/")[0]));
   for (const top of tops) {
     if (has(`${top}/agent-descriptor.json`) || has(`${top}/plugin.json`) || has(`${top}/descriptor.json`)) {
       const out = new Map();
-      for (const [p, b] of files) if (p.startsWith(`${top}/`)) out.set(p.slice(top.length + 1), b);
-      return { files: out, top };
+      const outside = [];
+      for (const [p, b] of files) {
+        if (p.startsWith(`${top}/`)) out.set(p.slice(top.length + 1), b);
+        else { outside.push(p); out.set(`(outside ${top})/${p}`, b); }
+      }
+      return { files: out, top, outside };
     }
   }
-  return { files, top: "" };
+  return { files, top: "", outside: [] };
 }
