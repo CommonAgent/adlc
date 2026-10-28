@@ -59,8 +59,13 @@ test("the agent's own files and the open questions are listed by the steps that 
     ["agent-runtime-requirements.json", "draft-the-spec", "out/agent/agent-runtime-requirements.json"],
     ["plugin.json", "draft-the-spec", "out/agent/plugin.json"],
     ["read-it.SKILL.md", "draft-the-spec", "out/agent/skills/read-it/SKILL.md"],
-    ["still-open.txt", "ask-what-is-missing", "out/still-open.txt"],
+    ["what is still open", "ask-what-is-missing", "out/still-open.md"],
   ]);
+  assert.deepEqual(entries.map((e) => e.media_type), [
+    "application/vnd.agentmesh.agent-descriptor+json", "application/vnd.agentmesh.agent-runtime-requirements+json",
+    "application/vnd.agentmesh.agent-plugin+json", "text/markdown", "text/markdown",
+  ]);
+  assert.equal(copies.at(-1).text, "# What is still open\n\n- `name`: What is it called?\n");
   assert.ok(!entries.some((e) => /spec\.json/.test(e.name + e.path)));
   assert.equal(copies[0].sha256, "d");
   assert.equal(pieceNameOf("skills/a-b/SKILL.md"), "a-b.SKILL.md");
@@ -69,7 +74,7 @@ test("the agent's own files and the open questions are listed by the steps that 
 
 test("a draft the builder did not take delivers no files, only what is still open", () => {
   const { entries } = plan({ files: [], blanks: [{ key: "price", question: "?" }] });
-  assert.deepEqual(entries.map((e) => e.name), ["still-open.txt"]);
+  assert.deepEqual(entries.map((e) => e.name), ["what is still open"]);
   assert.deepEqual(plan({}).entries, []);
 });
 
@@ -148,7 +153,7 @@ test("a container agent's draft makes no files, and its checked spec goes as spe
     const ok = runPieces(job, records);
     assert.equal(ok.status, 0, ok.stderr);
     const listed = JSON.parse(readFileSync(join(job, "pieces.json"), "utf8"));
-    assert.deepEqual(listed.map((e) => e.name), ["spec.json"]);
+    assert.deepEqual(listed.map((e) => [e.name, e.path, e.media_type]), [["the container spec", "out/spec.json", "application/vnd.agentmesh.agent-spec+json"]]);
     assert.equal(readFileSync(join(job, "out", "spec.json"), "utf8"), text);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

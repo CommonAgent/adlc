@@ -10,15 +10,21 @@
 // reason is lost.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MODEL, OUTPUT_TOKENS, suiteRequest, httpRequestFor, serviceOf, textOf } from "../scripts/write-suite.mjs";
+import { NO_MODEL, OUTPUT_TOKENS, suiteRequest, httpRequestFor, serviceOf, textOf } from "../scripts/write-suite.mjs";
 
 const KEY = "not-a-real-key-0000";
 
-test("a vertex name is Claude on Vertex and the default, a bare name is google's, and any other provider is none", () => {
-  assert.equal(MODEL, "google-vertex-anthropic/claude-sonnet-5-5");
+test("a vertex name is Claude on Vertex, a bare name is google's, and any other provider or no name is none", () => {
+  assert.equal(serviceOf("google-vertex-anthropic/some-model"), "vertex");
   assert.equal(serviceOf("gemini-3.8-flash"), "google");
   assert.equal(serviceOf("anthropic/claude-sonnet-5.5"), "none");
-  assert.equal(serviceOf("  "), "vertex", "a blank name falls back like the default model does");
+  assert.equal(serviceOf("  "), "none", "a blank name is no model: there is no default");
+});
+
+test("with no model configured, no call is built and the reason names both settings", () => {
+  assert.throws(() => httpRequestFor(suiteRequest({ env: {} }), KEY), (e) => e.message === NO_MODEL);
+  assert.match(NO_MODEL, /TEXT_MODEL/);
+  assert.match(NO_MODEL, /AGENT_MODEL/);
 });
 
 test("the output limit is generous enough for a whole long answer", () => {
@@ -71,7 +77,7 @@ test("a google-vertex-anthropic model goes to Vertex with a token, the credentia
   assert.equal(body.anthropic_version, "vertex-2023-10-16");
   assert.equal(body.model, undefined);
   const got = m.textOf("vertex", { model: "claude-sonnet-5-5", content: [{ type: "text", text: "x" }], usage: { input_tokens: 1000000, output_tokens: 0 } }, model);
-  assert.deepEqual(got, { text: "x", answered_by: model, usage: { tokens_in: 1000000, tokens_out: 0, cost: 2.2 } });
+  assert.deepEqual(got, { text: "x", answered_by: model, usage: { tokens_in: 1000000, tokens_out: 0, cost: null } }, "Vertex reports tokens, and no cost is stated");
   assert.throws(() => m.textOf("vertex", { stop_reason: "max_tokens" }, model), /cut at the output limit/);
   assert.equal(await m.metadataToken(async () => new Response(JSON.stringify({ access_token: "ya29.y" }))), "ya29.y");
 });

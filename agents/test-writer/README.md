@@ -18,7 +18,8 @@ writer does not control.
 
 - Node 22 or later. The scripts use only node's own modules.
 - A text model, bound as the `text-reasoning` system: `TEXT_API_KEY`, and
-  `TEXT_MODEL` to pick the model. The default is Claude on Google Vertex AI.
+  `TEXT_MODEL` to pick the model, else the host's `AGENT_MODEL`. The package
+  names no model; with neither set, the job is refused in words.
 
 ## Running it
 

@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  INSTRUCTION, MODEL, TRIES, answerFrom, blanksOf, draftRequest, modelOf, requestParts, wentWithoutOf,
+  INSTRUCTION, TRIES, answerFrom, blanksOf, draftRequest, modelOf, requestParts, wentWithoutOf,
 } from "../scripts/draft.mjs";
 
 const ASKED = {
@@ -37,11 +37,12 @@ const GOOD_SPEC = {
   systems: [],
 };
 
-test("the model is a setting, and the default is the current generation", () => {
-  assert.equal(MODEL, "google-vertex-anthropic/claude-sonnet-5-5");
-  assert.equal(modelOf({}), MODEL);
+test("the model is a setting, and the package names none of its own", () => {
+  assert.equal(modelOf({}), "", "the package names no model of its own");
   assert.equal(modelOf({ TEXT_MODEL: "gemini-3.8-flash-cyber" }), "gemini-3.8-flash-cyber");
-  assert.equal(modelOf({ TEXT_MODEL: "  " }), MODEL, "a blank setting is not a model");
+  assert.equal(modelOf({ AGENT_MODEL: "gemini-3.8-flash" }), "gemini-3.8-flash", "the host's model when the install sets none");
+  assert.equal(modelOf({ TEXT_MODEL: "x", AGENT_MODEL: "y" }), "x", "the text-reasoning setting comes first");
+  assert.equal(modelOf({ TEXT_MODEL: "  " }), "", "a blank setting is not a model");
   assert.equal(draftRequest({ env: { TEXT_MODEL: "x" } }).model, "x");
 });
 

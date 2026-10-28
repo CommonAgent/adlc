@@ -1,6 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.2",
+  "agent_version": "0.1.3",
+  "name": "Watcher",
+  "summary": "Checks that the agents you name are alive, answering and inside their limits, and reports what each spent against what you allowed.",
+  "will_not": [
+    "It will not watch an agent you did not name.",
+    "It will not pause, restart, stop or fix an agent it watches.",
+    "It will not spend, buy credits or change a budget.",
+    "It will not guess the cause of a failure; it says what it saw and where.",
+    "It will not raise an alarm to anyone but the incident recorder you named."
+  ],
   "does": "Watches the agents its owner names and reports, for each, whether it is alive, whether it answers a question sent to it, and whether it is inside the limits it declared, and what each spent, job by job, per agent, per owner and in total, against what its owner allowed, with whether every spend traces to a job and whether the totals reconcile. It reads the platform's own records and asks each agent one light question, the worker interface's status; it spends nothing, changes nothing it watches and calls no model. Each open alert goes to the incident recorder in the shape it takes.",
   "offerings": [
     {
@@ -242,6 +251,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -297,5 +321,6 @@
       "access": "read",
       "needs": "to read each watched agent's presence, run record and declared ceilings, and the spend report for the watched agents, with an account API token that carries only the credits:read scope, which can read the account's money and cannot buy or spend"
     }
-  ]
+  ],
+  "can_use": []
 }

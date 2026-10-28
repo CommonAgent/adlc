@@ -45,6 +45,11 @@ export function aboutOf(text, path) {
   return said ? `${name}: ${said.slice(0, 280)}` : `${name}, a test file that says nothing about itself`;
 }
 
+/** What could not be tested, as Markdown a person reads: a heading, then one
+ *  bullet per thing, with why where it is known. */
+export const couldNotMarkdown = (open) =>
+  ["# What it could not test", "", ...open.map((c) => `- ${trim(c.what)}${trim(c.why) ? `: ${trim(c.why)}` : ""}`)].join("\n") + "\n";
+
 /** What to list and what to copy. Pure; the caller does the copying. */
 export function plan({ workDir = "", files = [], couldNot = [] } = {}) {
   if (!workDir) throw new Error("there is no work folder to deliver from");
@@ -62,15 +67,12 @@ export function plan({ workDir = "", files = [], couldNot = [] } = {}) {
   const open = couldNot.filter((c) => trim(c?.what));
   if (open.length) {
     entries.push({
-      name: "what it could not test", step: STEP_OF["what it could not test"], path: "out/could-not-test.txt",
-      media_type: "text/plain",
+      name: "what it could not test", step: STEP_OF["what it could not test"], path: "out/could-not-test.md",
+      media_type: "text/markdown",
       about: "What no test was written for and why, each one a thing the spec left unsettled or a thing no test can hold. Until these are settled the suite is thin there.",
       produced_from: ["spec"],
     });
-    copies.push({
-      to: "out/could-not-test.txt", what: "what it could not test",
-      text: open.map((c) => `${trim(c.what)}${trim(c.why) ? `: ${trim(c.why)}` : ""}`).join("\n") + "\n",
-    });
+    copies.push({ to: "out/could-not-test.md", what: "what it could not test", text: couldNotMarkdown(open) });
   }
   return { entries, copies };
 }

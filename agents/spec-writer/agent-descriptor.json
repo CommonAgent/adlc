@@ -1,6 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.5.2",
+  "agent_version": "0.5.3",
+  "name": "Spec writer",
+  "summary": "Turns what you want an agent to do into the agent's own files a builder takes, and says plainly what it could not settle without you.",
+  "will_not": [
+    "It will not choose the agent's name or its price; it asks you.",
+    "It will not give the agent access to a system you did not ask for.",
+    "It will not write the scripts the spec names, or build, pack or deploy anything.",
+    "It will not say a spec builds when the files it names do not exist yet.",
+    "It will not repeat a credential written into your message."
+  ],
   "does": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
   "offerings": [
     {
@@ -11,7 +20,9 @@
         {
           "name": "what it should do",
           "kind": "text",
-          "required": true
+          "required": true,
+          "given_by": "person",
+          "about": "What the agent should do, in your own words."
         },
         {
           "name": "the architecture record",
@@ -22,30 +33,51 @@
         },
         {
           "name": "an existing spec",
-          "kind": "application/json",
-          "required": false
+          "kind": "document",
+          "required": false,
+          "given_by": "either",
+          "accepts": [
+            "application/vnd.agentmesh.agent-descriptor+json",
+            "application/vnd.agentmesh.agent-runtime-requirements+json",
+            "application/vnd.agentmesh.agent-plugin+json",
+            "text/markdown",
+            "application/vnd.agentmesh.agent-spec+json"
+          ],
+          "about": "A draft to revise rather than start again: the agent's own files this writer delivered, or a spec.json."
         },
         {
           "name": "notes or a document",
           "kind": "document",
-          "required": false
+          "required": false,
+          "given_by": "person",
+          "about": "Anything that says more about the job: notes, a document, a page."
         },
         {
           "name": "answers to earlier questions",
           "kind": "text",
-          "required": false
+          "required": false,
+          "given_by": "person",
+          "about": "Your answers to the questions an earlier draft left open."
         }
       ],
       "outputs": [
         {
           "name": "the agent's own files",
           "kind": "document",
-          "when": "per_task"
+          "when": "per_task",
+          "about": "The agent's own files, each delivered under its own name and kind: agent-descriptor.json (application/vnd.agentmesh.agent-descriptor+json), agent-runtime-requirements.json (application/vnd.agentmesh.agent-runtime-requirements+json), plugin.json (application/vnd.agentmesh.agent-plugin+json) and a SKILL.md per skill (text/markdown)."
         },
         {
           "name": "what is still open",
-          "kind": "text",
-          "when": "per_task"
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: `# What is still open`, then one bullet per question, `` `key`: question ``. Only when something is open."
+        },
+        {
+          "name": "the container spec",
+          "kind": "application/vnd.agentmesh.agent-spec+json",
+          "when": "per_task",
+          "about": "Only for a container agent, whose code is in its own repository and which makes no package: its checked spec.json, `{name, version, description, kind, container, jobs, refuses, records}`, which a container deploy is filed with."
         }
       ],
       "how": {
@@ -99,6 +131,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 500000,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -154,5 +201,6 @@
       "access": "read",
       "needs": "to write the spec from what somebody asked for, which is the one judgment in this package"
     }
-  ]
+  ],
+  "can_use": []
 }

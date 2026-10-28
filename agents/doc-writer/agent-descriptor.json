@@ -1,6 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.1",
+  "agent_version": "0.1.2",
+  "name": "Doc writer",
+  "summary": "Writes the documentation a person reads to use an agent, from the agent's own declaration and records, with every line traced to its source.",
+  "will_not": [
+    "It will not write a sentence that no source says.",
+    "It will not guess where the sources are silent; it lists those gaps.",
+    "It will not change the agent or the records it documents.",
+    "It will not fetch anything from an address; it reads only the files you attach.",
+    "It will not publish or sign the documentation."
+  ],
   "does": "Writes the documentation a person reads to use an agent: what it does, where to send it work, what each job takes and hands back, what it will not do, reaches, costs and leaves behind, with examples from its records. It writes only from the agent's descriptor, its AgentDoc, its records and the verdicts about it, marks every line with the place it came from, and lists everything those sources are silent on.",
   "offerings": [
     {
@@ -223,6 +232,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -255,5 +279,6 @@
       "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
       "when": "per_task"
     }
-  ]
+  ],
+  "can_use": []
 }

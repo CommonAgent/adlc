@@ -1,6 +1,14 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.1",
+  "agent_version": "0.1.2",
+  "name": "Impact analyst",
+  "summary": "Tells you what a change to an agent touches before it is built: every dependent, and whether the change is compatible, breaking or a change of behavior for each.",
+  "will_not": [
+    "It will not approve or refuse the change; you decide from its report.",
+    "It will not change, build or deploy the agent or anything that depends on it.",
+    "It will not call a dependent compatible when it cannot tell.",
+    "It will not follow a path or an address written in your message; it reads only the files you attach."
+  ],
   "does": "Works out what a change to an agent touches before anything is built. Given the agent's declaration as it runs today and as it would be after the change, and the platform's list of what depends on it, it names every dependent with where it was learned of, and answers each one compatible, breaking or a change of behavior, with the reason. It reads the dependent solutions' canvases and the agents that take what it hands back when they are given, and compares kinds by the platform's own rule for whether a line fits. It files a dependency debt in the ledger, owed to the dependent's owner, for each one that is not compatible, and writes the impact report the person who asked for the change approves or refuses it from. It calls no model, changes nothing it reports on and approves nothing. It holds the impact analyst role (agentroles.ai) for the Impact stage of the Agent Development Lifecycle.",
   "offerings": [
     {
@@ -128,6 +136,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -157,5 +180,6 @@
       "access": "write",
       "needs": "to file a dependency debt, owed to the dependent's owner, for each dependent answered breaking or change of behavior, and to read what is already filed so nothing is filed twice"
     }
-  ]
+  ],
+  "can_use": []
 }

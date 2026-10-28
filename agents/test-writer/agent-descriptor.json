@@ -1,6 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.0",
+  "agent_version": "0.3.1",
+  "name": "Test writer",
+  "summary": "Writes the tests an agent's scripts must pass, before the scripts exist, and proves each test would notice a script being wrong.",
+  "will_not": [
+    "It will not hand over a suite that passes against nothing as if it were a suite.",
+    "It will not write the scripts the tests are for.",
+    "It will not change a test to make a script pass.",
+    "It will not overwrite tests the package already has.",
+    "It will not repeat a credential written into your message."
+  ],
   "does": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something.",
   "offerings": [
     {
@@ -10,18 +19,29 @@
       "inputs": [
         {
           "name": "the spec",
-          "kind": "application/json",
-          "required": true
+          "kind": "document",
+          "required": true,
+          "given_by": "either",
+          "accepts": [
+            "application/vnd.agentmesh.agent-descriptor+json",
+            "application/vnd.agentmesh.agent-runtime-requirements+json",
+            "application/vnd.agentmesh.agent-plugin+json",
+            "text/markdown",
+            "application/vnd.agentmesh.agent-spec+json"
+          ],
+          "about": "The agent's own files as the spec writer delivers them: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill; or, for an agent written before them, its spec.json."
         },
         {
           "name": "the suite it already has",
           "kind": "text/javascript",
-          "required": false
+          "required": false,
+          "given_by": "either"
         },
         {
           "name": "what to add",
           "kind": "text",
-          "required": false
+          "required": false,
+          "given_by": "person"
         }
       ],
       "outputs": [
@@ -32,8 +52,9 @@
         },
         {
           "name": "what it could not test",
-          "kind": "text/plain",
-          "when": "per_task"
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: `# What it could not test`, then one bullet per thing, with why. Only when something could not be tested."
         }
       ],
       "how": {
@@ -87,6 +108,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 500000,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     },
     {
@@ -97,14 +133,16 @@
         {
           "name": "the package folder on this host",
           "kind": "text",
-          "required": true
+          "required": true,
+          "given_by": "either"
         }
       ],
       "outputs": [
         {
           "name": "the verdict",
-          "kind": "text/plain",
-          "when": "per_task"
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "The verdict in words, as the reply: whether the suite passes against the package's own scripts, and which blanked scripts it noticed and which it did not."
         }
       ],
       "how": {
@@ -147,6 +185,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 500000,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -192,5 +245,6 @@
       "access": "read",
       "needs": "to write the suite from the spec, which is the one judgment in this package"
     }
-  ]
+  ],
+  "can_use": []
 }

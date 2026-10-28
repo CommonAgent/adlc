@@ -36,10 +36,11 @@
 //   needs: node >= 22; TEXT_API_KEY for the text-reasoning service
 //   DECLARED=<declared.json> SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder> WORK=<work folder>
 //   [EXISTING=<folder holding test/>] [ASKED_TEXT=<the message, as a file>]
-//   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] [TEXT_MODEL=<model>] node write-suite.mjs
+//   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] TEXT_MODEL=<model> (or AGENT_MODEL) node write-suite.mjs
 //
-// TEXT_MODEL decides the service. A google-vertex-anthropic/ name is Claude on
-// Vertex AI, and is the default; a bare name (gemini-3.8-flash) is Google's.
+// The model decides the service; the install sets it as TEXT_MODEL or
+// AGENT_MODEL, and the package names none. A google-vertex-anthropic/ name is
+// Claude on Vertex AI; a bare name is Google's.
 // Any other name with a provider in front is refused in words (owner,
 // 2026-10-03: every Claude call goes through Vertex). Both services are sent
 // the same generous output limit, and an answer cut at that limit is refused
@@ -54,11 +55,14 @@ import { loadSpec } from "./agent-folder.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
 
-/** The default model, and the setting that overrides it. Never hardcoded at
- *  a call site: the model an agent runs is a fact its deploy record states.
- *  TEXT_MODEL is placed by the install from the spec's own settings. */
-export const MODEL = "google-vertex-anthropic/claude-sonnet-5-5";
-export const modelOf = (env = {}) => trim(env.TEXT_MODEL) || MODEL;
+/** The model, from the install's settings: TEXT_MODEL, the text-reasoning
+ *  system's own setting, else AGENT_MODEL, the model the host runs agents on.
+ *  The package names no model of its own, because a model named in a package
+ *  is a rebuild waiting to happen: models are retired on somebody else's
+ *  schedule. With neither set, the job is refused in words (NO_MODEL). */
+export const MODEL_SETTINGS = ["TEXT_MODEL", "AGENT_MODEL"];
+export const modelOf = (env = {}) => MODEL_SETTINGS.map((k) => trim(env[k])).find(Boolean) ?? "";
+export const NO_MODEL = "no model is configured: the install sets TEXT_MODEL (the text-reasoning system's model) or AGENT_MODEL (the model the host runs agents on), and this package names none of its own";
 
 /** The most the service may write in one answer. A whole suite for a package
  *  of several scripts runs long, and a cut answer is worthless. */
@@ -192,11 +196,12 @@ export function suiteRequest(opts = {}) {
 }
 
 /** Which service a model name is reached through. google-vertex-anthropic/ in
- *  front, or no name at all (the default), means Claude on Google Vertex AI;
- *  a bare name means Google; any other provider in front is "none", which no
- *  call is made for. */
+ *  front means Claude on Google Vertex AI; a bare name means Google; any other
+ *  provider in front, or no name at all (there is no default), is "none",
+ *  which no call is made for. */
 export const serviceOf = (model) => {
-  const m = trim(model) || MODEL;
+  const m = trim(model);
+  if (!m) return "none";
   if (m.startsWith(`${VERTEX}/`)) return "vertex";
   return m.includes("/") ? "none" : "google";
 };
@@ -204,11 +209,9 @@ export const serviceOf = (model) => {
 /** Claude on Google Vertex AI (2026-09-29). Called with a token from the job's
  *  own service account (the metadata server); the credential is not a key but
  *  where to call, "<project>/<location>". Vertex reports tokens and not money,
- *  so the cost is the tokens at the published price. */
+ *  so no cost is stated. */
 export const VERTEX = "google-vertex-anthropic";
 export const METADATA_TOKEN_URL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-/** USD per million tokens, in and out, US multi-region (Vertex pricing page, 2026-09-29). */
-export const VERTEX_PRICES = { "claude-sonnet-5-5": [2.2, 11], "claude-haiku-4-5": [1.1, 5.5] };
 
 export function vertexUrl(model, key) {
   const [project, location] = trim(key).split("/");
@@ -219,10 +222,11 @@ export function vertexUrl(model, key) {
   return `https://${host}/v1/projects/${project}/locations/${location}/publishers/anthropic/models/${id}:rawPredict`;
 }
 
-export function vertexCost(model, tokensIn, tokensOut) {
-  const id = trim(model).replace(`${VERTEX}/`, "").split("@")[0];
-  const [i, o] = VERTEX_PRICES[id] ?? [2.2, 11];
-  return Math.round(((tokensIn ?? 0) * i + (tokensOut ?? 0) * o) / 1e6 * 1e8) / 1e8;
+/** Vertex reports tokens and not money, and a price table would name models,
+ *  so the cost is not stated here: the tokens are recorded, and the money is
+ *  the platform's spend report's. */
+export function vertexCost() {
+  return null;
 }
 
 /** A token from the metadata server of the machine the job runs on. */
@@ -238,7 +242,8 @@ export async function metadataToken(fetchImpl = fetch) {
  *  nowhere in the body. Nothing is sent here. For a Vertex model `key` is where
  *  to call and `token` pays. */
 export function httpRequestFor(request, key, token = "") {
-  const model = trim(request.model) || MODEL;
+  const model = trim(request.model);
+  if (!model) throw new Error(NO_MODEL);
   if (serviceOf(model) === "vertex") {
     const content = request.body.contents.flatMap((c) => c.parts.map((p) => p.text)).join("\n\n");
     return {
@@ -534,6 +539,11 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const declared = JSON.parse(readFileSync(DECLARED, "utf8"));
     const spec = loadSpec(SPEC);
     const model = modelOf(env);
+    if (!model) {
+      console.log(JSON.stringify({ ok: false, code: 1, reply: `The suite was not written: ${NO_MODEL}.` }));
+      console.error(NO_MODEL);
+      process.exit(1);
+    }
     mkdirSync(RECORDS, { recursive: true });
     // What the writer works from, and what it goes ahead without when a
     // reference file is not where the package put it. Said now, before the

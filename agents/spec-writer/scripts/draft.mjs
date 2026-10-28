@@ -16,16 +16,17 @@
 // one on the third ask, and the person is owed the draft plus the truth about
 // it rather than another two minutes of waiting.
 //
-// The service is chosen by the model's name: a google-vertex-anthropic/ name is
-// Claude on Google Vertex AI (paid for with the job's own token; TEXT_API_KEY
-// then says <project>/<location>), and is the default; a bare Gemini name is
+// The service is chosen by the model's name, which the install sets as
+// TEXT_MODEL or AGENT_MODEL; the package names none. A google-vertex-anthropic/
+// name is Claude on Google Vertex AI (paid for with the job's own token;
+// TEXT_API_KEY then says <project>/<location>); a bare Gemini name is
 // reached at Google with TEXT_API_KEY as its key. Any other name with a provider
 // in front is refused in words (owner, 2026-10-03: every Claude call goes
 // through Vertex).
 //
 //   needs: node >= 22; TEXT_API_KEY for the text-reasoning service
 //   ASKED=<asked.json> RECORDS=<records folder> [REFERENCE=<md>] [WORKED=<spec.json>]
-//   [ANSWERS=<answers.json>] [TEXT_MODEL=<model>] node draft.mjs
+//   [ANSWERS=<answers.json>] TEXT_MODEL=<model> (or AGENT_MODEL) node draft.mjs
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -41,15 +42,14 @@ const trim = (s) => String(s ?? "").trim();
 /** The digest a draft is delivered against: sha256 over its bytes. */
 export const digestOf = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-/** The default model, and the setting that overrides it.
- *
- *  Never hardcoded at a call site: the model an agent runs is a fact its
- *  deploy record states, and the one time a package and its record disagreed
- *  an image preview model wrote four throwaway scripts and burned a twenty
- *  five minute job. TEXT_MODEL is placed by the install from the spec's own
- *  settings, so changing it is a setting change and not a new version. */
-export const MODEL = "google-vertex-anthropic/claude-sonnet-5-5";
-export const modelOf = (env = {}) => trim(env.TEXT_MODEL) || MODEL;
+/** The model, from the install's settings: TEXT_MODEL, the text-reasoning
+ *  system's own setting, else AGENT_MODEL, the model the host runs agents on.
+ *  The package names no model of its own, because a model named in a package
+ *  is a rebuild waiting to happen: models are retired on somebody else's
+ *  schedule. With neither set, the job is refused in words (NO_MODEL). */
+export const MODEL_SETTINGS = ["TEXT_MODEL", "AGENT_MODEL"];
+export const modelOf = (env = {}) => MODEL_SETTINGS.map((k) => trim(env[k])).find(Boolean) ?? "";
+export const NO_MODEL = "no model is configured: the install sets TEXT_MODEL (the text-reasoning system's model) or AGENT_MODEL (the model the host runs agents on), and this package names none of its own";
 
 /** Two goes and no more. The second carries the findings from the first. */
 export const TRIES = 2;
@@ -278,10 +278,11 @@ export const OUTPUT_TOKENS = 64000;
 
 /** Which service a model is reached through. A google-vertex-anthropic/ name is
  *  Claude on Vertex; a bare name is a Gemini model at Google; any other name
- *  with a provider in front is "none", which no call is made for. A blank name
- *  is the default, which is Claude on Vertex. */
+ *  with a provider in front is "none", which no call is made for, and so is
+ *  a blank name: there is no default model. */
 export const serviceOf = (model) => {
-  const m = trim(model) || MODEL;
+  const m = trim(model);
+  if (!m) return "none";
   if (m.startsWith(`${VERTEX}/`)) return "vertex";
   return m.includes("/") ? "none" : "google";
 };
@@ -292,11 +293,9 @@ export const GOOGLE_URL = "https://generativelanguage.googleapis.com/v1beta/mode
  *  google-vertex-anthropic/<id> is called at Vertex with a token from the
  *  job's own service account (the metadata server), and the credential is not
  *  a key but where to call: "<project>/<location>". Vertex reports tokens and
- *  not money, so the cost is the tokens at the published price. */
+ *  not money, so no cost is stated. */
 export const VERTEX = "google-vertex-anthropic";
 export const METADATA_TOKEN_URL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-/** USD per million tokens, in and out, US multi-region (Vertex pricing page, 2026-09-29). */
-export const VERTEX_PRICES = { "claude-sonnet-5-5": [2.2, 11], "claude-haiku-4-5": [1.1, 5.5] };
 
 export function vertexWhere(key) {
   const [project, location] = trim(key).split("/");
@@ -312,10 +311,11 @@ export function vertexUrl(model, key) {
   return `https://${host}/v1/projects/${project}/locations/${location}/publishers/anthropic/models/${id}:rawPredict`;
 }
 
-export function vertexCost(model, tokensIn, tokensOut) {
-  const id = trim(model).replace(`${VERTEX}/`, "").split("@")[0];
-  const [i, o] = VERTEX_PRICES[id] ?? [2.2, 11];
-  return Math.round(((tokensIn ?? 0) * i + (tokensOut ?? 0) * o) / 1e6 * 1e8) / 1e8;
+/** Vertex reports tokens and not money, and a price table would name models,
+ *  so the cost is not stated here: the tokens are recorded, and the money is
+ *  the platform's spend report's. */
+export function vertexCost() {
+  return null;
 }
 
 /** A token from the metadata server of the machine the job runs on. */
@@ -331,7 +331,8 @@ export async function metadataToken(fetchImpl = fetch) {
  *  nowhere else, so nothing that logs a body can carry it. Pure; main sends.
  *  For a Vertex model `key` is where to call and `token` pays. */
 export function httpRequestFor(request, key, token = "") {
-  const model = trim(request?.model) || MODEL;
+  const model = trim(request?.model);
+  if (!model) throw new Error(NO_MODEL);
   if (serviceOf(model) === "vertex") {
     const text = (request?.body?.contents?.[0]?.parts ?? []).map((p) => p.text).join("\n\n");
     return {
@@ -530,6 +531,11 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const asked = JSON.parse(readFileSync(ASKED, "utf8"));
     const answers = ANSWERS && existsSync(ANSWERS) ? JSON.parse(readFileSync(ANSWERS, "utf8")) : null;
     const model = modelOf(env);
+    if (!model) {
+      console.log(JSON.stringify({ ok: false, code: 1, reply: `The spec was not drafted: ${NO_MODEL}.` }));
+      console.error(NO_MODEL);
+      process.exit(1);
+    }
     const call = async (request) => {
       const token = serviceOf(request.model) === "vertex" ? await metadataToken() : "";
       const http = httpRequestFor(request, key, token);

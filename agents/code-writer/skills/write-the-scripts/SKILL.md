@@ -13,7 +13,7 @@ when a spec and its suite exist and the scripts do not, or exist only as a proto
 
 ## What this needs
 
-- the spec (application/json, required)
+- the spec (document, required)
 - the suite (text/javascript, required)
 - a prototype, in any language (document, optional)
 
@@ -25,7 +25,7 @@ Every script the spec names, under scripts/, in the house stack, passing every t
 
 - the scripts (text/javascript, per task)
 - the account (text/markdown, per task)
-- the run record (application/json, per task)
+- the run record (application/vnd.agentmesh.code-runs+json, per task)
 
 ## When it comes back empty
 

@@ -1,6 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.2",
+  "agent_version": "0.2.3",
+  "name": "Code writer",
+  "summary": "Writes the scripts a spec names until the test suite passes, and hands back the scripts with an account of how it got there.",
+  "will_not": [
+    "It will not edit a test or the spec.",
+    "It will not hand over scripts the suite fails.",
+    "It will not write outside the package's scripts folder.",
+    "It will not install anything or reach a network.",
+    "It will not settle a question the spec left open when a test depends on the answer; it stops and asks."
+  ],
   "does": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. It is one code writer among any: the package-maker packs scripts from whichever code writer delivered them.",
   "offerings": [
     {
@@ -10,18 +19,29 @@
       "inputs": [
         {
           "name": "the spec",
-          "kind": "application/json",
-          "required": true
+          "kind": "document",
+          "required": true,
+          "given_by": "either",
+          "accepts": [
+            "application/vnd.agentmesh.agent-descriptor+json",
+            "application/vnd.agentmesh.agent-runtime-requirements+json",
+            "application/vnd.agentmesh.agent-plugin+json",
+            "text/markdown",
+            "application/vnd.agentmesh.agent-spec+json"
+          ],
+          "about": "The agent's own files as the spec writer delivers them: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill; or, for an agent written before them, its spec.json."
         },
         {
           "name": "the suite",
           "kind": "text/javascript",
-          "required": true
+          "required": true,
+          "given_by": "either"
         },
         {
           "name": "a prototype, in any language",
           "kind": "document",
-          "required": false
+          "required": false,
+          "given_by": "person"
         }
       ],
       "outputs": [
@@ -37,8 +57,9 @@
         },
         {
           "name": "the run record",
-          "kind": "application/json",
-          "when": "per_task"
+          "kind": "application/vnd.agentmesh.code-runs+json",
+          "when": "per_task",
+          "about": "`{runs}`: each round of the check, with what passed and failed, as code reads it."
         }
       ],
       "how": {
@@ -81,6 +102,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 2000000,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -125,5 +161,6 @@
       "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply; it is the provenance the package-maker's door checks.",
       "when": "per_task"
     }
-  ]
+  ],
+  "can_use": []
 }

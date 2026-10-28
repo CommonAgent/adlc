@@ -35,6 +35,7 @@ const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 
 export const STEP_OF = {
   "files": "draft-the-spec",
+  "the container spec": "draft-the-spec",
   "what is still open": "ask-what-is-missing",
 };
 
@@ -43,9 +44,25 @@ const ABOUT = {
   "agent-runtime-requirements.json": "The draft runtime requirements: what a host must have and do to run the agent, each system's binding, its directories and how each job runs. One of the agent's own files.",
   "plugin.json": "The agent's manifest, with the builder's own entry naming the files each skill carries. One of the agent's own files.",
   skill: "A skill's SKILL.md: when the job is the right one, what a good result looks like, what it does when there is nothing to give, and how it is done. One of the agent's own files.",
-  container: "A container agent's checked spec: its code is a program in its own repository, so it makes no package and has none of the files a package is built from, and a container deploy is filed with this.",
+  "the container spec": "A container agent's checked spec: its code is a program in its own repository, so it makes no package and has none of the files a package is built from, and a container deploy is filed with this.",
   "what is still open": "The questions nobody else could answer, each one a thing that was deliberately not invented. Until these are settled the draft is not finished.",
 };
+
+/** The kind each of the agent's own files is delivered as: the kinds the test
+ *  writer, the code writer and the package maker take them by. A SKILL.md is
+ *  Markdown. The container spec is the spec.json a container deploy is filed
+ *  with. */
+export const KIND_OF = {
+  "agent-descriptor.json": "application/vnd.agentmesh.agent-descriptor+json",
+  "agent-runtime-requirements.json": "application/vnd.agentmesh.agent-runtime-requirements+json",
+  "plugin.json": "application/vnd.agentmesh.agent-plugin+json",
+  spec: "application/vnd.agentmesh.agent-spec+json",
+};
+
+/** What is still open, as Markdown a person reads: a heading, then one bullet
+ *  per question with its key. */
+export const openQuestionsMarkdown = (questions) =>
+  ["# What is still open", "", ...questions.map((q) => `- \`${q.key}\`: ${q.question}`)].join("\n") + "\n";
 
 /** The name a file goes under as a piece. The three authored files keep
  *  theirs; a SKILL.md is named for its skill, because a piece is delivered
@@ -65,11 +82,11 @@ export function plan({ files = [], filesDir = "", blanks = [], container = null 
   // A container agent's draft makes no package and has no files: what a
   // container deploy is filed with is the checked spec, until container
   // agents carry the two files (the plan's milestone 2). It is the one
-  // spec.json this agent still delivers.
+  // spec.json this agent still delivers, as the output "the container spec".
   if (container) {
     entries.push({
-      name: "spec.json", step: STEP_OF.files, path: "out/spec.json", media_type: "application/json",
-      about: ABOUT.container, produced_from: ["what it should do"],
+      name: "the container spec", step: STEP_OF["the container spec"], path: "out/spec.json", media_type: KIND_OF.spec,
+      about: ABOUT["the container spec"], produced_from: ["what it should do"],
     });
     copies.push({ from: container, to: "out/spec.json", what: "the container agent's checked spec" });
   }
@@ -77,7 +94,7 @@ export function plan({ files = [], filesDir = "", blanks = [], container = null 
     const name = pieceNameOf(f.path);
     entries.push({
       name, step: STEP_OF.files, path: `out/agent/${f.path}`,
-      media_type: f.path.endsWith(".json") ? "application/json" : "text/markdown",
+      media_type: KIND_OF[f.path] ?? "text/markdown",
       about: ABOUT[f.path] ?? ABOUT.skill, produced_from: ["what it should do"],
     });
     copies.push({ from: join(filesDir, f.path), to: `out/agent/${f.path}`, what: `the draft's ${f.path}`, sha256: f.sha256 });
@@ -87,13 +104,10 @@ export function plan({ files = [], filesDir = "", blanks = [], container = null 
   // file somebody opens for nothing.
   if (questions.length) {
     entries.push({
-      name: "still-open.txt", step: STEP_OF["what is still open"], path: "out/still-open.txt",
-      media_type: "text/plain", about: ABOUT["what is still open"], produced_from: ["what it should do"],
+      name: "what is still open", step: STEP_OF["what is still open"], path: "out/still-open.md",
+      media_type: "text/markdown", about: ABOUT["what is still open"], produced_from: ["what it should do"],
     });
-    copies.push({
-      to: "out/still-open.txt", what: "the open questions",
-      text: questions.map((q) => `${q.key}: ${q.question}`).join("\n") + "\n",
-    });
+    copies.push({ to: "out/still-open.md", what: "the open questions", text: openQuestionsMarkdown(questions) });
   }
   return { entries, copies };
 }

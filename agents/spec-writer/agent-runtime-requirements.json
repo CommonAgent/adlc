@@ -17,7 +17,7 @@
       "settings": [
         {
           "env": "TEXT_MODEL",
-          "purpose": "the model this agent runs, so that changing it is a setting and not a new version. Absent, it is the google-vertex-anthropic/ name with claude-sonnet-5-5 after it. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI, paid for with a token from the machine it runs on, and the credential is then where to call, written <project>/<location>; a bare name is a Gemini model reached at Google, and the credential is then its key; any other name with a provider in front is refused in words"
+          "purpose": "the model this agent runs, so that changing it is a setting and not a new version. It must read text and hold a long request in one context. The package names no model of its own: absent, the model the host runs agents on (AGENT_MODEL) is used, and with neither the job is refused in words. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI, paid for with a token from the machine it runs on, and the credential is then where to call, written <project>/<location>; a bare name is a Gemini model reached at Google, and the credential is then its key; any other name with a provider in front is refused in words"
         }
       ]
     }

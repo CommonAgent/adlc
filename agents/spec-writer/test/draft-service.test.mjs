@@ -1,8 +1,8 @@
 // Which service the model is reached through, and what comes back from it.
 //   node --test test/draft-service.test.mjs
 //
-// The model is a setting (TEXT_MODEL). A google-vertex-anthropic/ name is
-// Claude on Vertex, and is the default; a bare name is a Gemini model and goes
+// The model is a setting (TEXT_MODEL, else AGENT_MODEL), and there is no
+// default. A google-vertex-anthropic/ name is Claude on Vertex; a bare name is a Gemini model and goes
 // to Google; any other name with a provider in front is refused before a call.
 // Nothing here touches the network: the functions build the call and read the
 // answer, and main sends. An answer cut at the output limit is refused by
@@ -10,15 +10,21 @@
 // reason is lost.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MODEL, OUTPUT_TOKENS, draftRequest, httpRequestFor, serviceOf, textOf } from "../scripts/draft.mjs";
+import { NO_MODEL, OUTPUT_TOKENS, draftRequest, httpRequestFor, serviceOf, textOf } from "../scripts/draft.mjs";
 
 const KEY = "not-a-real-key-0000";
 
-test("a vertex name is Claude on Vertex and the default, a bare name is google's, and any other provider is none", () => {
-  assert.equal(MODEL, "google-vertex-anthropic/claude-sonnet-5-5");
+test("a vertex name is Claude on Vertex, a bare name is google's, and any other provider or no name is none", () => {
+  assert.equal(serviceOf("google-vertex-anthropic/some-model"), "vertex");
   assert.equal(serviceOf("gemini-3.8-flash"), "google");
   assert.equal(serviceOf("anthropic/claude-sonnet-5.5"), "none");
-  assert.equal(serviceOf("  "), "vertex", "a blank name falls back like the default model does");
+  assert.equal(serviceOf("  "), "none", "a blank name is no model: there is no default");
+});
+
+test("with no model configured, no call is built and the reason names both settings", () => {
+  assert.throws(() => httpRequestFor(draftRequest({ env: {} }), KEY), (e) => e.message === NO_MODEL);
+  assert.match(NO_MODEL, /TEXT_MODEL/);
+  assert.match(NO_MODEL, /AGENT_MODEL/);
 });
 
 test("the output limit is generous enough for a whole long answer", () => {
@@ -59,7 +65,7 @@ test("an answer cut at the output limit is refused as cut, from either service",
 
 // Claude on Google Vertex AI (since 2026-09-29):
 // the credential says where to call, a token from the job's own service
-// account pays, and the cost is the tokens at the published price.
+// account pays, and the tokens are recorded with no cost stated.
 test("a google-vertex-anthropic model goes to Vertex with a token, the credential only saying where", async () => {
   const { metadataToken, vertexCost } = await import("../scripts/draft.mjs");
   const model = "google-vertex-anthropic/claude-sonnet-5-5";
@@ -76,9 +82,9 @@ test("a google-vertex-anthropic model goes to Vertex with a token, the credentia
   const got = textOf("vertex", { model: "claude-sonnet-5-5", content: [{ type: "thinking", thinking: "" }, { type: "text", text: "{\"a\":1}" }], stop_reason: "end_turn", usage: { input_tokens: 10000, output_tokens: 1000 } }, model);
   assert.equal(got.text, "{\"a\":1}");
   assert.equal(got.answered_by, model);
-  assert.deepEqual(got.usage, { tokens_in: 10000, tokens_out: 1000, cost: 0.033 });
+  assert.deepEqual(got.usage, { tokens_in: 10000, tokens_out: 1000, cost: null });
   assert.throws(() => textOf("vertex", { content: [], stop_reason: "max_tokens" }, model), /cut at the output limit/);
-  assert.equal(vertexCost("google-vertex-anthropic/claude-haiku-4-5@20251001", 1_000_000, 0), 1.1);
+  assert.equal(vertexCost("google-vertex-anthropic/some-model@20251001", 1_000_000, 0), null);
   const seen = [];
   const tok = await metadataToken(async (url, init) => { seen.push([url, init.headers["Metadata-Flavor"]]); return new Response(JSON.stringify({ access_token: "ya29.x" })); });
   assert.equal(tok, "ya29.x");

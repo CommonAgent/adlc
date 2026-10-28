@@ -1,6 +1,15 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.5",
+  "agent_version": "0.1.6",
+  "name": "Solution architect",
+  "summary": "Writes the architecture record for a new agent: the systems it reaches, the product bound to each, and every decision with its reason.",
+  "will_not": [
+    "It will not write the statement of the job for you; it asks for yours.",
+    "It will not design the steps or write the spec; the spec writer does that within its record.",
+    "It will not choose a product your organization has not chosen without marking it as the platform's default.",
+    "It will not fill in a spending limit, an access or an address on your behalf; it asks.",
+    "It will not put a model name, an address or a credential into a record."
+  ],
   "does": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks what only a person can commit to, and designs nothing.",
   "offerings": [
     {
@@ -106,6 +115,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     },
     {
@@ -231,6 +255,21 @@
             "contract": "full"
           }
         }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
       ]
     }
   ],
@@ -286,5 +325,6 @@
       "access": "trigger",
       "needs": "text: to read a statement of a job and name what the agent stands on, which is the one judgment in this package"
     }
-  ]
+  ],
+  "can_use": []
 }
