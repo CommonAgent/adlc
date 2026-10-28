@@ -66,7 +66,51 @@ function stageCheck(stage) {
   };
 }
 
+/** What a conformance verdict says: its own word, else read from conforms. */
+export function verdictWord(doc) {
+  const v = trim(doc?.verdict);
+  if (v) return v;
+  return doc?.conforms === true ? "conforms" : doc?.conforms === false ? "does-not-conform" : "";
+}
+
+const caseWords = (c) => `${trim(c?.id) || "?"} (${trim(c?.source).slice(0, 120) || trim(c?.kind)}): ${trim(c?.observed) || trim(c?.verdict)}`; // cut-ok: a case's source is quoted for reading; the verdict holds it whole
+
 export const REGISTERED = {
+  // What the conformance verdict for this version says (stage-record-
+  // conformance says only that one is present, signed and bound).
+  "conformance-result": (entry, ctx) => {
+    const l = ctx.lines.find((x) => x.stage === "conformance");
+    if (!l?.present || !l.record) return NOT(`no conformance verdict is on record for this version (${l?.evidence ?? "the stage was not read"})`);
+    if (!l.bound) return NOT("the conformance verdict on record is for another version, so it says nothing about this one");
+    const doc = l.record;
+    const word = verdictWord(doc);
+    const cases = Array.isArray(doc.cases) ? doc.cases : [];
+    const failed = cases.filter((c) => trim(c?.verdict) === "fail");
+    const unjudged = cases.filter((c) => trim(c?.verdict) === "inconclusive");
+    const ra = doc.records_audit && typeof doc.records_audit === "object" ? doc.records_audit : {};
+    const missing = Array.isArray(ra.missing) ? ra.missing : [];
+    const unobserved = Array.isArray(ra.unobserved) ? ra.unobserved : [];
+    const head = `the verdict for this version (${l.source}) says ${word || "nothing"}`;
+    if (word === "conforms") return PASS(`${head}: every case the package's declarations gave rise to was judged and passed, and every promised record was found`);
+    if (word === "does-not-conform") {
+      const what = [
+        failed.length ? `failed: ${failed.map(caseWords).join("; ")}` : "",
+        missing.length ? `promised records not found: ${missing.join("; ")}` : "",
+      ].filter(Boolean);
+      return FAIL(`${head}. ${what.length ? what.join(". ") : "it names no failed case and no missing record"}`, "the agent's answers to its own declarations");
+    }
+    if (word === "inconclusive") {
+      const what = [
+        unjudged.length ? `not judged: ${unjudged.map(caseWords).join("; ")}` : "",
+        unobserved.length ? `records not observed: ${unobserved.join("; ")}` : "",
+      ].filter(Boolean);
+      // A warning whatever the check's level: nothing was found broken, only
+      // left unjudged.
+      return FAIL(`${head}. ${what.length ? what.join(". ") : "it names nothing it could not judge"}`, "the agent's answers to its own declarations", { at_most: "warn" });
+    }
+    return NOT(`the verdict on record says ${word ? `"${word}", which is not a verdict this check reads` : "no verdict"}`);
+  },
+
   registered: (entry, ctx) => {
     const sf = ctx.facts.dev.storefront;
     if (!sf?.ok) return FAIL(`${ctx.facts.handle} does not resolve on ${ctx.facts.dev.origin}: ${sf?.error ?? "no answer"}`, `the registration of ${ctx.facts.handle}`);

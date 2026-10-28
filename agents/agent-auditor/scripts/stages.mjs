@@ -182,6 +182,7 @@ function conformanceLine(facts, deployLine) {
   return line("conformance", facts, {
     ...parts, state: stateOf(parts),
     evidence: `verdict ${trim(doc.verdict) || (typeof doc.conforms === "boolean" ? (doc.conforms ? "conforms" : "does not conform") : "?")}${doc.summary && typeof doc.summary === "object" ? ` (${["pass", "fail", "inconclusive", "flagged_for_review"].filter((k) => typeof doc.summary[k] === "number").map((k) => `${doc.summary[k]} ${k.replace(/_/g, " ")}`).join(", ")})` : ""}, ${signedWords(s, facts, "conformance")}; ${bound ? "names this package's digest or the image its deployment record started" : "names neither this package's digest nor the image its deployment record started"}`,
+    extra: { record: doc },
   });
 }
 
