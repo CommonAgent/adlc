@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.1",
+  "agent_version": "0.3.2",
   "name": "Solution planner",
   "summary": "Plans a piece of work you describe as steps, each saying what kind of work it is, what it takes and what it hands back.",
   "will_not": [

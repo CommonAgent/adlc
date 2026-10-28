@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.6",
+  "agent_version": "0.1.7",
   "name": "Solution architect",
   "summary": "Writes the architecture record for a new agent: the systems it reaches, the product bound to each, and every decision with its reason.",
   "will_not": [

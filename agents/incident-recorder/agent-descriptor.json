@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.3",
+  "agent_version": "0.1.4",
   "name": "Incident recorder",
   "summary": "Writes the record of an incident when an agent goes quiet or a job fails: a timeline of what the records show, each fact with its source.",
   "will_not": [

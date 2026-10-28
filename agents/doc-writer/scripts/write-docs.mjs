@@ -16,7 +16,7 @@
 import { KIND_WORDS, isEmpty, linesOf, resolvePath, textLines } from "./given.mjs";
 import { CREDENTIAL, GIVEN, LEGEND, code, esc, looksSecret, oneLine, render, renderAll, silence, withheld } from "./templates.mjs";
 
-export const WRITER = "doc-writer 0.1.2";
+export const WRITER = "doc-writer 0.1.3";
 /** The most lines of one record shown as an example. */
 export const EXAMPLE_LINES = 40;
 

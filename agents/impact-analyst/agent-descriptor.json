@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.2",
+  "agent_version": "0.1.3",
   "name": "Impact analyst",
   "summary": "Tells you what a change to an agent touches before it is built: every dependent, and whether the change is compatible, breaking or a change of behavior for each.",
   "will_not": [
