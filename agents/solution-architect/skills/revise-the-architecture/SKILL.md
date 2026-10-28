@@ -61,6 +61,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/standard.mjs
 - scripts/bind.mjs
 - scripts/architecture-record.mjs
+- scripts/standing.mjs
 - scripts/check-record.mjs
 - scripts/reply.mjs
 - scripts/pieces.mjs
@@ -72,3 +73,4 @@ Run these from this skill's folder; each one says what it needs at the top.
 - references/house-stack.json
 - references/a-record-that-works.md
 - references/rules.md
+- references/standing-asset-schemas.json

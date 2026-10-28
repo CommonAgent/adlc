@@ -18,6 +18,7 @@ const rec = (over = {}) => ({
   kind: { kind: "plugin-on-harness", why: "the house default" },
   decisions: [{ decided: "Hand back Markdown", why: "a person reads it" }],
   questions: [{ key: "binding-text-reasoning-test", question: "Which product in test?" }],
+  standing_assets: { outputs: [], schemas: [], none: "no output is read by a person" },
   done: false,
   ...over,
 });
@@ -47,7 +48,7 @@ test("the body carries the fixed headings in the standard's order", () => {
 });
 
 test("the standard and the descriptor name the same headings and header fields as the code", () => {
-  const standard = readFileSync(join(ROOT, "references", "architecture-standard.md"), "utf8");
+  const standard = readFileSync(join(ROOT, "..", "..", "standards", "architecture-standard.md"), "utf8");
   for (const h of HEADINGS) assert.ok(standard.includes(`\`## ${h}\``), `the standard names ## ${h}`);
   for (const f of HEADER_FIELDS) assert.ok(standard.includes(`\`${f}\``), `the standard names the header field ${f}`);
   const desc = JSON.parse(readFileSync(join(ROOT, "agent-descriptor.json"), "utf8"));

@@ -1,5 +1,5 @@
 // The Design starts from the architecture record (Agent Roles, the solution
-// architect; agents/solution-architect/references/architecture-standard.md):
+// architect; standards/architecture-standard.md):
 // the record is read by its header, handed to the drafting step with what the
 // Design owes it, and a draft is held to the record's systems, so a system the
 // record does not name goes back to the architect as a question.
@@ -91,8 +91,15 @@ test("a system the record does not name is taken out of the draft and asked of t
   assert.ok(!out.findings.some((f) => /does not name/.test(f)), "the finding is answered by the blank");
 });
 
+const BRAND = "https://schemas.agentmesh.ai/brand/v1";
+const STYLE = "https://schemas.agentmesh.ai/style-guide/v1";
+const CAN_USE = [
+  { schema: BRAND, reads: ["name", "words.never_say"], required: false, does: "writes the organization's name as the brand writes it", without: "writes the name as the person gave it, and says so" },
+  { schema: STYLE, reads: ["voice"], required: false, does: "writes the reminders in the organization's voice", without: "writes in a plain, neutral voice, and says so" },
+];
+
 test("a draft within the record is one call and asks nothing of the architect", async () => {
-  const out = await askForSpec({ asked: askedWithRecord(), call: async () => JSON.stringify({ spec: DRAFT, blanks: [] }) });
+  const out = await askForSpec({ asked: askedWithRecord(), call: async () => JSON.stringify({ spec: { ...DRAFT, can_use: CAN_USE }, blanks: [] }) });
   assert.equal(out.calls, 1);
   assert.ok(!out.blanks.some((b) => b.key === "architecture"));
   assert.equal(fitToArchitecture(DRAFT, { systems: ["database", "mail", "text-reasoning"] }).blank, null);
@@ -110,4 +117,52 @@ test("this copy of the record reader is the solution architect's, byte for byte"
   const theirs = join(ARCHITECT, "scripts", "architecture-record.mjs");
   if (!existsSync(theirs)) return;
   assert.equal(readFileSync(join(HERE, "..", "scripts", "architecture-record.mjs"), "utf8"), readFileSync(theirs, "utf8"));
+});
+
+test("the record's standing assets reach the draft: read from its header, and given to the model with the rule", () => {
+  const asked = askedWithRecord();
+  assert.deepEqual(asked.architecture.standing_assets, [BRAND, STYLE]);
+  assert.match(ARCHITECTURE_RULE, /Declare exactly the standing assets the record's "Standing assets" section decides/);
+  assert.match(ARCHITECTURE_RULE, /"without"/);
+});
+
+test("a draft that leaves the record's standing assets out is asked again, and code then declares them from the house rule, each with without", async () => {
+  let calls = 0;
+  const out = await askForSpec({ asked: askedWithRecord(), call: async () => { calls += 1; return JSON.stringify({ spec: DRAFT, blanks: [] }); } });
+  assert.equal(calls, 2, "asked once more with the finding");
+  assert.deepEqual(out.spec.can_use.map((e) => e.schema), [BRAND, STYLE]);
+  for (const e of out.spec.can_use) {
+    assert.ok(e.reads.length && e.does && e.without, JSON.stringify(e));
+    assert.equal(e.required, false);
+  }
+  assert.ok(!out.findings.some((f) => /can_use/.test(f)), out.findings.join("; "));
+  assert.match(out.notes, /added from the house rule/);
+});
+
+test("a standing asset the record does not decide is taken out, and an empty without is filled", async () => {
+  const extra = [{ ...CAN_USE[0], without: "" }, CAN_USE[1], { schema: "https://schemas.agentmesh.ai/glossary/v1", reads: ["terms"], does: "uses the terms", without: "uses plain words" }];
+  const out = await askForSpec({ asked: askedWithRecord(), call: async () => JSON.stringify({ spec: { ...DRAFT, can_use: extra }, blanks: [] }) });
+  assert.deepEqual(out.spec.can_use.map((e) => e.schema), [BRAND, STYLE]);
+  assert.ok(out.spec.can_use[0].without);
+  assert.match(out.notes, /glossary\/v1 was taken out/);
+});
+
+test("the checks name each can_use problem in words a model can act on", () => {
+  const arch = { systems: [], standing_assets: [BRAND] };
+  const found = checkDraft({ ...DRAFT, systems: [], can_use: [{ schema: "https://schemas.example/x/v1", reads: [] }] }, { architecture: arch });
+  assert.ok(found.some((f) => /not a known kind of standing asset/.test(f)));
+  assert.ok(found.some((f) => /which the architecture record does not decide/.test(f)));
+  assert.ok(found.some((f) => /without says what the agent does when none is given/.test(f)));
+  assert.ok(found.some((f) => /decides the standing asset https:\/\/schemas\.agentmesh\.ai\/brand\/v1 and the draft does not declare it/.test(f)));
+});
+
+test("a record that says none leaves can_use out", async () => {
+  const none = RECORD.replace(/^standing_assets: .*$/m, "standing_assets: none");
+  const dir = mkdtempSync(join(tmpdir(), "spec-arch-none-"));
+  const at = join(dir, "architecture-record.md");
+  writeFileSync(at, none);
+  const asked = readingOf({ text: "Write a spec. what it should do: renewal reminders", files: [{ path: at, media_type: "text/markdown" }] });
+  assert.deepEqual(asked.architecture.standing_assets, []);
+  const out = await askForSpec({ asked, call: async () => JSON.stringify({ spec: { ...DRAFT, can_use: CAN_USE }, blanks: [] }) });
+  assert.equal(out.spec.can_use, undefined);
 });

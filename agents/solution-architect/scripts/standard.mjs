@@ -1,6 +1,6 @@
 // The architecture standard, as checks: what the drafting answer is held to
 // before anything is bound, and what is put right in code when a second go
-// still has it wrong. references/architecture-standard.md is the prose; this
+// still has it wrong. standards/architecture-standard.md is the prose; this
 // is the part a program can see.
 //
 // Two kinds of thing are told apart, and the difference is the whole point of

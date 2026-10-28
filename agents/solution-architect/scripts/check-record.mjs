@@ -19,11 +19,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { bodyOf, parseRecord, renderRecord } from "./architecture-record.mjs";
 import { ADDRESS_RE, CREDENTIAL_RE, MODEL_NAME_RE, productWords } from "./standard.mjs";
+import { loadSchemas, standardAt, standingAssetsOf, standingProblems } from "./standing.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
-/** The record's facts, from the three records before it. */
-export function recordOf({ asked, named, bound }) {
+/** The record's facts, from the three records before it. `table` is the
+ *  list of standing-asset kinds and the house rule (standards/
+ *  standing-asset-schemas.json), read where this agent pins it. */
+export function recordOf({ asked, named, bound, table = loadSchemas() }) {
   const arch = named.architecture ?? {};
   const questions = [];
   const seen = new Set();
@@ -56,6 +59,7 @@ export function recordOf({ asked, named, bound }) {
     egress: arch.egress ?? [],
     egress_policy: bound.egress_policy ?? {},
     formats: arch.formats ?? [],
+    standing_assets: standingAssetsOf(arch.formats ?? [], table, asked.answers?.["standing-assets"]),
     settings: arch.settings ?? [],
     decisions,
     questions,
@@ -65,7 +69,7 @@ export function recordOf({ asked, named, bound }) {
 }
 
 /** Whether the record is finished, and every reason it is not. */
-export function doneOf(rec, vocabulary = []) {
+export function doneOf(rec, vocabulary = [], table = loadSchemas()) {
   const problems = [];
   const products = productWords(vocabulary);
   for (const s of rec.systems ?? []) {
@@ -77,15 +81,38 @@ export function doneOf(rec, vocabulary = []) {
     }
   }
   for (const d of rec.decisions ?? []) if (!trim(d.why)) problems.push(`the decision "${trim(d.decided)}" has no reason`);
+  // A record that could not decide them (the list was not read) is not done.
+  problems.push(...standingProblems(rec.standing_assets, table));
   if (!trim(rec.kind?.kind)) problems.push("the kind is not settled");
   if ((rec.questions ?? []).length) problems.push(`${rec.questions.length} question${rec.questions.length === 1 ? " is" : "s are"} open`);
   return { done: problems.length === 0, problems };
 }
 
-/** What the record must never carry, read off its own text. Empty when it
- *  carries none of them. */
-export function forbiddenIn(text) {
+/** The standards this record was written under, as a run record cites a
+ *  standing asset: its schema, the digest of the bytes read, and its layer. */
+export function standardsCited() {
   const out = [];
+  for (const name of ["architecture-standard.md", "standing-asset-schemas.json"]) {
+    const p = standardAt(name);
+    if (!p) continue;
+    const bytes = readFileSync(p);
+    const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(bytes.toString("utf8"))?.[1] ?? "";
+    const field = (k) => new RegExp(`^${k}:\\s*(.+)$`, "m").exec(head)?.[1]?.trim() ?? null;
+    // The JSON list has no front matter; its own format word stands in.
+    const format = name.endsWith(".json") ? (() => { try { const j = JSON.parse(bytes.toString("utf8")); return j.standing_asset_schemas ? `standing_asset_schemas ${j.standing_asset_schemas}` : null; } catch { return null; } })() : null;
+    out.push({ file: name, schema: field("schema"), ...(format ? { format } : {}), version_digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, layer: field("layer") ?? "publisher" });
+  }
+  return out;
+}
+
+/** What the record must never carry, read off its own text. Empty when it
+ *  carries none of them. A known standing-asset schema is not an address. */
+export function forbiddenIn(text, table = loadSchemas()) {
+  const out = [];
+  // A standing asset's schema is a name with the version in it, never an
+  // address the agent reaches: the known kinds are taken out before the
+  // address check reads the text.
+  for (const k of table?.schemas ?? []) text = String(text).split(k.schema).join("(schema)");
   for (const m of String(text).matchAll(MODEL_NAME_RE)) out.push(`the record names the model ${m[0]}`);
   for (const m of String(text).matchAll(ADDRESS_RE)) out.push(`the record carries the address ${m[0]}`);
   if ([...String(text).matchAll(CREDENTIAL_RE)].length) out.push("the record carries something that looks like a credential");
@@ -158,12 +185,20 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       changed = whatChanged(asked.earlier.text, text, rec);
       // The earlier record may be a person's edited file: what is quoted from it
       // carries nothing a record never carries.
-      const scrubbed = changed.text.replace(MODEL_NAME_RE, "(a model's name)").replace(CREDENTIAL_RE, "(a credential, left out)").replace(ADDRESS_RE, "(an address)");
+      // A known standing-asset schema is a name and is kept as it is.
+      const schemas = (loadSchemas()?.schemas ?? []).map((k) => k.schema);
+      let scrubbed = changed.text;
+      const mark = (i) => `\u0000schema ${i}\u0000`;
+      schemas.forEach((x, i) => { scrubbed = scrubbed.split(x).join(mark(i)); });
+      scrubbed = scrubbed.replace(MODEL_NAME_RE, "(a model's name)").replace(CREDENTIAL_RE, "(a credential, left out)").replace(ADDRESS_RE, "(an address)");
+      schemas.forEach((x, i) => { scrubbed = scrubbed.split(mark(i)).join(x); });
       writeFileSync(join(RECORDS, "what-changed.md"), scrubbed);
     }
     const header = parseRecord(text);
     writeFileSync(join(RECORDS, "checks.json"), JSON.stringify({
       checks: "v1", done: done.done, problems: done.problems, systems: header.systems, environments: header.environments,
+      standing_assets: header.standing_assets,
+      standards: standardsCited(),
       record_sha256: createHash("sha256").update(text).digest("hex"),
       ...(changed ? { changed_lines: changed.lines, changed_decisions: changed.decisions } : {}),
     }, null, 2) + "\n");

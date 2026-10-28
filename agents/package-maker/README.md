@@ -120,6 +120,43 @@ sides. The list is by name, so a new agent that happens to share a listed
 name (a generic one such as `planner`) is warned rather than refused until
 that name leaves the list.
 
+## The standing-asset rules (2026-10-28)
+
+A standing asset is the organization's shared material many agents read: a
+brand profile, a style guide, a glossary, media templates (see
+[`standards/README.md`](../../standards/README.md)). An agent declares each
+kind it reads as a `can_use` entry, and since 2026-10-28 `build.py` holds
+every package to three rules, the audit checklist's `can-use-known-schema`,
+`can-use-without` and `person-facing-declares-library`:
+
+1. **A known kind.** Every `can_use` entry names a schema on the list in
+   [`standards/standing-asset-schemas.json`](../../standards/standing-asset-schemas.json).
+2. **`without`.** Every entry says what the agent does when none is given.
+3. **Person-facing output declares its library.** A new agent whose offered
+   jobs hand a person `text/markdown`, `text/html`, an image, video or audio,
+   and that declares no `can_use`, is warned, unless its architecture record
+   says why none apply, in the person's own words: `architecture-record.md` at the top of the agent's
+   folder, or the file `ARCHITECTURE_RECORD` names, whose header says
+   `standing_assets: none` and whose `## Standing assets` section gives the
+   reason.
+
+Rules 1 and 2 use the format rules' cut-over: they refuse a new agent and
+warn for an existing one (the same `FORMAT_EXISTING_NAMES`,
+`FORMAT_EXISTING` and `FORMAT_EXISTING_MODE`). Rule 3 is only ever a warning,
+and only for a new agent. The result, and the signed build record `pack.py`
+writes, carry `standing_rules`: `existing`, `mode`, `since`, `findings`
+(rules 1 and 2), `warnings` (rule 3), `schemas_digest`, `levels`, and
+`none_because` where the record said why.
+
+The list is read at the version `build.py` pins, `STANDING_SCHEMAS_PIN` (the
+sha256 of its bytes): on a fleet host from
+`/opt/fleet/agentbuilder-standing-asset-schemas.json`, beside the builder,
+and in this repository from `standards/`. A list that is not the pinned
+version, or no list at all, is not read: rule 1 is not run, the build is
+warned, and `standing_rules` says why under `not_checked`. To adopt a changed list, re-pin, run
+`test_standing.py` and release both files together. `test_standing.py` pins
+the rules and the pin.
+
 ## What it needs
 
 - Python 3.11 or later for `build.py`. Nothing else to build a package.

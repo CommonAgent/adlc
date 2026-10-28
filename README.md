@@ -68,7 +68,10 @@ reaches and the product bound to each one in each environment, and records
 every decision with its reason. The spec writer and the solution planner then
 design within those systems. The rules the record applies are written down as
 the stage's standard, in
-[agents/solution-architect/references/architecture-standard.md](agents/solution-architect/references/architecture-standard.md).
+[standards/architecture-standard.md](standards/architecture-standard.md).
+The [`standards/`](standards) folder holds the standing assets every Builder
+reads at a version it pins: the architecture standard, the audit checklist
+and the known kinds of standing asset.
 
 [agents/image](agents/image) is not an agent. It holds the tools the deployment
 manager uses to turn an Agent Package into a container image's build context,

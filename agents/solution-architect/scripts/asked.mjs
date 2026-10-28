@@ -70,7 +70,7 @@ export function oneFile(f) {
 /** The keys the architect asks under, so an answer can be told from a change
  *  without a model: the open questions of the earlier record, and the shapes
  *  this agent's questions always take. */
-export const ANSWER_KEY_RE = /^(limit-cost|egress-\d+|reason-\d+|binding-[a-z0-9-]+|system-[a-z0-9-]+)$/;
+export const ANSWER_KEY_RE = /^(limit-cost|egress-\d+|reason-\d+|binding-[a-z0-9-]+|system-[a-z0-9-]+|standing-assets)$/;
 
 /** Split a revision's words into answers (`key: value` lines under a key the
  *  record asked) and the change (everything else). */

@@ -98,6 +98,7 @@ function canUse(entries) {
     const o = { schema: str(e.schema).trim(), reads: (e.reads ?? []).map((f) => str(f).trim()) };
     if ("required" in e) o.required = e.required;
     if ("does" in e) o.does = str(e.does).trim();
+    if ("without" in e) o.without = str(e.without).trim();
     return o;
   });
 }

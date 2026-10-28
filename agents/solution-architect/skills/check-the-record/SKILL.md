@@ -23,12 +23,18 @@ A record that would carry a model name, an address or a credential is not writte
 
 Nothing in this folder is run on its own; the write-the-architecture and revise-the-architecture skills name the commands that do the whole job, and this skill only explains what its command does for this step.
 
-check-record.mjs renders the record with architecture-record.mjs, reads it back, and writes records/<job>/record.md, records/<job>/checks.json with its digest, records/<job>/still-open.md when a question is open, and records/<job>/what-changed.md in a revision.
+check-record.mjs decides the standing assets with standing.mjs (for each kind of output a person reads, the standing assets that apply and why, or none and why, by the architecture standard's section 10 and references/standing-asset-schemas.json), renders the record with architecture-record.mjs, reads it back, and writes records/<job>/record.md, records/<job>/checks.json with its digest, records/<job>/still-open.md when a question is open, and records/<job>/what-changed.md in a revision.
 
 ## Scripts
 
 Run these from this skill's folder; each one says what it needs at the top.
 
+- scripts/standing.mjs
 - scripts/check-record.mjs
 - scripts/architecture-record.mjs
 - scripts/standard.mjs
+
+## References
+
+- references/architecture-standard.md
+- references/standing-asset-schemas.json

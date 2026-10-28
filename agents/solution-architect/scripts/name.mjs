@@ -161,7 +161,9 @@ export async function nameTheSystems({ ask, asked, standard = "", example = "", 
 }
 
 export function referenceAt(name, here = HERE) {
-  return [join(here, "..", "references", name), join(here, "..", "..", "references", name)].find((p) => existsSync(p)) ?? null;
+  // In a package, a skill's references/; from source, the agent's own
+  // references/, or the repository's standards/ for a standard it pins.
+  return [join(here, "..", "references", name), join(here, "..", "..", "references", name), join(here, "..", "..", "..", "standards", name)].find((p) => existsSync(p)) ?? null;
 }
 
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";

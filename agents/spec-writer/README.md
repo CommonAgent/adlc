@@ -21,6 +21,19 @@ It holds the Design part of the Architecture and Design stage, after the
 the draft declares exactly the systems the record names; a step that needs
 another goes back to the architect as a question instead of into the draft.
 
+## Standing assets
+
+Given an architecture record, the draft declares exactly the standing assets
+its `Standing assets` section decides, as `can_use` entries, each with
+`reads`, `required`, `does` and `without`, and none where the record says
+none (the architecture standard, section 10). The model drafts the entries;
+`scripts/can-use.mjs` then takes out any the record did not decide, and adds
+any it left out (or fills an empty member) from the house rule in
+[`standards/standing-asset-schemas.json`](../../standards/standing-asset-schemas.json),
+which this agent reads at the version [standards-pins.json](standards-pins.json)
+pins (`test/standards-pins.test.mjs` holds the pin). The draft's notes say
+what code changed.
+
 ## What it needs
 
 - Node 22 or later. The scripts use only node's own modules.

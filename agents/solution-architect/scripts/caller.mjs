@@ -1,6 +1,6 @@
 // The caller: the one way this package reaches its text-reasoning system.
 //
-// A model is a bound system (references/architecture-standard.md, section 3).
+// A model is a bound system (standards/architecture-standard.md, section 3).
 // Which model answers is configuration, never code: the install places it from
 // the text-reasoning binding as TEXT_MODEL (AGENT_MODEL is read the same way
 // where a host places that instead), and a run config may change it for one

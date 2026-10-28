@@ -72,9 +72,11 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/pieces.mjs
 - scripts/agent-folder.mjs
 - scripts/architecture-record.mjs
+- scripts/can-use.mjs
 
 ## References
 
 - references/what-a-good-spec-carries.md
 - references/a-spec-that-works.json
 - references/rules.md
+- references/standing-asset-schemas.json
