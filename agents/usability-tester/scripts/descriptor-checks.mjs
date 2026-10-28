@@ -4,7 +4,9 @@
 // Descriptor, so the stage that fixes it is design.
 //
 //   summary            the agent says, in one sentence, what it does for a person
-//   example            every offering a person starts declares an example
+//   example            every offering declares an example: one a person starts,
+//                      and one other agents start, which a person can still
+//                      run by giving its inputs as files (6.13.2)
 //   inputs-to-controls each input a person gives maps to a control a page can
 //                      draw: words, an address, a name or a file, and never
 //                      structured data typed by hand
@@ -17,7 +19,7 @@
 // example (6.13.8). Pure: the Descriptor in, the findings out.
 //
 //   needs: node >= 22
-//   import { personOfferings, descriptorChecks } from "./descriptor-checks.mjs"
+//   import { offeringsOf, personOfferings, descriptorChecks } from "./descriptor-checks.mjs"
 
 const trim = (s) => String(s ?? "").trim();
 const base = (k) => trim(k).split(";")[0].trim().toLowerCase();
@@ -35,6 +37,11 @@ export const readsAsItIs = (kind) => /^(text\/markdown|text\/html|text\/plain|te
 const OPTION_NAME = /\b(tone|voice|length|style|format|order|depth|language|lens|palette|how many|count|max[_ ]?\w*|min[_ ]?\w*|number of)\b/i;
 /** Names that hold one of those words and are material, not an option: a measure, or a list of counts. */
 const NOT_AN_OPTION = /\bshare of voice\b|^counts$|\bword counts?\b/i;
+
+/** Every offering. One other agents start is still one a person can run, by
+ *  giving its inputs as pieces of their declared kinds (6.13.2), so the
+ *  tester checks and runs them all. */
+export const offeringsOf = (d) => (Array.isArray(d?.offerings) ? d.offerings.filter(Boolean) : []);
 
 /** The offerings a person starts: started_by holds person, or is absent (6.13.2). */
 export function personOfferings(d) {
@@ -77,7 +84,7 @@ export function exampleProblems(o, ex) {
   return out;
 }
 
-/** The descriptor checks, for the whole Descriptor and each offering a person starts. */
+/** The descriptor checks, for the whole Descriptor and each offering. */
 export function descriptorChecks(d) {
   const checks = [];
   const findings = [];
@@ -89,9 +96,9 @@ export function descriptorChecks(d) {
     summary ? `summary: "${summary}"${oneSentence(summary) ? "" : " (not one sentence of at most 200 characters)"}; name: ${name ? `"${name}"` : "absent"}` : `no summary; name: ${name ? `"${name}"` : "absent"}`,
     summary && oneSentence(summary) ? [] : [F("summary", "summary", summary ? "the summary is not one plain sentence of at most 200 characters" : "the Descriptor has no summary", "a page shows the operator's does, written for programs and models, as the first thing a person reads")]);
 
-  const offs = personOfferings(d);
+  const offs = offeringsOf(d);
   if (!offs.length) {
-    add("example", true, "no offering is started by a person, so none needs an example");
+    add("example", true, "the Descriptor declares no offering");
     return { checks, findings, offerings: [] };
   }
 
@@ -100,7 +107,9 @@ export function descriptorChecks(d) {
   for (const o of offs) {
     const p = exampleProblems(o, o.example);
     exEv.push(`${o.id}: ${o.example ? (p.length ? p.join("; ") : "an example that fills every required input, with its good result") : "no example"}`);
-    for (const x of p) exFound.push(F("example", `offering ${o.id}`, x, o.example ? "a person, or a tester, cannot run the offering from its example as it stands" : "a person sees an empty form with nothing to show what a working request looks like, and nobody outside the builders can run it as a person would"));
+    for (const x of p) exFound.push(F("example", `offering ${o.id}`, x, o.example ? "a person, or a tester, cannot run the offering from its example as it stands" : Array.isArray(o.started_by) && !o.started_by.includes("person")
+      ? "other agents usually start it, and a person who gives its inputs themselves has nothing to show what they look like, so nobody outside the builders can run it as a person would"
+      : "a person sees an empty form with nothing to show what a working request looks like, and nobody outside the builders can run it as a person would"));
   }
   add("example", !exFound.length, exEv.join("; "), exFound);
 

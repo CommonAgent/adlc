@@ -1,15 +1,15 @@
 ---
 name: run-the-examples
-description: Once the Descriptor is checked, for each offering a person starts.
+description: Once the Descriptor is checked, for each offering.
 ---
 
 # Run the examples
 
-Part of usability-tester. Once the Descriptor is checked, for each offering a person starts.
+Part of usability-tester. Once the Descriptor is checked, for each offering.
 
 ## When to use this
 
-Once the Descriptor is checked, for each offering a person starts.
+Once the Descriptor is checked, for each offering.
 
 ## What a good result looks like
 

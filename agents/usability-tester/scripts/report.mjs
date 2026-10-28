@@ -4,7 +4,7 @@
 // judgment where one was added, and what was not checked and why.
 //
 // The verdict:
-//   not_usable            an offering a person starts could not be run from
+//   not_usable            an offering could not be run from
 //                         an example, its form could not be filled, its run
 //                         delivered nothing, or nothing it delivered can be
 //                         read by a person
@@ -19,7 +19,7 @@
 //   import { trialFindings, verdictOf, writeReport, readHeader, ABOUT } from "./report.mjs"
 
 const trim = (s) => String(s ?? "").trim();
-export const ABOUT = "The usability report: a YAML header (usability_report, agent, version, package_digest, descriptor_digest, verdict, tested_at, tested_by, the counts of offerings and findings, person_judgment), then for each offering a person starts whether its form could be filled from the Descriptor, whether a real run delivered in its declared form, whether the result can be read and whether a change came back as a new version; the descriptor checks; each finding labelled descriptor or agent with the stage that fixes it; a person's judgment where one was added; and what was not checked. The verdict is usable, usable_with_findings or not_usable.";
+export const ABOUT = "The usability report: a YAML header (usability_report, agent, version, package_digest, descriptor_digest, verdict, tested_at, tested_by, the counts of offerings and findings, person_judgment), then for each offering (one other agents usually start included, run with its inputs given as files) whether its form could be filled from the Descriptor, whether a real run delivered in its declared form, whether the result can be read and whether a change came back as a new version; the descriptor checks; each finding labelled descriptor or agent with the stage that fixes it; a person's judgment where one was added; and what was not checked. The verdict is usable, usable_with_findings or not_usable.";
 
 const A = (check, place, what, consequence) => ({ label: "agent", fixed_by: "code", check, place, what, consequence });
 const D = (check, place, what, consequence) => ({ label: "descriptor", fixed_by: "design", check, place, what, consequence });
@@ -95,9 +95,9 @@ export function readHeader(text) {
 
 const cell = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\n+/g, " ");
 const VERDICT_WORDS = {
-  usable: "A person can run every offering they start from its example, get a result in its declared form and read it, and every change asked came back.",
-  usable_with_findings: "A person can run every offering they start from its example, get a result and read it; the findings below say what still gets in their way.",
-  not_usable: "A person cannot get through at least one offering they start: the offering below that says no shows where they are stopped.",
+  usable: "A person can run every offering from its example, get a result in its declared form and read it, and every change asked came back.",
+  usable_with_findings: "A person can run every offering from its example, get a result and read it; the findings below say what still gets in their way.",
+  not_usable: "A person cannot get through at least one offering: the offering below that says no shows where they are stopped.",
 };
 
 /**
@@ -115,7 +115,7 @@ export function writeReport(t) {
     usability_report: "v1",
     agent: t.handle, version: t.version, package_digest: t.package_digest, descriptor_digest: t.descriptor_digest,
     verdict, tested_at: t.tested_at, tested_by: t.tested_by,
-    offerings_a_person_starts: t.trials.length,
+    offerings: t.trials.length,
     offerings_run: t.trials.filter((x) => x.run).length,
     findings: findings.length,
     descriptor_findings: findings.filter((x) => x.label === "descriptor").length,
@@ -124,12 +124,12 @@ export function writeReport(t) {
   };
   const L = ["---", ...Object.entries(header).map(([k, v]) => `${k}: ${yamlValue(v)}`), "---", ""];
   L.push(`# Usability report: ${t.name || t.handle}`, "");
-  L.push(`${t.name || t.handle} (${t.handle}, version ${t.version ?? "not stated"}) is **${verdict.replace(/_/g, " ")}**. ${t.trials.length ? VERDICT_WORDS[verdict] : "No offering is started by a person, so there was nothing to run as one."}`, "");
-  L.push("## Offerings a person starts", "");
-  if (!t.trials.length) L.push("None. Every offering says it is started by another agent (started_by).", "");
+  L.push(`${t.name || t.handle} (${t.handle}, version ${t.version ?? "not stated"}) is **${verdict.replace(/_/g, " ")}**. ${t.trials.length ? VERDICT_WORDS[verdict] : "It declares no offering, so there was nothing to run."}`, "");
+  L.push("## Offerings", "");
+  if (!t.trials.length) L.push("None.", "");
   else {
-    L.push("| Offering | Example | Form | Delivers | Readable | Change |", "|---|---|---|---|---|---|");
-    for (const x of t.trials) L.push(`| ${cell(x.name || x.id)} | ${cell(x.example_from ?? "none")} | ${x.answers.form} | ${x.answers.delivers} | ${x.answers.readable} | ${x.answers.change} |`);
+    L.push("| Offering | Started by | Example | Form | Delivers | Readable | Change |", "|---|---|---|---|---|---|---|");
+    for (const x of t.trials) L.push(`| ${cell(x.name || x.id)} | ${Array.isArray(x.started_by) ? x.started_by.join(" and ") : "not said"} | ${cell(x.example_from ?? "none")} | ${x.answers.form} | ${x.answers.delivers} | ${x.answers.readable} | ${x.answers.change} |`);
     L.push("");
     for (const x of t.trials) {
       L.push(`### ${x.name || x.id} (\`${x.id}\`)`, "");

@@ -76,11 +76,11 @@ export async function fillForm(o, example, { nameJob = false, fetchFile, attache
   for (const i of all) {
     if (RUN_CONTEXT.test(trim(i.kind))) continue;
     const v = given[i.name];
-    // Only an input a person gives has a field on the page, so only those are
-    // asked of the example; one the agent supplies goes in only when given.
-    const personal = trim(i.given_by) !== "agent";
+    // A person who runs the offering gives every input it needs, those
+    // other agents usually hand over included, as pieces of their kinds
+    // (Common Agent 6.13.2), so the example names every required one.
     if (v === undefined) {
-      if (personal && i.required && !i.one_of) problems.push(`the example gives nothing for the required input "${i.name}"`);
+      if (i.required && !i.one_of) problems.push(`the example gives nothing for the required input "${i.name}"`);
       continue;
     }
     if (typeof v === "string") {
@@ -131,7 +131,7 @@ export async function fillForm(o, example, { nameJob = false, fetchFile, attache
     files.push(out);
     shown.push({ input: i.name, value: `${out.name} (${bytes.length} bytes, from ${from})` });
   }
-  const groups = [...new Set(personInputs(o).map((i) => i.one_of).filter(Boolean))];
+  const groups = [...new Set(all.filter((i) => !RUN_CONTEXT.test(trim(i.kind))).map((i) => i.one_of).filter(Boolean))];
   for (const g of groups) if (!all.some((i) => i.one_of === g && given[i.name] !== undefined)) problems.push(`the example gives none of the "${g}" inputs, and the form needs one`);
   const said = [body, lines.join("\n")].filter(Boolean).join("\n\n");
   const text = nameJob ? [`${trim(o.name) || o.id}.`, said].filter(Boolean).join("\n\n") : said || `${trim(o.name) || o.id}.`;

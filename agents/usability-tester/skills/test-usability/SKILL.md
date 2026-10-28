@@ -1,15 +1,15 @@
 ---
 name: test-usability
-description: When an agent has passed Conformance and someone needs to know whether a person can actually use it, or when a sweep tests every agent a person starts. This is the usability tester role of the Usability stage, in the Prove phase of the Agent Development Lifecycle.
+description: When an agent has passed Conformance and someone needs to know whether a person can actually use it, or when a sweep tests every agent. This is the usability tester role of the Usability stage, in the Prove phase of the Agent Development Lifecycle.
 ---
 
 # Test an agent's usability
 
-Part of usability-tester. When an agent has passed Conformance and someone needs to know whether a person can actually use it, or when a sweep tests every agent a person starts. This is the usability tester role of the Usability stage, in the Prove phase of the Agent Development Lifecycle.
+Part of usability-tester. When an agent has passed Conformance and someone needs to know whether a person can actually use it, or when a sweep tests every agent. This is the usability tester role of the Usability stage, in the Prove phase of the Agent Development Lifecycle.
 
 ## When to use this
 
-When an agent has passed Conformance and someone needs to know whether a person can actually use it, or when a sweep tests every agent a person starts. This is the usability tester role of the Usability stage, in the Prove phase of the Agent Development Lifecycle.
+When an agent has passed Conformance and someone needs to know whether a person can actually use it, or when a sweep tests every agent. This is the usability tester role of the Usability stage, in the Prove phase of the Agent Development Lifecycle.
 
 ## What this needs
 
@@ -21,7 +21,7 @@ When an agent has passed Conformance and someone needs to know whether a person 
 
 ## What a good result looks like
 
-One usability report with the YAML header an auditor reads, then for each offering a person starts whether its form could be filled from the Descriptor, whether a real run delivered in its declared form, whether the result can be read and whether a change came back, the descriptor checks, each finding labelled descriptor or agent with the stage that fixes it, a person's judgment when one was given, and what was not checked and why.
+One usability report with the YAML header an auditor reads, then for each offering whether its form could be filled from the Descriptor, whether a real run delivered in its declared form, whether the result can be read and whether a change came back, the descriptor checks, each finding labelled descriptor or agent with the stage that fixes it, a person's judgment when one was given, and what was not checked and why.
 
 ## What it produces
 
