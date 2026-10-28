@@ -16,6 +16,15 @@
 // one on the third ask, and the person is owed the draft plus the truth about
 // it rather than another two minutes of waiting.
 //
+// An answer that is not one JSON object (wrapped in prose, fenced, or broken
+// part way) is read for the object inside it first, and only when there is
+// none is the same request sent once more with a "JSON only" reminder. The
+// whole step runs inside a time budget (DRAFT_SECONDS, 240 by default): no
+// call starts without a minute left, each call is cut at what remains, and a
+// step that ends without a usable draft exits 4 with a reply saying so, so the
+// job ends in words and never runs on to the job's own time limit
+// (2026-10-28: three of four runs on dev did).
+//
 // The service is chosen by the model's name, which the install sets as
 // TEXT_MODEL or AGENT_MODEL; the package names none. A google-vertex-anthropic/
 // name is Claude on Google Vertex AI (paid for with the job's own token;
@@ -53,6 +62,32 @@ export const NO_MODEL = "no model is configured: the install sets TEXT_MODEL (th
 
 /** Two goes and no more. The second carries the findings from the first. */
 export const TRIES = 2;
+
+/** One more call, at most, when an answer is not one JSON object. */
+export const JSON_RETRIES = 1;
+
+/** The time the whole drafting step may take, every call included, unless
+ *  DRAFT_SECONDS says otherwise. The job has ten minutes, and the harness, the
+ *  builder check and the reply need what is left. */
+export const DRAFT_SECONDS = 240;
+
+/** No call starts with less than this left: an answer takes about a minute. */
+export const MIN_CALL_SECONDS = 60;
+
+/** The exit code, and the error, of a step that ends with no usable draft. */
+export const NO_DRAFT_EXIT = 4;
+export class NoDraft extends Error {}
+
+/** The draft step's budget in seconds, from DRAFT_SECONDS when it is a
+ *  positive number, else the default. */
+export const draftSecondsOf = (env = {}) => {
+  const n = Number(trim(env.DRAFT_SECONDS));
+  return Number.isFinite(n) && n > 0 ? n : DRAFT_SECONDS;
+};
+
+/** Said once more, after an answer that was not one JSON object. */
+export const JSON_ONLY = "Answer with exactly one JSON object and nothing else: no words before or after it, no code fence, "
+  + "no comments and no trailing commas. Its members are \"spec\", \"blanks\" and \"notes\", as above.";
 
 export const INSTRUCTION = `You are writing one spec, as JSON, for an agent package.
 
@@ -161,7 +196,7 @@ Answer with one JSON object and nothing else:
 
 /** The parts of the request, in order, as text. Pure and exported so the whole
  *  prompt can be read in a test rather than inferred from a fixture. */
-export function requestParts({ asked = null, reference = "", worked = "", answers = null, findings = [] } = {}) {
+export function requestParts({ asked = null, reference = "", worked = "", answers = null, findings = [], notJson = "" } = {}) {
   // A revision with no draft in hand is not drafted: a spec written from an
   // answer's own words is a spec for the wrong agent (2026-09-15).
   const hasFiles = (asked?.attached ?? []).some((a) => a.kind === "an agent's own file" && typeof a.text === "string");
@@ -217,6 +252,9 @@ export function requestParts({ asked = null, reference = "", worked = "", answer
   if (trim(worked)) parts.push(`--- A WHOLE SPEC THAT WORKS ---\n${trim(worked)}`);
   if (findings.length) {
     parts.push(`--- WHAT WAS WRONG WITH YOUR LAST DRAFT ---\n${findings.map((f) => `- ${f}`).join("\n")}\nWrite it again with these fixed. Change nothing else.`);
+  }
+  if (trim(notJson)) {
+    parts.push(`--- YOUR LAST ANSWER COULD NOT BE READ ---\n${trim(notJson)}.\n${JSON_ONLY}`);
   }
   return parts;
 }
@@ -347,7 +385,9 @@ export function httpRequestFor(request, key, token = "") {
   return {
     url: `${GOOGLE_URL}/${encodeURIComponent(model)}:generateContent`,
     headers: { "content-type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({ ...request.body, generationConfig: { maxOutputTokens: OUTPUT_TOKENS } }),
+    // JSON mode: the service answers with one JSON object and no prose or
+    // fence around it, which is what the answer is read as.
+    body: JSON.stringify({ ...request.body, generationConfig: { maxOutputTokens: OUTPUT_TOKENS, responseMimeType: "application/json" } }),
   };
 }
 
@@ -384,20 +424,72 @@ export function textOf(service, data, model = "") {
  *
  *  A model asked for JSON returns JSON in a code fence about as often as it
  *  returns it bare, and an agent that treats a fenced answer as a failure
- *  throws away work it already paid for. */
+ *  throws away work it already paid for. A sentence before or after the
+ *  object, or a fence in the middle of prose, is the same answer: the object
+ *  is taken out of it. */
 export function answerFrom(text) {
   const raw = trim(text);
   if (!raw) throw new Error("the service answered with nothing");
-  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(raw);
-  const body = fenced ? fenced[1] : raw;
-  let doc;
-  try { doc = JSON.parse(body); } catch { throw new Error("the service did not answer with JSON"); }
+  const doc = jsonIn(raw);
+  if (doc === undefined) throw new Error("the service did not answer with JSON");
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) throw new Error("the service answered with JSON that is not an object");
   if (!doc.spec || typeof doc.spec !== "object" || Array.isArray(doc.spec)) throw new Error("the answer carries no spec");
   const blanks = Array.isArray(doc.blanks)
     ? doc.blanks.filter((b) => b && trim(b.key)).map((b) => ({ key: trim(b.key), question: trim(b.question) }))
     : [];
   return { spec: doc.spec, blanks, notes: trim(doc.notes) };
+}
+
+/** The places a JSON value may sit in an answer, most likely first: the
+ *  whole answer, each fenced block, and each balanced {...} in the prose
+ *  (read with strings and escapes respected, so a brace inside a string does
+ *  not end it). Pure. */
+export function jsonCandidates(raw) {
+  const out = [raw];
+  for (const m of raw.matchAll(/```[a-zA-Z]*[ \t]*\r?\n?([\s\S]*?)```/g)) out.push(m[1].trim());
+  for (let i = raw.indexOf("{"); i !== -1; i = raw.indexOf("{", i + 1)) {
+    const end = objectEnd(raw, i);
+    if (end !== -1) {
+      out.push(raw.slice(i, end + 1));
+      i = end; // the next candidate starts after this object, not inside it
+    }
+  }
+  return [...new Set(out.filter(Boolean))];
+}
+
+/** Where the object opened at `start` closes, or -1 when it never does. */
+function objectEnd(s, start) {
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < s.length; i += 1) {
+    const c = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === "\"") inString = false;
+      continue;
+    }
+    if (c === "\"") inString = true;
+    else if (c === "{" || c === "[") depth += 1;
+    else if (c === "}" || c === "]") {
+      depth -= 1;
+      if (depth === 0) return c === "}" ? i : -1;
+      if (depth < 0) return -1;
+    }
+  }
+  return -1;
+}
+
+/** The first candidate that parses: an object when there is one, else the
+ *  first value of any other kind, else undefined. */
+export function jsonIn(raw) {
+  let other;
+  for (const c of jsonCandidates(raw)) {
+    let v;
+    try { v = JSON.parse(c); } catch { continue; }
+    if (v && typeof v === "object" && !Array.isArray(v)) return v;
+    if (other === undefined) other = v;
+  }
+  return other;
 }
 
 /** The blanks, with the three that are never the model's to fill added back
@@ -424,8 +516,13 @@ export function blanksOf(spec, said = []) {
 
 /** Ask, check what came back, and ask once more with the findings. Returns the
  *  draft, whatever survived, and what it cost. */
-export async function askForSpec({ call, check = null, tries = TRIES, ...opts } = {}) {
+export async function askForSpec({
+  call, check = null, tries = TRIES, jsonRetries = JSON_RETRIES,
+  seconds = null, minCallSeconds = MIN_CALL_SECONDS, now = Date.now, ...opts
+} = {}) {
   if (typeof call !== "function") throw new Error("askForSpec needs a call");
+  const deadline = now() + 1000 * (seconds ?? draftSecondsOf(opts.env ?? {}));
+  const left = () => (deadline - now()) / 1000;
   // What a good spec carries, and the format rules, holding a revision to
   // them only for the pieces it adds: what an earlier spec already sent as
   // bare JSON is kept, and named in the notes.
@@ -435,19 +532,51 @@ export async function askForSpec({ call, check = null, tries = TRIES, ...opts } 
   let findings = [];
   let last = null;
   let calls = 0;
+  let notJson = "";
+  let retriesLeft = jsonRetries;
+  let stopped = null;
   const used = [];
-  for (let go = 0; go < tries; go += 1) {
-    const request = draftRequest({ ...opts, findings });
+  for (let go = 0; go < tries;) {
+    // Never start a call that cannot finish inside the step's time.
+    if (left() < minCallSeconds) {
+      stopped = "the drafting step ran out of time";
+      break;
+    }
+    const request = draftRequest({ ...opts, findings: last ? findings : [], notJson });
     calls += 1;
     // A call answers with the text alone, or with the text and what the call
-    // used, which is what main's call does.
-    const got = await call(request);
-    const said = typeof got === "string" ? { text: got } : got;
+    // used, which is what main's call does. It is given the seconds left, so
+    // it is cut there rather than run on past the step's time.
+    let said;
+    try {
+      const got = await call(request, { seconds: left() });
+      said = typeof got === "string" ? { text: got } : got;
+    } catch (e) {
+      // A service that fails after a usable draft is in hand ends the asking,
+      // and the draft stands with its findings; with none, the step ends.
+      if (!last) throw new NoDraft(e.message);
+      stopped = e.message;
+      break;
+    }
     used.push({ model: said?.answered_by ?? null, ...(said?.usage ?? { tokens_in: null, tokens_out: null, cost: null }) });
-    last = answerFrom(said?.text);
+    let answer;
+    try {
+      answer = answerFrom(said?.text);
+    } catch (e) {
+      // Not one JSON object: asked once more with the reminder, and never
+      // more than that. A draft already in hand still stands.
+      if (retriesLeft > 0) { retriesLeft -= 1; notJson = e.message; continue; }
+      if (!last) throw new NoDraft(e.message);
+      stopped = e.message;
+      break;
+    }
+    notJson = "";
+    last = answer;
     findings = check(last.spec);
+    go += 1;
     if (!findings.length) break;
   }
+  if (!last) throw new NoDraft(stopped ?? "the service gave no draft");
   // A system the record does not name never stays in the draft.
   const fitted = fitToArchitecture(last.spec, architecture);
   // The standing assets are the record's: exactly those, as can_use, each
@@ -466,6 +595,8 @@ export async function askForSpec({ call, check = null, tries = TRIES, ...opts } 
     calls,
     used,
     tried_again: calls > 1,
+    // Why the asking ended before the draft was clean, when it did.
+    stopped: findings.length ? stopped : null,
   };
 }
 
@@ -536,12 +667,20 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       console.error(NO_MODEL);
       process.exit(1);
     }
-    const call = async (request) => {
+    const call = async (request, { seconds = DRAFT_SECONDS } = {}) => {
       const token = serviceOf(request.model) === "vertex" ? await metadataToken() : "";
       const http = httpRequestFor(request, key, token);
-      const r = await fetch(http.url, { method: "POST", headers: http.headers, body: http.body });
-      if (!r.ok) throw new Error(`the text-reasoning service answered ${r.status}`);
-      const d = await r.json();
+      // Cut at the seconds the step has left, so no call outlives the step.
+      const signal = AbortSignal.timeout(Math.max(1, Math.floor(seconds * 1000)));
+      let r, d;
+      try {
+        r = await fetch(http.url, { method: "POST", headers: http.headers, body: http.body, signal });
+        if (!r.ok) throw new Error(`the text-reasoning service answered ${r.status}`);
+        d = await r.json();
+      } catch (e) {
+        if (e?.name === "TimeoutError" || e?.name === "AbortError") throw new Error(`the text-reasoning service did not answer within ${Math.round(seconds)} seconds`);
+        throw e;
+      }
       if (d?.error) throw new Error(`the text-reasoning service refused: ${trim(d.error.message) || "no reason given"}`);
       return textOf(serviceOf(request.model), d, request.model);
     };
@@ -570,10 +709,20 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     writeFileSync(join(RECORDS, "blanks.json"), JSON.stringify({ blanks: "v1", blanks: out.blanks, notes: out.notes }, null, 2) + "\n");
     console.log(JSON.stringify({
       ok: true, code: 0, draft: join(RECORDS, "draft.json"),
-      blanks: out.blanks.map((b) => b.key), findings: out.findings, calls: out.calls, model,
+      blanks: out.blanks.map((b) => b.key), findings: out.findings, calls: out.calls, stopped: out.stopped, model,
     }));
   } catch (e) {
     console.error(e.message);
-    process.exitCode = 1;
+    if (e instanceof NoDraft) {
+      // The job ends here, in words. Running this step again will not do
+      // better inside the same job, so the reply says to ask again later.
+      console.log(JSON.stringify({
+        ok: false, code: NO_DRAFT_EXIT,
+        reply: `The spec was not drafted: ${e.message}. Nothing was delivered. You can ask again.`,
+      }));
+      process.exitCode = NO_DRAFT_EXIT;
+    } else {
+      process.exitCode = 1;
+    }
   }
 }

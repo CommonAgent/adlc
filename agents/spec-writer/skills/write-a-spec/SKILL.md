@@ -49,7 +49,7 @@ Run these four commands in order, with these exact paths. JOB_DIR is the path on
 
 Then JOB_DIR=<job folder> RECORDS=<records folder> node ~/spec-writer/skills/write-a-spec/scripts/pieces.mjs to file the pieces.
 
-Each script prints one JSON object. The last one's `reply` field is your whole answer; print it and nothing else. When the first exits 3, print its `reply` and stop: nothing arrived to write a spec from, and no model was woken. When any of them exits 2 the command was called wrong; fix the variables and run it again.
+Each script prints one JSON object. The last one's `reply` field is your whole answer; print it and nothing else. When the first exits 3, print its `reply` and stop: nothing arrived to write a spec from, and no model was woken. When the second exits 4, print its `reply` and stop: the drafting service gave no usable draft inside the step's time, and running it again inside this job will not finish. Run draft.mjs once per message and never again for the same message; it already asks the service a second time when it needs to. When any of them exits 2 the command was called wrong; fix the variables and run it again.
 
 Attached files arrive as local paths in an `attached: N files, already downloaded to this machine:` block the adapter writes under the message, each with its media type in brackets and, when the sender filed a manifest, a sentence saying what it is. Pass every one of them in FILES.
 
