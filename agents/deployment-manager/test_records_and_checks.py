@@ -243,7 +243,7 @@ class EachDeployIsFollowedByAConformanceCheck(unittest.TestCase):
         os.makedirs(os.path.join(home, "tmp"))
         real_isdir = os.path.isdir
         with mock.patch.object(ex, "EVAL_HOME", home), mock.patch.object(ex, "DM_RECORDS", os.path.join(home, "rec")), \
-                mock.patch.object(ex, "checker_seat", return_value=("own", "/home/agentevaluator/.config/fleet/mesh.creds")), \
+                mock.patch.object(ex, "checker_seat", return_value=("node", "/opt/fleet/node-platform/mesh.creds")), \
                 mock.patch.object(ex.os.path, "isdir", lambda p: True if p.startswith("/home/") else real_isdir(p)), \
                 mock.patch("builtins.print"):
             out = ex.conform_now(s, run=fake_run)
@@ -252,8 +252,8 @@ class EachDeployIsFollowedByAConformanceCheck(unittest.TestCase):
         spec = json.load(open(os.path.join(home, "tmp", "brand-reader-conf1-eval.json")))
         self.assertEqual((spec["package_sha256"], spec["subject_key"]), (SHA, KEY))
         run_cmd = calls[1]
-        self.assertEqual(run_cmd[:3], ["sudo", "-u", "agentevaluator"])
-        self.assertIn(f"AGENTMESH_ENV={os.environ.get('AGENTMESH_ENV') or 'prod'}", run_cmd, "sudo drops the environment; the mesh is named")
+        self.assertNotIn("sudo", run_cmd)
+        self.assertIn(f"AGENTMESH_ENV={os.environ.get('AGENTMESH_ENV') or 'prod'}", run_cmd, "the mesh is named")
         self.assertIn("brand-reader.platform@example.com", run_cmd)
 
     def test_with_only_the_nodes_credential_it_runs_as_root_over_a_private_copy_of_the_checkers_state(self):
