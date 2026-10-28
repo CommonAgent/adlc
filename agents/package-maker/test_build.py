@@ -1149,15 +1149,14 @@ class TheFormatRules(Harness):
         self.assertTrue(res["ok"], res)
         self.assertEqual(len(res["format_rules"]["findings"]), 1)
 
-    def test_a_pieces_json_in_the_folder_or_named_by_pieces_is_read(self):
-        sample = os.path.join(self.tmp, "fixtures", "a-job")
-        os.makedirs(sample)
+    def test_a_pieces_json_at_the_top_of_the_folder_or_named_by_pieces_is_read(self):
+        sample = self.tmp
         with open(os.path.join(sample, "pieces.json"), "w", encoding="utf-8") as f:
             json.dump([{"name": "key points", "path": "out/points.md"}, {"name": "notes", "path": "out/notes.md"}], f)
         res, _ = self.build(format_spec(name="fact-writer"))
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["format_rules"]["findings"],
-                         ["fixtures/a-job/pieces.json delivers a piece 'notes' that no job declares as an output; declare it, with its kind, or stop delivering it"])
+                         ["pieces.json delivers a piece 'notes' that no job declares as an output; declare it, with its kind, or stop delivering it"])
         elsewhere = os.path.join(tempfile.mkdtemp(prefix="pieces-"), "pieces.json")
         try:
             with open(elsewhere, "w", encoding="utf-8") as f:
@@ -1178,3 +1177,98 @@ class TheFormatRules(Harness):
         res, _ = self.build(doc)
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["format_rules"]["findings"], [])
+
+
+class AModelIsABoundSystem(Harness):
+    """A literal model name in a job's scripts or skills is a finding under the
+    same cut-over as the formats: a new agent is refused, an agent released
+    before 2026-10-27 is warned. Comment lines in a script are not read; a
+    SKILL.md is read whole; a provider prefix is read with the name."""
+
+    def setUp(self):
+        super().setUp()
+        self._env = os.environ.pop("FORMAT_EXISTING", None)
+        os.makedirs(os.path.join(self.tmp, "scripts"))
+
+    def tearDown(self):
+        if self._env is not None:
+            os.environ["FORMAT_EXISTING"] = self._env
+        super().tearDown()
+
+    def script(self, text, name="points.mjs"):
+        with open(os.path.join(self.tmp, "scripts", name), "w", encoding="utf-8") as f:
+            f.write(text)
+        return f"scripts/{name}"
+
+    def test_a_new_agent_whose_script_names_a_model_is_refused(self):
+        rel = self.script('const model = env.AGENT_MODEL || "gemini-2.5-flash";\n')
+        res, out = self.build(format_spec(scripts=[rel]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("refused on its formats and models", res["error"])
+        self.assertIn("scripts/points.mjs names the model 'gemini-2.5-flash' (line 1)", res["error"])
+        self.assertIn("text-reasoning with access trigger", res["error"])
+        self.assertFalse(os.path.exists(os.path.join(out, "key-points")))
+
+    def test_an_existing_agent_whose_script_names_a_model_is_warned_and_built(self):
+        rel = self.script('export const MODEL = "google-vertex-anthropic/claude-sonnet-5-5";\n')
+        res, _ = self.build(format_spec(name="brand-reader", scripts=[rel]))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"]["mode"], "warn")
+        self.assertTrue(any(w.startswith("model: scripts/points.mjs names the model 'claude-sonnet-5-5'") for w in res["warnings"]), res["warnings"])
+
+    def test_a_script_that_reads_the_model_from_configuration_is_clean(self):
+        rel = self.script('// Brand reader once wrote gemini-2.5-flash here, and it answered 404.\n'
+                          '/* gpt-4o is never named in code */\n'
+                          'const model = env.AGENT_MODEL ?? env.TEXT_MODEL;\n'
+                          'if (!model) throw new Error("AGENT_MODEL is not set");\n')
+        res, _ = self.build(format_spec(scripts=[rel]))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"]["findings"], [])
+
+    def test_the_families_are_named_by_family_and_version(self):
+        hits = [m for m, _ in build.model_names_in(
+            'a("gemini-3.8-flash"); b("gpt-4o-mini"); c("o3-mini"); d("claude-haiku-4-5"); '
+            'e("llama-3.1-70b"); f("mistral-large-2"); g("command-r-plus"); h("openai/gpt-5");')]
+        self.assertEqual(hits, ["gemini-3.8-flash", "gpt-4o-mini", "o3-mini", "claude-haiku-4-5",
+                                "llama-3.1-70b", "mistral-large-2", "command-r-plus", "gpt-5"])
+        for clean in ("Claude on Vertex", "the gemini endpoint", "text-reasoning", "image/png", "gpt", "claude-code"):
+            self.assertEqual(build.model_names_in(f'x("{clean}")'), [], clean)
+
+    def test_a_skill_that_names_a_model_is_a_finding(self):
+        doc = format_spec()
+        doc["jobs"][0]["instructions"] = "Ask gemini-2.5-pro for the points, then file them."
+        res, _ = self.build(doc)
+        self.assertFalse(res["ok"], res)
+        self.assertIn("skills/list-the-points/SKILL.md names the model 'gemini-2.5-pro'", res["error"])
+
+
+class WhereThePiecesAreRead(Harness):
+    """Only the agent's own delivery is read: a pieces.json at the top of the
+    folder, or named by PIECES. One under a test's fixtures is not the
+    agent's and refuses nobody. Quoted keys in a literal piece entry are read."""
+
+    def setUp(self):
+        super().setUp()
+        self._env = os.environ.pop("FORMAT_EXISTING", None)
+
+    def tearDown(self):
+        if self._env is not None:
+            os.environ["FORMAT_EXISTING"] = self._env
+        super().tearDown()
+
+    def test_a_fixtures_pieces_json_is_not_the_agents_delivery(self):
+        d = os.path.join(self.tmp, "test", "fixtures", "delivered", "a-job")
+        os.makedirs(d)
+        with open(os.path.join(d, "pieces.json"), "w", encoding="utf-8") as f:
+            json.dump([{"name": "someone else's piece", "path": "out/x.md"}], f)
+        res, _ = self.build(format_spec())
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["format_rules"]["findings"], [])
+
+    def test_a_quoted_key_in_a_piece_entry_is_read(self):
+        os.makedirs(os.path.join(self.tmp, "scripts"))
+        with open(os.path.join(self.tmp, "scripts", "pieces.mjs"), "w", encoding="utf-8") as f:
+            f.write('export const P = [{ "name": "replay report", "media_type": "application/json" }];\n')
+        res, _ = self.build(format_spec(scripts=["scripts/pieces.mjs"]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("delivers a piece 'replay report'", res["error"])

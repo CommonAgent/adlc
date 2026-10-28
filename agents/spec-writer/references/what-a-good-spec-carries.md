@@ -164,7 +164,8 @@ three cases, and each has its own place:
 
 - A product somebody binds (a database, a mail service, a model): the system
   name and the credential name. The installer binds the address from what the
-  account chose. Nothing in the spec says where it is.
+  account chose. Nothing in the spec says where it is, and for a model nothing
+  says which one: see the next section.
 - A public read that needs no key (a public web page, an open API anybody may
   call): declare it as a system with `"access": "read"`, `"kind": "service"`,
   `"leaves": true` when a caller's material is sent to it, and no credential
@@ -174,6 +175,25 @@ three cases, and each has its own place:
   different address is a different version of the script.
 - An address the caller gives with the job (a page to read): an input of kind
   `url`, never a setting.
+
+### A model is a bound system, never a name
+
+A job that calls a model declares the capability as a system with access
+`trigger`: `text-reasoning` for text, `image-reading` for pictures,
+`speech-to-text` and `text-to-speech` for speech. The system's `purpose`
+says what the job needs of it, such as "reads a whole 200-page document at
+once" for long context. The scripts read the model from configuration,
+`AGENT_MODEL` or `TEXT_MODEL`, through the shared caller, so the install
+binds it and a run config can override it.
+
+    { "name": "text-reasoning", "access": "trigger", "kind": "service",
+      "purpose": "judges which sentences on the page are its key points; needs text only" }
+
+A spec never names a model or a version: not in a setting's default, not in
+an instruction, not in a sentence. Brand reader shipped with
+`gemini-2.5-flash` in a script and answered 404 when Google retired it. The
+package maker warns on a model named in an existing agent's scripts or
+skills and refuses a new agent that names one.
 
 ## What a job takes, in kinds the builder reads
 

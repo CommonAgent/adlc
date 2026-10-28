@@ -141,6 +141,25 @@ Your suite fakes them the way it fakes everything else: every function takes
 and no test touches a network. You do not write a second way to reach a
 product, and you do not read a credential anywhere else in the package.
 
+## A model is a system, read from configuration
+
+A model is reached like any other bound system: the spec declares the
+capability (`text-reasoning` for text, `image-reading` for pictures,
+`speech-to-text` and `text-to-speech` for speech, each with access
+`trigger`), and the script calls it through the shared caller, which reads
+which model from `AGENT_MODEL` (or `TEXT_MODEL`, where the spec's install
+entry names that variable) and refuses when it is empty. The install sets
+it, and a run config can override it for one job.
+
+    const model = trim(env.AGENT_MODEL ?? env.TEXT_MODEL);
+    if (!model) return { ok: false, said: "AGENT_MODEL is not set, so no model is called" };
+
+Never write a model's name or version into a script: not as a default, not
+in a price table, not in a test of your own. Models are retired on somebody
+else's schedule, and a name in a script turns that into a broken agent and a
+rebuild. The package maker warns on one in an agent released before
+2026-10-27 and refuses a new agent that carries one.
+
 ## Refusals are acts
 
 A refusal in the spec is written as a gerund, then why, then what happens

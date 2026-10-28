@@ -395,6 +395,10 @@ def lay_out_folder(found, files):
                   "manifest": manifest_path, "skills": sorted(found["skills"])}
 
 
+# The day the format rules came in (build.py, FORMAT_CUTOVER).
+CUTOVER = "2026-10-27"
+
+
 def input_name(spec_path):
     """The name of the agent an input describes, read before it is built: the
     folder's plugin.json, or the spec's own name. None when neither says."""
@@ -421,9 +425,13 @@ def released_before_format_rules(name, records=None):
     except Exception:  # noqa: BLE001
         return False
     rules = rec.get("format_rules")
-    if not isinstance(rules, dict):
-        return True
-    return rules.get("existing") is True
+    if isinstance(rules, dict):
+        return rules.get("existing") is True
+    # No format_rules: written by a builder from before the rules. It counts
+    # only when it was written before the cut-over too, so a new agent built
+    # on a host that had not yet been given these rules is not grandfathered.
+    at_ = str(rec.get("produced_at") or "")
+    return bool(at_) and at_[:10] < CUTOVER
 
 
 def file_pieces(job_dir, name, version, tgz, rec_path, sha256):

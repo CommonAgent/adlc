@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  GIVEN_BY, checkDraft, checkSpec, conventionHeadings, earlierBareJson, formatProblems, isBareJson,
+  GIVEN_BY, checkDraft, checkSpec, conventionHeadings, earlierBareJson, formatProblems, isBareJson, modelProblems,
 } from "../scripts/check-spec.mjs";
 import { INSTRUCTION, askForSpec } from "../scripts/draft.mjs";
 import { formatsLine, replyText } from "../scripts/ask.mjs";
@@ -153,5 +153,31 @@ test("the builder takes the new agent's draft, and refuses it with a bare JSON o
   bad.jobs[0].outputs[0] = { name: "key points", kind: "application/json", when: "per_task" };
   const refused = checkBuilds({ spec: bad, env });
   assert.equal(refused.ok, false);
-  assert.match(refused.problems.join(" "), /key-points is refused on its formats, because it is a new agent/);
+  assert.match(refused.problems.join(" "), /key-points is refused on its formats and models, because it is a new agent/);
+});
+
+test("the instruction says a model is a bound system and never named", () => {
+  assert.match(INSTRUCTION, /reaches it as a bound system with access "trigger":\n"text-reasoning" for text/);
+  assert.match(INSTRUCTION, /AGENT_MODEL or\nTEXT_MODEL through the shared caller/);
+  assert.match(INSTRUCTION, /Never name a model or a version anywhere in the spec/);
+});
+
+test("a draft that names a model anywhere is a finding, and one that names the capability is not", () => {
+  const named = clone(KEY_POINTS);
+  named.jobs[0].instructions = "Ask gemini-2.5-flash for the points.";
+  named.systems = [{ name: "text-reasoning", access: "trigger", kind: "service", settings: [{ env: "TEXT_MODEL", purpose: "which model", default: "google-vertex-anthropic/claude-sonnet-5-5" }] }];
+  const found = modelProblems(named);
+  assert.equal(found.length, 2, found.join(" | "));
+  assert.match(found.join(" "), /jobs\[0\]\.instructions names the model "gemini-2\.5-flash"/);
+  assert.match(found.join(" "), /names the model "claude-sonnet-5-5"/);
+  assert.ok(checkDraft(named).some((p) => /names the model/.test(p)));
+  const bound = clone(KEY_POINTS);
+  bound.systems = [{ name: "text-reasoning", access: "trigger", kind: "service", purpose: "judges which sentences are key points; text only, a page at a time" }];
+  assert.deepEqual(modelProblems(bound), []);
+});
+
+test("a markdown piece whose convention is a header alone has a convention", () => {
+  const s = clone(KEY_POINTS);
+  s.jobs[0].outputs[0].about = "Markdown: a header `source, read_at`, then the points as bullets.";
+  assert.deepEqual(formatProblems(s), []);
 });

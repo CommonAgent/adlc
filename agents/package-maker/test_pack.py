@@ -769,7 +769,7 @@ class TheFormatCutOver(Harness):
         self.assertEqual(self.dist(), [])
 
     def test_an_agent_this_builder_released_before_the_rules_is_warned_and_packed(self):
-        self.earlier_record("key-points")
+        self.earlier_record("key-points", produced_at="2026-10-24T21:50:43Z")
         res = self.pack(bare_json_spec())
         self.assertEqual(res["act"], "build", res)
         self.assertEqual(res["format_rules"]["mode"], "warn")
@@ -777,6 +777,12 @@ class TheFormatCutOver(Harness):
         rec = self.record(res)
         self.assertEqual(rec["format_rules"]["findings"], res["format_rules"]["findings"])
         self.assertEqual(len(rec["format_rules"]["findings"]), 1)
+
+    def test_a_record_from_an_old_builder_written_after_the_cut_over_is_not_an_earlier_release(self):
+        self.earlier_record("key-points", produced_at="2026-10-28T09:00:00Z")
+        self.assertEqual(self.pack(bare_json_spec())["act"], "refuse")
+        self.earlier_record("key-points")
+        self.assertEqual(self.pack(bare_json_spec())["act"], "refuse", "a record that says nothing of when is no evidence")
 
     def test_an_agent_first_released_under_the_rules_stays_new(self):
         self.earlier_record("key-points", format_rules={"existing": False, "mode": "refuse", "findings": []})

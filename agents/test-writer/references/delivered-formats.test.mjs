@@ -1,7 +1,8 @@
 // Every piece a job delivers is what its declared kind says it is.
 // Written by the test writer into every suite it writes, the same bytes each
 // time; it is the test writer's file and not the package's, so it is never
-// edited here. A new copy comes with the next suite the test writer writes.
+// edited here. The next suite the test writer writes for this package brings
+// its current copy.
 //   node --test test/delivered-formats.test.mjs
 //
 // What is worth pinning. An agent declares a kind for every output, and the
@@ -135,9 +136,17 @@ export function formatProblems(bytes, kind, about = "", what = "the piece") {
     if (/^<(!doctype html|html)\b/i.test(t)) return [`${what} is declared text/markdown and is an HTML page`];
     for (const h of conv.headings) if (!headingPattern(h).test(text)) out.push(`${what} is missing the heading ${h} its convention names`);
     if (conv.header.length) {
+      // The header is front matter, or the lines before the first heading of
+      // the second level, so a title line (# Title) may come first. A field
+      // may be bold or a list item: "source: x", "**Source:** x", "- source: x".
       const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(t);
-      const top = fm ? fm[1] : t.split(/^#/m)[0];
-      for (const f of conv.header) if (!new RegExp(`^\\s*${escape(f)}\\s*:`, "im").test(top)) out.push(`${what} has no ${f}: line in its header`);
+      const top = fm ? fm[1] : t.split(/^#{2,6} /m)[0];
+      for (const f of conv.header) {
+        if (!new RegExp(`^\\s*(?:[-*]\\s+)?(?:\\*\\*|__)?${escape(f)}(?:\\*\\*|__)?\\s*:`, "im").test(top)
+          && !new RegExp(`^\\s*(?:[-*]\\s+)?(?:\\*\\*|__)${escape(f)}\\s*:(?:\\*\\*|__)`, "im").test(top)) {
+          out.push(`${what} has no ${f}: line in its header`);
+        }
+      }
     }
     return out;
   }
@@ -230,6 +239,9 @@ export function checkDelivered(jobDir, { declaration = readDeclaration(), undecl
 export function sampleOf(kind, about) {
   const k = base(kind); const c = conventionOf(about);
   if (k === "text/markdown") {
+    // A Markdown piece whose about sketches no convention has nothing to make
+    // a sample from; it is held only to being Markdown and not JSON or a page.
+    if (!c.headings.length && !c.header.length) return null;
     const head = c.header.length ? `---\n${c.header.map((f) => `${f}: x`).join("\n")}\n---\n\n` : "";
     return head + c.headings.map((h) => `${h.replace(/<[^>]*>/g, "Example")}\n\nA line.\n`).join("\n");
   }

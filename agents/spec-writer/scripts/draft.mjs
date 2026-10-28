@@ -116,6 +116,14 @@ to make specific.
 Where a person might want another format than the default, draft the
 default and say so in "notes"; never decide it for them.
 
+A job that calls a model reaches it as a bound system with access "trigger":
+"text-reasoning" for text, "image-reading" for pictures, "speech-to-text" or
+"text-to-speech" for speech. Its "purpose" says the capability the job needs
+(text, vision, long context). The scripts read the model from AGENT_MODEL or
+TEXT_MODEL through the shared caller, so the install and a run config choose
+it. Never name a model or a version anywhere in the spec: not in a setting's
+default, an instruction or a sentence.
+
 No address goes anywhere in "systems": not in a setting, not in a purpose.
 A product somebody binds is named by its system and credential. A public read
 that needs no key is a system with access "read", kind "service", no

@@ -1060,11 +1060,20 @@ def run_config_declaration(spec):
 #      another, is text/markdown with a convention.
 #   2. A piece the scripts deliver that the spec does not declare, where the
 #      build can see one: a literal piece entry ({name, ..., media_type}) in a
-#      job's pieces script, and the entries of any pieces.json in the agent's
-#      folder or named by PIECES (paths separated by the path separator or a
-#      comma).
+#      job's pieces script, and the entries of a pieces.json at the top of the
+#      agent's folder or named by PIECES (paths separated by the path
+#      separator or a comma). A pieces.json deeper in the folder (a test's
+#      fixture, a leftover out/) is not the agent's delivery and is not read.
+#   3. A literal model name in a job's scripts or skills (gemini-2.5-flash,
+#      claude-sonnet-4-5, gpt-4o and the like). A model is a bound system,
+#      text-reasoning with access trigger: the script reads which model from
+#      configuration (AGENT_MODEL or TEXT_MODEL, through the shared caller),
+#      so the install and a run config choose it, and a model that is retired
+#      is a setting changed and not a package rebuilt. Brand reader shipped
+#      with gemini-2.5-flash written into a script, and it answered 404 when
+#      that model went. Comment lines are not read.
 #
-# THE CUT-OVER. These are findings, and what a finding does depends on whether
+# THE CUT-OVER. All three are findings, and what a finding does depends on whether
 # the agent is new. An agent released before FORMAT_CUTOVER is EXISTING: its
 # findings are warnings, said on stderr and carried in the result, and the
 # package is built as before. Any other agent is NEW and its findings refuse
@@ -1072,7 +1081,7 @@ def run_config_declaration(spec):
 # agents released when the rule came in; the list is never added to), or the
 # caller says so with FORMAT_EXISTING=1, which the pack procedure sets when
 # this builder released the name before the rule existed (an earlier build
-# record that carries no format_rules member). FORMAT_EXISTING=0 treats a
+# record written before FORMAT_CUTOVER that carries no format_rules member). FORMAT_EXISTING=0 treats a
 # listed name as new. To turn the warnings into refusals once the existing
 # agents are fixed, remove each fixed name from the list, or set
 # FORMAT_EXISTING_MODE to "refuse" to do it for all of them at once.
@@ -1124,8 +1133,8 @@ def format_mode(existing):
 # run time (a template string) is not seen, which is what "where the checks
 # can see that" means.
 PIECE_ENTRY_RES = (
-    re.compile(r"\{[^{}]*?\bname\s*:\s*([\"'])([^\"'`$\\\n]+?)\1[^{}]*?\bmedia_type\s*:[^{}]*\}"),
-    re.compile(r"\{[^{}]*?\bmedia_type\s*:[^{}]*?\bname\s*:\s*([\"'])([^\"'`$\\\n]+?)\1[^{}]*\}"),
+    re.compile(r"\{[^{}]*?[\"']?\bname[\"']?\s*:\s*([\"'])([^\"'`$\\\n]+?)\1[^{}]*?[\"']?\bmedia_type[\"']?\s*:[^{}]*\}"),
+    re.compile(r"\{[^{}]*?[\"']?\bmedia_type[\"']?\s*:[^{}]*?[\"']?\bname[\"']?\s*:\s*([\"'])([^\"'`$\\\n]+?)\1[^{}]*\}"),
 )
 
 
@@ -1150,14 +1159,14 @@ def piece_list_names(jobs, src_base):
 
 
 def pieces_json_names(src_base):
-    """(piece name, where) for every entry of a pieces.json in the agent's
-    folder, and of each file PIECES names."""
+    """(piece name, where) for every entry of the pieces.json at the top of
+    the agent's folder, and of each file PIECES names. Only the top: a
+    pieces.json deeper down is a fixture, an input from another agent or a
+    leftover, and reading it would refuse a new agent for a piece it never
+    delivers."""
     paths = [p.strip() for p in re.split("[" + re.escape(os.pathsep) + ",]", os.environ.get("PIECES", "")) if p.strip()]
-    if src_base and os.path.isdir(src_base):
-        for root, dirs, files in os.walk(src_base):
-            dirs[:] = [d for d in dirs if d not in ("node_modules", ".git")]
-            if "pieces.json" in files:
-                paths.append(os.path.join(root, "pieces.json"))
+    if src_base and os.path.isfile(os.path.join(src_base, "pieces.json")):
+        paths.append(os.path.join(src_base, "pieces.json"))
     seen = []
     for p in paths:
         try:
@@ -1187,8 +1196,77 @@ def is_declared_piece(piece, declared):
     return False
 
 
-def format_findings(jobs, src_base):
-    """Every finding of the two format rules, as sentences."""
+# A model named by its own name: the families the platform's agents have
+# called, with a version or a size after the family. A provider prefix
+# (google-vertex-anthropic/, openai/) is read with it.
+MODEL_NAME_RE = re.compile(
+    r"(?<![\w.-])(?:[a-z][a-z0-9-]*/)?("
+    r"gemini-(?:\d[\w.-]*|pro\b[\w.-]*|flash\b[\w.-]*|ultra\b[\w.-]*)"
+    r"|gpt-(?:\d[\w.-]*|4o[\w.-]*)"
+    r"|claude-(?:opus|sonnet|haiku|instant|\d)[\w.-]*"
+    r"|o[134]-(?:mini|preview|pro)[\w.-]*"
+    r"|llama-?\d[\w.-]*"
+    r"|mistral-(?:large|medium|small|tiny)[\w.-]*"
+    r"|command-r[\w.-]*"
+    r")", re.I)
+COMMENT_LINE_RE = re.compile(r"^\s*(//|/\*|\*|#(?!#))")
+
+
+def model_names_in(text, markdown=False):
+    """(model, line number) for every model named in a file's text, comment
+    lines left out (a script's // and /* lines; nothing is left out of a
+    SKILL.md, which is read whole by a harness)."""
+    out = []
+    for n, line in enumerate(str(text).splitlines(), 1):
+        if not markdown and COMMENT_LINE_RE.match(line):
+            continue
+        for m in MODEL_NAME_RE.finditer(line):
+            out.append((m.group(1), n))
+    return out
+
+
+def model_findings(jobs, src_base, authored=None):
+    """A sentence for every literal model name in a job's scripts, its
+    SKILL.md (an agent folder's own) or its instructions (a spec's)."""
+    found = []
+    told = set()
+
+    def say(where, hits):
+        for model, n in hits:
+            if (where, model.lower()) in told:
+                continue
+            told.add((where, model.lower()))
+            found.append(f"{where} names the model {model!r} (line {n}). A model is a bound system, text-reasoning "
+                         f"with access trigger: read it from AGENT_MODEL or TEXT_MODEL through the shared caller so the "
+                         f"install and a run config choose it, and say in the spec the capability the job needs "
+                         f"(text, vision, long context), never a model")
+    for j in jobs:
+        for rel in j.get("scripts") or []:
+            try:
+                text = open(os.path.normpath(os.path.join(src_base, rel)), encoding="utf-8").read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            say(str(rel).replace(os.sep, "/"), model_names_in(text))
+        md = None
+        if authored and j["slug"] in (authored.get("skills") or {}):
+            try:
+                md = open(os.path.join(authored["skills"][j["slug"]], "SKILL.md"), encoding="utf-8").read()
+            except OSError:
+                md = None
+        elif isinstance(j.get("instructions"), str):
+            md = j["instructions"]
+        elif isinstance(j.get("instructions"), dict) and j["instructions"].get("file"):
+            try:
+                md = open(os.path.normpath(os.path.join(src_base, j["instructions"]["file"])), encoding="utf-8").read()
+            except OSError:
+                md = None
+        if md:
+            say(f"skills/{j['slug']}/SKILL.md", model_names_in(md, markdown=True))
+    return found
+
+
+def format_findings(jobs, src_base, authored=None):
+    """Every finding of the three rules, as sentences."""
     found = []
     for j in jobs:
         for side, word in (("inputs", "input"), ("outputs", "output")):
@@ -1208,24 +1286,24 @@ def format_findings(jobs, src_base):
         told.add((piece.lower(), where))
         found.append(f"{where} delivers a piece {piece!r} that no job declares as an output; declare it, with its kind, "
                      f"or stop delivering it")
-    return found
+    return found + model_findings(jobs, src_base, authored)
 
 
-def apply_format_rules(name, jobs, src_base):
+def apply_format_rules(name, jobs, src_base, authored=None):
     """Warn or refuse on the format findings, by the cut-over, and return what
     the result and the build record carry about it."""
     existing = format_existing(name)
     mode = format_mode(existing)
     if mode not in FORMAT_MODES:
         fail(f"FORMAT_EXISTING_MODE is warn or refuse; bad: {mode!r}")
-    found = format_findings(jobs, src_base)
+    found = format_findings(jobs, src_base, authored)
     if found and mode == "refuse":
         why = (f"it is a new agent, and the format rules refuse a new agent's findings since {FORMAT_CUTOVER}"
                if not existing else "the format rules now refuse an existing agent's findings too")
-        fail(f"{name} is refused on its formats, because {why}: " + "; ".join(found)
+        fail(f"{name} is refused on its formats and models, because {why}: " + "; ".join(found)
              + ". An agent released before the cut-over is warned instead; FORMAT_EXISTING=1 says so for one this builder does not list")
     for f in found:
-        warn(f"format: {f}")
+        warn(f"{'model' if ' names the model ' in f else 'format'}: {f}")
     return {"existing": existing, "mode": mode, "since": FORMAT_CUTOVER, "findings": found}
 
 
@@ -2407,7 +2485,7 @@ def build(spec, src_base, out_dir, authored):
     where_it_is_read(spec)     # the license, the page and the repository
     # The format rules: warned for an agent released before them, refused for
     # a new one, before any file is written.
-    formats = apply_format_rules(name, jobs, src_base)
+    formats = apply_format_rules(name, jobs, src_base, authored)
     if spec.get("kind") in CONTAINER_KINDS:
         # Checked, and nothing written: its code is in its own repository.
         out({**container_spec(spec, name, version, jobs), "format_rules": formats,

@@ -48,6 +48,10 @@ Every input says who gives it, with `given_by`: `person`, `agent` or `either`. A
 
 These are drafted, not asked: the format is not one of the three that are never invented, so the default goes in and the reply points at it. Where a person might reasonably want something other than the default, the draft carries the default and the reply offers the choice; it is never settled on their behalf. A revision of a released agent keeps a piece it already sends as bare `application/json` exactly as it is, because changing what an agent sends is its own decision, and the reply names that piece as one to make specific.
 
+## A model is a bound system, never a name
+
+A job that calls a model reaches it the way it reaches any product somebody binds: as a system. Text is `text-reasoning`, pictures `image-reading`, speech `speech-to-text` or `text-to-speech`, each with access `trigger`. The scripts read which model from configuration, `AGENT_MODEL` or `TEXT_MODEL`, through the shared caller, so the install chooses it and a run config can change it. The spec says the capability the job needs, in the system's purpose: text, vision, long context, speech. It never names a model or a version, in a setting's default, an instruction, a sentence or anywhere else. Models are retired on somebody else's schedule; Brand reader shipped with `gemini-2.5-flash` written into a script and answered 404 when that model went. A model named in a package is a rebuild waiting to happen, and the package maker refuses a new agent whose scripts or skills name one.
+
 ## What was missing
 
 A job that went ahead without something it takes says so in the reply, near the top, before the detail of what it produced. This is not a failure and not an apology. It is the one thing a reader cannot work out from what they were sent, because work done on half the material looks exactly like work done on all of it.

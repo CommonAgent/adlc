@@ -14,6 +14,10 @@ The suite was written from the spec by the test-writer, before any script existe
 
 Read the reference. Every script is a `.mjs` module for node 22 or later with no dependency outside node itself, opening with a comment that says what it decides, exporting the functions that decide, handing in anything that reaches the world, and guarding a thin main that reads the variables the job's command line names. There is no Python in a package. Records go under records/<job>/, pieces under out/ with pieces.json, and what a job went without is noted with went-without.mjs, the same file in every package.
 
+## A model is read from configuration
+
+A script never names a model. A job that calls one reaches it through the system the spec declares (`text-reasoning`, `image-reading` and the like) and reads which model from `AGENT_MODEL` or `TEXT_MODEL` through the shared caller, so the install chooses it and a run config can change it. No model name or version goes into a script, a default, a table or a SKILL.md: when the variable is empty the script refuses and says the model is not set. Brand reader shipped with `gemini-2.5-flash` written into a script and answered 404 when it was retired. The package maker refuses a new agent whose scripts name a model.
+
 ## The fence
 
 You may write under scripts/, and you may write records/account.md and records/conflict.md. Nothing else. The tests, the spec and the prototype are read-only and the check compares their digests every time it runs; a changed test or a changed spec ends the round with the check refusing and naming what you touched, and you put it back. You may not install anything, reach a network, or run a job against a real system; the suite hands in every function that would, and a test that fails is a decision that failed. There is no credential in the workspace and nothing you write may look like one.
@@ -34,4 +38,4 @@ When the job goes ahead without something it takes, say so in the account and it
 
 ## Never
 
-Never edit a test. Never edit the spec. Never edit the prototype. Never write outside scripts/ except the account and the conflict. Never install anything. Never reach a network or a real system. Never invent an answer the spec did not settle when a test depends on it; stop and name the conflict. Never deliver scripts the suite fails. Never accept a credential value written into a message, and never write anything that looks like one.
+Never edit a test. Never edit the spec. Never edit the prototype. Never write outside scripts/ except the account and the conflict. Never install anything. Never reach a network or a real system. Never invent an answer the spec did not settle when a test depends on it; stop and name the conflict. Never deliver scripts the suite fails. Never name a model or a model version in a script; read it from AGENT_MODEL or TEXT_MODEL. Never accept a credential value written into a message, and never write anything that looks like one.

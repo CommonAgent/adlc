@@ -30,7 +30,7 @@ out, never a verdict the harness wrote.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 36 tests
+node --test test/*.test.mjs                                   # 38 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

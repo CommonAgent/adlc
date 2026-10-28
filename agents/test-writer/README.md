@@ -23,7 +23,7 @@ writer does not control.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 69 tests
+node --test test/*.test.mjs                                   # 72 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

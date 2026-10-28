@@ -21,12 +21,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FORMAT_TEST, NO_FORMAT_CHECK, askForSuite, callsFormatCheck, declaresOutputs, formatTestAt, staticFindings, withFormatTest,
+  FORMAT_TEST, NO_FORMAT_CHECK, askForSuite, refreshFormatTest, callsFormatCheck, declaresOutputs, formatTestAt, staticFindings, withFormatTest,
   INSTRUCTION,
 } from "../scripts/write-suite.mjs";
 import { provingRuns, standInRun } from "../scripts/check-suite.mjs";
 import { declaredOf } from "../scripts/declared.mjs";
-import { checkDelivered, conventionOf, formatProblems } from "../references/delivered-formats.test.mjs";
+import { checkDelivered, conventionOf, formatProblems, sampleOf } from "../references/delivered-formats.test.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MASTER = join(HERE, "..", "references", "delivered-formats.test.mjs");
@@ -178,4 +178,29 @@ test("the checker reads pieces.json, the media type it lists, and the convention
   });
   assert.deepEqual(conventionOf(ABOUT), { headings: ["## Key points"], header: ["source"], shape: null });
   assert.deepEqual(formatProblems('{"a":1}', "application/vnd.agentmesh.x+json", "`{a, b?}`"), []);
+});
+
+
+test("a suite being added to gets the current check, and keeps one that is already the same bytes", () => {
+  const other = { path: "test/a.test.mjs", text: "x" };
+  const old = { path: FORMAT_TEST, text: "an older copy" };
+  const r = refreshFormatTest([other, old], FORMAT_TEXT);
+  assert.deepEqual(r.existing, [other]);
+  assert.deepEqual(r.generated, [{ path: FORMAT_TEST, text: FORMAT_TEXT }]);
+  const same = { path: FORMAT_TEST, text: FORMAT_TEXT };
+  assert.deepEqual(refreshFormatTest([other, same], FORMAT_TEXT), { existing: [other, same], generated: [] });
+  assert.deepEqual(refreshFormatTest([other], FORMAT_TEXT).generated.map((f) => f.path), [FORMAT_TEST]);
+});
+
+test("a header may follow a title line and be written bold or as a list item", () => {
+  const about = "Markdown: a header `source, read_at`, then `## Key points`.";
+  assert.deepEqual(formatProblems("# A page\n\nsource: x\n**Read_at:** y\n\n## Key points\n- a\n", "text/markdown", about), []);
+  assert.deepEqual(formatProblems("# A page\n\n- **source:** x\n- read_at: y\n\n## Key points\n", "text/markdown", about), []);
+  assert.match(formatProblems("# A page\n\n## Key points\nsource: x\n", "text/markdown", about).join(" "), /no source: line/);
+});
+
+test("a markdown output that sketches no convention is held only to being markdown", () => {
+  assert.equal(sampleOf("text/markdown", "plain notes a person reads"), null);
+  assert.deepEqual(formatProblems("Some notes.\n", "text/markdown", "plain notes a person reads"), []);
+  assert.match(formatProblems('{"notes":1}', "text/markdown", "plain notes").join(" "), /is JSON/);
 });

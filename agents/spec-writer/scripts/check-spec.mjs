@@ -193,7 +193,7 @@ export function formatProblems(spec, { earlier = new Set() } = {}) {
         if (isBareJson(e?.kind) && !earlier.has(`${side}:${trim(e?.name)}`)) {
           out.push(`job ${slug}: ${word} ${name} is bare application/json. Content one agent hands another, or a person reviews, is text/markdown with a convention sketched in its about; JSON is only for exact typed data code consumes and no person reads, and then a kind that says what it is, such as application/vnd.agentmesh.<name>+json`);
         }
-        if (isMarkdown(e?.kind) && !conventionHeadings(e?.about).length) {
+        if (isMarkdown(e?.kind) && !conventionHeadings(e?.about).length && !/(?:header|front matter)[^`]{0,40}`[^`#]+`/i.test(String(e?.about ?? ""))) {
           out.push(`job ${slug}: ${word} ${name} is text/markdown and its about sketches no convention; say the short header's fields, then the fixed headings, each in backticks as \`## Heading\`, so the next reader and the test of it know what to find`);
         }
         if (side === "inputs" && !GIVEN_BY.includes(e?.given_by)) {
@@ -205,10 +205,32 @@ export function formatProblems(spec, { earlier = new Set() } = {}) {
   return out;
 }
 
+/** A model named by its own name (the families the platform's agents have
+ *  called, with a version or size after the family), the same pattern the
+ *  package maker refuses in a new agent's scripts and skills. */
+export const MODEL_NAME_RE = /(?<![\w.-])(?:[a-z][a-z0-9-]*\/)?(gemini-(?:\d[\w.-]*|pro\b[\w.-]*|flash\b[\w.-]*|ultra\b[\w.-]*)|gpt-(?:\d[\w.-]*|4o[\w.-]*)|claude-(?:opus|sonnet|haiku|instant|\d)[\w.-]*|o[134]-(?:mini|preview|pro)[\w.-]*|llama-?\d[\w.-]*|mistral-(?:large|medium|small|tiny)[\w.-]*|command-r[\w.-]*)/gi;
+
+/** Every model the draft names, anywhere in it, with where. A model is a
+ *  bound system (text-reasoning, access trigger) and the spec says the
+ *  capability, never the model (rules.md, "A model is a bound system"). */
+export function modelProblems(spec) {
+  const out = [];
+  const told = new Set();
+  for (const [where, text] of stringsIn(spec, "")) {
+    for (const m of String(text).matchAll(MODEL_NAME_RE)) {
+      const key = `${where}:${m[1].toLowerCase()}`;
+      if (told.has(key)) continue;
+      told.add(key);
+      out.push(`${where || "the spec"} names the model ${JSON.stringify(m[1])}; a model is a bound system (text-reasoning, image-reading and the like, access trigger) that the scripts read from AGENT_MODEL or TEXT_MODEL, so say the capability the job needs in the system's purpose and never a model or a version`);
+    }
+  }
+  return out;
+}
+
 /** What the drafting step holds a draft to: what a good spec carries, and
  *  the format rules. checkSpec alone is the first, which is what the specs
  *  that shipped before the format rules are measured by. */
-export const checkDraft = (spec, opts = {}) => [...checkSpec(spec), ...formatProblems(spec, opts)];
+export const checkDraft = (spec, opts = {}) => [...checkSpec(spec), ...formatProblems(spec, opts), ...modelProblems(spec)];
 
 /** The systems the platform brokers: the agent asks the mesh for a short-lived
  *  grant each time, so the spec names no credential, variable or setting. */

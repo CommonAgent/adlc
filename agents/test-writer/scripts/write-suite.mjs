@@ -336,6 +336,15 @@ export function withFormatTest(files = [], text = "") {
   return [...files, { path: FORMAT_TEST, text }];
 }
 
+/** What a suite being added to keeps, and the format check it is given: the
+ *  current copy, unless it already carries those same bytes. An older copy
+ *  is the test writer's own file and is replaced, not kept. */
+export function refreshFormatTest(existing = [], text = "") {
+  const kept = existing.find((f) => f.path === FORMAT_TEST);
+  if (kept && kept.text === text) return { existing, generated: [] };
+  return { existing: existing.filter((f) => f !== kept), generated: [{ path: FORMAT_TEST, text }] };
+}
+
 /** Whether a declaration has any output for the format check to hold. */
 export const declaresOutputs = (declared) => (declared?.jobs ?? []).some((j) => (j.outputs ?? []).length);
 
@@ -567,9 +576,12 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       formatTest,
       env,
     });
-    // The format check goes in beside what the model wrote, unless the suite
-    // being added to has it already.
-    const generated = existing.some((f) => f.path === FORMAT_TEST) ? [] : [{ path: FORMAT_TEST, text: formatTest }];
+    // The format check goes in beside what the model wrote. It is the test
+    // writer's own file, so a suite being added to that carries an older copy
+    // gets the current one; a copy that is the same bytes is left as it is.
+    const refreshed = refreshFormatTest(existing, formatTest);
+    existing.splice(0, existing.length, ...refreshed.existing);
+    const generated = refreshed.generated;
     out.files = [...out.files.filter((f) => f.path !== FORMAT_TEST), ...generated];
     // The kept files go into the work folder beside the new ones, so the
     // check runs the suite as it will stand; only the new ones are delivered.
