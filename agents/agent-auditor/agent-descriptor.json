@@ -1,0 +1,195 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "does": "Audits one built agent version, named by its handle and its version or package digest, against an audit checklist: the standards/audit-checklist.md it carries, or one it is given. For each lifecycle stage it finds the stage's record and checks it is present, signed by the stage's holder and bound to the package digest. It runs every checklist entry through the test registered for it, reusing the package maker's own checks, the platform's rule against model names in code, the test writer's delivered-formats check and the registry's signed Descriptor, and reads the agent as it runs on dev and prod. A check with no registered test is reported as not checked, never skipped. It files each finding as a debt in the platform's ledger, routed to the stage that fixes it, and hands back one signed audit report, which it files where the Deployment Manager and the Catalog read it by package digest. It calls no model and approves nothing. It holds the audit role for the Prove phase of the Agent Development Lifecycle.",
+  "offerings": [
+    {
+      "id": "audit-an-agent",
+      "name": "Audit an agent version",
+      "does": "Audits one agent version against the audit checklist and hands back the signed audit report: one line per stage record, every rule check with its evidence, each finding with the stage that fixes it and its debt, and what was not checked and why.",
+      "inputs": [
+        {
+          "name": "agent",
+          "kind": "text",
+          "required": true,
+          "given_by": "either",
+          "about": "The agent's handle, on a line of its own in the message: `agent: <handle>`."
+        },
+        {
+          "name": "version",
+          "kind": "text",
+          "required": false,
+          "given_by": "either",
+          "about": "Which version to audit, on a line of its own: `version: <x.y.z>` or `package_digest: sha256:<64 hex>`. Without either, the version the agent serves on dev."
+        },
+        {
+          "name": "checklist",
+          "kind": "text/markdown",
+          "required": false,
+          "given_by": "either",
+          "about": "An audit checklist to use in place of the one carried (standards/audit-checklist.md at its pinned digest): a front matter header `schema, name, owner, layer, approved_by, approved_at`, then each check a fenced YAML block `id, says, why, kind, check, fixed-by, level, applies, evidence` with its explanation after it."
+        },
+        {
+          "name": "stage records",
+          "kind": "application/vnd.agentmesh.job-manifest+json",
+          "required": false,
+          "given_by": "either",
+          "about": "The signed delivery manifests the lifecycle's stages left for this version, one file each: `{format, agent, pieces, sig}` (job-manifest-v1). The platform keeps no store of these by package, so a stage's record that is not attached is missing."
+        },
+        {
+          "name": "signed records",
+          "kind": "application/vnd.agentmesh.signed-record+json",
+          "required": false,
+          "given_by": "either",
+          "about": "A build record, deployment record or conformance verdict, when the platform's own copy is not to be read: `{record, role, act, package, produced_at, by, signatures}`."
+        },
+        {
+          "name": "package",
+          "kind": "application/gzip",
+          "required": false,
+          "given_by": "either",
+          "about": "The package tarball, when it is not to be fetched from the deploy request that filed it."
+        },
+        {
+          "name": "run records",
+          "kind": "application/vnd.agentmesh.run-record+json",
+          "required": false,
+          "given_by": "either",
+          "about": "Records of runs that were given a standing asset, each citing what it used: `{run_record, standing_assets: [{schema, version_digest, layer}]}`."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audit report",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "The signed audit report: a YAML header `audit_report, agent, version, package_digest, checklist, checklist_digest, verdict, audited_at, expires_at, signed_by, signature`, then `## Stage records`, `## Rule checks`, `## Findings` and `## Not checked`. The verdict is pass, pass_with_findings or fail."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-request",
+          "name": "Read the request",
+          "does": "Reads which agent and version to audit and sorts the attached files, then reads the agent on dev and prod, the deploy queue's signed records and the package.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-stage-records",
+          "name": "Check the stage records",
+          "does": "Gives one line per lifecycle stage: whether its record is present, signed by the stage's holder and bound to the package digest, or missing, unsigned or stale.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "run-the-checks",
+          "name": "Run the checks",
+          "does": "Runs every checklist entry through its registered test and reports pass or fail with the evidence, or not checked with the reason.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "file-the-findings",
+          "name": "File the findings",
+          "does": "Files each finding in the platform's ledger as a debt against the agent, owed to its owner and naming the stage that fixes it, holding back promote when it refuses, and never files the same one twice.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-report",
+          "name": "Write the report",
+          "does": "Writes and signs the audit report, files it where the gates read it by package digest, and writes the reply.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ],
+      "revisions": {
+        "included": {
+          "count": 0,
+          "window_days": 1
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
+    }
+  ],
+  "refusals": "Approving, deploying or listing an agent. The gates read the report; asked to approve, the reply says no and the audit is delivered as it stands.\nChanging the agent it audits, its records or its deploys. It reads them, files debts and its report, and nothing else.\nSkipping a check. A checklist entry whose test is not registered, or could not run, is reported under Not checked with the reason.\nCalling a record present that is not signed by its stage's holder and bound to the package digest. Such a record is reported missing, unsigned or stale.\nFiling the same debt twice. A finding already in the ledger for the same package is reported by its number.\nReading anything a message names other than the agent and its version. It reads the attached files and the platform's own doors.\nCalling a model. The same agent, records and checklist give the same findings.",
+  "escalates": [
+    "The decision to deploy to prod or list the agent. The Deployment Manager and the Catalog decide from the report, and a person decides past them."
+  ],
+  "records": [
+    {
+      "name": "the findings and what the ledger said, per job: each finding, owed to whom, and its number or why it was not filed; and where the report was filed",
+      "when": "per_task",
+      "file": "*/filed.json"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "the-platform",
+      "access": "read",
+      "needs": "to read the agent's storefront, its stored Descriptor, its AgentDoc and its conformance verdict on dev and prod, the deploy queue's signed build and deployment records, and the package bytes, and to file the signed report where the gates read it"
+    },
+    {
+      "name": "the-ledger",
+      "access": "write",
+      "needs": "to file each finding as a debt against the agent, owed to its owner, and to read what is already filed so nothing is filed twice"
+    },
+    {
+      "name": "the-signing-key",
+      "access": "read",
+      "needs": "to sign the audit report with the auditor's own key, which the gates check"
+    }
+  ],
+  "can_use": [
+    {
+      "schema": "https://schemas.agentmesh.ai/audit-checklist/v1",
+      "reads": [
+        "checks",
+        "approved_by",
+        "approved_at"
+      ],
+      "required": false,
+      "does": "Every check in it is run, at its level, with its applies dates, and the report cites its digest.",
+      "without": "Uses the audit checklist it carries, standards/audit-checklist.md at its pinned digest, and the report cites that digest."
+    }
+  ]
+}
