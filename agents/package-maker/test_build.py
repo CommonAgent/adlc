@@ -414,8 +414,10 @@ class WhatItCanBeTold(Harness):
         self.refused(self.told([{"schema": self.SHAPE["schema"]}]),
                      "reads is a non-empty list of field paths")
 
-    def test_an_empty_list_is_refused_rather_than_read_as_silence(self):
-        self.refused(self.told([]), "leave it out")
+    def test_an_empty_list_is_carried_as_a_statement_that_it_reads_none(self):
+        res, _ = self.build(self.told([]))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(self.descriptor(res)["can_use"], [])
 
     def test_a_shape_named_twice_and_a_field_listed_twice_are_refused(self):
         self.refused(self.told([self.SHAPE, dict(self.SHAPE, reads=["palette.accent"])]),

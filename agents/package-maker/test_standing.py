@@ -137,6 +137,14 @@ class APersonFacingOutputWithNoLibrary(Harness):
             self.assertTrue(res["ok"], res)
             self.assertEqual(len(res["standing_rules"]["warnings"]), 1, kind)
 
+    def test_an_empty_can_use_says_it_reads_none_and_is_not_warned(self):
+        res, err = self.build(announcement_spec(can_use=[]))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["standing_rules"]["warnings"], [])
+        self.assertNotIn("declares no can_use", err)
+        with open(os.path.join(res["path"], "agent-descriptor.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["can_use"], [])
+
     def test_output_that_only_code_reads_is_not_warned(self):
         res, _ = self.build(announcement_spec(kind="application/vnd.agentmesh.points+json"))
         self.assertTrue(res["ok"], res)

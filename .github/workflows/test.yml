@@ -43,7 +43,7 @@ jobs:
         run: |
           cd agents/package-maker
           node --test connection.test.mjs request.test.mjs
-          python3 -m unittest test_folder test_standing test_options
+          python3 -m unittest test_folder test_standing test_options test_person
 
       - name: Conformance checker
         run: node --test agents/conformance-checker/test/*.test.mjs
