@@ -185,7 +185,13 @@ class Built(Harness):
         self.assertEqual([s["id"] for s in declared["steps"]],
                          ["write-the-story", "read-the-brand", "lay-out-the-scenes", "record-the-narration",
                           "check-the-fit", "stage-a-draft"])
-        self.assertNotIn("revisions", by_id["check-the-fit"])
+        # The checklist now wants revisions on every offering (revisions-declared),
+        # so a step such as check-the-fit may carry its own; when it does, it is a
+        # flat policy and never priced by steps of its own.
+        fit = by_id["check-the-fit"].get("revisions")
+        if fit is not None:
+            self.assertIn("flat", fit)
+            self.assertNotIn("steps", fit)
 
     def test_a_step_may_not_carry_revisions(self):
         self.refused(spec(offered=False), "revisions belong to an offered job")
