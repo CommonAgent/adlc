@@ -48,6 +48,19 @@ class OptionsAreSettings(Harness):
         self.assertFalse(res["ok"], res)
         self.assertIn("input 'palette' is brand or library material; declare it as a can_use standing asset", res["error"])
 
+    def test_brand_material_with_a_kind_of_its_own_is_what_the_job_is_about(self):
+        # menu-reader and store-reader take the brand site's read as `brand`,
+        # under a vendor kind: that is the material, not library material.
+        for kind in ("application/vnd.agentmesh.brand-site+json", "application/pdf", "text/markdown"):
+            res, _ = self.build(with_inputs({"name": "brand", "kind": kind}), out=kind.replace("/", "-").replace("+", "-"))
+            self.assertTrue(res["ok"], (kind, res))
+            self.assertEqual(res["option_rules"]["findings"], [], kind)
+
+    def test_brand_material_as_a_plain_value_is_still_library_material(self):
+        res, _ = self.build(with_inputs({"name": "brand", "kind": "text"}))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("input 'brand' is brand or library material", res["error"])
+
     def test_an_existing_agent_is_warned_and_built(self):
         res, err = self.build(with_inputs({"name": "how it sounds", "kind": "text"}), env={"FORMAT_EXISTING": "1"})
         self.assertTrue(res["ok"], res)
