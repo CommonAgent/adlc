@@ -56,7 +56,7 @@ test("the checklist covers the checks the lifecycle plan names", () => {
   const ids = new Set(checksOf(read("audit-checklist.md")).map((p) => Object.fromEntries(p).id));
   for (const id of ["descriptor-stored-signed", "descriptor-person-members", "specific-kinds", "people-read-markdown",
     "no-model-names", "revisions-declared", "can-use-known-schema", "can-use-without", "person-facing-declares-library",
-    "reads-standing-assets", "present-dev-and-prod", "stage-record-package"]) {
+    "reads-standing-assets", "present-dev-and-prod", "stage-record-package", "options-are-settings", "settings-declared-fully"]) {
     assert.ok(ids.has(id), `no check ${id}`);
   }
 });
@@ -65,7 +65,7 @@ test("the checklist covers the checks the lifecycle plan names", () => {
 // otherwise is reported "not checked" until the auditor registers it, and
 // each one is listed for the auditor in NEW_CHECKS below, never silently.
 const REGISTERED = new Set(["package-maker-format-rules", "no-model-literals", "can-use-declared", "descriptor-floor",
-  "descriptor-signed", "descriptor-matches-package", "versions-dev-prod", "registered",
+  "descriptor-signed", "descriptor-matches-package", "versions-dev-prod", "registered", "package-maker-option-rules",
   ...["requirements", "architecture", "design", "impact", "source", "test", "code", "review", "security", "package",
     "build-record", "descriptor", "deployment-record", "conformance"].map((a) => `stage-record:${a}`)]);
 const NEW_CHECKS = new Set(["descriptor-person-members", "delivered-formats", "revisions-declared", "standing-assets-cited",

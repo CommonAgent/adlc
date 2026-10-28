@@ -215,6 +215,45 @@ The package maker checks the shape of a policy that is given
 (`revisions_policy` in agents/package-maker/build.py) but does not require
 one; this check is about presence.
 
+## Inputs and settings
+
+```yaml
+id: options-are-settings
+says: Inputs are only the material the job is about; an input that only shapes how the job runs is a run-config setting, and brand or palette material is a can_use standing asset.
+why: A voice, a tone, a length or a palette declared as an input is drawn as a free-text box on a person's page, with no default and no choices; Explainer maker declared Voice, How it sounds, Target length and Palette so.
+kind: design-time
+check: package-maker-option-rules
+fixed-by: design
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: each offered job's input that names an option or library material, by its job and name
+```
+
+An option is anything with a fixed set of values or a default: a voice, a
+tone, a length, a style, a format choice. It belongs in `run_config.settings`
+with a label, an about, a default and its allowed values, so a page draws a
+choice. Brand, palette, style-guide and template material is a `can_use`
+entry (see Standing assets). The package maker's option rules
+(`option_findings` in agents/package-maker/build.py) read the offered jobs'
+input names; the build record carries them under `option_rules`.
+
+```yaml
+id: settings-declared-fully
+says: Every run-config setting declares a label, an about and a default, its allowed values whenever the value has a natural set of choices, a label for each allowed value, and for a number its min, max and step.
+why: A setting without its choices and their labels is decided by whoever types into it; every option is decided at design time and never left open.
+kind: design-time
+check: package-maker-option-rules
+fixed-by: design
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: each setting and the members it does not declare
+```
+
+The members are Common Agent Section 6.13's (`label`, `about`,
+`value_labels`), proposed, and a numeric setting's range (`min`, `max`,
+`step`). A setting whose name says voice, tone, length, format and the like,
+or a rule, has a natural set of choices.
+
 ## Standing assets
 
 ```yaml

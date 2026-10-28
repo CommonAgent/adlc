@@ -33,7 +33,7 @@ export function findPackageMaker(env = process.env) {
   return tries.map((p) => resolve(p)).find((p) => existsSync(p)) ?? null;
 }
 
-/** {ran, how, format_rules, standing_rules, why}. */
+/** {ran, how, format_rules, standing_rules, option_rules, why}. */
 export function runPackageMaker(pkg, { work, env = process.env } = {}) {
   if (!pkg) return { ran: false, why: "the package's bytes were not read" };
   const build = findPackageMaker(env);
@@ -55,8 +55,8 @@ export function runPackageMaker(pkg, { work, env = process.env } = {}) {
     let out = null;
     try { out = JSON.parse(last); } catch { out = null; }
     if (!out) return { ran: false, why: `the package maker printed no result (${trim(p.stderr).split(/\r?\n/).pop() || `exit ${p.status}`})` };
-    if (!out.ok) return { ran: true, ok: false, how: `build.py over the package, which refused it`, why: trim(out.error), format_rules: { findings: [trim(out.error)] }, standing_rules: null };
-    return { ran: true, ok: true, how: "build.py over the package", format_rules: out.format_rules ?? null, standing_rules: out.standing_rules ?? null };
+    if (!out.ok) return { ran: true, ok: false, how: `build.py over the package, which refused it`, why: trim(out.error), format_rules: { findings: [trim(out.error)] }, standing_rules: null, option_rules: null };
+    return { ran: true, ok: true, how: "build.py over the package", format_rules: out.format_rules ?? null, standing_rules: out.standing_rules ?? null, option_rules: out.option_rules ?? null };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
