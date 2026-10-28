@@ -1,0 +1,48 @@
+{
+  "standing_asset_schemas": "v1",
+  "about": "The kinds of standing asset a Builder accepts in a can_use entry, each named by its schema URL with the version in the URL. The package maker refuses (or, for an agent released before the rule, warns about) a can_use entry whose schema is not listed here. A kind is added by changing this list, which is a new version of it, and every Builder that reads it re-pins its digest. 'published' says where the shape is written down today; a kind whose shape is not yet published can be declared, and an agent reading it reads only the fields it lists in reads.",
+  "schemas": [
+    {
+      "schema": "https://schemas.agentmesh.ai/brand/v1",
+      "kind": "brand profile",
+      "for": "visual output: pages, images, video, slides",
+      "published": "AgentMesh schemas/brand/v1/schema.json"
+    },
+    {
+      "schema": "https://schemas.agentmesh.ai/style-guide/v1",
+      "kind": "style guide",
+      "for": "written copy: voice, tone, spelling and the words to use and avoid",
+      "published": null
+    },
+    {
+      "schema": "https://schemas.agentmesh.ai/glossary/v1",
+      "kind": "glossary",
+      "for": "written copy: the organization's own terms and what each means",
+      "published": null
+    },
+    {
+      "schema": "https://schemas.agentmesh.ai/media-templates/v1",
+      "kind": "media templates",
+      "for": "media: title and end cards, slide masters, page and document templates",
+      "published": null
+    },
+    {
+      "schema": "https://schemas.agentmesh.ai/stack/v1",
+      "kind": "the organization's stack",
+      "for": "build: the product the organization binds to each system, per environment",
+      "published": "adlc agents/solution-architect/references/house-stack.json (house_stack v1)"
+    },
+    {
+      "schema": "https://schemas.agentmesh.ai/architecture-standard/v1",
+      "kind": "architecture standard",
+      "for": "build: the rules the Architecture and Design stage holds an agent to",
+      "published": "adlc standards/architecture-standard.md"
+    },
+    {
+      "schema": "https://schemas.agentmesh.ai/audit-checklist/v1",
+      "kind": "audit checklist",
+      "for": "build: the checks the auditor runs over an agent version",
+      "published": "adlc standards/audit-checklist.md"
+    }
+  ]
+}
