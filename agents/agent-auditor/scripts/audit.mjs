@@ -82,7 +82,10 @@ export async function audit({ asked, attached, checklist, dev, prod, files = new
   const notChecked = [];
   for (const entry of checklist.checks) {
     const r = runCheck(entry, ctx);
-    const lv = levelFor(entry, { firstReleased: facts.firstReleased, now });
+    let lv = levelFor(entry, { firstReleased: facts.firstReleased, now });
+    // A result that says it is at most a warning (conformance-result's
+    // inconclusive) never refuses, whatever the check's level.
+    if (r.at_most === "warn" && lv.level === "refuse") lv = { level: "warn", why: "nothing was found broken, only left unjudged, so this is a warning at most" };
     const row = { ...entry, ...r, level_applied: lv.level };
     results.push(row);
     // Info checks are shown in the report and never counted or filed.

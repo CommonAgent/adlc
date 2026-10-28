@@ -503,6 +503,26 @@ keeps the newest one for the agent (`agent-eval-record-v1`). A verdict for an
 earlier package or image is stale.
 
 ```yaml
+id: conformance-result
+says: The conformance verdict for this version says the agent conforms to its own declarations.
+why: A verdict on record proves the agent was checked, not that it passed; an agent that answers a request it declares it refuses, or leaves no record it promises, breaks the promise its Descriptor makes to everyone who reads it.
+kind: run-time
+check: conformance-result
+fixed-by: code
+level: warn
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the verdict, and each case that failed or could not be judged, with the declaration it came from and what the agent did
+```
+
+What the verdict says, read from the same verdict stage-record-conformance
+finds. `does-not-conform` is a finding that lists the cases that failed and
+any promised record not found. `inconclusive` (no case failed, but one could
+not be judged, or the records could not be observed) is a warning at most,
+whatever the check's level, naming what could not be judged. `conforms`
+passes. With no verdict for this version, the check is not checked, and
+stage-record-conformance says why.
+
+```yaml
 id: usability-report
 says: A usability report for this package digest is present, delivered under a signed manifest that is not the tested agent's own.
 why: Conformance proves the agent keeps its declared promises, not that a person can use it; the report is the record that someone ran each offering a person starts from its example and read what came back.

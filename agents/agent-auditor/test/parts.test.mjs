@@ -52,7 +52,7 @@ test("a delivery manifest verifies the adapter's way, and not under another agen
   assert.ok(!verifyManifest({ ...m, pieces: [] }));
 });
 
-test("the checklist this package pins is the one in standards/, and reads as 29 checks", () => {
+test("the checklist this package pins is the one in standards/, and reads as 30 checks", () => {
   const pins = JSON.parse(readFileSync(join(HERE, "..", "standards-pins.json"), "utf8")).pins;
   for (const [file, pin] of Object.entries(pins)) {
     const at = join(REPO, "standards", file);
@@ -62,7 +62,7 @@ test("the checklist this package pins is the one in standards/, and reads as 29 
   const c = readChecklist(readFileSync(join(REPO, "standards", "audit-checklist.md")));
   assert.equal(c.digest, pins["audit-checklist.md"]);
   assert.deepEqual(c.problems, []);
-  assert.equal(c.checks.length, 29);
+  assert.equal(c.checks.length, 30);
   assert.equal(c.schema, "https://schemas.agentmesh.ai/audit-checklist/v1");
   assert.equal(c.approved_by, null);
   const unregistered = c.checks.filter((x) => !REGISTERED[x.check]).map((x) => `${x.id} (${x.check})`);
@@ -193,4 +193,24 @@ test("person-facing-declares-library without the package maker: can_use [] is a 
   assert.equal(empty.result, "pass", empty.evidence);
   assert.match(empty.evidence, /declared empty/);
   assert.equal(absent.result, "fail", absent.evidence);
+});
+
+test("conformance-result: does-not-conform lists the failed cases, inconclusive is a warning at most naming what was not judged, conforms passes", () => {
+  const line = (record, bound = true) => ({ stage: "conformance", present: true, bound, source: "the registry", record, evidence: "e" });
+  const run = (record, bound) => REGISTERED["conformance-result"]({ id: "conformance-result" }, { lines: [line(record, bound)], facts: {} });
+  const failed = run({ verdict: "does-not-conform", cases: [{ id: "refuse-1", kind: "refusal", source: "Does not refund.", verdict: "fail", observed: "did not decline" }, { id: "refuse-2", verdict: "pass" }], records_audit: { missing: ["the run log"] } });
+  assert.equal(failed.result, "fail");
+  assert.match(failed.evidence, /refuse-1 \(Does not refund\.\): did not decline/);
+  assert.match(failed.evidence, /promised records not found: the run log/);
+  assert.doesNotMatch(failed.evidence, /refuse-2/);
+  assert.equal(failed.at_most, undefined);
+  const unjudged = run({ verdict: "inconclusive", cases: [{ id: "escalate-1", source: "A chargeback", verdict: "inconclusive", observed: "no reply" }], records_audit: { unobserved: ["each answer"] } });
+  assert.equal(unjudged.result, "fail");
+  assert.equal(unjudged.at_most, "warn");
+  assert.match(unjudged.evidence, /not judged: escalate-1 \(A chargeback\): no reply/);
+  assert.match(unjudged.evidence, /records not observed: each answer/);
+  assert.equal(run({ verdict: "conforms", cases: [] }).result, "pass");
+  assert.equal(run({ conforms: true }).result, "pass", "a verdict from before the word reads conforms");
+  assert.equal(run({ verdict: "conforms" }, false).result, "not checked", "a verdict for another version says nothing about this one");
+  assert.equal(REGISTERED["conformance-result"]({ id: "conformance-result" }, { lines: [{ stage: "conformance", present: false }], facts: {} }).result, "not checked");
 });
