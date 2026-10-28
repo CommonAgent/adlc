@@ -852,8 +852,9 @@ def can_use_declaration(spec):
         fail("can_use is a list of the shapes a caller may send with a job; each names a schema and the "
              "fields of it this agent reads")
     if not entries:
-        fail("can_use is empty. An empty list says nothing an absent member does not say; leave it out, "
-             "and a reader treats the agent as having stated nothing about what it can be told")
+        # An empty list is a statement (Common Agent 6.14.4, proposed): the
+        # agent reads no standing asset, where an absent member says nothing.
+        return []
     seen = set()
     out_entries = []
     for e in entries:
@@ -1549,7 +1550,9 @@ def standing_findings(spec, jobs, src_base, table):
             findings.append(f"can_use {schema} does not say without: what the agent does when none is given. Say it "
                             f"in one sentence, such as \"writes in a plain, neutral voice and says that none was given\"")
     warnings = []
-    if not entries:
+    # An empty can_use is the operator's statement that the agent reads no
+    # standing asset (Common Agent 6.14.4), so rule 3 has nothing to ask.
+    if not entries and not isinstance(spec.get("can_use"), list):
         facing = person_facing_outputs(jobs, table)
         if facing:
             said = ", ".join(f"{n!r} ({k})" for _, n, k in facing)
@@ -1723,10 +1726,11 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
                     fail(f"job {j['slug']}: output {e['name']!r} carries given_by, which says who gives an input")
                 if "presentation" in e and e["presentation"] not in PRESENTATIONS:
                     fail(f"job {j['slug']}: {side[:-1]} {e['name']!r} presentation is how a person meets it, one of {', '.join(PRESENTATIONS)}; bad: {e['presentation']!r}")
-                if "accepts" in e:
+                # `accepts` on a document input lists the media types it reads
+                # (6.13.7). Older packages carry their own `accepts` on other
+                # inputs, which this rule leaves alone.
+                if side == "inputs" and e["kind"] == "document" and "accepts" in e:
                     acc = e["accepts"]
-                    if side != "inputs" or e["kind"] != "document":
-                        fail(f"job {j['slug']}: {side[:-1]} {e['name']!r} carries accepts, which only an input of kind document has")
                     if not (isinstance(acc, list) and acc and all(isinstance(m, str) and MEDIA_RE.match(m) for m in acc)):
                         fail(f"job {j['slug']}: input {e['name']!r} accepts is a non-empty list of media types")
             o[side] = v
@@ -1819,7 +1823,7 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
     # through as declared, because a schema and its field list are the
     # operator's statement and there is nothing here to derive.
     can_use = can_use_declaration(spec)
-    if can_use:
+    if can_use is not None:
         doc["can_use"] = can_use
     # What a run config may set for this agent (docs/run-config-plan.md 2.2):
     # carried as declared, for the platform's resolver to read.

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """The members a person reads (Common Agent 6.13, proposed): name, summary
 and will_not on the Descriptor, started_by and works_as on an offering, and
-presentation and accepts on an input or output.
+presentation on an input or output, and accepts on a document input.
 
 What is worth pinning: a spec and an agent folder that state them build, and
 the Descriptor carries them exactly as authored; a folder that states them is
 not refused as saying something the build would not write; and a value
-outside its list, a summary that is not one sentence, or `accepts` on
-anything but a document input is refused.
+outside its list, a summary that is not one sentence, or a document input's `accepts`
+that is not a list of media types is refused.
 
 Run: AGENTMESH_ENV=example python3 -m unittest test_person
 """
@@ -86,12 +86,12 @@ class ThePersonMembers(Harness):
         self.assertFalse(res["ok"], res)
         self.assertIn("works_as is one of conversation, job", res["error"])
 
-    def test_accepts_belongs_to_a_document_input_and_presentation_to_its_list(self):
+    def test_a_document_input_accepts_media_types_and_presentation_comes_from_its_list(self):
         s = person_spec()
-        s["jobs"][0]["inputs"][0]["accepts"] = ["text/plain"]
+        s["jobs"][0]["inputs"][1]["accepts"] = ["markdown"]
         res, _ = self.build(s)
         self.assertFalse(res["ok"], res)
-        self.assertIn("carries accepts, which only an input of kind document has", res["error"])
+        self.assertIn("accepts is a non-empty list of media types", res["error"])
         s = person_spec()
         s["jobs"][0]["inputs"][1]["presentation"] = "slides"
         res, _ = self.build(s)
