@@ -1,0 +1,984 @@
+{
+  "id": "sol_1",
+  "name": "Explainer from a website and documents",
+  "org": "org_platform",
+  "nodes": [
+    {
+      "id": "n_18fc149756a0ec7372",
+      "kind": "start",
+      "agent": "",
+      "label": "Start",
+      "ports": {
+        "agent": "",
+        "label": "Start",
+        "offerings": [
+          {
+            "id": "start",
+            "name": "Start",
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "start.out.report pdf",
+                "name": "report pdf",
+                "media_type": "application/pdf"
+              },
+              {
+                "id": "start.out.word document",
+                "name": "word document",
+                "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              },
+              {
+                "id": "start.out.whose voice",
+                "name": "whose voice",
+                "media_type": "text"
+              },
+              {
+                "id": "start.out.url",
+                "name": "url",
+                "media_type": "url"
+              },
+              {
+                "id": "start.out.pdf deck",
+                "name": "pdf deck",
+                "media_type": "application/pdf"
+              },
+              {
+                "id": "start.out.pptx deck",
+                "name": "pptx deck",
+                "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+              },
+              {
+                "id": "start.out.*",
+                "name": "what comes in",
+                "media_type": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_59298b7f9605711646",
+      "kind": "agent",
+      "agent": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+      "label": "Site reader",
+      "ports": {
+        "agent": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+        "label": "Site reader",
+        "offerings": [
+          {
+            "id": "read-site",
+            "name": "Read a site",
+            "inputs": [
+              {
+                "id": "read-site.in.url",
+                "name": "url",
+                "media_type": "url",
+                "required": true
+              },
+              {
+                "id": "read-site.in.addresses",
+                "name": "addresses",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "read-site.in.max_pages",
+                "name": "max_pages",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "read-site.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "read-site.out.site-read",
+                "name": "site-read",
+                "media_type": "application/vnd.agentmesh.site-read+json"
+              },
+              {
+                "id": "read-site.out.subject",
+                "name": "subject",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_273888ea78fc20e284",
+      "kind": "agent",
+      "agent": "UATX7F3PX5ZORLTKIBDVTICYVT3IQZ7ROLYLFJXVCNLSWY4HFH3BE6WJ",
+      "label": "Document reader",
+      "ports": {
+        "agent": "UATX7F3PX5ZORLTKIBDVTICYVT3IQZ7ROLYLFJXVCNLSWY4HFH3BE6WJ",
+        "label": "Document reader",
+        "offerings": [
+          {
+            "id": "read-a-document",
+            "name": "Read a document",
+            "inputs": [
+              {
+                "id": "read-a-document.in.word document",
+                "name": "word document",
+                "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "required": false
+              },
+              {
+                "id": "read-a-document.in.old word document",
+                "name": "old word document",
+                "media_type": "application/msword",
+                "required": false
+              },
+              {
+                "id": "read-a-document.in.report pdf",
+                "name": "report pdf",
+                "media_type": "application/pdf",
+                "required": false
+              },
+              {
+                "id": "read-a-document.in.document address",
+                "name": "document address",
+                "media_type": "url",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "read-a-document.out.document read",
+                "name": "document read",
+                "media_type": "application/vnd.agentmesh.document-read+json"
+              },
+              {
+                "id": "read-a-document.out.document words",
+                "name": "document words",
+                "media_type": "text/markdown"
+              },
+              {
+                "id": "read-a-document.out.credit",
+                "name": "credit",
+                "media_type": "application/json"
+              },
+              {
+                "id": "read-a-document.out.site-read",
+                "name": "site-read",
+                "media_type": "application/json"
+              },
+              {
+                "id": "read-a-document.out.subject",
+                "name": "subject",
+                "media_type": "application/json"
+              },
+              {
+                "id": "read-a-document.out.pictures",
+                "name": "pictures",
+                "media_type": "application/zip"
+              },
+              {
+                "id": "read-a-document.out.read report",
+                "name": "read report",
+                "media_type": "text/plain"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_86da9eba34b739c209",
+      "kind": "agent",
+      "agent": "UBUPETU4T6A64SQOQRWBDOYOKWJMPFCCZDVI3BR434DRRDQOKA6KBW33",
+      "label": "Presentation reader",
+      "ports": {
+        "agent": "UBUPETU4T6A64SQOQRWBDOYOKWJMPFCCZDVI3BR434DRRDQOKA6KBW33",
+        "label": "Presentation reader",
+        "offerings": [
+          {
+            "id": "rip-a-deck",
+            "name": "Rip a deck",
+            "inputs": [
+              {
+                "id": "rip-a-deck.in.pdf deck",
+                "name": "pdf deck",
+                "media_type": "application/pdf",
+                "required": false
+              },
+              {
+                "id": "rip-a-deck.in.pptx deck",
+                "name": "pptx deck",
+                "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "required": false
+              },
+              {
+                "id": "rip-a-deck.in.deck address",
+                "name": "deck address",
+                "media_type": "url",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "rip-a-deck.out.deck rip",
+                "name": "deck rip",
+                "media_type": "application/vnd.agentmesh.deck-rip+json"
+              },
+              {
+                "id": "rip-a-deck.out.deck words",
+                "name": "deck words",
+                "media_type": "text/markdown"
+              },
+              {
+                "id": "rip-a-deck.out.credit",
+                "name": "credit",
+                "media_type": "application/json"
+              },
+              {
+                "id": "rip-a-deck.out.slide images",
+                "name": "slide images",
+                "media_type": "application/zip"
+              },
+              {
+                "id": "rip-a-deck.out.pictures",
+                "name": "pictures",
+                "media_type": "application/zip"
+              },
+              {
+                "id": "rip-a-deck.out.rip report",
+                "name": "rip report",
+                "media_type": "text/plain"
+              },
+              {
+                "id": "rip-a-deck.out.site-read",
+                "name": "site-read",
+                "media_type": "application/json"
+              },
+              {
+                "id": "rip-a-deck.out.subject",
+                "name": "subject",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_508a79eb3d12a137c6",
+      "kind": "agent",
+      "agent": "UAVK33U55B25LYAIEM3EJAEIJSJ2CVMWSNT6QXXBPK6RPRTIN3IPODQQ",
+      "label": "Fact writer",
+      "ports": {
+        "agent": "UAVK33U55B25LYAIEM3EJAEIJSJ2CVMWSNT6QXXBPK6RPRTIN3IPODQQ",
+        "label": "Fact writer",
+        "offerings": [
+          {
+            "id": "write-facts",
+            "name": "Write facts",
+            "inputs": [
+              {
+                "id": "write-facts.in.site-read",
+                "name": "site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.document site-read",
+                "name": "document site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.deck site-read",
+                "name": "deck site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.document subject",
+                "name": "document subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.deck subject",
+                "name": "deck subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.posting",
+                "name": "posting",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.repo-read",
+                "name": "repo-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.counts",
+                "name": "counts",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.share of voice",
+                "name": "share of voice",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.timeline",
+                "name": "timeline",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.architecture",
+                "name": "architecture",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-facts.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "write-facts.out.facts",
+                "name": "facts",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_a4e976eead27ab16cf",
+      "kind": "agent",
+      "agent": "UBQVRCKBL3O2REGIZ5XQ6XX4OLONUID23VF4BOJYHU7W3THTMPYJPQ4O",
+      "label": "Fact checker",
+      "ports": {
+        "agent": "UBQVRCKBL3O2REGIZ5XQ6XX4OLONUID23VF4BOJYHU7W3THTMPYJPQ4O",
+        "label": "Fact checker",
+        "offerings": [
+          {
+            "id": "check-facts",
+            "name": "Check facts",
+            "inputs": [
+              {
+                "id": "check-facts.in.facts",
+                "name": "facts",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "check-facts.in.site-read",
+                "name": "site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.repo-read",
+                "name": "repo-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.counts",
+                "name": "counts",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.share of voice",
+                "name": "share of voice",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.timeline",
+                "name": "timeline",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.architecture",
+                "name": "architecture",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck rip",
+                "name": "deck rip",
+                "media_type": "application/vnd.agentmesh.deck-rip+json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document site-read",
+                "name": "document site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck site-read",
+                "name": "deck site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document subject",
+                "name": "document subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck subject",
+                "name": "deck subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document read",
+                "name": "document read",
+                "media_type": "application/vnd.agentmesh.document-read+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "check-facts.out.facts",
+                "name": "facts",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.removed",
+                "name": "removed",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.credit",
+                "name": "credit",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.facts page",
+                "name": "facts page",
+                "media_type": "text/markdown"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_6bdb53a4bc1059e048",
+      "kind": "agent",
+      "agent": "UD5G7LGEIPUY6DY4IM7A7JFT63FETDXTF6PDZOTUZK667GVTDUDQJEUQ",
+      "label": "Pitch writer",
+      "ports": {
+        "agent": "UD5G7LGEIPUY6DY4IM7A7JFT63FETDXTF6PDZOTUZK667GVTDUDQJEUQ",
+        "label": "Pitch writer",
+        "offerings": [
+          {
+            "id": "write-pitches",
+            "name": "Write pitches",
+            "inputs": [
+              {
+                "id": "write-pitches.in.facts",
+                "name": "facts",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-pitches.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-pitches.in.posting",
+                "name": "posting",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pitches.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              },
+              {
+                "id": "write-pitches.in.document subject",
+                "name": "document subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pitches.in.deck subject",
+                "name": "deck subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pitches.in.credit",
+                "name": "credit",
+                "media_type": "application/json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "write-pitches.out.lenses",
+                "name": "lenses",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_29168e098146465935",
+      "kind": "agent",
+      "agent": "UDHA2N54H7VYQ77LLXGZIEVKQODLJZJJB266XJBT4W6SAVUJRKQTZRYK",
+      "label": "Scene writer",
+      "ports": {
+        "agent": "UDHA2N54H7VYQ77LLXGZIEVKQODLJZJJB266XJBT4W6SAVUJRKQTZRYK",
+        "label": "Scene writer",
+        "offerings": [
+          {
+            "id": "write-pack",
+            "name": "Write the pack",
+            "inputs": [
+              {
+                "id": "write-pack.in.facts",
+                "name": "facts",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-pack.in.lenses",
+                "name": "lenses",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-pack.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-pack.in.site-read",
+                "name": "site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.document site-read",
+                "name": "document site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.deck site-read",
+                "name": "deck site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.document subject",
+                "name": "document subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.deck subject",
+                "name": "deck subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.posting",
+                "name": "posting",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.self-check",
+                "name": "self-check",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.credit",
+                "name": "credit",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.employer",
+                "name": "employer",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.slide images",
+                "name": "slide images",
+                "media_type": "application/zip",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.show slides",
+                "name": "show slides",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.whose voice",
+                "name": "whose voice",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.deck manifest",
+                "name": "deck manifest",
+                "media_type": "application/vnd.agentmesh.deck-import+json",
+                "required": false
+              },
+              {
+                "id": "write-pack.in.live scenes",
+                "name": "live scenes",
+                "media_type": "application/zip",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "write-pack.out.pack",
+                "name": "pack",
+                "media_type": "application/json"
+              },
+              {
+                "id": "write-pack.out.visuals",
+                "name": "visuals",
+                "media_type": "application/zip"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_58eaa7b367e4dc380e",
+      "kind": "person",
+      "agent": "",
+      "label": "Approve the pack",
+      "ports": {
+        "agent": "",
+        "label": "Approve the pack",
+        "offerings": [
+          {
+            "id": "person",
+            "name": "Approve the pack",
+            "inputs": [
+              {
+                "id": "person.in.pack",
+                "name": "pack",
+                "media_type": null,
+                "required": null
+              }
+            ],
+            "outputs": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_1c186a4b16abfe840f",
+      "kind": "end",
+      "agent": "",
+      "label": "End",
+      "ports": {
+        "agent": "",
+        "label": "End",
+        "offerings": [
+          {
+            "id": "end",
+            "name": "End",
+            "inputs": [
+              {
+                "id": "end.in.pack",
+                "name": "pack",
+                "media_type": "application/json",
+                "required": null
+              },
+              {
+                "id": "end.in.*",
+                "name": "what you get",
+                "media_type": null,
+                "required": null
+              }
+            ],
+            "outputs": []
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from_node": "n_29168e098146465935",
+      "from_port": "write-pack.out.pack",
+      "to_node": "n_1c186a4b16abfe840f",
+      "to_port": "end.in.pack"
+    },
+    {
+      "from_node": "n_18fc149756a0ec7372",
+      "from_port": "start.out.report pdf",
+      "to_node": "n_273888ea78fc20e284",
+      "to_port": "read-a-document.in.report pdf"
+    },
+    {
+      "from_node": "n_18fc149756a0ec7372",
+      "from_port": "start.out.word document",
+      "to_node": "n_273888ea78fc20e284",
+      "to_port": "read-a-document.in.word document"
+    },
+    {
+      "from_node": "n_a4e976eead27ab16cf",
+      "from_port": "check-facts.out.credit",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.credit"
+    },
+    {
+      "from_node": "n_86da9eba34b739c209",
+      "from_port": "rip-a-deck.out.site-read",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.deck site-read"
+    },
+    {
+      "from_node": "n_86da9eba34b739c209",
+      "from_port": "rip-a-deck.out.subject",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.deck subject"
+    },
+    {
+      "from_node": "n_273888ea78fc20e284",
+      "from_port": "read-a-document.out.site-read",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.document site-read"
+    },
+    {
+      "from_node": "n_273888ea78fc20e284",
+      "from_port": "read-a-document.out.subject",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.document subject"
+    },
+    {
+      "from_node": "n_a4e976eead27ab16cf",
+      "from_port": "check-facts.out.facts",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.facts"
+    },
+    {
+      "from_node": "n_6bdb53a4bc1059e048",
+      "from_port": "write-pitches.out.lenses",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.lenses"
+    },
+    {
+      "from_node": "n_59298b7f9605711646",
+      "from_port": "read-site.out.site-read",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.site-read"
+    },
+    {
+      "from_node": "n_59298b7f9605711646",
+      "from_port": "read-site.out.subject",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.subject"
+    },
+    {
+      "from_node": "n_18fc149756a0ec7372",
+      "from_port": "start.out.whose voice",
+      "to_node": "n_29168e098146465935",
+      "to_port": "write-pack.in.whose voice"
+    },
+    {
+      "from_node": "n_86da9eba34b739c209",
+      "from_port": "rip-a-deck.out.site-read",
+      "to_node": "n_508a79eb3d12a137c6",
+      "to_port": "write-facts.in.deck site-read"
+    },
+    {
+      "from_node": "n_86da9eba34b739c209",
+      "from_port": "rip-a-deck.out.subject",
+      "to_node": "n_508a79eb3d12a137c6",
+      "to_port": "write-facts.in.deck subject"
+    },
+    {
+      "from_node": "n_273888ea78fc20e284",
+      "from_port": "read-a-document.out.site-read",
+      "to_node": "n_508a79eb3d12a137c6",
+      "to_port": "write-facts.in.document site-read"
+    },
+    {
+      "from_node": "n_273888ea78fc20e284",
+      "from_port": "read-a-document.out.subject",
+      "to_node": "n_508a79eb3d12a137c6",
+      "to_port": "write-facts.in.document subject"
+    },
+    {
+      "from_node": "n_59298b7f9605711646",
+      "from_port": "read-site.out.site-read",
+      "to_node": "n_508a79eb3d12a137c6",
+      "to_port": "write-facts.in.site-read"
+    },
+    {
+      "from_node": "n_59298b7f9605711646",
+      "from_port": "read-site.out.subject",
+      "to_node": "n_508a79eb3d12a137c6",
+      "to_port": "write-facts.in.subject"
+    },
+    {
+      "from_node": "n_29168e098146465935",
+      "from_port": "write-pack.out.pack",
+      "to_node": "n_58eaa7b367e4dc380e",
+      "to_port": "person.in.pack"
+    },
+    {
+      "from_node": "n_18fc149756a0ec7372",
+      "from_port": "start.out.url",
+      "to_node": "n_59298b7f9605711646",
+      "to_port": "read-site.in.url"
+    },
+    {
+      "from_node": "n_a4e976eead27ab16cf",
+      "from_port": "check-facts.out.credit",
+      "to_node": "n_6bdb53a4bc1059e048",
+      "to_port": "write-pitches.in.credit"
+    },
+    {
+      "from_node": "n_86da9eba34b739c209",
+      "from_port": "rip-a-deck.out.subject",
+      "to_node": "n_6bdb53a4bc1059e048",
+      "to_port": "write-pitches.in.deck subject"
+    },
+    {
+      "from_node": "n_273888ea78fc20e284",
+      "from_port": "read-a-document.out.subject",
+      "to_node": "n_6bdb53a4bc1059e048",
+      "to_port": "write-pitches.in.document subject"
+    },
+    {
+      "from_node": "n_a4e976eead27ab16cf",
+      "from_port": "check-facts.out.facts",
+      "to_node": "n_6bdb53a4bc1059e048",
+      "to_port": "write-pitches.in.facts"
+    },
+    {
+      "from_node": "n_59298b7f9605711646",
+      "from_port": "read-site.out.subject",
+      "to_node": "n_6bdb53a4bc1059e048",
+      "to_port": "write-pitches.in.subject"
+    },
+    {
+      "from_node": "n_18fc149756a0ec7372",
+      "from_port": "start.out.pdf deck",
+      "to_node": "n_86da9eba34b739c209",
+      "to_port": "rip-a-deck.in.pdf deck"
+    },
+    {
+      "from_node": "n_18fc149756a0ec7372",
+      "from_port": "start.out.pptx deck",
+      "to_node": "n_86da9eba34b739c209",
+      "to_port": "rip-a-deck.in.pptx deck"
+    },
+    {
+      "from_node": "n_86da9eba34b739c209",
+      "from_port": "rip-a-deck.out.deck rip",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.deck rip"
+    },
+    {
+      "from_node": "n_86da9eba34b739c209",
+      "from_port": "rip-a-deck.out.site-read",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.deck site-read"
+    },
+    {
+      "from_node": "n_86da9eba34b739c209",
+      "from_port": "rip-a-deck.out.subject",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.deck subject"
+    },
+    {
+      "from_node": "n_273888ea78fc20e284",
+      "from_port": "read-a-document.out.document read",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.document read"
+    },
+    {
+      "from_node": "n_273888ea78fc20e284",
+      "from_port": "read-a-document.out.site-read",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.document site-read"
+    },
+    {
+      "from_node": "n_273888ea78fc20e284",
+      "from_port": "read-a-document.out.subject",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.document subject"
+    },
+    {
+      "from_node": "n_508a79eb3d12a137c6",
+      "from_port": "write-facts.out.facts",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.facts"
+    },
+    {
+      "from_node": "n_59298b7f9605711646",
+      "from_port": "read-site.out.site-read",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.site-read"
+    },
+    {
+      "from_node": "n_59298b7f9605711646",
+      "from_port": "read-site.out.subject",
+      "to_node": "n_a4e976eead27ab16cf",
+      "to_port": "check-facts.in.subject"
+    }
+  ]
+}

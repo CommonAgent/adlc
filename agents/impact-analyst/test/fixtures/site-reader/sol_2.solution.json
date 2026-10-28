@@ -1,0 +1,460 @@
+{
+  "id": "sol_2",
+  "name": "Meme video from a story",
+  "org": "org_platform",
+  "nodes": [
+    {
+      "id": "n_c5bc140b10b7b7f70b",
+      "kind": "start",
+      "agent": "",
+      "label": "Start",
+      "ports": {
+        "agent": "",
+        "label": "Start",
+        "offerings": [
+          {
+            "id": "start",
+            "name": "Start",
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "start.out.the insider",
+                "name": "the insider",
+                "media_type": "text"
+              },
+              {
+                "id": "start.out.the story as words",
+                "name": "the story as words",
+                "media_type": "text/plain"
+              },
+              {
+                "id": "start.out.the template's slot map",
+                "name": "the template's slot map",
+                "media_type": "application/json"
+              },
+              {
+                "id": "start.out.video address",
+                "name": "video address",
+                "media_type": "url"
+              },
+              {
+                "id": "start.out.url",
+                "name": "url",
+                "media_type": "url"
+              },
+              {
+                "id": "start.out.*",
+                "name": "what comes in",
+                "media_type": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_e396469e49a72b5b3e",
+      "kind": "agent",
+      "agent": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+      "label": "Site reader",
+      "ports": {
+        "agent": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+        "label": "Site reader",
+        "offerings": [
+          {
+            "id": "read-site",
+            "name": "Read a site",
+            "inputs": [
+              {
+                "id": "read-site.in.url",
+                "name": "url",
+                "media_type": "url",
+                "required": true
+              },
+              {
+                "id": "read-site.in.addresses",
+                "name": "addresses",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "read-site.in.max_pages",
+                "name": "max_pages",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "read-site.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "read-site.out.site-read",
+                "name": "site-read",
+                "media_type": "application/vnd.agentmesh.site-read+json"
+              },
+              {
+                "id": "read-site.out.subject",
+                "name": "subject",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_1128cb275d0854ddbd",
+      "kind": "agent",
+      "agent": "UBZXK45VLRUIY475FHVOJG5LZD5Y27UX3BP6MVS3GI5FBGRSJCLJX4SA",
+      "label": "meme-writer",
+      "ports": {
+        "agent": "UBZXK45VLRUIY475FHVOJG5LZD5Y27UX3BP6MVS3GI5FBGRSJCLJX4SA",
+        "label": "meme-writer",
+        "offerings": [
+          {
+            "id": "write-subtitles",
+            "name": "Write the subtitles for a meme template",
+            "inputs": [
+              {
+                "id": "write-subtitles.in.the story as words",
+                "name": "the story as words",
+                "media_type": "text/plain",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.the story as a reader's JSON output (site-read or x-thread-v1)",
+                "name": "the story as a reader's JSON output (site-read or x-thread-v1)",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.the story as a video transcript",
+                "name": "the story as a video transcript",
+                "media_type": "text/vtt",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.the story as checked facts (fact-checker's facts)",
+                "name": "the story as checked facts (fact-checker's facts)",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.the template's slot map",
+                "name": "the template's slot map",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-subtitles.in.the insider",
+                "name": "the insider",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "write-subtitles.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "write-subtitles.out.subtitles.json",
+                "name": "subtitles.json",
+                "media_type": "application/json"
+              },
+              {
+                "id": "write-subtitles.out.subtitles.srt",
+                "name": "subtitles.srt",
+                "media_type": "application/x-subrip"
+              },
+              {
+                "id": "write-subtitles.out.check report",
+                "name": "check report",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_c6dca8861038b31a1d",
+      "kind": "agent",
+      "agent": "UCMKZMMG62ZIVL5GTKLAY5J7NIAJZ2NEK5DJNOM6IMNGRPMHWUE67HDZ",
+      "label": "Animation renderer",
+      "ports": {
+        "agent": "UCMKZMMG62ZIVL5GTKLAY5J7NIAJZ2NEK5DJNOM6IMNGRPMHWUE67HDZ",
+        "label": "Animation renderer",
+        "offerings": [
+          {
+            "id": "render-video",
+            "name": "Render the video",
+            "inputs": [
+              {
+                "id": "render-video.in.storyboard",
+                "name": "storyboard",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "render-video.in.narration",
+                "name": "narration",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "render-video.in.clips",
+                "name": "clips",
+                "media_type": "audio/wav",
+                "required": false
+              },
+              {
+                "id": "render-video.in.clip archive",
+                "name": "clip archive",
+                "media_type": "application/zip",
+                "required": false
+              },
+              {
+                "id": "render-video.in.slide images",
+                "name": "slide images",
+                "media_type": "application/zip",
+                "required": false
+              },
+              {
+                "id": "render-video.in.canvas",
+                "name": "canvas",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "render-video.in.video",
+                "name": "video",
+                "media_type": "text",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "render-video.out.video",
+                "name": "video",
+                "media_type": "video/mp4"
+              },
+              {
+                "id": "render-video.out.poster",
+                "name": "poster",
+                "media_type": "image/png"
+              },
+              {
+                "id": "render-video.out.watch",
+                "name": "watch",
+                "media_type": "application/json"
+              },
+              {
+                "id": "render-video.out.contact sheet",
+                "name": "contact sheet",
+                "media_type": "image/jpeg"
+              },
+              {
+                "id": "render-video.out.render record",
+                "name": "render record",
+                "media_type": "application/json"
+              }
+            ]
+          },
+          {
+            "id": "burn-subtitles",
+            "name": "Burn subtitles",
+            "inputs": [
+              {
+                "id": "burn-subtitles.in.video address",
+                "name": "video address",
+                "media_type": "url",
+                "required": false
+              },
+              {
+                "id": "burn-subtitles.in.video file",
+                "name": "video file",
+                "media_type": "document",
+                "required": false
+              },
+              {
+                "id": "burn-subtitles.in.subtitles",
+                "name": "subtitles",
+                "media_type": "application/x-subrip",
+                "required": false
+              },
+              {
+                "id": "burn-subtitles.in.transcript",
+                "name": "transcript",
+                "media_type": "text/vtt",
+                "required": false
+              },
+              {
+                "id": "burn-subtitles.in.cues",
+                "name": "cues",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "burn-subtitles.in.source and credit",
+                "name": "source and credit",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "burn-subtitles.in.keep clear",
+                "name": "keep clear",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "burn-subtitles.in.title",
+                "name": "title",
+                "media_type": "text",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "burn-subtitles.out.video",
+                "name": "video",
+                "media_type": "video/mp4"
+              },
+              {
+                "id": "burn-subtitles.out.poster",
+                "name": "poster",
+                "media_type": "image/png"
+              },
+              {
+                "id": "burn-subtitles.out.watch",
+                "name": "watch",
+                "media_type": "application/json"
+              },
+              {
+                "id": "burn-subtitles.out.contact sheet",
+                "name": "contact sheet",
+                "media_type": "image/jpeg"
+              },
+              {
+                "id": "burn-subtitles.out.burn record",
+                "name": "burn record",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_680c3bcde17000bfab",
+      "kind": "end",
+      "agent": "",
+      "label": "End",
+      "ports": {
+        "agent": "",
+        "label": "End",
+        "offerings": [
+          {
+            "id": "end",
+            "name": "End",
+            "inputs": [
+              {
+                "id": "end.in.poster",
+                "name": "poster",
+                "media_type": "image/png",
+                "required": null
+              },
+              {
+                "id": "end.in.video",
+                "name": "video",
+                "media_type": "video/mp4",
+                "required": null
+              },
+              {
+                "id": "end.in.watch",
+                "name": "watch",
+                "media_type": "application/json",
+                "required": null
+              },
+              {
+                "id": "end.in.*",
+                "name": "what you get",
+                "media_type": null,
+                "required": null
+              }
+            ],
+            "outputs": []
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from_node": "n_c5bc140b10b7b7f70b",
+      "from_port": "start.out.the insider",
+      "to_node": "n_1128cb275d0854ddbd",
+      "to_port": "write-subtitles.in.the insider"
+    },
+    {
+      "from_node": "n_e396469e49a72b5b3e",
+      "from_port": "read-site.out.site-read",
+      "to_node": "n_1128cb275d0854ddbd",
+      "to_port": "write-subtitles.in.the story as a reader's JSON output (site-read or x-thread-v1)"
+    },
+    {
+      "from_node": "n_c5bc140b10b7b7f70b",
+      "from_port": "start.out.the story as words",
+      "to_node": "n_1128cb275d0854ddbd",
+      "to_port": "write-subtitles.in.the story as words"
+    },
+    {
+      "from_node": "n_c5bc140b10b7b7f70b",
+      "from_port": "start.out.the template's slot map",
+      "to_node": "n_1128cb275d0854ddbd",
+      "to_port": "write-subtitles.in.the template's slot map"
+    },
+    {
+      "from_node": "n_c6dca8861038b31a1d",
+      "from_port": "burn-subtitles.out.poster",
+      "to_node": "n_680c3bcde17000bfab",
+      "to_port": "end.in.poster"
+    },
+    {
+      "from_node": "n_c6dca8861038b31a1d",
+      "from_port": "burn-subtitles.out.video",
+      "to_node": "n_680c3bcde17000bfab",
+      "to_port": "end.in.video"
+    },
+    {
+      "from_node": "n_c6dca8861038b31a1d",
+      "from_port": "burn-subtitles.out.watch",
+      "to_node": "n_680c3bcde17000bfab",
+      "to_port": "end.in.watch"
+    },
+    {
+      "from_node": "n_1128cb275d0854ddbd",
+      "from_port": "write-subtitles.out.subtitles.json",
+      "to_node": "n_c6dca8861038b31a1d",
+      "to_port": "burn-subtitles.in.cues"
+    },
+    {
+      "from_node": "n_c5bc140b10b7b7f70b",
+      "from_port": "start.out.video address",
+      "to_node": "n_c6dca8861038b31a1d",
+      "to_port": "burn-subtitles.in.video address"
+    },
+    {
+      "from_node": "n_c5bc140b10b7b7f70b",
+      "from_port": "start.out.url",
+      "to_node": "n_e396469e49a72b5b3e",
+      "to_port": "read-site.in.url"
+    }
+  ]
+}

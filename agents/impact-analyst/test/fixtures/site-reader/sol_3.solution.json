@@ -1,0 +1,503 @@
+{
+  "id": "sol_3",
+  "name": "Ponder",
+  "org": "org_platform",
+  "nodes": [
+    {
+      "id": "n_a0bc499ce663e9c649",
+      "kind": "start",
+      "agent": "",
+      "label": "Start",
+      "ports": {
+        "agent": "",
+        "label": "Start",
+        "offerings": [
+          {
+            "id": "start",
+            "name": "Start",
+            "inputs": [],
+            "outputs": [
+              {
+                "id": "start.out.url",
+                "name": "url",
+                "media_type": "url"
+              },
+              {
+                "id": "start.out.angle",
+                "name": "angle",
+                "media_type": "text"
+              },
+              {
+                "id": "start.out.words",
+                "name": "words",
+                "media_type": "text/plain"
+              },
+              {
+                "id": "start.out.*",
+                "name": "what comes in",
+                "media_type": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_9174c9b4c086fd4b59",
+      "kind": "agent",
+      "agent": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+      "label": "Site reader",
+      "ports": {
+        "agent": "UAMBC6CSLRB5XCWA3524A65QXBZ5BPBQ6YJ7WNXB6UGJD7NIDD26T6H4",
+        "label": "Site reader",
+        "offerings": [
+          {
+            "id": "read-site",
+            "name": "Read a site",
+            "inputs": [
+              {
+                "id": "read-site.in.url",
+                "name": "url",
+                "media_type": "url",
+                "required": true
+              },
+              {
+                "id": "read-site.in.addresses",
+                "name": "addresses",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "read-site.in.max_pages",
+                "name": "max_pages",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "read-site.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "read-site.out.site-read",
+                "name": "site-read",
+                "media_type": "application/vnd.agentmesh.site-read+json"
+              },
+              {
+                "id": "read-site.out.subject",
+                "name": "subject",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_c71b296cb726fcf203",
+      "kind": "agent",
+      "agent": "UAJRKOH6642BXN4LCKLYL5WIQIHNB6RZ5KJRHKCXPLO5PYXGY5ECE3SG",
+      "label": "Ponder planner",
+      "ports": {
+        "agent": "UAJRKOH6642BXN4LCKLYL5WIQIHNB6RZ5KJRHKCXPLO5PYXGY5ECE3SG",
+        "label": "Ponder planner",
+        "offerings": [
+          {
+            "id": "plan-lenses",
+            "name": "Plan the lenses",
+            "inputs": [
+              {
+                "id": "plan-lenses.in.site-read",
+                "name": "site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "plan-lenses.in.thread",
+                "name": "thread",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "plan-lenses.in.transcript",
+                "name": "transcript",
+                "media_type": "text/vtt",
+                "required": false
+              },
+              {
+                "id": "plan-lenses.in.words",
+                "name": "words",
+                "media_type": "text/plain",
+                "required": false
+              },
+              {
+                "id": "plan-lenses.in.angle",
+                "name": "angle",
+                "media_type": "text",
+                "required": false
+              },
+              {
+                "id": "plan-lenses.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "plan-lenses.in.credit",
+                "name": "credit",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "plan-lenses.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "plan-lenses.out.plan",
+                "name": "plan",
+                "media_type": "application/json"
+              },
+              {
+                "id": "plan-lenses.out.facts",
+                "name": "facts",
+                "media_type": "application/json"
+              },
+              {
+                "id": "plan-lenses.out.site-read",
+                "name": "site-read",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_2a71530426df76b64f",
+      "kind": "agent",
+      "agent": "UBQVRCKBL3O2REGIZ5XQ6XX4OLONUID23VF4BOJYHU7W3THTMPYJPQ4O",
+      "label": "Fact checker",
+      "ports": {
+        "agent": "UBQVRCKBL3O2REGIZ5XQ6XX4OLONUID23VF4BOJYHU7W3THTMPYJPQ4O",
+        "label": "Fact checker",
+        "offerings": [
+          {
+            "id": "check-facts",
+            "name": "Check facts",
+            "inputs": [
+              {
+                "id": "check-facts.in.facts",
+                "name": "facts",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "check-facts.in.site-read",
+                "name": "site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.repo-read",
+                "name": "repo-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.counts",
+                "name": "counts",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.share of voice",
+                "name": "share of voice",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.timeline",
+                "name": "timeline",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.architecture",
+                "name": "architecture",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.subject",
+                "name": "subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck rip",
+                "name": "deck rip",
+                "media_type": "application/vnd.agentmesh.deck-rip+json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document site-read",
+                "name": "document site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck site-read",
+                "name": "deck site-read",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document subject",
+                "name": "document subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.deck subject",
+                "name": "deck subject",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "check-facts.in.document read",
+                "name": "document read",
+                "media_type": "application/vnd.agentmesh.document-read+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "check-facts.out.facts",
+                "name": "facts",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.removed",
+                "name": "removed",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.credit",
+                "name": "credit",
+                "media_type": "application/json"
+              },
+              {
+                "id": "check-facts.out.facts page",
+                "name": "facts page",
+                "media_type": "text/markdown"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_0a273820450a589070",
+      "kind": "agent",
+      "agent": "UASL4LQMKZQZYXMPUYT3B3IZUPFEGID36ENJXBH5QJ7W5S5YR5IFPSA7",
+      "label": "Lens writer",
+      "ports": {
+        "agent": "UASL4LQMKZQZYXMPUYT3B3IZUPFEGID36ENJXBH5QJ7W5S5YR5IFPSA7",
+        "label": "Lens writer",
+        "offerings": [
+          {
+            "id": "write-spokes",
+            "name": "Write the spokes",
+            "inputs": [
+              {
+                "id": "write-spokes.in.plan",
+                "name": "plan",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-spokes.in.facts",
+                "name": "facts",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "write-spokes.in.removed",
+                "name": "removed",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-spokes.in.credit",
+                "name": "credit",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "write-spokes.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "write-spokes.out.canvas",
+                "name": "canvas",
+                "media_type": "application/json"
+              },
+              {
+                "id": "write-spokes.out.spokes",
+                "name": "spokes",
+                "media_type": "application/json"
+              }
+            ]
+          },
+          {
+            "id": "expand-spoke",
+            "name": "Go deeper on a spoke",
+            "inputs": [
+              {
+                "id": "expand-spoke.in.canvas",
+                "name": "canvas",
+                "media_type": "application/json",
+                "required": true
+              },
+              {
+                "id": "expand-spoke.in.expand",
+                "name": "expand",
+                "media_type": "application/json",
+                "required": false
+              },
+              {
+                "id": "expand-spoke.in.run-context",
+                "name": "run-context",
+                "media_type": "application/vnd.agentmesh.run-context+json",
+                "required": false
+              }
+            ],
+            "outputs": [
+              {
+                "id": "expand-spoke.out.expansion",
+                "name": "expansion",
+                "media_type": "application/json"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "n_edb6e39921206a3b76",
+      "kind": "end",
+      "agent": "",
+      "label": "End",
+      "ports": {
+        "agent": "",
+        "label": "End",
+        "offerings": [
+          {
+            "id": "end",
+            "name": "End",
+            "inputs": [
+              {
+                "id": "end.in.canvas",
+                "name": "canvas",
+                "media_type": "application/json",
+                "required": null
+              },
+              {
+                "id": "end.in.*",
+                "name": "what you get",
+                "media_type": null,
+                "required": null
+              }
+            ],
+            "outputs": []
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from_node": "n_2a71530426df76b64f",
+      "from_port": "check-facts.out.credit",
+      "to_node": "n_0a273820450a589070",
+      "to_port": "write-spokes.in.credit"
+    },
+    {
+      "from_node": "n_2a71530426df76b64f",
+      "from_port": "check-facts.out.facts",
+      "to_node": "n_0a273820450a589070",
+      "to_port": "write-spokes.in.facts"
+    },
+    {
+      "from_node": "n_c71b296cb726fcf203",
+      "from_port": "plan-lenses.out.plan",
+      "to_node": "n_0a273820450a589070",
+      "to_port": "write-spokes.in.plan"
+    },
+    {
+      "from_node": "n_2a71530426df76b64f",
+      "from_port": "check-facts.out.removed",
+      "to_node": "n_0a273820450a589070",
+      "to_port": "write-spokes.in.removed"
+    },
+    {
+      "from_node": "n_c71b296cb726fcf203",
+      "from_port": "plan-lenses.out.facts",
+      "to_node": "n_2a71530426df76b64f",
+      "to_port": "check-facts.in.facts"
+    },
+    {
+      "from_node": "n_c71b296cb726fcf203",
+      "from_port": "plan-lenses.out.site-read",
+      "to_node": "n_2a71530426df76b64f",
+      "to_port": "check-facts.in.site-read"
+    },
+    {
+      "from_node": "n_a0bc499ce663e9c649",
+      "from_port": "start.out.url",
+      "to_node": "n_9174c9b4c086fd4b59",
+      "to_port": "read-site.in.url"
+    },
+    {
+      "from_node": "n_a0bc499ce663e9c649",
+      "from_port": "start.out.angle",
+      "to_node": "n_c71b296cb726fcf203",
+      "to_port": "plan-lenses.in.angle"
+    },
+    {
+      "from_node": "n_9174c9b4c086fd4b59",
+      "from_port": "read-site.out.site-read",
+      "to_node": "n_c71b296cb726fcf203",
+      "to_port": "plan-lenses.in.site-read"
+    },
+    {
+      "from_node": "n_9174c9b4c086fd4b59",
+      "from_port": "read-site.out.subject",
+      "to_node": "n_c71b296cb726fcf203",
+      "to_port": "plan-lenses.in.subject"
+    },
+    {
+      "from_node": "n_a0bc499ce663e9c649",
+      "from_port": "start.out.words",
+      "to_node": "n_c71b296cb726fcf203",
+      "to_port": "plan-lenses.in.words"
+    },
+    {
+      "from_node": "n_0a273820450a589070",
+      "from_port": "write-spokes.out.canvas",
+      "to_node": "n_edb6e39921206a3b76",
+      "to_port": "end.in.canvas"
+    }
+  ]
+}

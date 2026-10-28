@@ -1,0 +1,161 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "does": "Works out what a change to an agent touches before anything is built. Given the agent's declaration as it runs today and as it would be after the change, and the platform's list of what depends on it, it names every dependent with where it was learned of, and answers each one compatible, breaking or a change of behavior, with the reason. It reads the dependent solutions' canvases and the agents that take what it hands back when they are given, and compares kinds by the platform's own rule for whether a line fits. It files a dependency debt in the ledger, owed to the dependent's owner, for each one that is not compatible, and writes the impact report the person who asked for the change approves or refuses it from. It calls no model, changes nothing it reports on and approves nothing. It holds the impact analyst role (agentroles.ai) for the Impact stage of the Agent Development Lifecycle.",
+  "offerings": [
+    {
+      "id": "agent-change",
+      "name": "Report on a change to an agent",
+      "does": "Answers what a change to an agent touches: every dependent, where it was learned of, and compatible, breaking or a change of behavior for each, with the reason, in an impact report, and a dependency debt filed for each one that is not compatible.",
+      "inputs": [
+        {
+          "name": "running version",
+          "kind": "application/vnd.agentmesh.agent-descriptor+json",
+          "required": true,
+          "given_by": "either",
+          "about": "The agent's declaration as it runs today, an agent-descriptor-v1 document: `{format, agent_version, offerings, refusals}`."
+        },
+        {
+          "name": "changed version",
+          "kind": "application/vnd.agentmesh.agent-descriptor+json",
+          "required": true,
+          "given_by": "either",
+          "about": "The agent's declaration as it would be after the change, the same shape. Of the two, the one with the lower agent_version is read as the running version."
+        },
+        {
+          "name": "what depends on it",
+          "kind": "application/vnd.agentmesh.dependents+json",
+          "required": true,
+          "given_by": "either",
+          "about": "The platform's list of what depends on the agent, as dependents_list answers it: `{subject, read_at, dependents, unread, not_read}`."
+        },
+        {
+          "name": "dependent solutions",
+          "kind": "application/vnd.agentmesh.solution+json",
+          "required": false,
+          "given_by": "either",
+          "about": "A dependent solution as the platform answers GET /v1/solutions/:id, one file each, so its lines out of and into the agent are read: `{id, name, org, nodes, connections}`."
+        },
+        {
+          "name": "agents that may take its outputs",
+          "kind": "application/vnd.agentmesh.agent-ports+json",
+          "required": false,
+          "given_by": "either",
+          "about": "An agent's ports as the platform reads them for a canvas (ports.ts readPorts), one or a list, so each one that takes what this agent hands back is answered: `{agent, label, offerings}`."
+        },
+        {
+          "name": "runtime requirements",
+          "kind": "application/vnd.agentmesh.agent-runtime-requirements+json",
+          "required": false,
+          "given_by": "either",
+          "about": "The agent-runtime-requirements-v1 before and after the change, two files, for the price and the limits: `{format, job_seconds, price}`."
+        },
+        {
+          "name": "what changed",
+          "kind": "text",
+          "required": false,
+          "given_by": "person",
+          "about": "The change in the person's words, on a line of its own after `what changed:`. It is quoted in the report; it never decides an answer the declarations decide."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "impact report",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "The impact report, Markdown for the person who approves or refuses the change. A front matter header `report, subject, running, changed, read_at, verdict, counts, dependents, approved` lists each dependent with its answer (compatible, breaking or change of behavior) and the reason, then `## What changed`, `## Each dependent`, `## The agents that read what it hands back`, `## What is owed`, `## What to redo and what to reuse`, `## Cost`, `## Not read` and `## Your decision`. It approves nothing."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-change",
+          "name": "Read the change",
+          "does": "Sorts the attached files into the two declarations, the dependents list, the solutions, the agents' ports and the runtime requirements, by what each holds, and says which declaration runs today and why.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "compare-the-declarations",
+          "name": "Compare the declarations",
+          "does": "Lists every difference between the two declarations and the two runtime requirements, each marked compatible, breaking, change of behavior, words only, or to be answered for each reader.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "answer-each-dependent",
+          "name": "Answer each dependent",
+          "does": "Answers each dependent from what it uses: the lines its canvas draws, the inputs an agent declares, or the offerings it was seen using, by the platform's own rule for whether a line fits.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "file-what-is-owed",
+          "name": "File what is owed",
+          "does": "Files one dependency debt in the ledger for each dependent answered breaking or change of behavior, owed to its owner and holding back promote and decommission, and never files the same one twice.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-report",
+          "name": "Write the report",
+          "does": "Writes the impact report, pieces.json and the reply, which says what was filed and declines any request to approve.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ]
+    }
+  ],
+  "refusals": "Approving a change, or saying whether to go ahead with it. The person who asked for the change decides from the report; asked to approve, the reply says no, and the report is delivered as it stands.\nChanging, building or deploying the agent, or anything that depends on it. It writes the report and files ledger items, and nothing else.\nJudging whether the change is worth making. The report says what the change touches, never whether it is a good idea.\nRunning the new version. Whether a change of behavior matters is settled by running the new version against each dependent's own check, which is the conformance checker's work once the new version exists.\nCalling a dependent compatible when it could not be told. An answer it cannot work out from the declarations and the lines is breaking, and the report says why it could not tell.\nLeaving a dependent out. Every dependent the platform's list names and every one given is in the report with where it was found, and a source of dependents that could not be read is named as not read.\nFiling the same debt twice. An item already in the ledger for the same change, owed to the same owner for the same dependent, is reported by its number and not filed again.\nReading anything a message names. It reads the files attached to the job and nothing else; a path or an address in the message is not followed.\nCalling a model. The comparison follows written rules, so the same two versions and the same dependents always give the same report.",
+  "escalates": [
+    "The decision on the change. The report goes to the person who asked for the change, and whether the change goes ahead is theirs."
+  ],
+  "records": [
+    {
+      "name": "what was owed and what the ledger said, per job: each item, owed to whom, and its number or why it was not filed",
+      "when": "per_task",
+      "file": "*/filed.json"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "the-ledger",
+      "access": "write",
+      "needs": "to file a dependency debt, owed to the dependent's owner, for each dependent answered breaking or change of behavior, and to read what is already filed so nothing is filed twice"
+    }
+  ]
+}

@@ -47,6 +47,7 @@ replaced by any agent that holds the same role.
 | Architecture and Design (architecture) | [solution architect](https://agentroles.ai/solution-architect.html) | None | There is no reference agent for this role. A person or any agent that holds the role can do it. |
 | Requirements, Architecture and Design (design) | [spec writer](https://agentroles.ai/spec-writer.html) | [agents/spec-writer](agents/spec-writer) | Yes, with a model key |
 | Requirements, Architecture and Design (design) | [solution planner](https://agentroles.ai/solution-planner.html) | [agents/solution-planner](agents/solution-planner) | Yes, with a model key |
+| Impact | [impact analyst](https://agentroles.ai/impact-analyst.html) | [agents/impact-analyst](agents/impact-analyst) | Yes; filing what is owed needs the platform's ledger |
 | Source | [catalog](https://agentroles.ai/catalog.html) | [agents/catalog](agents/catalog) | The matching logic does; the agent runs inside the AgentMesh services |
 | Test | [test writer](https://agentroles.ai/test-writer.html) | [agents/test-writer](agents/test-writer) | Yes, with a model key |
 | Code | [code writer](https://agentroles.ai/code-writer.html) | [agents/code-writer](agents/code-writer) | Yes, with a coding harness |
@@ -99,7 +100,7 @@ deployment manager. From the repository root:
 
 ```sh
 export AGENTMESH_ENV=example
-for a in spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer; do
+for a in spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst; do
   (cd agents/$a && node --test test/*.test.mjs)
 done
 node --test agents/conformance-checker/test/*.test.mjs

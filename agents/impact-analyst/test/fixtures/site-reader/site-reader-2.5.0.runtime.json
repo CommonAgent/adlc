@@ -1,0 +1,66 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "chromium",
+      "purpose": "opens a page that shows its words only when JavaScript runs and reads it as drawn"
+    }
+  ],
+  "dependencies": [
+    {
+      "skill": "read-site",
+      "lockfile": "skills/read-site/scripts/package-lock.json",
+      "sha256": "71c8ac74d7540d6f8eef7ce1fe905fa4b300835bd5928ce5747c8935685a43f3"
+    }
+  ],
+  "systems": [],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "every record the descriptor names"
+    },
+    {
+      "name": "work",
+      "purpose": "inputs and drafts in progress"
+    }
+  ],
+  "job_seconds": 900,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "agent": true
+    },
+    "price": {
+      "model": "free"
+    }
+  },
+  "run": {
+    "read-site": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/read-site/scripts/read-site.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}
