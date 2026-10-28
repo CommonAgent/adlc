@@ -136,7 +136,7 @@ const RUN = json(join(AGENT, "agent-runtime-requirements.json")).run["watch-the-
 /** One message, run as the host runs the package's command: the run spec's
  *  own arguments with the placeholders filled in. Resolves { status, doc,
  *  jobDir, recordsDir, outbox }. */
-export function runJob(h, { message = "", from = "owner.platform@agentmesh.ai", inReplyTo = "none", env = {} } = {}) {
+export function runJob(h, { message = "", from = "owner.platform@agentmesh.ai", inReplyTo = "none", env = {}, hostSends = true } = {}) {
   const id = `msg-${++h.n}`;
   const jobDir = join(h.root, "jobs", id);
   mkdirSync(jobDir, { recursive: true });
@@ -153,7 +153,11 @@ export function runJob(h, { message = "", from = "owner.platform@agentmesh.ai", 
     child.on("close", (status) => {
       let doc = null;
       try { doc = JSON.parse(out.trim()); } catch { doc = { unreadable: out, err }; }
-      resolve({ status, doc, jobDir, recordsDir: join(h.records, id), outbox: outboxOf(jobDir) });
+      // As the host does when the job ends: send what it left, and write the
+      // id each went out as beside it.
+      const outbox = outboxOf(jobDir);
+      if (hostSends && outbox.length) writeFileSync(join(jobDir, "out", "outbox.sent.jsonl"), outbox.map((l) => JSON.stringify({ to: l.handle, message_id: `m-${l.ref}`, ref: l.ref })).join("\n") + "\n");
+      resolve({ status, doc, jobDir, recordsDir: join(h.records, id), outbox });
     });
   });
 }

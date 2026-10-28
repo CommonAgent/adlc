@@ -59,6 +59,7 @@ function answering(asked, waitSeconds) {
   if (asked.outcome === "silent") return { state: "no", why: asked.why ? asked.why.replace(/^no answer/, "it did not answer") : `it did not answer within ${waitSeconds}s`, gave_up_at: asked.gave_up_at, ...base, raise: true };
   if (asked.outcome === "held") return { state: "unknown", why: `the question was held at its door for its owner, so it was never asked: ${asked.why}`, gave_up_at: asked.gave_up_at, ...base, raise: false };
   if (asked.outcome === "refused") return { state: "unknown", why: `its door refused the question: ${asked.why}`, gave_up_at: asked.gave_up_at, ...base, raise: false };
+  if (asked.outcome === "unsent") return { state: "unknown", why: `the question was never sent: ${asked.why}`, gave_up_at: asked.gave_up_at ?? asked.sent_at, ...base, raise: false };
   return { state: "unknown", why: `the question could not be sent: ${asked.why}`, gave_up_at: asked.gave_up_at ?? asked.sent_at, ...base, raise: false };
 }
 
