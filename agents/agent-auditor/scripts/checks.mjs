@@ -216,6 +216,9 @@ export const REGISTERED = {
     const facing = [...outputs].filter(([, o]) => PERSON_FACING(o.kind)).map(([n, o]) => `${n} (${base(o.kind)})`);
     if (!facing.length) return PASS("no output a person reads or watches is declared");
     if (cu.length) return PASS(`person-facing outputs ${facing.join(", ")}; can_use declares ${cu.map((c) => trim(c?.schema)).join(", ")}`);
+    // An empty list is a statement (Common Agent 6.14.4): the agent reads no
+    // standing asset, said on purpose. The package maker honors it the same way.
+    if (Array.isArray(dd.doc.can_use)) return PASS(`person-facing outputs ${facing.join(", ")}; can_use is declared empty, which states the agent reads no standing asset (6.14.4)`);
     return FAIL(`person-facing outputs ${facing.join(", ")}, and no can_use entry; no architecture record was given to the audit to say why it reads none`, "can_use");
   },
 

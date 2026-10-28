@@ -184,3 +184,13 @@ test("can-use-declared reads the package maker's own standing rules when it runs
     assert.doesNotMatch(known.evidence, /does not say without/);
   } finally { rmSync(out, { recursive: true, force: true }); }
 });
+
+test("person-facing-declares-library without the package maker: can_use [] is a statement, a missing can_use is not (6.14.4)", () => {
+  const doc = (extra) => ({ format: "agent-descriptor-v1", agent_version: "1.0.0", does: "d", offerings: [{ id: "write", name: "Write", inputs: [], outputs: [{ name: "the note", kind: "text/markdown" }] }], ...extra });
+  const ctxOf = (d) => ({ facts: { pkg: { descriptor: d }, dev: {} }, packageMaker: { ran: false }, schemas: null });
+  const empty = REGISTERED["can-use-declared"]({ id: "person-facing-declares-library" }, ctxOf(doc({ can_use: [] })));
+  const absent = REGISTERED["can-use-declared"]({ id: "person-facing-declares-library" }, ctxOf(doc({})));
+  assert.equal(empty.result, "pass", empty.evidence);
+  assert.match(empty.evidence, /declared empty/);
+  assert.equal(absent.result, "fail", absent.evidence);
+});
