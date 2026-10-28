@@ -44,12 +44,14 @@ evidence: <what the report shows>
   read from the agent as it runs: its served Descriptor, its deploys, its run
   records. `stage-record` is a record a lifecycle stage left for this
   version.
-- **check.** The name of the test that runs the check. An existing test is
-  named `<repository>:<path>[#<function>]`, where the repository is `adlc`
-  (CommonAgent/adlc) or `agentmesh` (the AgentMesh repository). A test the
-  auditor runs itself is named `audit:<name>`. A check whose test is not
-  registered with the auditor is reported under "Not checked", with the
-  reason, and is never skipped silently.
+- **check.** The name of the test the auditor registers to run the check.
+  Where an existing test already holds the rule (the package maker's format,
+  model and standing-asset rules, AgentMesh's `check-no-model-literals`
+  gate, the registry's descriptor validation, the code writer's signed
+  delivery manifests), the explanation under the check names it, and the
+  auditor's registered test runs it. A check whose test is not registered
+  with the auditor is reported under "Not checked", with the reason, and is
+  never skipped silently.
 - **fixed-by.** The stage that fixes a finding. The report files each
   finding as a debt routed to that stage.
 - **level.** What a finding does to a new agent's verdict: `refuse` makes it
@@ -66,13 +68,15 @@ id: descriptor-stored-signed
 says: The agent serves a bound Descriptor that the registry stores, signed by the agent's own key.
 why: The Descriptor is what a buyer, a page and every gate reads; one the registry does not hold, or one whose signature does not verify, is a claim nobody can hold the agent to.
 kind: run-time
-check: agentmesh:server-release/server/src/registry/descriptor-store.ts#validateDescriptor
+check: descriptor-signed
 fixed-by: deploy
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: the digest of the Descriptor served at the agent's address, the registry's stored digest, and whether the signature verifies under the subject key
 ```
 
+It runs the registry's own validation
+(`validateDescriptor` in AgentMesh `server-release/server/src/registry/descriptor-store.ts`).
 The auditor fetches the Descriptor from the agent's descriptor door, asks
 the registry for the one it stores, and runs the registry's own validation
 over the bytes: bound (not a draft), the right format, signed by the subject
@@ -80,11 +84,51 @@ and not by another key. A Descriptor served but not stored, or stored but
 different from the one served, is a finding.
 
 ```yaml
+id: registered
+says: The agent is registered on the mesh under its handle, and its handle resolves to the address the auditor was given.
+why: The gates and the catalog name an agent by its handle; an agent that is not registered, or whose handle resolves elsewhere, is not the agent that was audited.
+kind: run-time
+check: registered
+fixed-by: deploy
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the handle, the address it resolves to, and the address given
+```
+
+```yaml
+id: descriptor-floor
+says: The Descriptor the agent serves holds at least the minimal Descriptor's members.
+why: A Descriptor below the floor cannot be read by a buyer, a page or a gate, whatever else it says.
+kind: run-time
+check: descriptor-floor
+fixed-by: package
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: each floor member, present or missing
+```
+
+The floor is Common Agent Section 4.9 (the minimal Descriptor's members,
+Sections 6.2 and 6.6), the rule the mesh-adapter's `descriptor-floor` test
+holds every node to.
+
+```yaml
+id: descriptor-matches-package
+says: The Descriptor the agent serves is the one in the audited package, bound for this deploy.
+why: An agent serving a Descriptor other than its package's makes claims nobody built or checked.
+kind: run-time
+check: descriptor-matches-package
+fixed-by: deploy
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the package's Descriptor digest and the served one's, and each member that differs other than those a deploy binds
+```
+
+```yaml
 id: descriptor-person-members
 says: The Descriptor carries the members a person reads, which are name, summary, will_not, and given_by on every input.
 why: A page shows what the agent says about itself; where a member is absent the page must say the agent has not said, and a person deciding whether to use it learns nothing.
 kind: design-time
-check: audit:descriptor-person-members
+check: descriptor-person-members
 fixed-by: design
 level: warn
 applies: new agents from 2026-10-28; existing agents from not set
@@ -103,22 +147,23 @@ id: specific-kinds
 says: Every input and output declares a specific kind, never a bare application/json.
 why: The next agent, the person reviewing and the App all go by the declared kind; a bare JSON kind says nothing about what the piece is, so a hand-off cannot be matched or checked.
 kind: design-time
-check: adlc:agents/package-maker/build.py#format_findings
+check: package-maker-format-rules
 fixed-by: design
 level: refuse
 applies: new agents from 2026-10-27; existing agents from not set
 evidence: each input or output declared application/json, by its job and name
 ```
 
-The package maker's format rule 1 (agents/package-maker/README.md). It
-already refuses a new agent's package and warns for an existing one.
+The package maker's format rule 1 (`format_findings` in
+agents/package-maker/build.py; agents/package-maker/README.md). It already
+refuses a new agent's package and warns for an existing one.
 
 ```yaml
 id: people-read-markdown
 says: Words a person reads, or one agent hands another to read, are delivered as text/markdown; a page, picture, sound or film uses its own media type.
 why: Markdown reads well as it is and renders well; plain text loses its structure, and JSON or an HTML page put in front of a person to read words is a format chosen for code.
 kind: run-time
-check: adlc:agents/test-writer/references/delivered-formats.test.mjs#checkDelivered
+check: delivered-formats
 fixed-by: design
 level: warn
 applies: new agents from 2026-10-28; existing agents from not set
@@ -126,7 +171,8 @@ evidence: each person-facing output with its declared kind, and for each deliver
 ```
 
 The architecture standard, section 4, is the rule. The test writer's
-delivered-formats check holds each delivered piece to its declared kind, so
+delivered-formats check (`checkDelivered` in
+agents/test-writer/references/delivered-formats.test.mjs) holds each delivered piece to its declared kind, so
 a piece declared Markdown is Markdown; this check also reads the declaration,
 and a person-facing output of words declared anything other than
 `text/markdown` is a finding.
@@ -138,15 +184,16 @@ id: no-model-names
 says: No model is named in the agent's code or skills; a model is a bound system the install and the run config choose.
 why: A model named in code breaks when that model is retired, and nothing an install sets can change it; Brand reader answered 404 when the model written into it went.
 kind: design-time
-check: agentmesh:tools/ci/check-no-model-literals.mjs
+check: no-model-literals
 fixed-by: code
 level: refuse
 applies: new agents from 2026-10-27; existing agents from not set
 evidence: each model name found, with its file and line
 ```
 
-The repository-wide gate reads every package in the AgentMesh repository.
-The package maker's format rule 3 (`adlc:agents/package-maker/build.py#model_findings`)
+The test is AgentMesh's `tools/ci/check-no-model-literals.mjs`, the gate
+that reads every package in the AgentMesh repository. The package maker's
+format rule 3 (`model_findings` in agents/package-maker/build.py)
 runs the same rule over one agent's folder as it is built, and the auditor
 may run either over the package it is given.
 
@@ -157,7 +204,7 @@ id: revisions-declared
 says: Every offering a person can buy declares its revisions policy, saying how many changes are included, for how long, and the price of each further one.
 why: A buyer who asks for a change needs to know before buying whether it is included and what it costs; an offering silent on revisions leaves that to argument.
 kind: design-time
-check: audit:revisions-declared
+check: revisions-declared
 fixed-by: design
 level: warn
 applies: new agents from 2026-10-28; existing agents from not set
@@ -165,7 +212,7 @@ evidence: each offered job with its revisions policy, or that it has none
 ```
 
 The package maker checks the shape of a policy that is given
-(`adlc:agents/package-maker/build.py#revisions_policy`) but does not require
+(`revisions_policy` in agents/package-maker/build.py) but does not require
 one; this check is about presence.
 
 ## Standing assets
@@ -175,21 +222,24 @@ id: can-use-known-schema
 says: Every can_use entry names a schema from the list of known standing-asset kinds.
 why: A schema nobody publishes is a shape the organization cannot keep, approve or hand over, so the agent would read nothing it was given.
 kind: design-time
-check: adlc:agents/package-maker/build.py#standing_findings
+check: can-use-declared
 fixed-by: design
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: each can_use schema and whether it is on the list, with the list's digest
 ```
 
-The list is `standards/standing-asset-schemas.json`.
+The list is `standards/standing-asset-schemas.json`. The package maker's
+standing-asset rules (`standing_findings` in agents/package-maker/build.py)
+hold this check and the next two as a package is built, and the build
+record carries their findings under `standing_rules`.
 
 ```yaml
 id: can-use-without
 says: Every can_use entry says what the agent does when no asset of that kind is given.
 why: Most jobs run without the organization's brand or style guide at hand; a person needs to know whether the agent stops, asks, or falls back to its own house style.
 kind: design-time
-check: adlc:agents/package-maker/build.py#standing_findings
+check: can-use-declared
 fixed-by: design
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
@@ -201,7 +251,7 @@ id: person-facing-declares-library
 says: An agent whose output a person reads or watches (text/markdown, text/html, an image, video or audio) declares the standing assets it reads as can_use, or its architecture record says why it reads none.
 why: Person-facing work that ignores the organization's brand and style comes back off-brand, and the person fixes it by hand every time.
 kind: design-time
-check: adlc:agents/package-maker/build.py#standing_findings
+check: can-use-declared
 fixed-by: architecture
 level: warn
 applies: new agents from 2026-10-28; existing agents from not set
@@ -218,7 +268,7 @@ id: reads-standing-assets
 says: When a standing asset the agent declares is given, the person-facing output reads it, and the run record cites its schema, version_digest and layer.
 why: A declaration the agent does not honor is a claim; the run record is how anyone can tell which version of the brand or style guide a piece was made under.
 kind: run-time
-check: audit:reads-standing-assets
+check: standing-assets-cited
 fixed-by: code
 level: warn
 applies: new agents from 2026-10-28; existing agents from not set
@@ -232,7 +282,7 @@ id: present-dev-and-prod
 says: The agent is deployed on dev at the audited version, and where it is on prod, prod runs the same version or the one before it while this version's prod deploy waits on this audit.
 why: A version that runs on prod and not on dev, or that drifted between them, was never proved where it runs.
 kind: run-time
-check: audit:present-dev-and-prod
+check: versions-dev-prod
 fixed-by: deploy
 level: warn
 applies: new agents from 2026-10-28; existing agents from not set
@@ -248,11 +298,23 @@ hand-made package has none of these, which is why it fails the audit and so
 both gates.
 
 ```yaml
+id: stage-record-requirements
+says: The requirements for this version (what the person asked the agent to do, in their words) are present, signed by their holder, and bound to the package digest.
+why: Every later stage answers the requirements; without them nothing says what the agent was built to do.
+kind: stage-record
+check: stage-record:requirements
+fixed-by: requirements
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the requirements' digest, their signer, and the package digest they name
+```
+
+```yaml
 id: stage-record-architecture
 says: The architecture record for this version is present, signed by its holder, and bound to the package digest.
 why: The record decides the systems, the bindings and the standing assets; without it nothing says those were decided rather than guessed.
 kind: stage-record
-check: audit:stage-record-architecture
+check: stage-record:architecture
 fixed-by: architecture
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
@@ -264,7 +326,7 @@ id: stage-record-design
 says: The Design (the agent's own files as the spec writer delivered them) for this version is present, signed by its holder, and bound to the package digest.
 why: The package must be built from a Design that was written within the architecture record, not from files made by hand.
 kind: stage-record
-check: audit:stage-record-design
+check: stage-record:design
 fixed-by: design
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
@@ -276,7 +338,7 @@ id: stage-record-test
 says: The test suite for this version is present, signed by its holder, and bound to the package digest.
 why: Untested code reaching prod is what the lifecycle exists to stop.
 kind: stage-record
-check: audit:stage-record-test
+check: stage-record:test
 fixed-by: test
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
@@ -288,11 +350,39 @@ id: stage-record-code
 says: Every script in the package was delivered by a code writer, traced through its signed delivery manifest.
 why: A script written or changed by hand after the code stage has passed no review and no test.
 kind: stage-record
-check: adlc:agents/package-maker/provenance.mjs
+check: stage-record:code
 fixed-by: code
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
 evidence: each script with the manifest that traces it, or that none does
+```
+
+The trace is the package maker's `provenance.mjs`: a script is traced when a
+delivery manifest signed by a code writer lists a piece with exactly its
+bytes.
+
+```yaml
+id: stage-record-review
+says: The code review for this version is present, signed by the reviewer, and bound to the package digest.
+why: Code that no reviewer read reaches prod on its author's word alone.
+kind: stage-record
+check: stage-record:review
+fixed-by: code
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the review's digest, its signer, the package digest it names, and its open findings
+```
+
+```yaml
+id: stage-record-security
+says: The security review for this version is present, signed by the reviewer, and bound to the package digest.
+why: What an agent may reach, hold and spend is checked before it runs where the money and the data are.
+kind: stage-record
+check: stage-record:security
+fixed-by: code
+level: refuse
+applies: new agents from 2026-10-28; existing agents from not set
+evidence: the review's digest, its signer, the package digest it names, and its open findings
 ```
 
 ```yaml
@@ -300,7 +390,7 @@ id: stage-record-package
 says: The build record for this version is present, signed by the package maker, and names this package digest.
 why: The build record is what binds every other record to the bytes being deployed.
 kind: stage-record
-check: audit:stage-record-package
+check: stage-record:build-record
 fixed-by: package
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
@@ -312,7 +402,7 @@ id: stage-record-deploy
 says: A deployment record on dev for this package digest is present and signed by the deployment manager.
 why: A version goes to prod only after it ran on dev.
 kind: stage-record
-check: audit:stage-record-deploy
+check: stage-record:deployment-record
 fixed-by: deploy
 level: refuse
 applies: new agents from 2026-10-28; existing agents from not set
@@ -324,7 +414,7 @@ id: stage-record-docs
 says: The agent's documentation for this version is present and names this version.
 why: A person deciding whether to use the agent reads its documentation; documentation for another version misleads them.
 kind: stage-record
-check: audit:stage-record-docs
+check: stage-record:docs
 fixed-by: docs
 level: warn
 applies: new agents from 2026-10-28; existing agents from not set

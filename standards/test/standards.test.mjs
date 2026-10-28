@@ -47,7 +47,7 @@ test("every check carries the members of the form, in order, with values from th
     assert.ok(KINDS.includes(c.kind), `${c.id}: kind ${c.kind}`);
     assert.ok(FIXED_BY.includes(c["fixed-by"]), `${c.id}: fixed-by ${c["fixed-by"]}`);
     assert.ok(LEVELS.includes(c.level), `${c.id}: level ${c.level}`);
-    assert.match(c.check, /^(adlc|agentmesh):[A-Za-z0-9_./-]+(#[A-Za-z0-9_]+)?$|^audit:[a-z0-9-]+$/, `${c.id}: check ${c.check}`);
+    assert.match(c.check, /^(stage-record:[a-z-]+|[a-z][a-z0-9]*(-[a-z0-9]+)*)$/, `${c.id}: check ${c.check}`);
     assert.match(c.applies, /^new agents from \d{4}-\d{2}-\d{2}; existing agents from (\d{4}-\d{2}-\d{2}|not set)$/, `${c.id}: applies`);
   }
 });
@@ -61,15 +61,20 @@ test("the checklist covers the checks the lifecycle plan names", () => {
   }
 });
 
-test("a check named for a file in this repository names one that exists", () => {
-  const root = join(STANDARDS, "..");
+// The names the Agent Auditor registers (lifecycle item 4b). A check named
+// otherwise is reported "not checked" until the auditor registers it, and
+// each one is listed for the auditor in NEW_CHECKS below, never silently.
+const REGISTERED = new Set(["package-maker-format-rules", "no-model-literals", "can-use-declared", "descriptor-floor",
+  "descriptor-signed", "descriptor-matches-package", "versions-dev-prod", "registered",
+  ...["requirements", "architecture", "design", "impact", "source", "test", "code", "review", "security", "package",
+    "build-record", "descriptor", "deployment-record", "conformance"].map((a) => `stage-record:${a}`)]);
+const NEW_CHECKS = new Set(["descriptor-person-members", "delivered-formats", "revisions-declared", "standing-assets-cited",
+  "stage-record:docs"]);
+
+test("every check names a test the auditor registers, or one listed as new for it", () => {
   for (const pairs of checksOf(read("audit-checklist.md"))) {
     const c = Object.fromEntries(pairs);
-    if (!c.check.startsWith("adlc:")) continue;
-    const [path, fn] = c.check.slice(5).split("#");
-    const text = readFileSync(join(root, path), "utf8");
-    // standing_findings arrives with the package maker's standing-asset rules.
-    if (fn && fn !== "standing_findings") assert.match(text, new RegExp(`(def|function) ${fn}\\b`), `${c.id}: ${c.check}`);
+    assert.ok(REGISTERED.has(c.check) || NEW_CHECKS.has(c.check), `${c.id}: ${c.check} is neither registered nor listed as new`);
   }
 });
 
