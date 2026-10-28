@@ -28,6 +28,8 @@ refusing after it.
 Env: MESH_CONTROL_URL (default the environment's urls.app + /v1, env/prod.json),
 MESH_DEPLOY_EXECUTOR_TOKEN_FILE (one line, the bearer), POLL_SECONDS (60).
 """
+import calendar
+import hashlib
 import json
 import os
 import shutil
@@ -49,6 +51,27 @@ import urllib.request
 def _am_env(key, override=None, suffix=""):
     if override and override in os.environ:
         return os.environ[override]
+    name, path, v = _am_env_file()
+    for part in key.split("."):
+        v = v.get(part) if isinstance(v, dict) else None
+        if v is None:
+            raise RuntimeError(f'{key} is not set for environment "{name}" in {path}')
+    return v + suffix
+
+
+def _am_env_section(key):
+    """A value an environment may leave out (audit_gate): None when the file
+    has no such path, or when no environment file can be found."""
+    try:
+        _name, _path, v = _am_env_file()
+    except RuntimeError:
+        return None
+    for part in key.split("."):
+        v = v.get(part) if isinstance(v, dict) else None
+    return v
+
+
+def _am_env_file():
     name = (os.environ.get("AGENTMESH_ENV") or "prod").strip()
     here = os.path.dirname(os.path.abspath(__file__))
     dirs = [os.environ.get("AGENTMESH_ENV_DIR"), os.path.join(here, "env"),
@@ -68,11 +91,7 @@ def _am_env(key, override=None, suffix=""):
         v = json.load(f)
     if not os.environ.get("AGENTMESH_ENV_FILE") and v.get("name") != name:
         raise RuntimeError(f'{path} says it is environment "{v.get("name")}", not "{name}"')
-    for part in key.split("."):
-        v = v.get(part) if isinstance(v, dict) else None
-        if v is None:
-            raise RuntimeError(f'{key} is not set for environment "{name}" in {path}')
-    return v + suffix
+    return name, path, v
 
 
 CONTROL = (os.environ.get("MESH_CONTROL_URL") or _am_env("urls.app", suffix="/v1")).rstrip("/")
@@ -406,9 +425,218 @@ def run_version_act(r):
     return {"ok": bool(result.get("ok")), "result": result, **({"record": record} if record else {})}
 
 
+# ── the audit gate (lifecycle plan item 4c) ──────────────────────────────
+#
+# The deployment manager installs a package only with a current audit pass for
+# that exact package digest, where this environment requires one: env/<name>
+# .json audit_gate.required (prod), its switch variable (AUDIT_GATE) set to on,
+# or the control plane's word on the request (`audit_gate.required`), which it
+# gives when its own gate is on. The control plane checked the pass before it
+# queued the request; this checks it again, itself, from the signed report's
+# own bytes, because this is the one agent that changes the live world.
+#
+# The audit is the platform's (item 4b, GATE-READ.md): GET /v1/audits/<digest>
+# names the newest report, GET /v1/audit-reports/<report digest> serves its
+# exact bytes. Those bytes must hash to the report digest, be for this package
+# digest, be signed (ed25519, the tag below, the report without its
+# signature: line) by an auditor key this environment pins, say pass or
+# pass_with_findings, and not have expired. Container agents from a repository
+# have no package digest and are not covered; retiring a version installs
+# nothing and is not asked.
+
+AUDIT_REPORT_TAG = "agent-audit-report-v1\n"
+PASSING_VERDICTS = ("pass", "pass_with_findings")
+VERIFY_JS = f"{FLEET}/deploymgr-sign.mjs"
+ADAPTER_MODULES = "/usr/lib/node_modules/mesh-adapter/node_modules"
+_KEY_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
+
+
+def _is_user_key(k):
+    return isinstance(k, str) and len(k) == 56 and k[0] == "U" and set(k[1:]) <= _KEY_CHARS
+
+
+def audit_gate_for(r):
+    """(required, why, auditor keys) for this request. Only turns the gate on:
+    nothing on a request turns off what the environment requires."""
+    s = _am_env_section("audit_gate")
+    s = s if isinstance(s, dict) else {}
+    stamp = r.get("audit_gate") if isinstance(r.get("audit_gate"), dict) else {}
+    switch = s.get("switch") if isinstance(s.get("switch"), str) and s.get("switch") else "AUDIT_GATE"
+    if s.get("required") is True:
+        required, why = True, "this environment requires a current audit pass"
+    elif str(os.environ.get(switch, "")).strip().lower() in ("on", "1", "true"):
+        required, why = True, f"{switch} is on here"
+    elif stamp.get("required") is True:
+        required, why = True, "the control plane's gate is on for this request"
+    else:
+        required, why = False, "no audit pass is required here"
+    keys = [k for k in (s.get("auditor_keys") or []) if _is_user_key(k)]
+    if not keys:
+        # The environment file on a fleet host is placed by hand and may not
+        # name the auditor yet; the keys the control plane pins then stand.
+        keys = [k for k in (stamp.get("auditor_keys") or []) if _is_user_key(k)]
+    return required, why, keys
+
+
+def normal_digest(d):
+    s = str(d or "").strip().lower()
+    h = s[7:] if s.startswith("sha256:") else s
+    return f"sha256:{h}" if len(h) == 64 and all(c in "0123456789abcdef" for c in h) else None
+
+
+def front_matter(text):
+    """The report's YAML header as {key: value}, or None when it has none."""
+    lines = text.split("\n")
+    if not lines or lines[0].rstrip("\r") != "---":
+        return None
+    out = {}
+    for line in lines[1:]:
+        line = line.rstrip("\r")
+        if line == "---":
+            return out
+        if ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        k, v = k.strip(), v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]
+        if k and k.replace("_", "").isalpha() and k.islower():
+            out[k] = v
+    return None
+
+
+def signed_text(text):
+    """The report without its signature: line, as the auditor signed it."""
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line.startswith("signature:"):
+            return "\n".join(lines[:i] + lines[i + 1:])
+    return text
+
+
+def signature_verifies(key, message, sig):
+    """Ed25519 under an nkey, through the deployment manager's own signer
+    (sign.mjs --verify) and the adapter's nkeys.js, as record.py signs."""
+    try:
+        env = {k: v for k, v in os.environ.items() if not k.startswith("NODE_CHANNEL")}
+        env["NODE_PATH"] = ADAPTER_MODULES
+        p = subprocess.run(["node", VERIFY_JS, "--verify", key, sig], input=message,
+                           capture_output=True, text=True, timeout=60, env=env)
+        return p.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def fetch_text(path, timeout=30):
+    req = urllib.request.Request(f"{CONTROL}{path}", headers={"accept": "text/markdown"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8")
+
+
+def _epoch(iso):
+    """Seconds since the epoch for an ISO-8601 UTC time, or None."""
+    try:
+        return calendar.timegm(time.strptime(str(iso)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        return None
+
+
+def judge_report_text(text, digest, keys, now):
+    """None when the report's own bytes are a current pass for the digest;
+    otherwise what is missing."""
+    h = front_matter(text)
+    if h is None:
+        return "the audit report has no readable header"
+    if h.get("audit_report") != "v1":
+        return "the audit report is not audit_report: v1"
+    if normal_digest(h.get("package_digest")) != digest:
+        return f"the audit report is for {h.get('package_digest')}, not this digest"
+    if not keys:
+        return "this environment pins no auditor key, so no audit can be accepted"
+    if h.get("signed_by") not in keys:
+        return f"the audit is signed_by {h.get('signed_by')}, which is not the auditor key this environment pins"
+    if h.get("verdict") not in PASSING_VERDICTS:
+        return f"the newest audit is {h.get('verdict')}"
+    expires = _epoch(h.get("expires_at", ""))
+    if expires is None:
+        return f"the audit report's expires_at \"{h.get('expires_at')}\" is not a time"
+    if expires <= now:
+        return f"the audit pass expired at {h.get('expires_at')}"
+    if not signature_verifies(h["signed_by"], AUDIT_REPORT_TAG + signed_text(text), h.get("signature", "")):
+        return "the audit report's signature does not verify under its signed_by key"
+    return None
+
+
+def audit_refusal(r, now=None):
+    """None when this request may be installed; otherwise the refusal, naming
+    the digest, what is missing and the report, or that none exists."""
+    required, _why, keys = audit_gate_for(r)
+    if not required:
+        return None
+    now = time.time() if now is None else now
+    pkg = r.get("package") or {}
+    who = " ".join(x for x in (pkg.get("name"), str(pkg.get("version") or "")) if x) or "this package"
+    digest = normal_digest(pkg.get("sha256"))
+    if not digest:
+        return f"{who} cannot be deployed here: it carries no package digest, so no audit pass can be for it."
+    head = f"{who} cannot be deployed here: no current audit pass for {digest}"
+    try:
+        answer = call(f"/audits/{digest}")
+    except Exception as e:  # noqa: BLE001
+        return f"{head}: the audit could not be read ({str(e)[:120]})."
+    cur = answer.get("current") if isinstance(answer, dict) else None
+    if not isinstance(cur, dict):
+        return f"{head}: no audit report exists for this package digest."
+    url = cur.get("report_url")
+    tail = f". The audit report: {url}" if url else "."
+    if answer.get("current_pass") is not True:
+        return f"{head}: {answer.get('why') or 'the newest audit is not a current pass'}{tail}"
+    rd = normal_digest(cur.get("report_digest"))
+    if not rd:
+        return f"{head}: the audit names no report to read{tail}"
+    try:
+        text = fetch_text(f"/audit-reports/{rd}")
+    except Exception as e:  # noqa: BLE001
+        return f"{head}: the audit report could not be read ({str(e)[:120]}){tail}"
+    if "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest() != rd:
+        return f"{head}: the audit report served is not the one the audit names{tail}"
+    missing = judge_report_text(text, digest, keys, now)
+    return f"{head}: {missing}{tail}" if missing else None
+
+
+def refuse_by_audit_gate(r, why):
+    """The refusal, recorded and signed like any other (a refusal is an act,
+    section 11.3), and nothing placed: no token, no argfile, no procedure."""
+    args = r.get("args") or {}
+    pkg = r.get("package") or {}
+    result = {"ok": False, "act": "deploy", "step": "audit-gate", "error": why,
+              "package": pkg.get("name") or args.get("name"), "version": pkg.get("version"),
+              "instructed_by": r.get("decided_by") or "the owner"}
+    print(f"[deploy-executor] {r.get('id')}: refused at the audit gate: {why}", flush=True)
+    record = None
+    try:
+        rp = subprocess.run(["python3", RECORD, DM_IDENTITY], input=json.dumps(result),
+                            capture_output=True, text=True, timeout=180)
+        if rp.returncode == 0 and rp.stdout.strip():
+            record = json.loads(rp.stdout)
+            os.makedirs(DM_RECORDS, exist_ok=True)
+            label = args.get("name") or pkg.get("name") or "package"
+            with open(f"{DM_RECORDS}/{label}-refuse-{str(r.get('id', ''))[3:15].lower()}.json", "w") as f:
+                json.dump(record, f, indent=2)
+    except Exception as e:  # noqa: BLE001
+        print(f"[deploy-executor] refusal record failed: {e}", flush=True)
+    return {"ok": False, "result": result, **({"record": record} if record else {})}
+
+
 def run_one(r):
     if r.get("container"):
         return run_container(r)
+    # Every package install asks the audit gate first: a new install, an
+    # update, a person's own package and a version kept alongside.
+    if not r.get("retire"):
+        refused = audit_refusal(r)
+        if refused:
+            return refuse_by_audit_gate(r, refused)
     if r.get("alongside") or r.get("retire"):
         return run_version_act(r)
     # A package that names a tenant is a person's own agent: the tenant
