@@ -74,6 +74,9 @@ function runConfig(rc) {
   const settings = (rc.settings ?? []).map((s) => {
     const e = { name: str(s.name).trim(), kind: s.kind, default: s.default };
     if ("allowed" in s) e.allowed = s.allowed;
+    for (const k of ["label", "about"]) if (k in s) e[k] = str(s[k]).trim();
+    if ("value_labels" in s) e.value_labels = Object.fromEntries(Object.entries(s.value_labels).map(([k, v]) => [k, str(v).trim()]));
+    for (const k of ["min", "max", "step"]) if (k in s) e[k] = s[k];
     e.job_may_set = s.job_may_set;
     if ("does" in s) e.does = str(s.does).trim();
     declared.set(e.name, e);

@@ -894,7 +894,8 @@ def can_use_declaration(spec):
 
 
 RUN_CONFIG_MEMBERS = ("settings", "tested_models", "named", "replay")
-RUN_CONFIG_SETTING_MEMBERS = ("name", "kind", "default", "allowed", "job_may_set", "does")
+RUN_CONFIG_SETTING_MEMBERS = ("name", "kind", "default", "allowed", "label", "about", "value_labels", "min", "max",
+                              "step", "job_may_set", "does")
 RUN_CONFIG_KINDS = ("preference", "rule")
 RUN_CONFIG_NAMED_MEMBERS = ("name", "settings", "does", "digest")
 
@@ -985,6 +986,39 @@ def run_config_declaration(spec):
             if s["default"] not in allowed:
                 fail(f"run_config setting {name}: the default {s['default']!r} is not in its own allowed list")
             entry["allowed"] = allowed
+        # What a person sees for the setting (Common Agent 6.13, proposed):
+        # its label, a sentence about it, a label for each allowed value, and
+        # for a number its range. Carried as declared; whether a setting says
+        # all it should is the option rules' question (apply_option_rules).
+        for k in ("label", "about"):
+            if k in s:
+                if not (isinstance(s[k], str) and s[k].strip()):
+                    fail(f"run_config setting {name}: {k} is a short text for a person")
+                entry[k] = s[k].strip()
+        if "value_labels" in s:
+            vl = s["value_labels"]
+            if not (isinstance(vl, dict) and vl and all(isinstance(v, str) and v.strip() for v in vl.values())):
+                fail(f"run_config setting {name}: value_labels maps each allowed value to a label for a person")
+            if "allowed" not in s:
+                fail(f"run_config setting {name}: value_labels labels the allowed values, and the setting has none")
+            keys = {str(a) for a in s["allowed"]}
+            for k in vl:
+                if k not in keys:
+                    fail(f"run_config setting {name}: value_labels names {k!r}, which is not an allowed value")
+            entry["value_labels"] = {k: v.strip() for k, v in vl.items()}
+        for k in ("min", "max", "step"):
+            if k in s:
+                if isinstance(s[k], bool) or not isinstance(s[k], (int, float)):
+                    fail(f"run_config setting {name}: {k} is a number")
+                entry[k] = s[k]
+        if "min" in entry and "max" in entry and entry["min"] > entry["max"]:
+            fail(f"run_config setting {name}: min is more than max")
+        if any(k in entry for k in ("min", "max", "step")):
+            d = s["default"]
+            if isinstance(d, bool) or not isinstance(d, (int, float)):
+                fail(f"run_config setting {name}: min, max and step are for a number, and the default is not one")
+            if ("min" in entry and d < entry["min"]) or ("max" in entry and d > entry["max"]):
+                fail(f"run_config setting {name}: the default {d!r} is outside its own range")
         entry["job_may_set"] = s["job_may_set"]
         if "does" in s:
             if not (isinstance(s["does"], str) and s["does"].strip()):
@@ -1486,6 +1520,100 @@ def standing_findings(spec, jobs, src_base, table):
                             f"a person reads, media templates for film and sound), or let the architecture record say "
                             f"why none apply")
     return findings, warnings
+
+
+# ── options and settings ──────────────────────────────────────────────────
+#
+# Two more design-time rules, the audit checklist's options-are-settings and
+# settings-declared-fully, with the format rules' cut-over (refuse a new
+# agent, warn an existing one):
+#
+#   options-are-settings. An input is the material the job is about. One that
+#   only shapes how the job runs (a voice, a tone, a length, a style, a format
+#   choice) is a run-config setting with a label, a default and its allowed
+#   values, and brand or palette material is a can_use standing asset. Read
+#   from the offered jobs' input names (and their about), so a person's page
+#   draws a choice and not a free-text box. Explainer maker declared Voice,
+#   "How it sounds", Target length and Palette as inputs.
+#   settings-declared-fully. Every run-config setting has a label, an about
+#   and a default; allowed whenever its value has a natural set of choices
+#   (its name says voice, tone, length, format and the like, or it is a
+#   rule); a label for each allowed value; and min, max and step for a
+#   number.
+OPTION_RULES_CUTOVER = "2026-10-28"
+OPTION_WORDS = re.compile(r"\b(voice|tone|sounds?|style|length|word[ -]?count|format|duration|pace|speed|level|"
+                          r"mode|size|register|formality|persona)\b", re.I)
+LIBRARY_WORDS = re.compile(r"\b(brand|palette|colou?rs?|logo|fonts?|typefaces?|style[ -]guide|glossary)\b", re.I)
+VALUE_INPUT_KINDS = ("text", "identifier")
+OPTION_LEVELS = {"options-are-settings": "refuse", "settings-declared-fully": "refuse"}
+
+
+def words_of(name):
+    return re.sub(r"[-_]+", " ", str(name or ""))
+
+
+def option_findings(spec, jobs):
+    """Sentences, each starting with its check id, for inputs that are
+    options or library material, and settings that do not say all they
+    should."""
+    found = []
+    offered = set(offered_slugs(jobs))
+    for j in jobs:
+        if j["slug"] not in offered:
+            continue
+        for i in j.get("inputs") or []:
+            if not isinstance(i, dict):
+                continue
+            n = words_of(i.get("name"))
+            if LIBRARY_WORDS.search(n):
+                found.append(f"options-are-settings: job {j['slug']}: input {i.get('name')!r} is brand or library material; "
+                             f"declare it as a can_use standing asset (a brand profile, a style guide, media templates) "
+                             f"with what the agent does without it, not as an input")
+            elif OPTION_WORDS.search(n) and str(i.get("kind") or "") in VALUE_INPUT_KINDS:
+                found.append(f"options-are-settings: job {j['slug']}: input {i.get('name')!r} only shapes how the job runs; "
+                             f"declare it as a run_config setting with a label, an about, a default and its allowed values, "
+                             f"so a page draws a choice and not a free-text box. Inputs are the material the job is about")
+    rc = spec.get("run_config") if isinstance(spec.get("run_config"), dict) else {}
+    for st in rc.get("settings") or []:
+        if not isinstance(st, dict):
+            continue
+        nm = st.get("name")
+        missing = [k for k in ("label", "about") if not (isinstance(st.get(k), str) and st[k].strip())]
+        if "default" not in st:
+            missing.append("default")
+        d = st.get("default")
+        numeric = isinstance(d, (int, float)) and not isinstance(d, bool)
+        if "allowed" not in st and not numeric and (st.get("kind") == "rule" or OPTION_WORDS.search(words_of(nm))):
+            missing.append("allowed (its natural set of choices)")
+        if "allowed" in st:
+            labelled = st.get("value_labels") if isinstance(st.get("value_labels"), dict) else {}
+            unlabelled = [a for a in st.get("allowed") or [] if str(a) not in labelled]
+            if unlabelled:
+                missing.append("value_labels for " + ", ".join(repr(a) for a in unlabelled))
+        if numeric and "allowed" not in st:
+            missing += [k for k in ("min", "max", "step") if k not in st]
+        if missing:
+            found.append(f"settings-declared-fully: run_config setting {nm!r} does not declare {', '.join(missing)}; every "
+                         f"option gets a label, an about, a default and its choices, decided at design time")
+    return found
+
+
+def apply_option_rules(name, spec, jobs):
+    """Warn or refuse on options-are-settings and settings-declared-fully, by
+    the format rules' cut-over, and return what the result and the build
+    record carry about them."""
+    existing = format_existing(name)
+    mode = format_mode(existing)
+    found = option_findings(spec, jobs)
+    if found and mode == "refuse":
+        why = (f"it is a new agent, and the option rules refuse a new agent's findings since {OPTION_RULES_CUTOVER}"
+               if not existing else "the option rules now refuse an existing agent's findings too")
+        fail(f"{name} is refused on its inputs and settings, because {why}: " + "; ".join(found)
+             + ". An agent released before the cut-over is warned instead; FORMAT_EXISTING=1 says so for one this builder does not list")
+    for f in found:
+        warn(f"options: {f}")
+    return {"existing": existing, "mode": mode, "since": OPTION_RULES_CUTOVER, "findings": found,
+            "levels": dict(OPTION_LEVELS)}
 
 
 def apply_standing_rules(name, spec, jobs, src_base):
@@ -2712,9 +2840,10 @@ def build(spec, src_base, out_dir, authored):
     formats = apply_format_rules(name, jobs, src_base, authored)
     # The standing-asset rules, by the same cut-over, before any file is written.
     standing = apply_standing_rules(name, spec, jobs, src_base)
+    options = apply_option_rules(name, spec, jobs)
     if spec.get("kind") in CONTAINER_KINDS:
         # Checked, and nothing written: its code is in its own repository.
-        out({**container_spec(spec, name, version, jobs), "format_rules": formats, "standing_rules": standing,
+        out({**container_spec(spec, name, version, jobs), "format_rules": formats, "standing_rules": standing, "option_rules": options,
              **({"warnings": list(WARNINGS)} if WARNINGS else {})})
     lin = lineage(spec)        # what this package was copied from, if anything
     verify_script(spec, jobs)  # refuse a bad verify before anything is written
@@ -2861,6 +2990,7 @@ def build(spec, src_base, out_dir, authored):
          "refuses_count": len(refuses), "records_count": len(records),
          "format_rules": formats,
          "standing_rules": standing,
+         "option_rules": options,
          "draft": True,
          **({"warnings": list(WARNINGS)} if WARNINGS else {}),
          "note": "Draft package. Nobody has run this agent; review before deploying."})

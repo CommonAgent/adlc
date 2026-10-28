@@ -58,7 +58,11 @@ test("the instruction tells the model the format rules before it drafts", () => 
   assert.match(INSTRUCTION, /application\/vnd\.agentmesh\.<name>\+json/);
   assert.match(INSTRUCTION, /Never a bare "application\/json"/);
   assert.match(INSTRUCTION, /"given_by" is "person", "agent" or "either"/);
-  assert.match(INSTRUCTION, /never decide it for them/);
+  assert.match(INSTRUCTION, /make the format\na setting \(below\), with the default and its choices/);
+  assert.match(INSTRUCTION, /Inputs are only the material the job is about/);
+  assert.match(INSTRUCTION, /is a run-config setting and never an input/);
+  assert.match(INSTRUCTION, /"value_labels"/);
+  assert.match(INSTRUCTION, /Brand, palette, a style guide and\ntemplates are the organization's standing assets, declared in "can_use"/);
   assert.ok(!/such as application\/json/.test(INSTRUCTION), "the instruction still holds bare JSON up as the example kind");
 });
 

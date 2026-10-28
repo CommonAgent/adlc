@@ -157,6 +157,31 @@ warned, and `standing_rules` says why under `not_checked`. To adopt a changed li
 `test_standing.py` and release both files together. `test_standing.py` pins
 the rules and the pin.
 
+## The option rules (2026-10-28)
+
+Two more design-time rules, the audit checklist's `options-are-settings` and
+`settings-declared-fully`, with the same cut-over (refuse a new agent, warn
+an existing one):
+
+1. **Options are settings, inputs are material.** An offered job's input
+   whose name says it only shapes how the job runs (a voice, a tone, a
+   length, a style, a format) and whose kind is `text` or `identifier` is a
+   finding: it belongs in `run_config.settings`. One whose name says brand,
+   palette, colours, logo, font, style guide or glossary is a
+   finding of any kind: it is a `can_use` standing asset. Explainer maker
+   declared Voice, How it sounds, Target length and Palette as inputs.
+2. **Settings declared in full.** Every run-config setting has `label`,
+   `about` and `default`; `allowed` when its value has a natural set of
+   choices (its name says so, or it is a rule); `value_labels` for each
+   allowed value; and `min`, `max` and `step` for a number.
+
+`label`, `about`, `value_labels`, `min`, `max` and `step` are carried into the
+descriptor as declared (Common Agent 6.13, proposed), and checked: a value
+label for a value that is not allowed, or a default outside its range, is
+refused. The result and the signed build record carry `option_rules`
+(`existing`, `mode`, `since`, `findings`, `levels`), each finding starting
+with its check id. `test_options.py` pins them.
+
 ## What it needs
 
 - Python 3.11 or later for `build.py`. Nothing else to build a package.

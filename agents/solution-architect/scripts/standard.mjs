@@ -13,6 +13,7 @@
 // model said, so the record never arrives looking settled when it is not.
 //
 //   needs: node >= 22. Pure: nothing here reads a file or the network.
+import { inputIs, settingMissing } from "./options.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -103,6 +104,8 @@ const numbersIn = (s) => [...String(s).matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => 
 /** The findings the drafting answer carries, as sentences the second go is
  *  handed. `ctx` is {statement, answers, vocabulary, environments}. */
 export function findingsOf(arch, ctx = {}) {
+  // Options are settings and inputs are material (options.mjs, the audit
+  // checklist's options-are-settings and settings-declared-fully).
   const out = [];
   if (!arch || typeof arch !== "object") return ["the answer is not an architecture"];
   const vocab = ctx.vocabulary ?? [];
@@ -136,12 +139,16 @@ export function findingsOf(arch, ctx = {}) {
     else if (!k.includes("/") && !VALUE_KINDS.includes(k)) out.push(`${piece} has the kind ${k}, which is neither a media type nor one of ${VALUE_KINDS.join(", ")}`);
     if (k === "text/markdown" && !trim(f?.convention)) out.push(`${piece} is Markdown with no convention; sketch its header and its fixed headings`);
     if (f?.direction === "in" && !GIVEN_BY.includes(f?.given_by)) out.push(`${piece} does not say who gives it (person, agent or either)`);
+    if (f?.direction === "in" && inputIs(f?.piece, k) === "option") out.push(`${piece} only shapes how the job runs, so it is a setting with a label, an about, a default and its allowed values, not an input; inputs are only the material the job is about`);
+    if (f?.direction === "in" && inputIs(f?.piece, k) === "library") out.push(`${piece} is brand or library material, so it is a standing asset the agent reads (section 10), not an input`);
     if (!trim(f?.why)) out.push(`the format of ${piece} has no reason`);
   }
   for (const s of Array.isArray(arch.settings) ? arch.settings : []) {
     const n = trim(s?.name);
     if (!n) { out.push("a setting has no name"); continue; }
     if (!("default" in (s ?? {}))) out.push(`the setting ${n} has no default`);
+    const missing = settingMissing(s).filter((m) => m !== "default");
+    if (missing.length) out.push(`the setting ${n} does not declare ${missing.join(", ")}; every option gets a label, an about, a default and its choices, decided now and never left open`);
     if (/url|address|host|endpoint|base/i.test(n) || addressesIn(String(s?.default ?? "")).length) out.push(`the setting ${n} is an address, and addresses are never settings`);
     if (/model/i.test(n)) out.push(`the setting ${n} chooses a model; the model is the text-reasoning binding's, placed at install, and the package declares no default for it`);
   }

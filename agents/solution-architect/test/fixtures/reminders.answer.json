@@ -13,7 +13,7 @@
   {"piece": "the run's account", "direction": "out", "kind": "text/markdown", "convention": "a header `sent, skipped`, then `## Sent` and `## Skipped` with one bullet per customer and why", "why": "A person reads what went out."},
   {"piece": "which customers to remind", "direction": "in", "kind": "text", "given_by": "person", "why": "The owner says which renewals are due, in words."}
  ],
- "settings": [{"name": "days-before", "kind": "preference", "default": 14, "job_may_set": false, "why": "How far ahead of a renewal a reminder goes is the organization's habit; two weeks is common."}],
+ "settings": [{"name": "days-before", "kind": "preference", "label": "Days before renewal", "about": "How many days before a renewal the reminder goes.", "default": 14, "min": 1, "max": 60, "step": 1, "job_may_set": false, "why": "How far ahead of a renewal a reminder goes is the organization's habit; two weeks is common."}],
  "decisions": [
   {"decided": "Report each run as Markdown", "why": "A person reads it.", "weighed": "a vendor JSON kind, which only code reads", "follows": "Its headings are fixed so a test can hold them."}
  ],

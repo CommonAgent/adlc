@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.4",
+  "agent_version": "0.1.5",
   "does": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks what only a person can commit to, and designs nothing.",
   "offerings": [
     {

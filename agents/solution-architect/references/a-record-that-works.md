@@ -78,7 +78,7 @@ None.
 
 ## Settings
 
-- `days-before`, a preference with the default 14: How far ahead of a renewal a reminder goes is the organization's habit; two weeks is common.
+- `days-before` ("Days before renewal"), a preference with the default 14, from 1 to 60 in steps of 1: How many days before a renewal the reminder goes. How far ahead of a renewal a reminder goes is the organization's habit; two weeks is common.
 
 ## Decisions
 

@@ -59,6 +59,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/name.mjs
 - scripts/caller.mjs
 - scripts/standard.mjs
+- scripts/options.mjs
 - scripts/bind.mjs
 - scripts/architecture-record.mjs
 - scripts/standing.mjs

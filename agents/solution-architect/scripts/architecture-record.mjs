@@ -172,7 +172,14 @@ function standingSection(rec) {
 }
 
 function settingsSection(rec) {
-  const lines = (rec.settings ?? []).map((s) => `\`${trim(s.name)}\`, a ${s.kind === "rule" ? "rule" : "preference"} with the default ${JSON.stringify(s.default)}${s.job_may_set ? ", which a sender may set for one job" : ""}: ${sentence(s.why)}`);
+  const choices = (s) => {
+    if (Array.isArray(s.allowed) && s.allowed.length) {
+      const label = (v) => (s.value_labels && trim(s.value_labels[String(v)]) ? ` (${oneLine(s.value_labels[String(v)])})` : "");
+      return `, one of ${s.allowed.map((v) => `${JSON.stringify(v)}${label(v)}`).join(", ")}`;
+    }
+    return ["min", "max", "step"].some((k) => k in s) ? `, from ${s.min ?? "?"} to ${s.max ?? "?"} in steps of ${s.step ?? "?"}` : "";
+  };
+  const lines = (rec.settings ?? []).map((s) => `\`${trim(s.name)}\`${trim(s.label) ? ` ("${oneLine(s.label)}")` : ""}, a ${s.kind === "rule" ? "rule" : "preference"} with the default ${JSON.stringify(s.default)}${choices(s)}${s.job_may_set ? ", which a sender may set for one job" : ""}: ${trim(s.about) ? `${sentence(s.about)} ` : ""}${sentence(s.why)}`);
   return lines.length ? lines.map(bullet).join("\n") : "No setting beyond the bindings' own.";
 }
 

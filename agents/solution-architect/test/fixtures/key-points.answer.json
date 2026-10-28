@@ -9,7 +9,7 @@
    {"piece": "the page to read", "direction": "in", "kind": "url", "given_by": "either", "why": "An address is an input the caller gives, never a setting."},
    {"piece": "the key points", "direction": "out", "kind": "text/markdown", "convention": "a header `source, read_at`, then `## Key points` with one bullet per point, then `## Not read`", "why": "A person reviews them, so they are Markdown a person reads, with fixed headings the next agent can find."}
  ],
- "settings": [{"name": "most-points", "kind": "preference", "default": 7, "job_may_set": true, "why": "How many key points a person wants to review varies; seven is a page's worth."}],
+ "settings": [{"name": "most-points", "kind": "preference", "label": "Most points", "about": "The most key points the summary lists.", "default": 7, "min": 3, "max": 12, "step": 1, "job_may_set": true, "why": "How many key points a person wants to review varies; seven is a page's worth."}],
  "decisions": [
    {"decided": "Hand the key points back as Markdown", "why": "A person reviews them; JSON would be a page of brackets.", "weighed": "JSON with a vendor kind, which only code would read", "follows": "The convention is a header and fixed headings, so a test and the next agent can hold it."},
    {"decided": "Take the page as an address the caller gives", "why": "Addresses are never settings.", "weighed": "a configured site", "follows": "Each page is a destination beyond the derived set, asked as egress."}
