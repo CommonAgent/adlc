@@ -79,6 +79,16 @@ export function sortGiven(files = []) {
   return { sources, leftOut };
 }
 
+/** The name a file was sent under. A host stages an attached file as
+ *  `<n>-<8 characters>-<name>` (the supervisor's index in front of the
+ *  adapter's own prefix), and the documentation names it, and matches it to
+ *  a job or a declared record, by the name it was sent under. A name without
+ *  both prefixes is taken as it stands. */
+export function givenName(file) {
+  const m = /^\d+-[A-Za-z0-9_-]{8}-(.+)$/.exec(String(file));
+  return m ? m[1] : String(file);
+}
+
 /** Read the files a job was handed. Returns what was read and what could not
  *  be. Names are made unique so a line can name its file without doubt. */
 export function gather(paths = []) {
@@ -94,10 +104,11 @@ export function gather(paths = []) {
       unreadable.push({ file: basename(String(p)) || String(p), why: `it could not be read (${e.code ?? trim(e.message)})` });
       continue;
     }
-    let name = basename(p);
-    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${n}-${basename(p)}`;
+    const given = givenName(basename(p));
+    let name = given;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${n}-${given}`;
     taken.add(name.toLowerCase());
-    files.push({ name, original: basename(p), path: p, bytes: bytes.length, raw: bytes, sha256: sha256(bytes), text: bytes.toString("utf8") });
+    files.push({ name, original: given, path: p, bytes: bytes.length, raw: bytes, sha256: sha256(bytes), text: bytes.toString("utf8") });
   }
   return { files, unreadable };
 }

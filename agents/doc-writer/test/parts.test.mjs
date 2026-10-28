@@ -50,3 +50,8 @@ test("went-without.mjs is the same file the other packages keep", () => {
   const mine = readFileSync(join(AGENT, "scripts", "went-without.mjs"), "utf8");
   assert.equal(mine, readFileSync(join(AGENT, "..", "spec-writer", "scripts", "went-without.mjs"), "utf8"));
 });
+
+test("the documentation names the version that wrote it", async () => {
+  const { WRITER } = await import("../scripts/write-docs.mjs");
+  assert.equal(WRITER, `doc-writer ${P.version}`);
+});

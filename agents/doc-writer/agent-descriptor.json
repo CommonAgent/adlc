@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.0",
+  "agent_version": "0.1.1",
   "does": "Writes the documentation a person reads to use an agent: what it does, where to send it work, what each job takes and hands back, what it will not do, reaches, costs and leaves behind, with examples from its records. It writes only from the agent's descriptor, its AgentDoc, its records and the verdicts about it, marks every line with the place it came from, and lists everything those sources are silent on.",
   "offerings": [
     {

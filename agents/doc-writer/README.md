@@ -67,6 +67,13 @@ This folder is the agent's source, laid out the way the
 - `records/` holds the build records;
 - `test/` holds the suites.
 
+## What changed in 0.1.1
+
+A host stages an attached file as `<n>-<8 characters>-<name>`. Each file is
+now named, matched to its job and listed under Sources by the name it was
+sent under, so a job's own records become its examples on a real host as
+they did in the tests.
+
 ## What it needs
 
 Node 22 or later, and a records folder. It reaches no system and no network,
