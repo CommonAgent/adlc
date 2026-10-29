@@ -55,7 +55,12 @@ it writes is always the current names.
   templates in `host/` set neither, so scripts from any code writer are packed.
 - `repo.mjs` lays a built agent out as its own git repository.
 - `shared/` holds rules shared with the AgentMesh services: connections,
-  credit and trial declarations.
+  credit and trial declarations. It also holds `model-caller.mjs`, the one
+  way a package reaches its model: it reads `MODEL_NAME`, `MODEL_ENDPOINT`,
+  `MODEL_KEY` and `MODEL_PROTOCOL` on every call and writes no address of its
+  own. A package that calls a model carries a byte-identical copy as
+  `scripts/model-caller.mjs`, and `model-caller.test.mjs` holds every copy to
+  this one.
 - `AGENTS.md` is the instructions the agent's harness reads.
 - `host/` holds the agent's descriptor and listing, and the brain and pack
   script templates for a fleet host.
@@ -194,7 +199,7 @@ with its check id. `test_options.py` pins them.
 
 ```sh
 python3 build.py ../publisher ./out
-node --test connection.test.mjs request.test.mjs
+node --test connection.test.mjs request.test.mjs model-caller.test.mjs
 AGENTMESH_ENV=example python3 -m unittest test_build test_pack
 ```
 

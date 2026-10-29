@@ -101,6 +101,16 @@ only runs inside AgentMesh today.
   deployment manager and the conformance checker on a fleet host.
 - `env/` holds the environment reader the agents and host templates use, with
   an example environment to copy.
+- `checks/` holds the repository's own checks: `addresses.mjs` finds every
+  network address written into an agent's scripts (Common Agent 12.6 rule 2),
+  against `known-addresses.json`, the addresses written before the check,
+  which only shrinks.
+
+A package reaches its model through one shared caller,
+`agents/package-maker/shared/model-caller.mjs`, copied byte for byte into each
+package that calls a model. It reads `MODEL_NAME`, `MODEL_ENDPOINT`,
+`MODEL_KEY` and `MODEL_PROTOCOL` from what the install places;
+[host/README.md](host/README.md#the-model-settings) says what a host sets.
 
 ## Running the tests
 
@@ -115,6 +125,9 @@ done
 node --test agents/conformance-checker/test/*.test.mjs
 (cd agents/deployment-manager && python3 -m unittest discover -p "test_*.py" && node --test "test/*.test.mjs")
 node --test "agents/image/test/*.test.mjs"
+(cd agents/package-maker && node --test connection.test.mjs request.test.mjs model-caller.test.mjs)
+node --test host/test/*.test.mjs
+node checks/addresses.mjs && node --test checks/test/*.test.mjs
 (cd agents/catalog && npm install && npm test)
 ```
 
