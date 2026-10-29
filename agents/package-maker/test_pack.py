@@ -800,3 +800,102 @@ class TheFormatCutOver(Harness):
         # So its next build, with a bare JSON output, is refused and not warned.
         res = self.pack(bare_json_spec())
         self.assertEqual(res["act"], "refuse", res)
+
+
+class PackingTwiceGivesTheSameBytes(Harness):
+    """Common Agent 12.6 rule 5: packing is deterministic, so the same files
+    pack to the same bytes on any machine at any time. A security review made
+    over one packing names the digest of the archive that is published only
+    if the two are the same bytes."""
+
+    def load(self):
+        import importlib.util
+        s = importlib.util.spec_from_file_location("pack_module", PACK)
+        m = importlib.util.module_from_spec(s)
+        s.loader.exec_module(m)
+        return m
+
+    def tree(self, root, files, mtime):
+        for rel, data in files:
+            p = os.path.join(root, *rel.split("/"))
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "wb") as f:
+                f.write(data)
+            os.utime(p, (mtime, mtime))
+        return root
+
+    def entries(self, archive):
+        import io
+        import tarfile
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as t:
+            return t.getmembers()
+
+    def test_the_pack_procedure_run_twice_writes_identical_bytes(self):
+        first = self.pack(spec())
+        self.assertEqual(first["act"], "build", first)
+        with open(first["tarball"], "rb") as f:
+            one = f.read()
+        second = self.pack(spec())
+        with open(second["tarball"], "rb") as f:
+            two = f.read()
+        self.assertEqual(one, two)
+        self.assertEqual(first["sha256"], second["sha256"])
+
+    def test_the_same_files_written_in_another_order_at_another_time_pack_the_same(self):
+        m = self.load()
+        files = [("plugin.json", b"{}\n"), ("skills/b/SKILL.md", b"b\n"), ("skills/a/scripts/x.mjs", b"x" * 70000),
+                 ("agent-descriptor.json", b"{\"a\": 1}\n"), ("Z.md", b"upper case first in byte order\n")]
+        a = self.tree(os.path.join(self.home, "a"), files, 1000000000)
+        b = self.tree(os.path.join(self.home, "b"), list(reversed(files)), 1700000000)
+        self.assertEqual(m.pack_archive(a, "p"), m.pack_archive(b, "p"))
+
+    def test_each_entry_is_ordered_timed_and_ownerless_and_says_only_whether_it_runs(self):
+        m = self.load()
+        files = [("b.txt", b"b"), ("a/z.mjs", b"z"), ("a/run.sh", b"#!/bin/sh\n"), ("C.txt", b"C")]
+        root = self.tree(os.path.join(self.home, "pkg"), files, 1234567890)
+        if os.name != "nt":
+            os.chmod(os.path.join(root, "a", "run.sh"), 0o775)
+            os.chmod(os.path.join(root, "b.txt"), 0o600)
+        members = self.entries(m.pack_archive(root, "pkg"))
+        names = [e.name for e in members]
+        self.assertEqual(names, sorted(names, key=lambda n: n.encode("utf-8")))
+        self.assertEqual(names, ["pkg/C.txt", "pkg/a/run.sh", "pkg/a/z.mjs", "pkg/b.txt"])
+        for e in members:
+            self.assertTrue(e.isfile(), e.name)
+            self.assertEqual(e.mtime, m.ARCHIVE_MTIME)
+            self.assertEqual((e.uid, e.gid, e.uname, e.gname), (0, 0, "", ""))
+            self.assertIn(e.mode, (0o644, 0o755))
+        if os.name != "nt":
+            self.assertEqual({e.name: e.mode for e in members}["pkg/a/run.sh"], 0o755)
+            self.assertEqual({e.name: e.mode for e in members}["pkg/b.txt"], 0o644)
+
+    def test_the_compression_is_stored_blocks_so_no_zlib_version_changes_the_bytes(self):
+        import gzip
+        m = self.load()
+        data = os.urandom(200000)
+        packed = m.gzip_stored(data)
+        self.assertEqual(gzip.decompress(packed), data)
+        self.assertEqual(packed[:10], bytes([0x1F, 0x8B, 8, 0, 0, 0, 0, 0, 0, 0xFF]))
+        # Four stored blocks for 200000 bytes, each a 5-byte header, plus the
+        # 10-byte gzip header and the 8-byte trailer.
+        self.assertEqual(len(packed), len(data) + 4 * 5 + 10 + 8)
+
+    def test_a_symbolic_link_is_refused_rather_than_packed(self):
+        if os.name == "nt":
+            self.skipTest("symbolic links need privileges on this system")
+        m = self.load()
+        root = self.tree(os.path.join(self.home, "pkg"), [("a.txt", b"a")], 1)
+        os.symlink("a.txt", os.path.join(root, "b.txt"))
+        with self.assertRaises(ValueError):
+            m.pack_archive(root, "pkg")
+
+    def test_the_conformance_fixture_packs_to_the_digest_its_standard_publishes(self):
+        # The Agent Roles conformance fixture forecast-reader, packed by the
+        # standards repository's own packer as base.tar.gz, digest from its
+        # SHA256SUMS. A second implementation giving the same bytes is the
+        # evidence that the archive depends only on the files.
+        m = self.load()
+        import hashlib
+        root = os.path.join(HERE, "fixtures", "forecast-reader")
+        self.assertEqual(hashlib.sha256(m.pack_archive(root, "forecast-reader")).hexdigest(),
+                         "40c5e7df3f221185894fe30201f1eaaecb70879c46cc67416e50b6bc7732f4fa")

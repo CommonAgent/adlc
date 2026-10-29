@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "forecast-reader",
+  "version": "1.0.0",
+  "description": "Reads tomorrow's forecast for a city and says whether to take an umbrella.",
+  "license": "Apache-2.0",
+  "extensions": {
+    "net.agentdoc.package": {
+      "descriptor": {
+        "path": "agent-descriptor.json",
+        "sha256": "8eada41c948b2a3a71f8cd54da56790c5cbe19b148229f93c20581a5f9218292"
+      },
+      "runtime_requirements": {
+        "path": "agent-runtime-requirements.json",
+        "sha256": "cdf91a3dcc6ac948df261a585bf6ac979e8d8cac1080e40a8a41201c88aa0235"
+      },
+      "built": true,
+      "draft": true
+    }
+  }
+}

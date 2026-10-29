@@ -47,12 +47,116 @@ import re
 import shutil
 import subprocess
 import sys
-import tarfile
 import time
+import zlib
 
 # A reference to a file in the repository's shared standards/ folder, as the
 # Builders name them: ../../standards/<file> (build.py reads the same pattern).
 STANDARDS_REF = re.compile(r"^(?:\.\./)+standards/[^/]+$")
+
+# ── The archive (Common Agent 12.6 rule 5) ─────────────────────────────────
+# A package is published as an archive and its digest is the SHA-256 of the
+# archive's bytes, so packing is deterministic: the same files pack to the
+# same bytes on any machine at any time. The entries are the package's files,
+# under one top folder named for the package, in the byte order of their
+# paths; every entry has one fixed modification time; no entry names an owner
+# or a group (uid and gid 0, no user or group name); an entry's permission
+# bits say only whether the file is executable (0755 or 0644); and the
+# compression is fixed by writing no compressor's output at all: the gzip
+# stream is made of stored deflate blocks, whose bytes no zlib version can
+# change. This is the same archive the Agent Roles conformance fixtures are
+# packed as (roles/conformance/security-reviewer/make-fixtures.mjs in the
+# standards repository), so the same files packed there and here give the
+# same digest. Folders get no entry of their own; a symbolic link or anything
+# else that is not a regular file is refused, because what it points at
+# differs between machines.
+
+#: The modification time written into every entry: 2026-10-29T00:00:00Z.
+ARCHIVE_MTIME = 1793232000
+#: The largest stored deflate block (RFC 1951 section 3.2.4).
+STORED_BLOCK = 65535
+
+
+def archive_entries(pkg_dir, top):
+    """The package's files as (path in the archive, bytes, executable), in the
+    byte order of their paths. Refuses anything that is not a regular file."""
+    entries = []
+    for root, dirs, files in os.walk(pkg_dir, followlinks=False):
+        for d in dirs:
+            if os.path.islink(os.path.join(root, d)):
+                raise ValueError(f"{os.path.relpath(os.path.join(root, d), pkg_dir)} is a symbolic link, which a package may not carry")
+        for fn in files:
+            full = os.path.join(root, fn)
+            rel = os.path.relpath(full, pkg_dir).replace(os.sep, "/")
+            if os.path.islink(full) or not os.path.isfile(full):
+                raise ValueError(f"{rel} is not a regular file, which a package may not carry")
+            with open(full, "rb") as f:
+                data = f.read()
+            entries.append((f"{top}/{rel}", data, bool(os.stat(full).st_mode & 0o111)))
+    entries.sort(key=lambda e: e[0].encode("utf-8"))
+    return entries
+
+
+def tar_header(path, size, executable):
+    """One ustar header: fixed time, no owner or group, mode 0755 or 0644."""
+    raw = path.encode("utf-8")
+    prefix, base = b"", raw
+    if len(raw) > 100:
+        cut = raw.rfind(b"/", 0, 156)
+        if cut <= 0 or len(raw) - cut - 1 > 100:
+            raise ValueError(f"{path} is too long a path for an archive entry")
+        prefix, base = raw[:cut], raw[cut + 1:]
+    h = bytearray(512)
+
+    def put(value, at, length):
+        h[at:at + length] = value[:length].ljust(length, b"\0")
+
+    put(base, 0, 100)
+    put(b"0000755\0" if executable else b"0000644\0", 100, 8)
+    put(b"0000000\0", 108, 8)
+    put(b"0000000\0", 116, 8)
+    put(b"%011o\0" % size, 124, 12)
+    put(b"%011o\0" % ARCHIVE_MTIME, 136, 12)
+    h[148:156] = b" " * 8
+    h[156:157] = b"0"
+    put(b"ustar\0", 257, 6)
+    put(b"00", 263, 2)
+    put(prefix, 345, 155)
+    h[148:156] = b"%06o\0 " % sum(h)
+    return bytes(h)
+
+
+def tar_bytes(entries):
+    out = []
+    for path, data, executable in entries:
+        out += [tar_header(path, len(data), executable), data, b"\0" * ((512 - len(data) % 512) % 512)]
+    out.append(b"\0" * 1024)
+    return b"".join(out)
+
+
+def gzip_stored(data):
+    """One gzip member (RFC 1952): no name, no time, OS unknown, and a deflate
+    stream of stored blocks, so no compressor's choices are in the bytes."""
+    parts = [bytes([0x1F, 0x8B, 8, 0, 0, 0, 0, 0, 0, 0xFF])]
+    at = 0
+    while True:
+        chunk = data[at:at + STORED_BLOCK]
+        last = at + STORED_BLOCK >= len(data)
+        n = len(chunk)
+        parts.append(bytes([1 if last else 0, n & 0xFF, n >> 8, ~n & 0xFF, (~n >> 8) & 0xFF]))
+        parts.append(chunk)
+        if last:
+            break
+        at += STORED_BLOCK
+    parts.append((zlib.crc32(data) & 0xFFFFFFFF).to_bytes(4, "little"))
+    parts.append((len(data) & 0xFFFFFFFF).to_bytes(4, "little"))
+    return b"".join(parts)
+
+
+def pack_archive(pkg_dir, top):
+    """The package folder as its archive's bytes, under one top folder `top`."""
+    return gzip_stored(tar_bytes(archive_entries(pkg_dir, top)))
+
 
 HOME = os.path.expanduser("~")
 BUILT = os.path.join(HOME, "built")
@@ -821,11 +925,17 @@ def main():
              "refused": "this package cannot be turned into a container image, so nothing was packed. "
                         + image["refused"]})
 
-    # 3. Tar and hash.
+    # 3. Tar and hash, deterministically (Common Agent 12.6 rule 5): the same
+    #    files pack to the same bytes on any machine at any time, so a record
+    #    made over one packing names the digest of every other.
     tgz = os.path.join(DIST, f"{name}.tar.gz")
-    with tarfile.open(tgz, "w:gz") as t:
-        t.add(pkg_dir, arcname=name)
-    sha256 = hashlib.sha256(open(tgz, "rb").read()).hexdigest()
+    try:
+        archive = pack_archive(pkg_dir, name)
+    except ValueError as e:
+        fail("pack", e)
+    with open(tgz, "wb") as f:
+        f.write(archive)
+    sha256 = hashlib.sha256(archive).hexdigest()
 
     # 4. Build and sign the record. Where the spec came out of a repository,
     #    the record names the repository and the commit it was read at; where
