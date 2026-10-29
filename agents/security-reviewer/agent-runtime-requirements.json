@@ -11,7 +11,10 @@
   "systems": [
     {
       "name": "text-reasoning",
-      "kind": "service"
+      "kind": "model",
+      "protocols": [
+        "anthropic-messages"
+      ]
     }
   ],
   "ceilings": [],

@@ -179,11 +179,10 @@ three cases, and each has its own place:
   says which one: see the next section.
 - A public read that needs no key (a public web page, an open API anybody may
   call): declare it as a system with `"access": "read"`, `"kind": "service"`,
-  `"leaves": true` when a caller's material is sent to it, and no credential
-  and no settings. The address itself is written in the script as a constant,
-  which is where the publisher's `published-address` keeps its own. "The base
-  address should be changeable" is not a reason to make it a setting: a
-  different address is a different version of the script.
+  `"leaves": true` when a caller's material is sent to it, no credential, and
+  the address it calls under `settings`, by variable name and purpose. A
+  script carries no address of its own (Common Agent 12.6 rule 2, the address
+  check of 12.10): it reads the address from the setting the install places.
 - An address the caller gives with the job (a page to read): an input of kind
   `url`, never a setting.
 
@@ -193,11 +192,16 @@ A job that calls a model declares the capability as a system with access
 `trigger`: `text-reasoning` for text, `image-reading` for pictures,
 `speech-to-text` and `text-to-speech` for speech. The system's `purpose`
 says what the job needs of it, such as "reads a whole 200-page document at
-once" for long context. The scripts read the model from configuration,
-`AGENT_MODEL` or `TEXT_MODEL`, through the shared caller, so the install
-binds it and a run config can override it.
+once" for long context. A model called in one of the three request formats of Common Agent 12.4.1
+is the agent's one system of kind `model`, with its `protocols` and with no
+credential, variable or setting of its own. The scripts reach it only through
+the four settings every agent reads, `MODEL_NAME`, `MODEL_ENDPOINT`,
+`MODEL_KEY` and `MODEL_PROTOCOL`, on every run, through the shared model
+caller (scripts/model-caller.mjs), so the install binds it and a run config
+can override which model.
 
-    { "name": "text-reasoning", "access": "trigger", "kind": "service",
+    { "name": "text-reasoning", "access": "trigger", "kind": "model",
+      "protocols": ["anthropic-messages"],
       "purpose": "judges which sentences on the page are its key points; needs text only" }
 
 A spec never names a model or a version: not in a setting's default, not in

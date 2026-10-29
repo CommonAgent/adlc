@@ -23,14 +23,14 @@ With no model configured, or none reachable, no findings come from this step and
 
 Nothing in this folder is run on its own; the offering names the one command that does the whole job, and this skill only explains what that command does for this step.
 
-review.mjs hands the configured model (through caller.mjs, which reads TEXT_MODEL or AGENT_MODEL and names no model of its own) every declaration, script and test with its line numbers, changed files first, within one ask's room; the account, the diff and an earlier review when they came; the house rules and the findings the program already made, which it must not repeat; and the person's words as where to look. It asks for findings in blocks and for nothing else: no verdict, no grade, no fix.
+review.mjs hands the model the install placed (the four settings the install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, read on every run through the shared model caller (scripts/model-caller.mjs); the package names no model and no address of its own) every declaration, script and test with its line numbers, changed files first, within one ask's room; the account, the diff and an earlier review when they came; the house rules and the findings the program already made, which it must not repeat; and the person's words as where to look. It asks for findings in blocks and for nothing else: no verdict, no grade, no fix.
 
 ## Scripts
 
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/review.mjs
-- scripts/caller.mjs
+- scripts/model-caller.mjs
 - scripts/house-rules.mjs
 - scripts/went-without.mjs
 

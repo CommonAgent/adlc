@@ -46,7 +46,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/platform.mjs
 - scripts/secrets.mjs
 - scripts/weigh.mjs
-- scripts/caller.mjs
+- scripts/model-caller.mjs
 - scripts/model-record.mjs
 - scripts/write-review.mjs
 - scripts/went-without.mjs

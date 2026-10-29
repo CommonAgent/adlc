@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "code-critic",
-  "version": "0.1.3",
-  "description": "Reviews a change to an agent package, its scripts, tests and declarations alike, and hands back findings for a person to answer, each naming a place, a claim and a consequence. It checks the house architecture rules with a program and calls a model once for the rest, and it changes nothing.",
+  "version": "0.2.0",
+  "description": "Reviews a change to an agent package, its scripts, tests and declarations alike, and hands back findings for a person to answer, each naming a place, a claim and a consequence. It checks the house architecture rules with a program, lists every network address written into a script as a warning the same way on every run, calls a model once for the rest, and changes nothing.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
@@ -28,7 +28,7 @@
               "scripts/read-change.mjs",
               "scripts/house-rules.mjs",
               "scripts/review.mjs",
-              "scripts/caller.mjs",
+              "scripts/model-caller.mjs",
               "scripts/check-findings.mjs",
               "scripts/write-findings.mjs",
               "scripts/pieces.mjs",
@@ -59,7 +59,7 @@
           "review-the-code": {
             "scripts": [
               "scripts/review.mjs",
-              "scripts/caller.mjs",
+              "scripts/model-caller.mjs",
               "scripts/house-rules.mjs",
               "scripts/went-without.mjs"
             ],
