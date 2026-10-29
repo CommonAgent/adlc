@@ -1,0 +1,433 @@
+// The model caller reaches the text-reasoning model through the four standard
+// settings: MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL.
+//
+// What is worth pinning: the model is reached through POST /v1/messages with
+// the anthropic-version header and model name in the body; x-api-key is sent
+// only when MODEL_KEY is not empty; missing or empty settings or unsupported
+// protocols stop before sending any request; settings are read on every run;
+// truncated answers with stop_reason max_tokens fail immediately; old Google
+// Vertex, Gemini and AGENT_MODEL variables are never read; declarations match
+// the anthropic-messages protocol for text-reasoning; name.mjs asks for JSON
+// with json: true; replayCaller answers without TEXT_API_KEY; and architecture
+// records binding a model system state that the install places the model in
+// MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL and never name
+// TEXT_MODEL or AGENT_MODEL.
+//
+// Nothing here touches a real network or model: all calls reach a local
+// stand-in server on 127.0.0.1 started inside the test.
+// Run: node --test test/model-caller.test.mjs
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import http from "node:http";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { callerFor, replayCaller } from "../scripts/model-caller.mjs";
+import { bindAll } from "../scripts/bind.mjs";
+import { renderRecord } from "../scripts/architecture-record.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, "..");
+
+function standInServer(handler) {
+  let server;
+  const requests = [];
+  return {
+    requests,
+    async start() {
+      server = http.createServer(async (req, res) => {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const bodyText = Buffer.concat(chunks).toString("utf8");
+        let body = null;
+        try { body = JSON.parse(bodyText); } catch { body = bodyText; }
+        const recorded = { method: req.method, url: req.url, headers: req.headers, body };
+        requests.push(recorded);
+        if (handler) {
+          await handler(req, res, recorded);
+        } else {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            id: "msg_stand_in",
+            type: "message",
+            role: "assistant",
+            content: [{ type: "text", text: JSON.stringify({ systems: [] }) }],
+            stop_reason: "end_turn",
+          }));
+        }
+      });
+      return new Promise((resolve) => {
+        server.listen(0, "127.0.0.1", () => {
+          const { port } = server.address();
+          resolve(`http://127.0.0.1:${port}`);
+        });
+      });
+    },
+    async close() {
+      if (server) await new Promise((done) => server.close(done));
+    },
+  };
+}
+
+test("the stand-in receives post /v1/messages with anthropic-version and model in the body", async () => {
+  const standIn = standInServer();
+  const endpoint = await standIn.start();
+  try {
+    const env = {
+      MODEL_NAME: "test-reasoning-model",
+      MODEL_ENDPOINT: endpoint,
+      MODEL_PROTOCOL: "anthropic-messages",
+      MODEL_KEY: "secret-key-123",
+    };
+    const ask = callerFor(env);
+    await ask("Write the architecture");
+    assert.equal(standIn.requests.length, 1);
+    const req = standIn.requests[0];
+    assert.equal(req.method, "POST");
+    assert.equal(req.url, "/v1/messages");
+    assert.ok(req.headers["anthropic-version"], "anthropic-version header must be sent");
+    assert.equal(req.headers["x-api-key"], "secret-key-123");
+    assert.equal(req.body.model, "test-reasoning-model");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("the api key is sent in x-api-key only when model_key is not empty", async () => {
+  const standIn = standInServer();
+  const endpoint = await standIn.start();
+  try {
+    const askEmpty = callerFor({
+      MODEL_NAME: "test-model",
+      MODEL_ENDPOINT: endpoint,
+      MODEL_PROTOCOL: "anthropic-messages",
+      MODEL_KEY: "",
+    });
+    await askEmpty("Hello with empty key");
+    assert.equal(standIn.requests.length, 1);
+    assert.equal(standIn.requests[0].headers["x-api-key"], undefined);
+
+    const askUnset = callerFor({
+      MODEL_NAME: "test-model",
+      MODEL_ENDPOINT: endpoint,
+      MODEL_PROTOCOL: "anthropic-messages",
+    });
+    await askUnset("Hello with unset key");
+    assert.equal(standIn.requests.length, 2);
+    assert.equal(standIn.requests[1].headers["x-api-key"], undefined);
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("missing or empty model_name stops before sending and names the setting", async () => {
+  const standIn = standInServer();
+  const endpoint = await standIn.start();
+  try {
+    for (const emptyName of [undefined, ""]) {
+      await assert.rejects(
+        async () => {
+          const ask = callerFor({
+            MODEL_NAME: emptyName,
+            MODEL_ENDPOINT: endpoint,
+            MODEL_PROTOCOL: "anthropic-messages",
+          });
+          if (typeof ask === "function") await ask("Hello");
+        },
+        (err) => {
+          assert.match(err.message, /MODEL_NAME/);
+          return true;
+        }
+      );
+    }
+    assert.equal(standIn.requests.length, 0, "stand-in must see no request");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("missing or empty model_endpoint stops before sending and names the setting", async () => {
+  const standIn = standInServer();
+  await standIn.start();
+  try {
+    for (const emptyEndpoint of [undefined, ""]) {
+      await assert.rejects(
+        async () => {
+          const ask = callerFor({
+            MODEL_NAME: "test-model",
+            MODEL_ENDPOINT: emptyEndpoint,
+            MODEL_PROTOCOL: "anthropic-messages",
+          });
+          if (typeof ask === "function") await ask("Hello");
+        },
+        (err) => {
+          assert.match(err.message, /MODEL_ENDPOINT/);
+          return true;
+        }
+      );
+    }
+    assert.equal(standIn.requests.length, 0, "stand-in must see no request");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("missing or empty model_protocol stops before sending and names the setting", async () => {
+  const standIn = standInServer();
+  const endpoint = await standIn.start();
+  try {
+    for (const emptyProtocol of [undefined, ""]) {
+      await assert.rejects(
+        async () => {
+          const ask = callerFor({
+            MODEL_NAME: "test-model",
+            MODEL_ENDPOINT: endpoint,
+            MODEL_PROTOCOL: emptyProtocol,
+          });
+          if (typeof ask === "function") await ask("Hello");
+        },
+        (err) => {
+          assert.match(err.message, /MODEL_PROTOCOL/);
+          return true;
+        }
+      );
+    }
+    assert.equal(standIn.requests.length, 0, "stand-in must see no request");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("unsupported model_protocol stops before sending and names model_protocol", async () => {
+  const standIn = standInServer();
+  const endpoint = await standIn.start();
+  try {
+    await assert.rejects(
+      async () => {
+        const ask = callerFor({
+          MODEL_NAME: "test-model",
+          MODEL_ENDPOINT: endpoint,
+          MODEL_PROTOCOL: "openai-chat",
+        });
+        if (typeof ask === "function") await ask("Hello");
+      },
+      (err) => {
+        assert.match(err.message, /MODEL_PROTOCOL/);
+        return true;
+      }
+    );
+    assert.equal(standIn.requests.length, 0, "stand-in must see no request");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("settings are read on every run so different endpoints reach different stand-ins", async () => {
+  const standIn1 = standInServer();
+  const standIn2 = standInServer();
+  const ep1 = await standIn1.start();
+  const ep2 = await standIn2.start();
+  try {
+    const ask1 = callerFor({
+      MODEL_NAME: "model-1",
+      MODEL_ENDPOINT: ep1,
+      MODEL_PROTOCOL: "anthropic-messages",
+    });
+    await ask1("First run");
+
+    const ask2 = callerFor({
+      MODEL_NAME: "model-2",
+      MODEL_ENDPOINT: ep2,
+      MODEL_PROTOCOL: "anthropic-messages",
+    });
+    await ask2("Second run");
+
+    assert.equal(standIn1.requests.length, 1);
+    assert.equal(standIn2.requests.length, 1);
+    assert.equal(standIn1.requests[0].body.model, "model-1");
+    assert.equal(standIn2.requests[0].body.model, "model-2");
+  } finally {
+    await standIn1.close();
+    await standIn2.close();
+  }
+});
+
+test("an answer cut at max_tokens fails with a message naming the limit and is never read as whole", async () => {
+  const standIn = standInServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      id: "msg_cut",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: '{"systems": [{"name": "text' }],
+      stop_reason: "max_tokens",
+    }));
+  });
+  const endpoint = await standIn.start();
+  try {
+    const ask = callerFor({
+      MODEL_NAME: "test-model",
+      MODEL_ENDPOINT: endpoint,
+      MODEL_PROTOCOL: "anthropic-messages",
+    });
+    await assert.rejects(
+      async () => {
+        await ask("Give the full architecture");
+      },
+      (err) => {
+        assert.match(err.message, /max_tokens/i);
+        return true;
+      }
+    );
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("no script reads agent_model, vertex_where or google variables, and setting them changes nothing", async () => {
+  const scriptsDir = join(ROOT, "scripts");
+  const files = readdirSync(scriptsDir).filter((f) => f.endsWith(".mjs"));
+  for (const f of files) {
+    const text = readFileSync(join(scriptsDir, f), "utf8");
+    const code = text.split("\n").filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join("\n");
+    assert.doesNotMatch(code, /\bAGENT_MODEL\b/, `${f} reads AGENT_MODEL`);
+    assert.doesNotMatch(code, /\bVERTEX_WHERE\b/, `${f} reads VERTEX_WHERE`);
+    assert.doesNotMatch(code, /\bGOOGLE_[A-Z0-9_]+\b/, `${f} reads a GOOGLE_ variable`);
+  }
+
+  const standIn = standInServer();
+  const endpoint = await standIn.start();
+  try {
+    const ask = callerFor({
+      MODEL_NAME: "test-model",
+      MODEL_ENDPOINT: endpoint,
+      MODEL_PROTOCOL: "anthropic-messages",
+      AGENT_MODEL: "disallowed-agent-model",
+      VERTEX_WHERE: "disallowed-vertex-location",
+      GOOGLE_API_KEY: "disallowed-google-key",
+      GOOGLE_APPLICATION_CREDENTIALS: "/tmp/fake.json",
+    });
+    await ask("Check variables");
+    assert.equal(standIn.requests.length, 1);
+    const bodyStr = JSON.stringify(standIn.requests[0].body);
+    assert.equal(bodyStr.includes("disallowed-agent-model"), false);
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("no script names the metadata server or carries forbidden network address literals", () => {
+  const scriptsDir = join(ROOT, "scripts");
+  const files = readdirSync(scriptsDir).filter((f) => f.endsWith(".mjs"));
+  const exceptedPrefixes = [
+    "https://schemas.agentmesh.ai/",
+    "http://schemas.agentmesh.ai/",
+    "https://json-schema.org/",
+    "http://json-schema.org/",
+    "https://www.w3.org/",
+    "http://www.w3.org/",
+    "https://schemas.example/",
+  ];
+
+  for (const f of files) {
+    const text = readFileSync(join(scriptsDir, f), "utf8");
+    const code = text.split("\n").filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join("\n");
+    assert.doesNotMatch(code, /metadata\.google\.internal/, `${f} names the metadata server`);
+    assert.doesNotMatch(code, /169\.254\.\d+\.\d+/, `${f} carries metadata IP literal`);
+
+    const matches = code.matchAll(/(https?|wss?):\/\/[a-zA-Z0-9\[][^\s"'`)]*/g);
+    for (const m of matches) {
+      const url = m[0];
+      const allowed = exceptedPrefixes.some((prefix) => url.startsWith(prefix));
+      assert.ok(allowed, `${f} carries forbidden address literal: ${url}`);
+    }
+  }
+});
+
+test("agent-runtime-requirements declares text-reasoning with anthropic-messages and no credential, env or settings", () => {
+  const reqs = JSON.parse(readFileSync(join(ROOT, "agent-runtime-requirements.json"), "utf8"));
+  const tr = (reqs.systems ?? []).find((s) => s.name === "text-reasoning");
+  assert.ok(tr, "text-reasoning must be declared in agent-runtime-requirements.json");
+  assert.deepEqual(tr, {
+    name: "text-reasoning",
+    kind: "model",
+    protocols: ["anthropic-messages"],
+  });
+  assert.equal(tr.credential, undefined);
+  assert.equal(tr.env, undefined);
+  assert.equal(tr.settings, undefined);
+});
+
+test("plugin build lists model-caller for skills calling the model and drops the old caller", () => {
+  const plugin = JSON.parse(readFileSync(join(ROOT, "plugin.json"), "utf8"));
+  const skills = plugin.extensions["net.agentdoc.package"].build.skills;
+  for (const [slug, skill] of Object.entries(skills)) {
+    const scripts = skill.scripts ?? [];
+    const callsModel = scripts.some((s) => s.endsWith("name.mjs"));
+    if (callsModel) {
+      assert.ok(
+        scripts.some((s) => s.endsWith("model-caller.mjs")),
+        `${slug} must list scripts/model-caller.mjs`
+      );
+      assert.ok(
+        !scripts.some((s) => s.endsWith("caller.mjs") && !s.endsWith("model-caller.mjs")),
+        `${slug} must not list the old caller`
+      );
+    }
+  }
+});
+
+test("name asks the model through callerfor with json true", () => {
+  const text = readFileSync(join(ROOT, "scripts", "name.mjs"), "utf8");
+  assert.match(text, /callerFor\([^)]*json:\s*true/);
+});
+
+test("replaycaller answers from files without requiring text_api_key", async () => {
+  const fixtureFile = join(HERE, "fixtures", "key-points.answer.json");
+  const replay = replayCaller([fixtureFile]);
+  const emptyEnv = {};
+  const answer = await replay("statement", emptyEnv);
+  assert.ok(answer, "replayCaller must return an answer");
+  const text = typeof answer === "string" ? answer : (answer.text ?? JSON.stringify(answer));
+  assert.ok(text.includes("text-reasoning"));
+});
+
+test("an architecture record binding a model says install places it in standard model variables and never names text_model or agent_model", () => {
+  const vocabulary = [{ name: "text-reasoning", plain: "text reasoning", capability: "text", access: "trigger" }];
+  const out = bindAll({ systems: [{ name: "text-reasoning", access: "trigger" }] }, { vocabulary });
+  const decision = out.decisions.find((d) => d.decided.includes("text-reasoning"));
+  assert.ok(decision, "must have a decision for text-reasoning");
+
+  const combined = `${decision.decided} ${decision.why} ${decision.follows ?? ""}`;
+  assert.match(combined, /MODEL_NAME/);
+  assert.match(combined, /MODEL_ENDPOINT/);
+  assert.match(combined, /MODEL_KEY/);
+  assert.match(combined, /MODEL_PROTOCOL/);
+  assert.doesNotMatch(combined, /TEXT_MODEL/);
+  assert.doesNotMatch(combined, /AGENT_MODEL/);
+
+  const rendered = renderRecord({
+    title: "sample",
+    statement: "sample statement",
+    environments: ["dev"],
+    systems: [{
+      name: "text-reasoning",
+      plain: "text reasoning",
+      capability: "text",
+      access: "trigger",
+      why: "reasoning",
+      bindings: { dev: { product: "google-gemini", provided_by: "platform" } },
+    }],
+    kind: { kind: "plugin-on-harness", why: "default" },
+    decisions: out.decisions,
+    questions: [],
+    standing_assets: { outputs: [], schemas: [], none: "no output is read by a person" },
+    done: true,
+  });
+  assert.match(rendered, /MODEL_NAME/);
+  assert.match(rendered, /MODEL_ENDPOINT/);
+  assert.match(rendered, /MODEL_KEY/);
+  assert.match(rendered, /MODEL_PROTOCOL/);
+  assert.doesNotMatch(rendered, /TEXT_MODEL/);
+  assert.doesNotMatch(rendered, /AGENT_MODEL/);
+});
