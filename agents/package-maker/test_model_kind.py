@@ -2,7 +2,7 @@
 """The model system (Common Agent 0.39.0, 12.4.1) as the builder writes it.
 
 What is worth pinning: a system of kind model with protocols from the closed
-list builds, and the runtime requirements carry its kind and protocols and no
+list builds, from a spec and from an agent folder, and the runtime requirements carry its kind and protocols and no
 credential, variable or setting; a second model system, a protocol outside the
 list, a model system naming a credential, and protocols on another kind are
 each refused.
@@ -34,6 +34,27 @@ class TheModelSystem(Harness):
         res, _ = self.build(with_systems(MODEL))
         self.assertTrue(res["ok"], res)
         with open(os.path.join(self.tmp, "out", "announcement-writer", "agent-runtime-requirements.json"), encoding="utf-8") as f:
+            doc = json.load(f)
+        self.assertEqual(doc["systems"], [{"name": "text-reasoning", "kind": "model",
+                                           "protocols": ["anthropic-messages", "openai-chat"]}])
+
+    def test_an_agent_folder_with_a_model_system_builds_with_its_protocols(self):
+        # An agent kept as its own files (Common Agent 13.2), as every agent in
+        # a repository is: convert.py writes them from the spec, and building
+        # the folder reads the protocols from its runtime requirements.
+        import subprocess
+        path = os.path.join(self.src, "spec.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(with_systems(MODEL), f, indent=2)
+        e = {**os.environ, "AGENTMESH_ENV": "example"}
+        run = lambda *a: json.loads(subprocess.run([sys.executable, *a], capture_output=True, text=True,
+                                                   encoding="utf-8", env=e).stdout.strip().splitlines()[-1])
+        converted = run(os.path.join(HERE, "convert.py"), path, self.src)
+        self.assertTrue(converted.get("ok", True), converted)
+        os.remove(path)
+        built = run(os.path.join(HERE, "build.py"), self.src, os.path.join(self.tmp, "folder"))
+        self.assertTrue(built["ok"], built)
+        with open(os.path.join(self.tmp, "folder", "announcement-writer", "agent-runtime-requirements.json"), encoding="utf-8") as f:
             doc = json.load(f)
         self.assertEqual(doc["systems"], [{"name": "text-reasoning", "kind": "model",
                                            "protocols": ["anthropic-messages", "openai-chat"]}])

@@ -2765,7 +2765,7 @@ def read_folder(folder):
         for k in ("needs", "leaves"):
             if k in d:
                 s[k] = d[k]
-        for k in ("kind", "credential", "env", "spends", "settings"):
+        for k in ("kind", "credential", "env", "spends", "settings", "protocols"):
             if k in e:
                 s[k] = e[k]
         systems.append(s)
