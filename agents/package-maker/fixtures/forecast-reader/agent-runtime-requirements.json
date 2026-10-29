@@ -1,0 +1,24 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    { "name": "node", "version": ">=22", "purpose": "runs the script that reads the forecast" }
+  ],
+  "binaries": [],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "forecast-service",
+      "kind": "service",
+      "credential": "forecast-key",
+      "env": "FORECAST_API_KEY",
+      "settings": [
+        { "env": "FORECAST_SERVICE_URL", "purpose": "where the forecast service the owner binds answers" }
+      ]
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    { "name": "records", "purpose": "one folder per job, holding the forecast as it was read" }
+  ],
+  "job_seconds": 60
+}
