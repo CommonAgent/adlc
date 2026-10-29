@@ -112,14 +112,25 @@ Where the work runs decides what `MODEL_ENDPOINT` points at:
 
 - **On this host**, the pm2 app `responses-bridge` that `ecosystem.config.js`
   starts, at `http://127.0.0.1:8788`.
-- **In a job's container**, a bridge started in that container, as the rig
-  starts one beside Codex: `node responses-bridge.mjs` with
-  `BRIDGE_VERTEX_PROJECT` and `BRIDGE_VERTEX_REGION`, signed in as the job's
-  service account. The image tools do not start one yet.
+- **In a job's container**, a bridge started in that container for the length
+  of the message. The image of a package with a model system carries this file
+  as `/opt/agent/model-gateway.mjs`, the deployment manager places
+  `BRIDGE_VERTEX_PROJECT`, `BRIDGE_VERTEX_REGION` and `BRIDGE_PORT` on the job
+  (from `model.gateway` in the environment file) when `MODEL_ENDPOINT` is on
+  loopback, and the entrypoint starts it there, signed in as the job's service
+  account, before the work runs. The work is not given those three.
 - **In a tenant container**, the tenant host already serves a model door on
   `http://127.0.0.1:8790` that speaks `anthropic-messages` and carries each call
   to the platform's model gateway, so `MODEL_ENDPOINT` points there and no
   bridge is needed.
+
+The deployment manager binds the four settings for a package whose runtime
+requirements declare a system of kind `model`. The owner's instruction gives
+them under `settings` for that system (and the name of the credential placed as
+`MODEL_KEY` under `credentials`); what the instruction leaves out comes from
+the environment file's `model` block, key by key. `TEXT_MODEL` is placed beside
+`MODEL_NAME` for this version, and `MODEL_KEY` is placed empty when no
+credential is named.
 
 A host that reaches a model service directly sets `MODEL_ENDPOINT` to that
 service's root, `MODEL_PROTOCOL` to the format it speaks, and `MODEL_KEY` to

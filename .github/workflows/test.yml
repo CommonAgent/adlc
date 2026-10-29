@@ -43,7 +43,7 @@ jobs:
         run: |
           cd agents/package-maker
           node --test connection.test.mjs request.test.mjs model-caller.test.mjs
-          python3 -m unittest test_folder test_standing test_options test_person
+          python3 -m unittest test_folder test_standing test_options test_person test_model_kind
 
       - name: No network address in an agent's scripts
         run: |
@@ -64,7 +64,7 @@ jobs:
           node --test "test/*.test.mjs"
 
       - name: Image tools
-        run: node --test agents/image/test/job-usage.test.mjs agents/image/test/tenant-host.test.mjs agents/image/test/wake-host.test.mjs
+        run: node --test agents/image/test/job-usage.test.mjs agents/image/test/model-gateway.test.mjs agents/image/test/tenant-host.test.mjs agents/image/test/wake-host.test.mjs
 
       - name: Catalog
         run: |
