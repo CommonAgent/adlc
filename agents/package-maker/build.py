@@ -91,7 +91,8 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
   "systems": [                           # the systems it needs, by NAME ("role" still read)
     { "name": "the-ledger", "access": "read", "needs": "what the access is for",
       "leaves": false,                   # ? true when a caller's material is sent to it
-      "kind": "directory",               # ? directory (default) | mcp | service
+      "kind": "directory",               # ? directory (default) | mcp | service | model
+      "protocols": ["anthropic-messages"], # ? kind model only: the formats the scripts speak (12.4.1)
       "credential": "ledger-key",        # ? NAME of the credential a service needs
       "env": "LEDGER_TOKEN",             # ? the variable the scripts read it from
       "spends": { "unit": "calls" } }    # ? present when the service costs money
@@ -187,7 +188,10 @@ SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
 CREDENTIAL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 ACCESS = ("read", "write", "trigger")
-KINDS = ("directory", "mcp", "service")
+KINDS = ("directory", "mcp", "service", "model")
+#: The request formats a model system may declare (Common Agent 0.39.0,
+#: 12.4.1). The list is closed; the shared caller speaks exactly these.
+MODEL_PROTOCOLS = ("anthropic-messages", "openai-chat", "gemini")
 VALUE_KINDS = ("text", "identifier", "url", "document")
 MEDIA_RE = re.compile(r"^[a-z]+/[a-z0-9][a-z0-9.+-]*$")
 WHEN = ("per_task", "standing")
@@ -1935,6 +1939,10 @@ def ceiling_side(entry, package="?"):
     somebody watching the spend."""
     if entry.get("credential"):
         return "runtime"
+    # A model system is called by the scripts themselves, through the shared
+    # caller, so its ceiling is applied by the runtime that makes the call.
+    if entry.get("kind") == "model":
+        return "runtime"
     if entry.get("kind") == "mcp":
         return "platform"
     fail(f"system {system_name(entry)}: cannot tell which side applies its ceiling. A spending service the "
@@ -2149,6 +2157,26 @@ def install_file(spec, jobs, systems, lockfiles):
         if kind not in KINDS:
             fail(f"system {s['name']}: kind must be one of {KINDS}")
         e = {"name": s["name"], "kind": kind}
+        if kind == "model":
+            # The model system (12.4.1): its entry names the formats the
+            # scripts speak and no credential, variable or setting, because
+            # the four settings (MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY,
+            # MODEL_PROTOCOL) have the same names in every agent and the
+            # installer binds them without being told.
+            if any(o.get("kind") == "model" for o in sys_entries):
+                fail(f"system {s['name']}: an agent declares at most one system of kind model")
+            protocols = s.get("protocols")
+            if not (isinstance(protocols, list) and protocols and all(p in MODEL_PROTOCOLS for p in protocols)
+                    and len(set(protocols)) == len(protocols)):
+                fail(f"system {s['name']}: a model system names the formats its scripts speak under protocols, "
+                     f"one or more of {', '.join(MODEL_PROTOCOLS)}; bad: {protocols!r}")
+            for k in ("credential", "env", "settings"):
+                if s.get(k) is not None:
+                    fail(f"system {s['name']}: a model system takes no {k}; the installer places MODEL_NAME, "
+                         f"MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL for it")
+            e["protocols"] = list(protocols)
+        elif s.get("protocols") is not None:
+            fail(f"system {s['name']}: only a system of kind model names protocols")
         if s.get("credential") is not None:
             if kind == "directory":
                 fail(f"system {s['name']}: a directory takes no credential")
@@ -2163,8 +2191,8 @@ def install_file(spec, jobs, systems, lockfiles):
             sp = s["spends"]
             if not (isinstance(sp, dict) and isinstance(sp.get("unit"), str) and sp["unit"]):
                 fail(f"system {s['name']}: spends needs a unit, e.g. {{\"unit\": \"characters\"}}")
-            if kind != "service":
-                fail(f"system {s['name']}: only a service spends")
+            if kind not in ("service", "model"):
+                fail(f"system {s['name']}: only a service or a model spends")
             e["spends"] = {"unit": sp["unit"]}
         if s.get("settings") is not None:
             # A non-secret value the scripts read and the host must supply

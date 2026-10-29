@@ -59,7 +59,21 @@ SCHEMA_FILE = next((p for p in (os.path.join(HERE, "deploymgr-plugin.schema.json
 CREDENTIAL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 SYSTEM_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
-KINDS = ("directory", "mcp", "service")
+KINDS = ("directory", "mcp", "service", "model")
+# THE MODEL SYSTEM (Common Agent 0.39.0, 12.4.1). An agent declares at most one
+# system of kind model, whose entry names the formats its scripts speak and no
+# credential, variable or setting: the four settings have the same names in
+# every agent and the installer binds them without being told. The formats are
+# a closed list, and an instruction outside it, or outside the entry's own
+# protocols, is refused before anything is changed.
+MODEL_PROTOCOLS = ("anthropic-messages", "openai-chat", "gemini")
+MODEL_KEY_VAR = "MODEL_KEY"
+# The three the instruction supplies as values; MODEL_KEY is a credential the
+# instruction names (or leaves empty, for a gateway on the agent's own host).
+MODEL_VALUES = ("MODEL_NAME", "MODEL_ENDPOINT", "MODEL_PROTOCOL")
+# For 0.39.0 only a host MAY set the former name beside the current one; the
+# platform's older scripts still read TEXT_MODEL, so it is placed too.
+MODEL_ALIASES = {"TEXT_MODEL": "MODEL_NAME"}
 # Characters that can carry invisible instructions: zero-width, bidi
 # controls, and the tag block. The depot refuses these at its door; the
 # installer refuses them again because a package can reach it another way.
@@ -349,6 +363,17 @@ def read_package(pkg_dir):
                 problems.append(f"system {name}: the credential must be a name, never a value")
             if e.get("env") is not None and not (isinstance(e["env"], str) and ENV_RE.match(e["env"])):
                 problems.append(f"system {name}: env must be a variable name")
+            protocols = e.get("protocols")
+            if kind == "model":
+                if sum(1 for o in inst_entries.values() if o.get("kind") == "model") > 1:
+                    problems.append(f"system {name}: an agent declares at most one system of kind model")
+                if not (isinstance(protocols, list) and protocols and all(p in MODEL_PROTOCOLS for p in protocols)):
+                    problems.append(f"system {name}: a model system names its formats under protocols, one or more of {', '.join(MODEL_PROTOCOLS)}")
+                for k in ("credential", "env", "settings"):
+                    if e.get(k) is not None:
+                        problems.append(f"system {name}: a model system names no {k}; the installer binds MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL")
+            elif protocols is not None:
+                problems.append(f"system {name}: only a system of kind model names protocols")
             settings = e.get("settings") or []
             for st in settings:
                 if not (isinstance(st, dict) and isinstance(st.get("env"), str) and ENV_RE.match(st["env"])):
@@ -357,7 +382,9 @@ def read_package(pkg_dir):
             systems.append({"name": name, "kind": kind, "access": d.get("access", "read"),
                             "credential": e.get("credential"), "env": e.get("env"),
                             "settings": [st for st in settings if isinstance(st, dict) and isinstance(st.get("env"), str)],
-                            "spends": e.get("spends")})
+                            "spends": e.get("spends"),
+                            **({"protocols": [p for p in protocols if isinstance(p, str)]}
+                               if kind == "model" and isinstance(protocols, list) else {})})
     elif legacy:
         for s in ext.get("servers", []):
             if system_name(s):
@@ -517,6 +544,8 @@ def check_instruction(args, pkg, store_has=None):
                 for k in got:
                     if k not in {st["env"] for st in s.get("settings", [])}:
                         refusals.append(f"service {sysname}: the instruction supplies {k}, which the package does not declare")
+        elif s["kind"] == "model":
+            refusals += check_model_instruction(s, creds, settings, store_has)
         elif s["kind"] == "mcp":
             addr = addresses.get(sysname) if isinstance(addresses, dict) else None
             if not (isinstance(addr, str) and addr.strip()):
@@ -574,6 +603,56 @@ def check_instruction(args, pkg, store_has=None):
                 refusals.append(f"the instruction's {k} carries what looks like a credential value; place it in the store and name it")
                 break
     return refusals
+
+
+def check_model_instruction(s, creds, settings, store_has=None):
+    """What the instruction must give a model system (12.4.1): MODEL_NAME,
+    MODEL_ENDPOINT and MODEL_PROTOCOL as values under settings, and, when the
+    endpoint asks for one, the NAME of the credential placed as MODEL_KEY under
+    credentials. Absent, MODEL_KEY is placed empty: a gateway on the agent's own
+    host needs none. Refusals in words, naming the setting, never a value."""
+    sysname = s["name"]
+    refusals = []
+    got = settings.get(sysname) if isinstance(settings, dict) else None
+    got = got if isinstance(got, dict) else {}
+    for k in MODEL_VALUES:
+        v = got.get(k)
+        if v in (None, ""):
+            refusals.append(f"model {sysname}: the instruction must supply {k}")
+        elif not isinstance(v, str):
+            refusals.append(f"model {sysname}: {k} must be a string")
+    for k in got:
+        if k == MODEL_KEY_VAR:
+            refusals.append(f"model {sysname}: MODEL_KEY is a credential; name it under credentials, never give it as a setting")
+        elif k not in MODEL_VALUES:
+            refusals.append(f"model {sysname}: the instruction supplies {k}, which a model system does not take")
+    protocol = got.get("MODEL_PROTOCOL")
+    if isinstance(protocol, str) and protocol:
+        if protocol not in MODEL_PROTOCOLS:
+            refusals.append(f"model {sysname}: MODEL_PROTOCOL {protocol} is not one of {', '.join(MODEL_PROTOCOLS)}")
+        elif s.get("protocols") and protocol not in s["protocols"]:
+            refusals.append(f"model {sysname}: MODEL_PROTOCOL {protocol} is not one this package's model system speaks ({', '.join(s['protocols'])})")
+    endpoint = got.get("MODEL_ENDPOINT")
+    if isinstance(endpoint, str) and endpoint:
+        if not re.match(r"^https?://[^\s/@]+(/\S*)?$", endpoint):
+            refusals.append(f"model {sysname}: MODEL_ENDPOINT must be an http or https address with no credential in it")
+        elif any(looks_like_value(t) for t in re.split(r"[\s?&=/]+", endpoint)):
+            refusals.append(f"model {sysname}: MODEL_ENDPOINT carries what looks like a credential value")
+    name = got.get("MODEL_NAME")
+    if isinstance(name, str) and name and looks_like_value(name) and not model_named(name):
+        refusals.append(f"model {sysname}: MODEL_NAME looks like a credential value")
+    if isinstance(creds, dict) and sysname in creds:
+        cred = creds[sysname]
+        if not (isinstance(cred, str) and CREDENTIAL_RE.match(cred)):
+            refusals.append(f"model {sysname}: the credential must be a NAME in the store, never a value")
+        elif store_has is not None and not store_has(cred):
+            refusals.append(f"model {sysname}: no credential named {cred} in the store; place it there and name it")
+    return refusals
+
+
+def model_system(pkg):
+    """The package's model system, found by its kind and never by its name, or None."""
+    return next((s for s in (pkg or {}).get("systems", []) if s.get("kind") == "model"), None)
 
 
 # ── 4. the dependencies ───────────────────────────────────────────────────
@@ -656,6 +735,27 @@ def plan_bindings(args, pkg, home):
         b = {"name": s["name"], "kind": s["kind"], "access": s.get("access", "read")}
         if s["kind"] == "directory":
             b["path"] = f"{home}/work/{s['name']}"
+        elif s["kind"] == "model":
+            # The four settings under their fixed names (12.4.1), the former
+            # name beside the current one for this version, and MODEL_KEY as a
+            # credential when the instruction names one, empty when it does not.
+            got = settings.get(s["name"]) if isinstance(settings, dict) else {}
+            got = got if isinstance(got, dict) else {}
+            b["settings"] = {k: str(got.get(k)) for k in MODEL_VALUES}
+            for alias, of in MODEL_ALIASES.items():
+                b["settings"][alias] = b["settings"][of]
+            if isinstance(creds, dict) and creds.get(s["name"]):
+                b["credential"] = creds[s["name"]]
+                b["env"] = MODEL_KEY_VAR
+            else:
+                b["settings"][MODEL_KEY_VAR] = ""
+            if s.get("spends"):
+                b["spends"] = s["spends"].get("unit")
+                if s["name"] in limits:
+                    b["ceiling"] = {"per": limits[s["name"]]["per"], "limit": ceilings.get(s["name"]),
+                                    "env": ceiling_var(s["name"]),
+                                    **({"enforced_by": limits[s["name"]]["enforced_by"]}
+                                       if limits[s["name"]].get("enforced_by") in ("runtime", "platform") else {})}
         else:
             if s.get("credential") or s["name"] in creds:
                 b["credential"] = creds.get(s["name"], s.get("credential"))

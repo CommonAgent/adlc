@@ -46,7 +46,7 @@
 //     every credential, setting and ceiling variable the install file names
 //   exit: 0 answered, 2 refused before any work ran, 3 no answer, 4 stopped at
 //         the cap. The sender is told in words on 3 and 4; on 2 nothing ran.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -855,15 +855,26 @@ export function modelCost(model, u = {}) {
 /** The usage a model host's answer reports, or null when the address is not a
  *  model host or the body says nothing about usage. Self-contained on purpose:
  *  it is also written out as the tap's own source. Returns raw counts
- *  {model, input, output, cache_write, cache_read, cost?}. */
-export function usageOf(url, text) {
+ *  {model, input, output, cache_write, cache_read, cost?}.
+ *
+ *  THE MODEL GATEWAY IS A MODEL HOST TOO. Since Common Agent 0.39.0 (12.4.1) a
+ *  package reaches its model at MODEL_ENDPOINT, which on our hosts and in our
+ *  worker jobs is the gateway on loopback (port 8788), not a
+ *  Google address. Matching on Google's host names alone counted none of
+ *  those calls, so a job that spent read $0.00 and its tokens n/a. `gateway`
+ *  is {endpoint, model}, the job's own MODEL_ENDPOINT and MODEL_NAME: a call
+ *  under that address is a model call, named by the model its answer says
+ *  answered, else MODEL_NAME. */
+export function usageOf(url, text, gateway = null) {
   let u;
   try { u = new URL(String(url)); } catch { return null; }
   const host = u.hostname;
   const path = decodeURIComponent(u.pathname);
   const vertex = /(^|[.-])aiplatform(\.[a-z0-9-]+)*\.googleapis\.com$/.test(host);
   const gemini = host === "generativelanguage.googleapis.com";
-  if (!vertex && !gemini) return null;
+  const base = gateway && typeof gateway.endpoint === "string" ? gateway.endpoint.trim().replace(/\/+$/, "") : "";
+  const viaGateway = !!base && /^https?:\/\//i.test(base) && (String(url) === base || String(url).startsWith(base + "/"));
+  if (!vertex && !gemini && !viaGateway) return null;
   const docs = [];
   const body = String(text ?? "").trim();
   try {
@@ -880,6 +891,17 @@ export function usageOf(url, text) {
   const id = (/\/models\/([^/:]+)/.exec(path) || [])[1] || "";
   let model = vertex && /\/publishers\/anthropic\//.test(path) ? `google-vertex-anthropic/${id}`
     : vertex ? `google-vertex/${id}` : gemini ? `google/${id}` : "";
+  if (viaGateway) {
+    // The answer names the model that answered (Messages and Chat Completions
+    // carry `model`, generateContent `modelVersion`); the path names it for
+    // generateContent; MODEL_NAME is what was asked for.
+    let said = "";
+    for (const d of docs) {
+      const m = d?.model ?? d?.message?.model ?? d?.modelVersion;
+      if (typeof m === "string" && m) { said = m; break; }
+    }
+    model = said || id || String(gateway.model ?? "").trim();
+  }
   let input = 0, output = 0, cacheWrite = 0, cacheRead = 0, cost = null, seen = false;
   for (const d of docs) {
     if (!d || typeof d !== "object") continue;
@@ -927,20 +949,27 @@ function installUsageTap(usageOf) {
   const real = globalThis.fetch;
   if (!log || typeof real !== "function" || real.meshUsageTap || typeof process.getBuiltinModule !== "function") return;
   const { appendFileSync } = process.getBuiltinModule("node:fs");
-  const note = (url, text) => {
+  const note = (url, text, gw) => {
     try {
-      const u = usageOf(url, text);
+      const u = usageOf(url, text, gw);
       if (u) appendFileSync(log, JSON.stringify(u) + "\n");
     } catch { /* the tap never fails the work */ }
+  };
+  // The job's model gateway, read on every call as the package reads it.
+  const gateway = () => {
+    const endpoint = String(process.env.MODEL_ENDPOINT ?? "").trim().replace(/\/+$/, "");
+    return endpoint ? { endpoint, model: String(process.env.MODEL_NAME ?? process.env.TEXT_MODEL ?? "").trim() } : null;
   };
   const tapped = async function (input, init) {
     const res = await real.call(this, input, init);
     try {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input?.url;
-      if (url && /googleapis\.com/.test(String(url)) && res && typeof res.text === "function") {
+      const gw = gateway();
+      const viaGateway = !!(url && gw && /^https?:\/\//i.test(gw.endpoint) && (String(url) === gw.endpoint || String(url).startsWith(gw.endpoint + "/")));
+      if (url && (/googleapis\.com/.test(String(url)) || viaGateway) && res && typeof res.text === "function") {
         const text = res.text.bind(res);
         let read = null;
-        const body = () => (read ??= text().then((t) => { note(url, t); return t; }));
+        const body = () => (read ??= text().then((t) => { note(url, t, gw); return t; }));
         Object.defineProperty(res, "text", { value: () => body(), configurable: true });
         Object.defineProperty(res, "json", { value: () => body().then((t) => JSON.parse(t)), configurable: true });
         Object.defineProperty(res, "arrayBuffer", { value: () => body().then((t) => new TextEncoder().encode(t).buffer), configurable: true });
@@ -1298,11 +1327,72 @@ function childEnv(env, where) {
   const preload = imports.length ? { NODE_OPTIONS: `${env.NODE_OPTIONS ?? ""} ${imports.join(" ")}`.trim() } : {};
   const tap = where.usage ? { MESH_USAGE_LOG: where.usage.log } : {};
   const guard = where.storage ? { MESH_STORAGE_LOG: where.storage.log } : {};
-  return { ...env, ...extra, ...preload, ...tap, ...guard, HOME: where.home, MESH_JOB_DIR: where.jobDir, MESH_JOB_OUT: where.jobOut,
+  const work = { ...env };
+  for (const k of GATEWAY_VARS) delete work[k];
+  return { ...work, ...extra, ...preload, ...tap, ...guard, HOME: where.home, MESH_JOB_DIR: where.jobDir, MESH_JOB_OUT: where.jobOut,
     // The work writes its answer here. A command that would rather print it
     // still can; this is the path for anything whose stdout is a transcript
     // rather than a deliverable, which is every harness.
     MESH_JOB_ANSWER: where.answerFile };
+}
+
+// ── THE MODEL GATEWAY INSIDE THE JOB ──────────────────────────────────────
+//
+// Common Agent 0.39.0 (12.4.1): a package reaches its model through four
+// settings, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, and takes
+// no credential from anything around it. Claude on Vertex signs in with a
+// short-lived Google token, so the host supplies a gateway that holds the
+// token, and MODEL_ENDPOINT points at it with MODEL_KEY empty. On a fleet host
+// that gateway is the resident responses-bridge. A worker job has no resident
+// anything, so this entrypoint starts the same file, copied into the image as
+// model-gateway.mjs, on the loopback port MODEL_ENDPOINT names, for the length
+// of this one message. It signs in as the job's own service account, which is
+// the host's identity here, and the work never sees the token.
+//
+// It starts only when the deployment placed the gateway's own settings
+// (BRIDGE_VERTEX_PROJECT, and BRIDGE_VERTEX_REGION and BRIDGE_PORT) and
+// MODEL_ENDPOINT is on loopback. Those settings are the gateway's and are not
+// handed to the work.
+export const GATEWAY_FILE = "model-gateway.mjs";
+const GATEWAY_VARS = ["BRIDGE_VERTEX_PROJECT", "BRIDGE_VERTEX_REGION", "BRIDGE_PORT"];
+
+/** Where the gateway listens, or null when this job has none to start:
+ *  {port}. */
+export function gatewayPlan(env = process.env, { exists = existsSync, dir = env.AGENT_DIR || "/opt/agent" } = {}) {
+  if (!String(env.BRIDGE_VERTEX_PROJECT ?? "").trim()) return null;
+  let u;
+  try { u = new URL(String(env.MODEL_ENDPOINT ?? "")); } catch { return null; }
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(u.hostname)) return null;
+  const port = Number(u.port || env.BRIDGE_PORT || (u.protocol === "https:" ? 443 : 80));
+  if (!Number.isInteger(port) || port <= 0) return null;
+  if (!exists(join(dir, GATEWAY_FILE))) return null;
+  return { port, file: join(dir, GATEWAY_FILE) };
+}
+
+/** Start the job's gateway and wait, up to `waitMs`, until it listens. Returns
+ *  {child, ready} or null when there is none to start. A gateway that does not
+ *  come up is said in the log and the work still runs: its model call then
+ *  fails naming the address it could not reach, which is the true reason. */
+export function startGateway(env = process.env, { waitMs = 15_000 } = {}) {
+  const plan = gatewayPlan(env);
+  if (!plan) return null;
+  const genv = { PATH: env.PATH ?? "/usr/local/bin:/usr/bin:/bin", HOME: env.HOME ?? "/tmp", BRIDGE_PORT: String(plan.port) };
+  for (const k of GATEWAY_VARS) if (env[k] && k !== "BRIDGE_PORT") genv[k] = env[k];
+  let child;
+  try {
+    child = spawn(process.execPath, [plan.file], { env: genv, stdio: ["ignore", "ignore", "inherit"] });
+  } catch (err) {
+    errorLine(`the model gateway could not be started: ${err?.message ?? err}`);
+    return null;
+  }
+  child.unref();
+  // A blocking wait, because this entrypoint is synchronous from here on: a
+  // short node program tries the port until it answers or the time is up.
+  const probe = `const net=require("node:net");const end=Date.now()+${Number(waitMs)};(function t(){const s=net.connect(${plan.port},"127.0.0.1");s.on("connect",()=>{s.end();process.exit(0)});s.on("error",()=>{s.destroy();if(Date.now()>end)process.exit(1);setTimeout(t,100)})})();`;
+  const r = spawnSync(process.execPath, ["-e", probe], { timeout: waitMs + 2000 });
+  const ready = r.status === 0;
+  if (!ready) errorLine(`the model gateway did not listen on 127.0.0.1:${plan.port} within ${Math.round(waitMs / 1000)} seconds`);
+  return { child, ready, port: plan.port };
 }
 
 function runProgram(argv, where, env) {
@@ -1374,6 +1464,7 @@ export function runOne(env = process.env) {
   // writes into the job folder from here on.
   where.storage = openStorageGuard();
   if (where.storage) guardThisProcess(where.storage.log);
+  const gateway = startGateway(env);
   const memory = watchMemory();
 
   const spec = where.runSpecPath && existsSync(where.runSpecPath)
@@ -1417,6 +1508,7 @@ export function runOne(env = process.env) {
   }
 
   const memMb = memory.stop();
+  if (gateway?.child) { try { gateway.child.kill("SIGTERM"); } catch { /* gone already */ } }
   try {
     writeJobUsage(where.jobDir, {
       calls: readTapLog(where.usage?.log),

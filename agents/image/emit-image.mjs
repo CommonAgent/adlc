@@ -861,6 +861,12 @@ export function dockerfileText(pkg, opts = {}) {
     `COPY entrypoint.mjs ${AGENT_DIR}/entrypoint.mjs`,
     `COPY check-lockfile.mjs ${AGENT_DIR}/check-lockfile.mjs`);
   if (runSpec) say(`COPY run.json ${AGENT_DIR}/run.json`);
+  if (hasModelSystem(install)) {
+    say(`# The model gateway the entrypoint starts on loopback for a package whose`,
+      `# model system's MODEL_ENDPOINT points there (Common Agent 12.4.1): the host's`,
+      `# own facility, holding the job's sign-in, never the package's.`,
+      `COPY ${GATEWAY_FILE} ${AGENT_DIR}/${GATEWAY_FILE}`);
+  }
   say(``);
   if (deps.length) {
     say(`# 12.4 rule 2: install from the lockfile, into the agent's own home,`,
@@ -911,6 +917,26 @@ export function dockerfileText(pkg, opts = {}) {
   return L.join("\n");
 }
 
+// ── the model gateway ─────────────────────────────────────────────────────
+
+/** The file the entrypoint starts as the job's model gateway (one-message.mjs
+ *  startGateway), and where its source is: beside this file on a fleet host,
+ *  where the host install puts responses-bridge.mjs in /opt/fleet, or in the
+ *  repository's host/ folder. */
+export const GATEWAY_FILE = "model-gateway.mjs";
+export function gatewaySource(dirs = [here, join(here, "..", "..", "host")]) {
+  for (const d of dirs) {
+    const p = join(d, "responses-bridge.mjs");
+    if (existsSync(p)) return readFileSync(p, "utf8");
+  }
+  return null;
+}
+
+/** Whether the package declares a system of kind model (12.4.1). */
+export function hasModelSystem(install) {
+  return (install?.systems ?? []).some((s) => s && s.kind === "model");
+}
+
 // ── emit ──────────────────────────────────────────────────────────────────
 
 /** Write the build context: the Dockerfile, the files it copies, the package
@@ -947,6 +973,19 @@ export function emit(packageDir, outDir, opts = {}) {
     const bad = forbiddenIn(text, rel, [base.image, harnessBin].filter(Boolean));
     if (bad.length) refuse(bad.join("; ") + ". Nothing was written.");
     writeFileSync(join(out, rel), text);
+  }
+  // THE MODEL GATEWAY, copied as it is. It is the host's program, not the
+  // package's and not authored here, and it carries the addresses it calls
+  // (Vertex AI, the metadata server's token path) by design, so it is scanned
+  // for what reads as an account and not for addresses or path segments that
+  // the loose credential sweep mistakes for a value. It holds no credential:
+  // it asks for a token at run time.
+  if (hasModelSystem(pkg.install)) {
+    const gateway = gatewaySource();
+    if (!gateway) refuse(`${pkg.name} declares a model system and the model gateway (responses-bridge.mjs) is not beside this tool; nothing was written`);
+    const bad = forbiddenIn(gateway, GATEWAY_FILE).filter((b) => !/carries an address|reads as a credential value/.test(b));
+    if (bad.length) refuse(bad.join("; ") + ". Nothing was written.");
+    writeFileSync(join(out, GATEWAY_FILE), gateway);
   }
   // The package goes in verbatim, because the digests in the manifest and in
   // the build record are over these bytes; a build that rewrote any of them

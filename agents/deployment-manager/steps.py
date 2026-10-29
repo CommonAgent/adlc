@@ -1102,6 +1102,91 @@ def fetch_and_verify(name, url, expected_sha):
     return staging, pkg_dir, sha256, pkg
 
 
+# THE MODEL SYSTEM'S FOUR SETTINGS (Common Agent 0.39.0, 12.4.1), where the
+# owner's instruction leaves them out: the environment file's `model` block,
+# which is this host's configuration and never a package's.
+#
+#   model.name      MODEL_NAME, the model as the endpoint names it
+#   model.endpoint  MODEL_ENDPOINT, the base address: on this host and in our
+#                   worker jobs the model gateway on loopback
+#                   (http://127.0.0.1:8788, host/responses-bridge.mjs)
+#   model.key       the NAME of the credential placed as MODEL_KEY, or "" for
+#                   none, which a gateway on the agent's own host needs
+#   model.protocol  MODEL_PROTOCOL, one of install.MODEL_PROTOCOLS
+#   model.gateway   {vertex_project, vertex_region}: where a worker job's own
+#                   gateway sends Claude's calls, placed on the job as the
+#                   bridge's settings when MODEL_ENDPOINT is on loopback
+#
+# The instruction wins key by key, so a deploy request that names its own
+# model or endpoint gets it. An environment with no `model` block fills
+# nothing, and a package with a model system is then refused by the
+# instruction check, naming the missing setting.
+MODEL_DEFAULT_KEYS = (("MODEL_NAME", "model.name", "DM_MODEL_NAME"),
+                      ("MODEL_ENDPOINT", "model.endpoint", "DM_MODEL_ENDPOINT"),
+                      ("MODEL_PROTOCOL", "model.protocol", "DM_MODEL_PROTOCOL"))
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+
+
+def host_model_defaults():
+    """The host's values for the model system, as {setting: value}, and the
+    credential name for MODEL_KEY ("" for none)."""
+    values = {}
+    for var, key, override in MODEL_DEFAULT_KEYS:
+        v = _optional_env(key, override)
+        if isinstance(v, str) and v.strip():
+            values[var] = v.strip()
+    cred = _optional_env("model.key", "DM_MODEL_KEY_CREDENTIAL")
+    return values, (cred.strip() if isinstance(cred, str) else "")
+
+
+def with_model_defaults(args, pkg):
+    """Fill the model system's settings the instruction left out from this
+    host's configuration (host_model_defaults), in place, and return args. A
+    package with no model system is untouched. A setting the instruction gives
+    is never replaced."""
+    system = INSTALL.model_system(pkg)
+    if not system:
+        return args
+    values, cred = host_model_defaults()
+    settings = args.get("settings")
+    if settings is None:
+        settings = args["settings"] = {}
+    if isinstance(settings, dict):
+        mine = settings.get(system["name"])
+        if mine is None:
+            mine = settings[system["name"]] = {}
+        if isinstance(mine, dict):
+            for k, v in values.items():
+                if mine.get(k) in (None, ""):
+                    mine[k] = v
+    creds = args.get("credentials")
+    if cred and (creds is None or isinstance(creds, dict)) and not (creds or {}).get(system["name"]):
+        args["credentials"] = {**(creds or {}), system["name"]: cred}
+    return args
+
+
+def model_gateway_env(args, pkg):
+    """The variables a worker job's own model gateway reads, when the model
+    system's MODEL_ENDPOINT is on loopback: the container starts
+    responses-bridge.mjs there (image/one-message.mjs) and it sends Claude's
+    calls to Vertex in this project and region, signed in as the job's own
+    service account. {} when there is no model system, the endpoint is
+    elsewhere, or the host names no gateway project."""
+    system = INSTALL.model_system(pkg)
+    if not system:
+        return {}
+    mine = ((args.get("settings") or {}).get(system["name"]) or {}) if isinstance(args.get("settings"), dict) else {}
+    endpoint = str(mine.get("MODEL_ENDPOINT") or "") if isinstance(mine, dict) else ""
+    host = re.sub(r"^https?://", "", endpoint).split("/")[0].rsplit(":", 1)[0]
+    if host not in LOOPBACK_HOSTS:
+        return {}
+    project = _optional_env("model.gateway.vertex_project", "DM_MODEL_GATEWAY_PROJECT") or VERTEX_PROJECT
+    region = _optional_env("model.gateway.vertex_region", "DM_MODEL_GATEWAY_REGION") or "global"
+    port = endpoint.rsplit(":", 1)[1].split("/")[0] if re.search(r":\d+(/|$)", endpoint) else ""
+    return {"BRIDGE_VERTEX_PROJECT": str(project), "BRIDGE_VERTEX_REGION": str(region),
+            **({"BRIDGE_PORT": port} if port else {})}
+
+
 def check_before_touching(args, pkg):
     """Steps 2 and the instruction: the host has what the install file
     names, and the instruction supplies every name, address and number the
@@ -1110,6 +1195,7 @@ def check_before_touching(args, pkg):
     if missing:
         fail("host", "this host lacks what the package needs: " + "; ".join(missing)
              + ". Nothing was substituted; install it or choose another host.")
+    with_model_defaults(args, pkg)
     refusals = INSTALL.check_instruction(args, pkg, store_has)
     if refusals:
         fail("instruction", "; ".join(refusals))
@@ -3848,6 +3934,7 @@ def container_step(args, count_against_ceiling=True, alongside=None):
     staging, pkg_dir, sha256, pkg = fetch_and_verify(name, url, expected_sha)
     pkg_name = pkg["manifest"]["name"]
     pkg_version = pkg["manifest"].get("version", "unknown")
+    with_model_defaults(args, pkg)
     refusals = INSTALL.check_instruction(args, pkg, store_has)
     if refusals:
         fail("instruction", "; ".join(refusals))
@@ -3942,6 +4029,9 @@ def container_step(args, count_against_ceiling=True, alongside=None):
         place_secrets_in_their_project(sorted(set(secret_refs.values())), project)
         env = IMAGE.job_env(name, bindings, values, install=pkg["install"], harness=harness, secrets=True,
                             binding=binding_name)
+        # The model gateway inside the job, when the model system's endpoint
+        # is on loopback (model_gateway_env).
+        env.update(model_gateway_env(args, pkg))
         # A SINGLE-CONTAINER EDITION carries each member's own variables too,
         # under that member's prefix, read off the member's own job, and one
         # time limit for the whole run (image.composite_job_variables).

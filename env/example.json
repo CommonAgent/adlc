@@ -14,7 +14,8 @@
     "name": "example-model-id",
     "endpoint": "http://127.0.0.1:8788",
     "key": "",
-    "protocol": "anthropic-messages"
+    "protocol": "anthropic-messages",
+    "gateway": { "vertex_project": "example-project", "vertex_region": "global" }
   },
   "urls": {
     "app": "https://app.mesh.example.com",
