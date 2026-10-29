@@ -22,7 +22,7 @@ needs and wire them to your own host.
 |---|---|
 | `install-on-host.sh` | run once on the fleet host, as root, from the staged folder |
 | `ecosystem.config.js.tmpl` | `/opt/fleet/ecosystem.config.js`, only on a host that has none |
-| `responses-bridge.mjs` | `/opt/fleet/responses-bridge.mjs`: lets the Codex brains reach Claude on Vertex AI as the machine's own service account, on loopback, with no key |
+| `responses-bridge.mjs` | `/opt/fleet/responses-bridge.mjs`: lets the Codex brains reach Claude on Vertex AI as the machine's own service account, on loopback, with no key; and is the model gateway agents reach through `MODEL_ENDPOINT` (see [The model settings](#the-model-settings)) |
 | `follow-names.mjs` | `/opt/fleet/follow-names.mjs`: binds each agent's descriptor to its key and name and signs it |
 | `sudoers.d/` | `/etc/sudoers.d/`: the one rule each for the package maker's pack and the deployment manager's procedures |
 
@@ -70,6 +70,60 @@ required coder, so the builder packs scripts from any code writer; an operator
 who wants only one writer's scripts packed sets `REQUIRED_CODER` (one or more
 public keys) in those two scripts, and the builder then checks every script
 against that writer's signed delivery manifest.
+
+## The model settings
+
+A package carries no model address and no way of signing in (Common Agent
+0.39.0, Section 12.4.1, and 12.6 rule 2). The host places four settings for
+every agent that calls a model, and the agent reads them on every call
+through its copy of the shared model caller (`agents/package-maker/shared/model-caller.mjs`):
+
+| Setting | What it holds |
+|---|---|
+| `MODEL_NAME` | which model, sent exactly as written |
+| `MODEL_ENDPOINT` | the base address; the caller adds the path its format names (`/v1/messages`, `/chat/completions`, `/models/<name>:generateContent`) |
+| `MODEL_KEY` | the credential; empty when the endpoint needs none |
+| `MODEL_PROTOCOL` | the request format: `anthropic-messages`, `openai-chat` or `gemini` |
+
+For one version the caller also reads `TEXT_MODEL` in place of `MODEL_NAME`
+and `TEXT_API_KEY` in place of `MODEL_KEY`. There is no older name for the
+endpoint: an agent with no `MODEL_ENDPOINT` refuses, naming it.
+
+`env/example.json` carries them under `model`. The values there are the ones
+for Claude on Vertex AI through this host's gateway:
+
+- `MODEL_ENDPOINT` `http://127.0.0.1:8788`, the responses bridge;
+- `MODEL_PROTOCOL` `anthropic-messages`;
+- `MODEL_KEY` empty;
+- `MODEL_NAME` the Claude model's id, as Vertex names it.
+
+The bridge is the gateway on the host's side that 12.4.1 asks for where a
+provider signs in with a short-lived token. It serves `POST /v1/messages`
+beside the Codex brains' `/v1/responses`. It holds the machine's Google identity (the metadata server on a Google Cloud
+machine, or `RIG_GCLOUD auth print-access-token` on a workstation), keeps the
+token fresh, and passes each Messages API request to Vertex in the project and
+region it is started with: the model moves from the body into Vertex's
+address, the version becomes Vertex's, and a streamed request is streamed back.
+Vertex's status and answer come back unchanged, and a key the agent sends is
+never passed on. It listens on loopback only. No agent fetches a Google token
+or knows where Vertex is.
+
+Where the work runs decides what `MODEL_ENDPOINT` points at:
+
+- **On this host**, the pm2 app `responses-bridge` that `ecosystem.config.js`
+  starts, at `http://127.0.0.1:8788`.
+- **In a job's container**, a bridge started in that container, as the rig
+  starts one beside Codex: `node responses-bridge.mjs` with
+  `BRIDGE_VERTEX_PROJECT` and `BRIDGE_VERTEX_REGION`, signed in as the job's
+  service account. The image tools do not start one yet.
+- **In a tenant container**, the tenant host already serves a model door on
+  `http://127.0.0.1:8790` that speaks `anthropic-messages` and carries each call
+  to the platform's model gateway, so `MODEL_ENDPOINT` points there and no
+  bridge is needed.
+
+A host that reaches a model service directly sets `MODEL_ENDPOINT` to that
+service's root, `MODEL_PROTOCOL` to the format it speaks, and `MODEL_KEY` to
+its key.
 
 ## Which account a build runs as
 

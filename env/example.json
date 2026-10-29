@@ -10,6 +10,12 @@
     "jobs_sa": "agent-jobs@example-project.iam.gserviceaccount.com"
   },
   "vertex": { "project": "example-project" },
+  "model": {
+    "name": "example-model-id",
+    "endpoint": "http://127.0.0.1:8788",
+    "key": "",
+    "protocol": "anthropic-messages"
+  },
   "urls": {
     "app": "https://app.mesh.example.com",
     "api": "https://api.mesh.example.com",

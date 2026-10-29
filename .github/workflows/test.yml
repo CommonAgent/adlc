@@ -42,8 +42,17 @@ jobs:
       - name: Package maker
         run: |
           cd agents/package-maker
-          node --test connection.test.mjs request.test.mjs
+          node --test connection.test.mjs request.test.mjs model-caller.test.mjs
           python3 -m unittest test_folder test_standing test_options test_person
+
+      - name: No network address in an agent's scripts
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          node checks/addresses.mjs --base FETCH_HEAD
+          node --test checks/test/*.test.mjs
+
+      - name: Host model gateway
+        run: node --test host/test/*.test.mjs
 
       - name: Conformance checker
         run: node --test agents/conformance-checker/test/*.test.mjs
