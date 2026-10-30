@@ -147,7 +147,7 @@ export function fromFiles(files) {
 
   const offerings = list(d.offerings).map((o) => ({
     id: trim(o.id), name: trim(o.name), does: trim(o.does),
-    inputs: list(o.inputs).map((i) => ({ name: trim(i.name), kind: trim(i.kind), required: i.required === true })),
+    inputs: list(o.inputs).map((i) => ({ name: trim(i.name), kind: trim(i.kind), required: i.required === true, external: i.external === true })),
     outputs: list(o.outputs).map((i) => ({ name: trim(i.name), kind: trim(i.kind) })),
     how: o.how ?? {},
     authority: Array.isArray(o.authority) ? o.authority.map(trim) : null,
