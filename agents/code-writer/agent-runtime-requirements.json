@@ -45,8 +45,12 @@
         "--records",
         "{records}",
         "--work",
-        "{work}"
+        "{work}",
+        "--message",
+        "{job_dir}/message.txt"
       ],
+      "message_file": "{job_dir}/message.txt",
+      "escalate_when": "json:escalate",
       "reply": "json:reply",
       "per_file": [
         "--file",
