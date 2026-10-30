@@ -3261,8 +3261,13 @@ def update(argfile):
     # rather than a host that says 0.2.0 over a job that runs 0.1.0.
     work = None
     # A reinstall placed the same bytes, so the image the job runs is already
-    # built from them; nothing in the container half would change.
-    if in_container and not reinstall:
+    # built from them and is not built again. But an instruction that names
+    # settings or credentials is applied: re-filing a version to change its
+    # model (a proposed MODEL_NAME, Common Agent 12.4.1) is a reinstall, and
+    # skipping the job left pitch-writer 2.13.0 on the environment's default
+    # model on 2026-10-30. The job is then re-placed from the image it runs.
+    reapply = reinstall_reapplies(reinstall, in_container, args)
+    if in_container and (not reinstall or reapply):
         def put_back(step):
             restore(name, home, old_ledger, prev, pkg_name)
             busy = ""
@@ -3280,7 +3285,12 @@ def update(argfile):
             return (f"the container half failed at {step}; the host half was put back to {before.get('version')}, "
                     f"which is the version job {in_container.get('job')} still runs{busy}")
         CURRENT["on_fail"] = put_back
-        work = place_in_cloud_run(container_args_for_update(args, in_container, entry, harness, model))
+        if reapply:
+            image_now = image_the_job_runs(in_container)
+            work = container_step({**container_args_for_update(args, in_container, entry, harness, model), "image": image_now},
+                                  count_against_ceiling=False)
+        else:
+            work = place_in_cloud_run(container_args_for_update(args, in_container, entry, harness, model))
         CURRENT["on_fail"] = None
     shutil.rmtree(prev, ignore_errors=True)
     # The runtime record names the package version, so an update that did not
@@ -3293,6 +3303,21 @@ def update(argfile):
          # The model the agent runs with as placed (technical debt 456).
          **model_placed_of(work, model, in_container),
          **({"work": work} if work else {}), **common})
+
+
+def reinstall_reapplies(reinstall, row, args):
+    """Whether a reinstall of an agent whose work is in a job re-places the job:
+    only when the instruction names settings or credentials to apply."""
+    return bool(reinstall and row and (args.get("settings") or args.get("credentials")))
+
+
+def image_the_job_runs(row):
+    """The image a container row's job runs, by digest."""
+    image = str(row.get("image") or "")
+    digest = str(row.get("image_digest") or "")
+    if "@" in image or not digest:
+        return image
+    return IMAGE.pinned(image, digest)
 
 
 def container_args_for_update(args, row, entry, harness, model):
