@@ -29,7 +29,8 @@
 //   node guard.mjs precheck --agent <name> --package-bytes <n> [--node-root <dir> --proc <pm2 name>] [--fleet <dir>] [--also-adding <n>]
 //   node guard.mjs mark     --proc <pm2 name> --log <file>
 //   node guard.mjs watch    --proc <pm2 name> --log <file> [--agent <name>] [--node-root <dir> | --session-file <file>]
-//                           [--seconds 120] [--sample 3] [--restarts-before <n>] [--log-from <byte offset>]
+//                           [--seconds 120] [--sample 3] [--restarts-before <n>] [--restarts-allowed <n>]
+//                           [--log-from <byte offset>]
 //
 // Each prints one JSON object on one line.
 import { existsSync, readFileSync, readdirSync, statSync, statfsSync, openSync, readSync, closeSync } from "node:fs";
@@ -335,7 +336,8 @@ export function mark(w, opts) {
  *
  *  - pm2's restart count may not climb during the window, nor by more than one
  *    since `restarts_before` (the one restart `pm2 start` of the config gives
- *    a running node);
+ *    a running node). `restarts_allowed` sets that number: 0 after a reload of
+ *    one agent, where nothing restarted the node on purpose;
  *  - the process stays online;
  *  - nothing in its log since `log_from` says the connect failed;
  *  - the new agent and `sample` others answer GET /version, three tries each.
@@ -349,12 +351,13 @@ export async function watch(w, opts) {
   const out = (ok, reason, extra = {}) => ({ ok, act: "watch", proc: opts.proc, agent: opts.agent ?? null, seconds, ...(reason ? { reason } : {}), ...extra });
   if (!first) return out(false, `${opts.proc} is not in pm2`);
   const before = Number.isInteger(opts.restarts_before) ? opts.restarts_before : first.restarts;
+  const allowed = Number.isInteger(opts.restarts_allowed) && opts.restarts_allowed >= 0 ? opts.restarts_allowed : 1;
   const logFrom = Number.isInteger(opts.log_from) ? opts.log_from : w.logSize(opts.log);
   const check = () => {
     const s = pm2State(w.pm2(), opts.proc);
     if (!s) return `${opts.proc} left pm2`;
     if (s.restarts > first.restarts) return `${opts.proc} restarted ${s.restarts - first.restarts} time${s.restarts - first.restarts === 1 ? "" : "s"} during the watch (pm2 count ${first.restarts} to ${s.restarts})`;
-    if (s.restarts > before + 1) return `${opts.proc} restarted ${s.restarts - before} times since the install began (pm2 count ${before} to ${s.restarts})`;
+    if (s.restarts > before + allowed) return `${opts.proc} restarted ${s.restarts - before} time${s.restarts - before === 1 ? "" : "s"} since the install began (pm2 count ${before} to ${s.restarts})${allowed === 0 ? ", and a reload restarts nothing" : ""}`;
     if (s.status !== "online") return `${opts.proc} is ${s.status} in pm2`;
     const hit = w.logSince(opts.log, logFrom).split("\n").find((l) => CONNECT_FAILURES.test(l));
     if (hit) return `${opts.proc}'s log says its connection failed: "${hit.trim().slice(0, 200)}"`;
@@ -417,7 +420,7 @@ async function main(argv) {
     return watch(w, {
       proc: f.proc, log: f.log, agent: f.agent && f.agent !== "-" ? f.agent : null,
       seconds: int(f.seconds) ?? 120, sample: int(f.sample) ?? 3, interval: int(f.interval) ?? 10,
-      restarts_before: int(f.restarts_before), log_from: int(f.log_from),
+      restarts_before: int(f.restarts_before), restarts_allowed: int(f.restarts_allowed), log_from: int(f.log_from),
       probe_sample: !!f.node_root,
     });
   }

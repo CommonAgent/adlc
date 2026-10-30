@@ -121,6 +121,37 @@ run, exactly as before. The guard is told how many new agents were placed on
 the node earlier in the same landing, because the node's credential does not
 carry them until it restarts.
 
+## Reloading one agent instead of restarting its node
+
+A node holds every platform agent on a host, and an install used to restart
+it, which took all of them off the mesh for about a minute. With
+`DM_NODE_RELOAD=on` set on the executor, an agent on a node that pm2 shows
+online is reloaded there instead (`mesh-adapter agent reload <name> --json`,
+as the node's user): the node serves that one agent again from its folder,
+keeps its mailbox, and touches no other agent.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `DM_NODE_RELOAD` | `off` | `on`: a deploy, an update, a model change and a landing reload the agent on its running node instead of restarting the node. |
+| `DM_RELOAD_SECONDS` | `150` | How long one reload may take before it counts as unanswered. |
+
+Off, every call is the one this procedure always made. On:
+
+- the smoke check reads the node's answer instead of its log, and still asks
+  the brain;
+- the watch after a reload allows the node no restart at all;
+- a node that cannot be told (stopped, older than reload, or silent) is started
+  as before, and the answer says why under `processes.reload`;
+- an agent whose new files do not serve is not followed by a restart: an
+  update's old files are put back and reloaded, a new agent is paused through
+  the node;
+- after a rollback the node's other agents are watched first, and the node is
+  restarted only if they do not stay well without it;
+- a landing reloads each agent and starts the node only for agents it could
+  not reload, so a batch needs no restart.
+
+The node must run an adapter that has `agent reload`.
+
 ## The audit gate
 
 The deployment manager installs a package only with a current audit pass

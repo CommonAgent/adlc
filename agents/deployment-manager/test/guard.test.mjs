@@ -210,6 +210,13 @@ test("a restart before the watch beyond the one pm2 start gives is a failure too
   assert.equal((await watch(fakeNode({ restartsAt: () => 5 }), { ...OPTS, restarts_before: 4 })).ok, true);
 });
 
+test("after a reload of one agent the node may not have restarted at all", async () => {
+  const r = await watch(fakeNode({ restartsAt: () => 5 }), { ...OPTS, restarts_before: 4, restarts_allowed: 0 });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /restarted 1 time since the install began \(pm2 count 4 to 5\), and a reload restarts nothing/);
+  assert.equal((await watch(fakeNode({ restartsAt: () => 4 }), { ...OPTS, restarts_before: 4, restarts_allowed: 0 })).ok, true);
+});
+
 test("the broker's refusal in the log fails the watch and is quoted", async () => {
   const r = await watch(fakeNode({ log: "2026-09-29 14:14:03: nats: maximum control line exceeded\n" }), OPTS);
   assert.equal(r.ok, false);

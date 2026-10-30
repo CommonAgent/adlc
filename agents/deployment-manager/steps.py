@@ -1876,14 +1876,147 @@ def agent_procs(name):
     return (adapter if held else [*adapter, f"{name}-attendant"]), held, why
 
 
+# ── reloading one agent instead of restarting its node ────────────────────
+#
+# Every install on a node used to restart the node, because a restart was the
+# only way the node read a changed agent folder. On the dev fleet the
+# platform's node holds 57 agents, and each restart took all of them off the
+# mesh for about a minute: replies for every agent failed with "no agent named
+# X on this node" until it was back, and the supervisor held them (technical
+# debt 417). The adapter's `agent reload <name>` serves one agent again from
+# its folder, keeps its mailbox, and touches no other agent on the node.
+#
+# DM_NODE_RELOAD=on uses it. Off, which is the default, every call this
+# procedure makes is the call it has always made. On:
+#   - an agent whose only process is a node that pm2 shows online is reloaded
+#     on that node instead of the node being started (reload_target);
+#   - a node that cannot be told (older than reload, not answering, or a
+#     command that gave no answer) is started as before, and the answer says
+#     why under processes.reload;
+#   - an agent whose new files do not serve is NOT followed by a restart. Its
+#     smoke check fails and the usual rollback runs: an update's old files are
+#     put back and reloaded (serve_again), a new agent is paused through the
+#     node;
+#   - the watch after a reload allows the node no restart at all, where a
+#     start of the node allows the one it causes;
+#   - after a rollback the neighbours are watched first, and the node is
+#     restarted only if they do not stay well without it (recovered).
+# The executor passes its environment to every act, so the setting goes on the
+# deploy-executor process.
+RELOAD_SECONDS = int(os.environ.get("DM_RELOAD_SECONDS", "150"))
+
+
+def node_reload_on():
+    """Whether DM_NODE_RELOAD is on. Read at each call, never cached."""
+    return os.environ.get("DM_NODE_RELOAD", "off").strip().lower() == "on"
+
+
+def reload_target(name, procs):
+    """The node to reload `name` on, or None and why not. `procs` is what this
+    host would otherwise start for the agent (agent_procs). Only an agent whose
+    one process is its node, online in pm2, is reloaded; anything else is
+    started the way it always was. With the setting off this asks nothing."""
+    if not node_reload_on():
+        return None, "DM_NODE_RELOAD is off"
+    row = next((e for e in load_list() if e.get("name") == name), None) or {}
+    if not row.get("node_root"):
+        return None, f"{name} runs no node of its own on this host's inventory, so its adapter is started"
+    holder = {"root": row["node_root"], "user": row.get("node_user") or NODE_USER,
+              "proc": row.get("node_proc") or NODE_PROC}
+    if list(procs) != [holder["proc"]]:
+        return None, f"this host starts {', '.join(procs)} for {name}, not its node alone, so pm2 starts them"
+    st = node_proc_state(holder["proc"])
+    if not st or st.get("status") != "online":
+        return None, f"{holder['proc']} is {st.get('status') if st else 'not in pm2'}, so starting it serves {name}"
+    return holder, None
+
+
+def reload_on_node(name, holder):
+    """Ask the running node to serve `name` again from its folder:
+    `mesh-adapter agent reload <name> --json`, as the node's user against the
+    node's root. Returns the adapter's one-line answer with the node named,
+    always a dict with `ok`, never raising. `code` NOT_RELOADED means the node
+    was told and the agent did not serve; every other refusal means the node
+    could not be told."""
+    cmd = (f"env MESH_ADAPTER_STATE={shlex.quote(holder['root'])} /usr/bin/mesh-adapter agent reload "
+           f"{shlex.quote(name)} --json")
+    said = {"node": holder["proc"]}
+    try:
+        p = subprocess.run(["su", "-", holder.get("user") or NODE_USER, "-c", cmd],
+                           capture_output=True, text=True, timeout=RELOAD_SECONDS)
+    except subprocess.TimeoutExpired:
+        return {**said, "ok": False, "code": "TIMEOUT", "error": f"agent reload did not answer in {RELOAD_SECONDS}s"}
+    except (OSError, subprocess.SubprocessError) as e:
+        return {**said, "ok": False, "code": "NOT_RUN", "error": str(e)[:300]}
+    lines = [ln for ln in (p.stdout or "").splitlines() if ln.strip().startswith("{")]
+    try:
+        doc = json.loads(lines[-1]) if lines else None
+    except ValueError:
+        doc = None
+    if not isinstance(doc, dict) or "ok" not in doc:
+        # An adapter without `agent reload` prints its usage and no JSON.
+        return {**said, "ok": False, "code": "NO_ANSWER",
+                "error": ((p.stderr or "") + (p.stdout or "")).strip()[-300:] or f"exit {p.returncode} and nothing said"}
+    return {**said, **doc}
+
+
+def reload_reached(said):
+    """Whether the node was told: served again, or refused the agent itself."""
+    return bool(said.get("ok")) or said.get("code") == "NOT_RELOADED"
+
+
 def start_processes(name, step="pm2"):
     """Step 9's first half: start what this host starts for this agent, and
     report which processes and why, so a deploy that started one process where
-    the reader expected two says so rather than leaving them to notice."""
+    the reader expected two says so rather than leaving them to notice.
+
+    With DM_NODE_RELOAD on, an agent on a running node is reloaded there
+    instead, `started` is empty and `reloaded` carries the node's answer."""
     procs, held, why = agent_procs(name)
+    attendant = f"not started: {why}" if held else f"started: {why}"
+    node, why_not = reload_target(name, procs)
+    if node:
+        said = reload_on_node(name, node)
+        if reload_reached(said):
+            return {"started": [], "attendant": attendant, "reloaded": said}
+        why_not = f"{node['proc']} could not be told to reload {name} ({said.get('code')}: {said.get('error')}), so it was started"
     run(["pm2", "start", CONF, "--only", ",".join(procs)], step, 90)
-    return {"started": procs,
-            "attendant": f"not started: {why}" if held else f"started: {why}"}
+    return {"started": procs, "attendant": attendant,
+            **({"reload": f"not used: {why_not}"} if node_reload_on() else {})}
+
+
+def serve_again(name, processes):
+    """After an agent's old files were put back: have what serves it read
+    them, the way step 9 brought it up. A reload when it was reloaded (and a
+    node restart if the node cannot be told), else the pm2 restart of what was
+    started, exactly as before. Returns the words for the record."""
+    if processes.get("reloaded"):
+        procs = [processes["reloaded"].get("node") or NODE_PROC]
+        node, _ = reload_target(name, procs)
+        if node:
+            said = reload_on_node(name, node)
+            if said.get("ok"):
+                return f"reloaded on {node['proc']}"
+        subprocess.run(["pm2", "restart", *procs], capture_output=True)
+        return f"{procs[0]} restarted, because it could not reload {name}"
+    subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+    return "processes restarted"
+
+
+def restarts_allowed_of(*processes):
+    """What the watch allows the node: no restart at all when every agent in
+    it was reloaded; otherwise the guard's default (the one restart a start of
+    the node causes)."""
+    return 0 if processes and all(p.get("reloaded") for p in processes) else None
+
+
+def check_served(name, processes, **kw):
+    """Step 9's check after start_processes: start_and_smoke with the same
+    arguments as always, and, when the agent was reloaded, the node's answer
+    on whether it is served in place of reading the node's log."""
+    if processes.get("reloaded"):
+        return start_and_smoke(name, served=bool(processes["reloaded"].get("ok")), **kw)
+    return start_and_smoke(name, **kw)
 
 
 # THE QUESTION THE SMOKE CHECK ASKS THE BRAIN. Asked plainly ("Reply with one
@@ -1897,11 +2030,24 @@ def start_processes(name, step="pm2"):
 SMOKE_PROBE = "Without using any tools or reading any files, reply with one sentence: what is your job?"
 
 
-def start_and_smoke(name, ask_model=True):
+def start_and_smoke(name, ask_model=True, served=None):
     """Step 9. Start (or restart) the two processes and check, smoke grade:
     the adapter listens, and the brain answers a direct probe. A reinstall of
     bytes that already passed does not ask the brain (`ask_model` False): the
-    probe wakes a model, and the watch after it asks the agent without one."""
+    probe wakes a model, and the watch after it asks the agent without one.
+
+    `served` is the node's own answer after a reload (DM_NODE_RELOAD), and is
+    then what "listening" means: the log line is not read, because a reloaded
+    agent's line from an earlier start is already in the log. An agent the
+    node did not serve wakes no model."""
+    if served is not None:
+        if not served:
+            return {"passed": False, "listening": False, "probe_reply": "",
+                    "probe": "not run: the node did not serve the agent after the reload"}
+        if not ask_model:
+            return {"passed": True, "listening": True, "probe_reply": "",
+                    "probe": "not run: a reinstall of bytes that already passed it; the watch's health probe wakes no model"}
+        return brain_probe(name, True)
     listening = False
     # On the node the line is the node's, in its one log, and says which agent.
     # THE AGENT'S OWN NODE, not the host's default: an account has a node of
@@ -1927,6 +2073,11 @@ def start_and_smoke(name, ask_model=True):
     if not ask_model:
         return {"passed": listening, "listening": listening, "probe_reply": "",
                 "probe": "not run: a reinstall of bytes that already passed it; the watch's health probe wakes no model"}
+    return brain_probe(name, listening)
+
+
+def brain_probe(name, listening):
+    """The smoke check's second half: the brain answers a direct probe."""
     probe = ""
     try:
         probe = subprocess.run(
@@ -2178,13 +2329,19 @@ def watch_mark(holder):
     return res if res is not None else unfinished_watch(why, "mark")
 
 
-def watch_after(name, holder, before, seconds=None, agent=True):
+def watch_after(name, holder, before, seconds=None, agent=True, restarts_allowed=None):
     """The two minutes before "deployed": the holder's restart count must not
     climb, its log must not say the connect failed, and the agent and three
-    others on the node must answer a probe that wakes no model."""
+    others on the node must answer a probe that wakes no model.
+
+    `restarts_allowed` is how many restarts since the mark the guard accepts;
+    None leaves the guard's default (one, the restart a start of the node
+    causes). After a reload it is 0: nothing restarted the node on purpose."""
     seconds = WATCH_SECONDS if seconds is None else seconds
     argv = ["watch", "--proc", holder["proc"], "--log", holder["log"], "--seconds", str(seconds),
             "--agent", name if agent else "-"]
+    if restarts_allowed is not None:
+        argv += ["--restarts-allowed", str(int(restarts_allowed))]
     if holder.get("root"):
         argv += ["--node-root", holder["root"]]
     else:
@@ -2223,6 +2380,18 @@ def recovered(holder, restart=True):
     try:
         with node_lock("the recovery watch", soft=True):
             mark = watch_mark(holder)
+            if restart and node_reload_on() and not mark.get("unfinished"):
+                # With reload on, the agent taken out was paused through the
+                # node, which stopped serving it and left the others running.
+                # Restarting them all is what reload is there to avoid, so the
+                # neighbours are watched first, allowed no restart, and the
+                # node is restarted only if they do not stay well.
+                first = watch_after("-", holder, {"restarts": mark.get("restarts"), "log_offset": mark.get("log_offset")},
+                                    seconds=RECOVERY_SECONDS, agent=False, restarts_allowed=0)
+                if first.get("ok"):
+                    return {**first, "restarted": False,
+                            "note": "the node was not restarted: its other agents answered and it held its connection without it"}
+                mark = watch_mark(holder)
             if restart:
                 try:
                     subprocess.run(["pm2", "restart", holder["proc"]], capture_output=True, text=True, timeout=90)
@@ -2304,11 +2473,11 @@ def watch_failure(what, watched):
     return f"the node did not stay well after {what}: {watched.get('reason')}"
 
 
-def watch_new_install(name, holder, before, **report):
+def watch_new_install(name, holder, before, restarts_allowed=None, **report):
     """Watch a NEW agent's node; on failure pause the agent on its node,
     confirm the node recovers, and refuse with "rolled back" and the reason.
     Returns the watch when it passed."""
-    watched = watch_after(name, holder, before)
+    watched = watch_after(name, holder, before, restarts_allowed=restarts_allowed)
     if watched.get("ok"):
         return watched
     what = pause_new_agent(name, holder)
@@ -2318,12 +2487,12 @@ def watch_new_install(name, holder, before, **report):
          watch=watched, recovery=recovery, **report)
 
 
-def watch_update(name, holder, before, put_old_back, version, common):
+def watch_update(name, holder, before, put_old_back, version, common, restarts_allowed=None):
     """Watch the node after an update; on failure put the old version back
-    (put_old_back restores and restarts), confirm the node recovers, and
-    refuse with "rolled back" and the reason. Returns the watch when it
-    passed."""
-    watched = watch_after(name, holder, before)
+    (put_old_back restores and restarts, or reloads), confirm the node
+    recovers, and refuse with "rolled back" and the reason. Returns the watch
+    when it passed."""
+    watched = watch_after(name, holder, before, restarts_allowed=restarts_allowed)
     if watched.get("ok"):
         return watched
     what = put_old_back()
@@ -2479,14 +2648,15 @@ def deploy(argfile):
     with node_lock(f"the deploy of {name}"):
         before = watch_mark(holder)
         processes = start_processes(name)
-        smoke = start_and_smoke(name)
+        smoke = check_served(name, processes)
 
         # 9b. The watch. Two minutes of the node holding its connection with this
         # agent on it, and the agent and three neighbours answering, before anything
         # says deployed; otherwise the agent is taken back out and the node is
         # confirmed well without it. Before the work is placed, so a rolled-back
         # install builds no image.
-        watched = watch_new_install(name, holder, before, act="deploy", package=ctx["pkg_name"],
+        watched = watch_new_install(name, holder, before, restarts_allowed=restarts_allowed_of(processes),
+                                    act="deploy", package=ctx["pkg_name"],
                                     version=ctx["pkg_version"], host=HOST, agent_key=ctx["agent_key"],
                                     handle=ctx["handle"], capacity=ctx["capacity"], smoke=smoke)
 
@@ -3193,7 +3363,7 @@ def update(argfile):
         for proc in (f"{name}-adapter", f"{name}-attendant"):
             subprocess.run(["pm2", "delete", proc], capture_output=True, text=True)
         processes = start_processes(name)
-        smoke = start_and_smoke(name, ask_model=not ctx["reinstall"])
+        smoke = check_served(name, processes, ask_model=not ctx["reinstall"])
         shutil.rmtree(ctx["staging"], ignore_errors=True)
         common = update_common(ctx, processes, smoke)
         if not smoke["passed"]:
@@ -3201,10 +3371,11 @@ def update(argfile):
             # The processes this host starts, and no other: restarting a name pm2
             # does not hold fails, and on a supervisor host the attendant is such a
             # name. The restore has to put back what was running, not what an older
-            # copy of this procedure used to run.
-            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+            # copy of this procedure used to run. A reloaded agent is reloaded
+            # again on the old files (serve_again).
+            again = serve_again(name, processes)
             fail("check", f"the smoke check failed on {pkg_version}; {entry.get('version')} was restored from the snapshot",
-                 state=f"restored to {entry.get('version')}; processes restarted", act="update", restored=True, **common)
+                 state=f"restored to {entry.get('version')}; {again}", act="update", restored=True, **common)
 
         # The watch, as a deploy has it: two minutes of the node staying well with
         # the new version before anything says updated. Otherwise the old version
@@ -3212,9 +3383,11 @@ def update(argfile):
         # confirmed well again.
         def put_old_back():
             restore(name, home, ctx["old_ledger"], ctx["prev"], pkg_name)
-            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
-            return f"{entry.get('version')} was restored from the snapshot and restarted"
-        common["watch"] = watch_update(name, holder, before, put_old_back, pkg_version, common)
+            again = serve_again(name, processes)
+            return (f"{entry.get('version')} was restored from the snapshot and restarted" if again == "processes restarted"
+                    else f"{entry.get('version')} was restored from the snapshot and {again}")
+        common["watch"] = watch_update(name, holder, before, put_old_back, pkg_version, common,
+                                       restarts_allowed=restarts_allowed_of(processes))
 
     release_node_lock()  # the hold taken before capacity_check
     update_finish(ctx, common)
@@ -3479,7 +3652,7 @@ def update_finish(ctx, common):
             busy = ""
             try:
                 with node_lock(f"putting {name}'s host half back", soft=True):
-                    subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+                    serve_again(name, processes)
             except NodeLockBusy as e:
                 busy = f"; its processes were NOT restarted: {e}"
             for k, v in before.items():
@@ -5406,10 +5579,17 @@ def set_model(name, model, harness=None):
     procs, _, _ = agent_procs(name)
     # Under the node lock, for the restart and the check after it (node_lock).
     with node_lock(f"the model change of {name}"):
-        run(["pm2", "restart", *procs], "pm2", 90)
+        # With DM_NODE_RELOAD on, the agent is reloaded on its running node,
+        # which re-registers it with the descriptor that names the new model,
+        # and no other agent on the node is restarted for it.
+        node, _ = reload_target(name, procs)
+        said = reload_on_node(name, node) if node else None
+        processes = {"started": [], "reloaded": said} if said and reload_reached(said) else {"started": procs}
+        if not processes.get("reloaded"):
+            run(["pm2", "restart", *procs], "pm2", 90)
         # The check is of the side that thinks: the host's brain where the work
         # runs here, and one message through the job where it runs in a container.
-        smoke = container["check"] if container else start_and_smoke(name)
+        smoke = container["check"] if container else check_served(name, processes)
     # The runtime record names the model the agent runs, so this act changes
     # something an owner reads and has to re-state it. Where the work runs is
     # untouched, and the helper reads that off the inventories.
@@ -5767,7 +5947,9 @@ def land_on_node(group):
     """One node's share of a landing: every agent in `group` is placed on the
     node that `holder` names. One start of the node, a smoke check of each
     agent, then the watch: the full one for the first agent and a short one
-    for each other, every one against the mark taken before the start."""
+    for each other, every one against the mark taken before the start. With
+    DM_NODE_RELOAD on, each agent is reloaded on the running node instead and
+    the node is started only for agents it could not reload."""
     holder = group[0][1]["holder"]
     names = [c["name"] for _, c in group]
     before = watch_mark(holder)
@@ -5777,31 +5959,60 @@ def land_on_node(group):
             for proc in (f"{c['name']}-adapter", f"{c['name']}-attendant"):
                 subprocess.run(["pm2", "delete", proc], capture_output=True, text=True)
     procs_of = {n: agent_procs(n) for n in names}
+    # With DM_NODE_RELOAD on, each agent its running node can reload is
+    # reloaded there, one after another, and the node is not started for it.
+    # Only the rest are started, behind one start as before. With it off,
+    # nothing here is reloaded and the start is the one it always was.
+    reloaded, reload_why = {}, {}
+    if node_reload_on():
+        for n in names:
+            node, why_not = reload_target(n, procs_of[n][0])
+            if node:
+                said = reload_on_node(n, node)
+                if reload_reached(said):
+                    reloaded[n] = said
+                    continue
+                why_not = f"{node['proc']} could not be told to reload {n} ({said.get('code')}: {said.get('error')}), so it was started"
+            reload_why[n] = why_not
     every = []
     for n in names:
-        every += [p for p in procs_of[n][0] if p not in every]
-    cmd = ["pm2", "start", CONF, "--only", ",".join(every)]
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
-        bad = None if p.returncode == 0 else (p.stderr or p.stdout or "nonzero exit").strip()[:400]
-    except subprocess.TimeoutExpired:
-        bad = f"timed out after 90s: {' '.join(cmd[:4])}"
-    if bad:
-        for path, c in group:
-            c["landing"] = {"failed": {"step": "pm2", "error": bad}}
-            write_state(path, c)
-        return
-    processes = {n: {"started": procs_of[n][0],
-                     "attendant": f"not started: {procs_of[n][2]}" if procs_of[n][1] else f"started: {procs_of[n][2]}"}
+        if n not in reloaded:
+            every += [p for p in procs_of[n][0] if p not in every]
+    # Whether anything restarted the node on purpose since the mark: the watch
+    # allows that one restart, and none when every agent was reloaded.
+    node_started = bool(every)
+    if every:
+        cmd = ["pm2", "start", CONF, "--only", ",".join(every)]
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+            bad = None if p.returncode == 0 else (p.stderr or p.stdout or "nonzero exit").strip()[:400]
+        except subprocess.TimeoutExpired:
+            bad = f"timed out after 90s: {' '.join(cmd[:4])}"
+        if bad:
+            for path, c in group:
+                if c["name"] in reloaded:
+                    continue  # already served by its node; it lands with the rest
+                c["landing"] = {"failed": {"step": "pm2", "error": bad}}
+                write_state(path, c)
+            group = [(p, c) for p, c in group if c["name"] in reloaded]
+            if not group:
+                return
+            names = [c["name"] for _, c in group]
+    attendant_of = {n: f"not started: {procs_of[n][2]}" if procs_of[n][1] else f"started: {procs_of[n][2]}" for n in names}
+    processes = {n: ({"started": [], "attendant": attendant_of[n], "reloaded": reloaded[n]} if n in reloaded else
+                     {"started": procs_of[n][0], "attendant": attendant_of[n],
+                      **({"reload": f"not used: {reload_why[n]}"} if node_reload_on() else {})})
                  for n in names}
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=len(group)) as pool:
-        smokes = dict(zip(names, pool.map(lambda c: start_and_smoke(c["name"], ask_model=not c.get("reinstall")),
+        smokes = dict(zip(names, pool.map(lambda c: check_served(c["name"], processes[c["name"]],
+                                                                 ask_model=not c.get("reinstall")),
                                           [c for _, c in group])))
     together = {n: [m for m in names if m != n] for n in names}
     # An update whose smoke check failed gets its old version back before
     # anything is watched, as it does alone, and the node is started again
-    # once for all of them; the watch below then counts from that start.
+    # once for all of them (a reloaded one is reloaded on its old files); the
+    # watch below then counts from that start.
     failed = [(p, c) for p, c in group if c["act"] == "update" and not smokes[c["name"]]["passed"]]
     for p, c in failed:
         restore(c["name"], c["home"], c["old_ledger"], c["prev"], c["pkg_name"])
@@ -5810,8 +6021,14 @@ def land_on_node(group):
         before = watch_mark(holder)
         again = []
         for _, c in failed:
+            if processes[c["name"]].get("reloaded"):
+                if not serve_again(c["name"], processes[c["name"]]).startswith("reloaded"):
+                    node_started = True
+                continue
             again += [p for p in processes[c["name"]]["started"] if p not in again]
-        subprocess.run(["pm2", "restart", *again], capture_output=True)
+        if again:
+            subprocess.run(["pm2", "restart", *again], capture_output=True)
+            node_started = True
         for p, c in failed:
             write_state(p, c)
     live = [(p, c) for p, c in group if not c.get("landing")]
@@ -5819,7 +6036,8 @@ def land_on_node(group):
         if c.get("landing"):
             continue  # taken back out with the first agent's watch
         n = c["name"]
-        watched = watch_after(n, holder, before, seconds=None if i == 0 else LAND_PROBE_SECONDS)
+        watched = watch_after(n, holder, before, seconds=None if i == 0 else LAND_PROBE_SECONDS,
+                              restarts_allowed=None if node_started else 0)
         c["landing"] = {"processes": processes[n], "smoke": smokes[n], "watched": watched,
                         **({"with": together[n]} if together[n] else {})}
         if not watched.get("ok"):
@@ -5848,7 +6066,13 @@ def take_back(items, holder, processes):
             whats[c["name"]] = pause_new_agent(c["name"], holder)
         else:
             restore(c["name"], c["home"], c["old_ledger"], c["prev"], c["pkg_name"])
-            whats[c["name"]] = f"{c['entry'].get('version')} was restored from the snapshot and restarted"
+            if processes[c["name"]].get("reloaded"):
+                # Reloaded on its old files; the recovery below then restarts
+                # the node only if its other agents do not stay well.
+                whats[c["name"]] = (f"{c['entry'].get('version')} was restored from the snapshot and "
+                                    f"{serve_again(c['name'], processes[c['name']])}")
+            else:
+                whats[c["name"]] = f"{c['entry'].get('version')} was restored from the snapshot and restarted"
     if holder.get("root"):
         recovery = recovered(holder, restart=True)
     else:
