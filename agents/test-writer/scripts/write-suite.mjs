@@ -37,6 +37,7 @@
 //   where the endpoint asks for one, for the text-reasoning model
 //   DECLARED=<declared.json> SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder> WORK=<work folder>
 //   [EXISTING=<folder holding test/>] [ASKED_TEXT=<the message, as a file>]
+//   [DEPENDS=<folder holding scripts/ the change depends on>]
 //   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] node write-suite.mjs
 //
 // The model is reached through the shared model caller (model-caller.mjs,
@@ -48,8 +49,16 @@
 // in words. The service is sent a
 // generous output limit, and an answer cut at that limit is refused as cut,
 // because a cut answer otherwise reads as a malformed one.
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+//
+// The files the change depends on go in whole. DEPENDS names a folder holding
+// attached scripts under scripts/, and every shared copy the spec names that
+// this package carries too (model-caller.mjs, went-without.mjs,
+// agent-folder.mjs) is read from this package's own copy. Each goes into the
+// request with the names it exports, and a test that imports from one of them
+// a name it does not export is a static finding naming the name and the file.
+// With none attached and none named, the request is as it was.
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { standInRun, suiteFiles } from "./check-suite.mjs";
 import { note } from "./went-without.mjs";
@@ -211,9 +220,92 @@ export function partsOf(scripts = [], size = PART_SCRIPTS) {
   return out.length ? out : [[]];
 }
 
+/** The names a module exports, from its export statements: functions (async
+ *  and generator ones too), classes, const, let and var, and the names an
+ *  `export { a, b as c }` list gives out (c, not b). A default export has no
+ *  name to import by braces and is left out. */
+export function exportsOf(code) {
+  const text = String(code ?? "");
+  const names = new Set();
+  for (const m of text.matchAll(/^[ \t]*export\s+(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/gm)) names.add(m[1]);
+  for (const m of text.matchAll(/^[ \t]*export\s+class\s+([A-Za-z_$][\w$]*)/gm)) names.add(m[1]);
+  for (const m of text.matchAll(/^[ \t]*export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) names.add(m[1]);
+  for (const m of text.matchAll(/^[ \t]*export\s*\{([^}]*)\}/gm)) {
+    for (const item of m[1].split(",")) {
+      const t = trim(item.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""));
+      if (!t) continue;
+      const as = /\bas\s+([A-Za-z_$][\w$]*)$/.exec(t);
+      const name = as ? as[1] : t.split(/\s+/)[0];
+      if (name && name !== "default" && /^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
+    }
+  }
+  return [...names];
+}
+
+/** The copies every package carries of the same file, kept the same by
+ *  test_folder.py. A spec naming one of them means its scripts will call it
+ *  as it is written. */
+export const SHARED_COPIES = ["scripts/model-caller.mjs", "scripts/went-without.mjs", "scripts/agent-folder.mjs"];
+
+/** Every script a spec names: its own list and each job's. */
+const namedScripts = (spec) => [...new Set([
+  ...(Array.isArray(spec?.scripts) ? spec.scripts : []),
+  ...(spec?.jobs ?? []).flatMap((j) => (Array.isArray(j?.scripts) ? j.scripts : [])),
+].map((s) => trim(s).replace(/\\/g, "/").replace(/^\.\//, "")).filter(Boolean))];
+
+/** The shared copies the spec names that this package carries in its own
+ *  scripts/, each read from this package's copy as {path, text, exports}.
+ *  `here` is the scripts folder to read from, so a test can point it
+ *  elsewhere. */
+export function sharedDependencies(spec, here = HERE) {
+  const named = new Set(namedScripts(spec).map((s) => s.split("/").pop()));
+  const out = [];
+  for (const path of SHARED_COPIES) {
+    const name = path.split("/").pop();
+    if (!named.has(name)) continue;
+    const at = join(here, name);
+    if (!existsSync(at)) continue;
+    const text = readFileSync(at, "utf8");
+    out.push({ path, text, exports: exportsOf(text) });
+  }
+  return out;
+}
+
+/** The files the change depends on, as the request and the check use them:
+ *  the attached ones first, then the shared copies the spec names that were
+ *  not attached, each with its exported names. */
+export function dependenciesFor({ spec = null, dependencies = [] } = {}) {
+  const out = [];
+  const seen = new Set();
+  for (const d of [...(dependencies ?? []), ...sharedDependencies(spec)]) {
+    if (!d?.path || seen.has(d.path)) continue;
+    seen.add(d.path);
+    const text = String(d.text ?? "");
+    out.push({ path: d.path, text, exports: Array.isArray(d.exports) ? d.exports : exportsOf(text) });
+  }
+  return out;
+}
+
+/** The attached dependencies under a folder: every script under its
+ *  scripts/, as {path, text, exports}. */
+export function dependenciesIn(dir) {
+  const at = join(dir, "scripts");
+  if (!dir || !existsSync(at)) return [];
+  return readdirSync(at).filter((n) => /\.(m|c)?js$/i.test(n)).sort().map((n) => {
+    const text = readFileSync(join(at, n), "utf8");
+    return { path: `scripts/${n}`, text, exports: exportsOf(text) };
+  });
+}
+
+/** What is said with the files the change depends on. */
+export const DEPENDS_INSTRUCTION = `These are the real files the scripts will call, given whole. The suite
+calls them as they are written: import from each only the names it exports,
+listed beside it, and call them with the arguments they really take. Do not
+test these files themselves.`;
+
 /** The parts of the request, in order, as text. Pure and exported so the
  *  whole prompt can be read in a test rather than inferred from a fixture. */
-export function requestParts({ spec = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], part = null } = {}) {
+export function requestParts({ spec = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], part = null, dependencies = [] } = {}) {
   const parts = [INSTRUCTION];
   if (trim(asked)) parts.push(`--- WHAT THEY ASKED FOR ---\n${trim(asked)}`);
   parts.push(`--- THE SPEC ---\n${spec ? JSON.stringify(spec, null, 2) : "(no spec)"}`);
@@ -225,6 +317,11 @@ export function requestParts({ spec = null, declared = null, reference = "", wor
   if (trim(reference)) parts.push(`--- WHAT A GOOD SUITE CARRIES ---\n${trim(reference)}`);
   if (trim(worked)) parts.push(`--- A SUITE THAT WORKS ---\n${trim(worked)}`);
   if (trim(workedSpec)) parts.push(`--- THE SPEC THAT SUITE TESTS ---\n${trim(workedSpec)}`);
+  const depends = dependenciesFor({ spec, dependencies });
+  if (depends.length) {
+    parts.push(`--- THE FILES THE CHANGE DEPENDS ON ---\n${DEPENDS_INSTRUCTION}\n\n${depends.map((d) =>
+      `=== ${d.path} (exports: ${d.exports.length ? d.exports.join(", ") : "nothing"}) ===\n${d.text}${d.text.endsWith("\n") ? "" : "\n"}=== end of ${d.path} ===`).join("\n\n")}`);
+  }
   if (existing.length) {
     parts.push(`--- THE SUITE IT ALREADY HAS ---\n${existing.map((f) => `<<<FILE ${f.path}>>>\n${f.text}<<<END>>>`).join("\n")}`);
     parts.push(ADD_INSTRUCTION);
@@ -327,7 +424,52 @@ export function testNamesOf(text) {
 
 /** What is wrong with a suite before it is run. Each finding is a sentence
  *  the model can act on. */
-export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false } = {}) {
+/** The names a test file imports by braces, with where from:
+ *  [{from, names}], where `names` are the exported names asked for (a in
+ *  `a as b`). */
+export function namedImportsOf(text) {
+  const out = [];
+  for (const m of String(text ?? "").matchAll(/\bimport\s+(?:[A-Za-z_$][\w$]*\s*,\s*)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+    const names = m[1].split(",").map((s) => trim(s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""))).filter(Boolean)
+      .map((s) => s.split(/\s+as\s+/)[0].trim()).filter((s) => /^[A-Za-z_$][\w$]*$/.test(s));
+    out.push({ from: m[2], names });
+  }
+  return out;
+}
+
+/** The dependency an import in a test file reaches, or null: the import's
+ *  path resolved from the test's own folder and matched to a dependency's
+ *  path, or to its file name when the dependency is not under scripts/. */
+function dependencyReached(testPath, from, dependencies) {
+  if (!/^\.\.?\//.test(from)) return null;
+  const resolved = posix.normalize(posix.join(posix.dirname(String(testPath ?? "test/x").replace(/\\/g, "/")), from));
+  const name = resolved.split("/").pop();
+  return dependencies.find((d) => d.path === resolved)
+    ?? dependencies.find((d) => !String(d.path).startsWith("scripts/") && String(d.path).split("/").pop() === name)
+    ?? null;
+}
+
+/** What a test file imports from a dependency that the dependency does not
+ *  export, as findings naming the name and the file. */
+export function importFindings(files = [], dependencies = []) {
+  const out = [];
+  if (!dependencies.length) return out;
+  for (const f of files) {
+    for (const imp of namedImportsOf(f.text)) {
+      const dep = dependencyReached(f.path, imp.from, dependencies);
+      if (!dep) continue;
+      const exported = new Set(dep.exports ?? exportsOf(dep.text));
+      for (const name of imp.names) {
+        if (!exported.has(name)) {
+          out.push(`${f.path} imports ${name} from ${dep.path}, which does not export it; ${dep.path} exports ${[...exported].join(", ") || "nothing"}, and the suite calls it as it is written`);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false, dependencies = [] } = {}) {
   const out = [];
   if (!files.length) return ["no test file came back"];
   // The format check is the test writer's own file, added after the answer.
@@ -360,6 +502,7 @@ export function staticFindings(files = [], declared = null, { existing = [], tak
     if (!/node:test/.test(f.text)) out.push(`${f.path} does not use node:test`);
     if (/from\s+["'](?!node:|\.\.?\/)/.test(f.text)) out.push(`${f.path} imports a package that is not node's own; a suite depends on nothing outside node`);
   }
+  out.push(...importFindings(files, dependencies));
   const all = whole.map((f) => f.text).join("\n");
   for (const s of named) {
     const name = String(s).split("/").pop();
@@ -398,6 +541,7 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
       // Over the whole suite when it is one ask; a suite in parts is held to
       // it once all its parts are in (askInParts).
       formatCheck: !opts.part && declaresOutputs(opts.declared),
+      dependencies: dependenciesFor(opts),
     });
     standIns = null;
     if (!findings.length && run) {
@@ -535,8 +679,11 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // The suite the package already has, when one came with the message: it
     // is added to and never rewritten.
     const existing = trim(env.EXISTING) ? suiteFiles(env.EXISTING) : [];
+    // The files the change depends on that came with the message; the shared
+    // copies the spec names are added from this package's own scripts/.
+    const dependencies = trim(env.DEPENDS) ? dependenciesIn(trim(env.DEPENDS)) : [];
     const out = await askInParts({
-      call, declared, spec, existing,
+      call, declared, spec, existing, dependencies,
       asked: read(trim(env.ASKED_TEXT)),
       run: async (files) => standInRun({ spec, files, folder: statSync(SPEC).isDirectory() ? SPEC : null }),
       reference: read(referenceAt(env)),

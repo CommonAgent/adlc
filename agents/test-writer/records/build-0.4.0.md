@@ -14,14 +14,15 @@ Common Agent 0.39.0 section 12.4.1 (https://commonagent.net/spec.html#s12-4-1) m
 - plugin.json lists `scripts/model-caller.mjs` in each skill that calls the model; each SKILL.md and the README say how the model is reached.
 - write-suite.mjs asks through the shared caller (streamed), and its instruction says a model call is tested against a stand-in model server reached through MODEL_ENDPOINT; job.mjs no longer needs TEXT_API_KEY; rules.md says the same. Its two entries come off checks/known-addresses.json.
 - agent-folder.mjs follows the spec writer's master (protocols).
+- Folded into this version before its release (owner, 2026-10-29, from the report on why the code writer failed): the test writer is given, and reads, the real files a change depends on. The offering takes an optional input, the files the change depends on; job.mjs finds attached scripts that are not tests (findDependencies), write-suite.mjs adds every shared copy the spec names that this package carries (sharedDependencies), puts each dependency into the request whole with the names it exports (exportsOf, requestParts), and its static check refuses a test that imports a name such a file does not export. test-writer 0.3.1 on dev wrote the tests for it (test/dependencies.test.mjs, 11 tests) with the real files attached; code-writer 0.2.4 delivered no scripts, and the harness stood in for the code step.
 
 ## Tests
 
-91 of 92 pass, 1 skipped. Retired: test/write-suite-service.test.mjs.
+98 of 99 pass, 1 skipped. Retired: test/write-suite-service.test.mjs.
 
 ## Review
 
-code-critic 0.1.2 delivered only its house-rule check (nothing found), twice: the model's answer was cut at its output limit. The owner accepted that, with a second review once code-critic 0.2.0 is on dev. A note outside the change (two credential-looking sample values in a reference) is technical debt 573.
+code-critic 0.1.2 delivered only its house-rule check (nothing found), twice: the model's answer was cut at its output limit. The owner accepted that, with a second review once code-critic 0.2.0 is on dev. A note outside the change (two credential-looking sample values in a reference) is technical debt 573. It reviewed the folded-in change (the files a change depends on) with no findings.
 
 ## Who held each step
 

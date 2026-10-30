@@ -15,6 +15,7 @@ when a spec exists and its scripts do not yet, and somebody wants the tests thos
 
 - the spec (document, required)
 - the suite it already has (text/javascript, optional)
+- the files the change depends on (text/javascript, optional)
 - what to add (text, optional)
 
 ## What a good result looks like
@@ -34,7 +35,7 @@ If no spec arrived, nothing is written and no model is woken: the reply says wha
 
 This job runs as one command, job.mjs, which the package names as the job's command: it finds the spec among the attached files by content, runs the four steps in order, files the pieces and prints the reply. No harness runs it and nothing is left to work out by hand. What follows says what that command does, step by step, so a reader can see it did the right thing.
 
-When the message also carries test files (any attached file that imports node:test), they are the suite the package already has. job.mjs lays them out by their bytes beside the work folder, never on the job folder's mount, and passes them to the writing step as EXISTING with the message's own words as ASKED_TEXT: the writer then adds new files for what was asked and never rewrites a kept one, and only the new files are delivered. When the spec names more scripts than one answer holds, the writing step asks for the suite in parts of three scripts, each checked on its own.
+When the message also carries test files (any attached file that imports node:test), they are the suite the package already has. job.mjs lays them out by their bytes beside the work folder, never on the job folder's mount, and passes them to the writing step as EXISTING with the message's own words as ASKED_TEXT: the writer then adds new files for what was asked and never rewrites a kept one, and only the new files are delivered. The files the change depends on are read as they are: any attached script that is not a test, and every shared copy the spec's build entry names that this package also carries (scripts/model-caller.mjs, scripts/went-without.mjs, scripts/agent-folder.mjs), go to the writer whole with the names each one exports, and the suite calls them as they are written. The check then refuses a test that imports a name such a file does not export. When the spec names more scripts than one answer holds, the writing step asks for the suite in parts of three scripts, each checked on its own.
 
 Nothing in this package runs on its own, and nothing here is done by opening files and working out what to do next. Every message that reaches this agent is one job, and one command does the whole of it. The package is installed at ~/test-writer, so the scripts are always under ~/test-writer/skills/write-a-suite/scripts/.
 

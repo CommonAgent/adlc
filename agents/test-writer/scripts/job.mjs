@@ -16,7 +16,10 @@
 // process runner arrives under its piece label with a prefix per hop, and
 // spec.json can be called "0-abcdefgh-spec" by the time it lands here. So is
 // the suite a released package already has: any attached file that imports
-// node:test. When one came, the writer adds to it and never rewrites it.
+// node:test. When one came, the writer adds to it and never rewrites it. And
+// so are the files the change depends on: any other attached script, laid out
+// under scripts/ by its bytes and handed to the writer whole (DEPENDS), so the
+// suite is written against what those files really export.
 //
 //   needs: node >= 22; the model settings the writing step reads (MODEL_NAME,
 //   MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY where the endpoint asks for
@@ -96,6 +99,37 @@ export function findSuite(files, spec, read = (p) => readFileSync(p, "utf8")) {
   return out;
 }
 
+/** Whether an attached file is a script: a .mjs, .js or .cjs name, or a
+ *  JavaScript media type when the process runner's label dropped the
+ *  extension. */
+export const looksLikeScript = (f) => /\.(m|c)?js$/i.test(String(f?.path ?? ""))
+  || /^(text|application)\/(x-)?javascript$/i.test(trim(f?.media_type));
+
+/** The name a dependency goes under in scripts/: the process runner's
+ *  prefixes taken off, and .mjs put on when it has no script extension. */
+export function dependencyNameOf(path) {
+  let n = basename(String(path ?? ""));
+  while (/^\d+-[A-Za-z0-9_-]{8}-/.test(n)) n = n.replace(/^\d+-[A-Za-z0-9_-]{8}-/, "");
+  return /\.(m|c)?js$/i.test(n) ? n : `${n}.mjs`;
+}
+
+/** The files the change depends on: every attached script that is not the
+ *  spec, not a job manifest and not a test (it imports node:test). The agent's
+ *  own files are taken out before this is asked. Each comes back with the
+ *  name it goes under (scripts/<name>) and its text, read as it is: the suite
+ *  is written against what these files really export, never a description. */
+export function findDependencies(files, spec, read = (p) => readFileSync(p, "utf8")) {
+  const out = [];
+  for (const f of files ?? []) {
+    if (!f?.path || f.path === spec || /job-manifest\.json$/.test(f.path) || !looksLikeScript(f)) continue;
+    let text;
+    try { text = read(f.path); } catch { continue; }
+    if (looksLikeTestText(text)) continue;
+    out.push({ path: f.path, name: `scripts/${dependencyNameOf(f.path)}`, text });
+  }
+  return out;
+}
+
 /** One step: a script beside this one, run with its variables, its last JSON
  *  line read back. A step that prints no JSON is a failure with its words. */
 function step(script, env, { spawn = spawnSync } = {}) {
@@ -144,6 +178,18 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
       writeFileSync(at, f.text);
     }
     extra.EXISTING = EXISTING;
+  }
+  // The files the change depends on are laid out the same way, by their
+  // bytes under scripts/, and handed to the writer whole as DEPENDS.
+  const depends = findDependencies(files.filter((f) => !used.has(f?.path)), SPEC, read);
+  if (depends.length) {
+    const DEPENDS = `${WORK}.depends`;
+    for (const d of depends) {
+      const at = join(DEPENDS, d.name);
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, d.text);
+    }
+    extra.DEPENDS = DEPENDS;
   }
   if (textFile && existsSync(textFile)) extra.ASKED_TEXT = textFile;
   const written = step("write-suite.mjs", { DECLARED: join(RECORDS, "declared.json"), SPEC, RECORDS, WORK, ...extra }, { spawn });
