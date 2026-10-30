@@ -38,6 +38,13 @@
           "given_by": "either"
         },
         {
+          "name": "the files the change depends on",
+          "kind": "text/javascript",
+          "required": false,
+          "given_by": "either",
+          "about": "The real code the scripts will call and the suite must call the same way, such as a shared copy every package carries (scripts/model-caller.mjs) or a file the change names. The suite is written against the names and signatures these files actually export, never a description of them."
+        },
+        {
           "name": "what to add",
           "kind": "text",
           "required": false,
