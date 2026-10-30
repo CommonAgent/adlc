@@ -50,3 +50,10 @@ rules and checks:
   the check.
 - Review: code-critic 0.1.2 reviewed the change; the owner answered its
   findings.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host, deterministically: sha256 c0bb9234d030af1f30120fb65b512fc111e72d0a945de3d9f42e22a93470cc93.
+- Security review, under the owner's spending limit of 10 USD per day, by security-reviewer 0.2.0: passed (by its own merged code, run by the harness before it was installed, and again as the installed agent).
+- Installed by the deployment manager on dev from deploy request dr_crk8jQx7P1ST7YLQ3AP2UndL, approved by the platform account. Its worker job reads MODEL_PROTOCOL=gemini, MODEL_NAME=gemini-3.8-flash, MODEL_ENDPOINT at the job's own gateway and MODEL_KEY empty: the model it ran before, now through the model system.
+- Proof: Installed, it reviewed the seven packages of this release under the owner's limit of 10 USD per day, each with one model call to gemini-3.8-flash at about $0.005: planner, solution-architect, spec-writer, code-critic and itself passed; test-writer and code-writer were refused for the known, earlier reasons above. security-reviewer 0.1.2 had refused all six model-system packages, because it did not know the model system kind.

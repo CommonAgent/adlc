@@ -49,3 +49,10 @@ rules and checks:
   the check.
 - Review: code-critic 0.1.2 reviewed the change; the owner answered its
   findings.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host, deterministically: sha256 21ca9262898a593c8074d247015e04e56f78c69dd08b846518386a2ae9de55e1.
+- Security review, under the owner's spending limit of 10 USD per day, by security-reviewer 0.2.0: passed.
+- Installed by the deployment manager on dev from deploy request dr_Vsr938ystJIkeXXASqHbSyV3, approved by the platform account. Its worker job reads MODEL_PROTOCOL=gemini, MODEL_NAME=gemini-3.8-flash, MODEL_ENDPOINT at the job's own gateway and MODEL_KEY empty: the model it ran before, now through the model system.
+- Proof: Asked for the spec of a new agent (text-counter), it delivered the agent's own files with nothing left open: 43 gateway calls to gemini-3.8-flash (its harness's included), $0.46.

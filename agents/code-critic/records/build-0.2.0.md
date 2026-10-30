@@ -50,3 +50,10 @@ rules and checks:
   the check.
 - Review: code-critic 0.1.2 reviewed the change; the owner answered its
   findings.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host, deterministically: sha256 c6bc76ddb6a1f091ecf8b4da40926725f6c410bf3d4b19c78f724b0c4270e973.
+- Security review, under the owner's spending limit of 10 USD per day, by security-reviewer 0.2.0: passed.
+- Installed by the deployment manager on dev from deploy request dr__L463hoMuop6JU62uybkskb3, approved by the platform account. Its worker job reads MODEL_PROTOCOL=gemini, MODEL_NAME=gemini-3.8-flash, MODEL_ENDPOINT at the job's own gateway and MODEL_KEY empty: the model it ran before, now through the model system.
+- Proof: It gave the second look the owner asked for at the three changes 0.1.2 could only check by its house rules (test-writer, code-critic, security-reviewer): each one model call to gemini-3.8-flash (one cut at its limit and said so), about $0.21 each. Its findings were answered by reasons (access as released; agent-folder.mjs is the spec writer's copy, laid separately; the metadata host and provider key names are escaped patterns and data to recognize), and one note went to technical debt 601 (the findings convention does not yet name its Warnings section).

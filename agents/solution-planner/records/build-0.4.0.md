@@ -48,3 +48,10 @@ rules and checks:
   the check.
 - Review: code-critic 0.1.2 reviewed the change; the owner answered its
   findings.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host, deterministically: sha256 b0807fee89564a387f64b9ada57b36032ddb07e46d05c3be43805379b38d41d8.
+- Security review, under the owner's spending limit of 10 USD per day, by security-reviewer 0.2.0: passed.
+- Installed by the deployment manager on dev from deploy request dr_jO65fhffMNhvpqoKie8YEAc8, approved by the platform account. Its worker job reads MODEL_PROTOCOL=gemini, MODEL_NAME=gemini-3.8-flash, MODEL_ENDPOINT at the job's own gateway and MODEL_KEY empty: the model it ran before, now through the model system.
+- Proof: Asked to plan a weekday blog summary sent by email, it answered with a three-step plan, its estimate, what it cannot do and what was missing: 1 model call to gemini-3.8-flash through the gateway, $0.005.
