@@ -241,6 +241,50 @@ test("gemini: a streamed answer, a blocked prompt, and a stop that is not STOP",
   } finally { await s.close(); }
 });
 
+test("a prompt of text and pictures goes as one user turn in each protocol's own form", async () => {
+  const png = "iVBORw0KGgo=";
+  const prompt = [{ type: "text", text: "what is in the frame?" }, { type: "image", media_type: "image/PNG", data: `${png}\n` }, { type: "text", text: "one line" }];
+  const answers = {
+    "anthropic-messages": { content: [{ type: "text", text: "a cat" }], stop_reason: "end_turn" },
+    "openai-chat": { choices: [{ message: { content: "a cat" }, finish_reason: "stop" }] },
+    gemini: { candidates: [{ content: { parts: [{ text: "a cat" }] }, finishReason: "STOP" }] },
+  };
+  const s = await standIn((r) => ({ json: answers[r.url.includes("/v1/messages") ? "anthropic-messages" : r.url.includes("/chat/completions") ? "openai-chat" : "gemini"] }));
+  try {
+    for (const protocol of PROTOCOLS) {
+      const env = { MODEL_NAME: "m", MODEL_ENDPOINT: s.origin, MODEL_KEY: "", MODEL_PROTOCOL: protocol };
+      assert.equal((await callModel(prompt, { env })).text, "a cat");
+    }
+    const [a, o, g] = s.seen.map((r) => r.body);
+    assert.deepEqual(a.messages, [{ role: "user", content: [
+      { type: "text", text: "what is in the frame?" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: png } },
+      { type: "text", text: "one line" },
+    ] }]);
+    assert.deepEqual(o.messages, [{ role: "user", content: [
+      { type: "text", text: "what is in the frame?" },
+      { type: "image_url", image_url: { url: `data:image/png;base64,${png}` } },
+      { type: "text", text: "one line" },
+    ] }]);
+    assert.deepEqual(g.contents, [{ role: "user", parts: [{ text: "what is in the frame?" }, { inlineData: { mimeType: "image/png", data: png } }, { text: "one line" }] }]);
+  } finally { await s.close(); }
+});
+
+test("a part the caller cannot send is refused before anything is sent, and a string is sent as before", async () => {
+  const s = await standIn(() => ({ json: { content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" } }));
+  try {
+    const env = { MODEL_NAME: "m", MODEL_ENDPOINT: s.origin, MODEL_KEY: "", MODEL_PROTOCOL: "anthropic-messages" };
+    await assert.rejects(callModel([], { env }), /empty list of parts/);
+    await assert.rejects(callModel([{ type: "image", media_type: "image/tiff", data: "AAAA" }], { env }), /prompt part 1 is a picture of media type image\/tiff/);
+    await assert.rejects(callModel([{ type: "text", text: "hi" }, { type: "image", media_type: "image/png", data: "not base64!" }], { env }), /prompt part 2 is a picture whose bytes are not base64/);
+    await assert.rejects(callModel([{ type: "audio", data: "AAAA" }], { env }), /prompt part 1 is neither a text part nor a picture/);
+    await assert.rejects(callModel([{ type: "text" }], { env }), /prompt part 1 is a text part with no text/);
+    assert.equal(s.seen.length, 0);
+    await callModel("plain words", { env });
+    assert.equal(s.seen[0].body.messages[0].content, "plain words");
+  } finally { await s.close(); }
+});
+
 test("a service's error carries its status and what it said, with the key and any token left out", async () => {
   const s = await standIn(() => ({ status: 401, json: { error: { message: "bad key secret-key-123 for Bearer abc.def" } } }));
   try {

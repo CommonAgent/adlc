@@ -58,7 +58,7 @@ it writes is always the current names.
   credit and trial declarations. It also holds `model-caller.mjs`, the one
   way a package reaches its model: it reads `MODEL_NAME`, `MODEL_ENDPOINT`,
   `MODEL_KEY` and `MODEL_PROTOCOL` on every call and writes no address of its
-  own. A package that calls a model carries a byte-identical copy as
+  own. A prompt is a string, or a list of text and picture parts. A package that calls a model carries a byte-identical copy as
   `scripts/model-caller.mjs`, and `model-caller.test.mjs` holds every copy to
   this one.
 - `AGENTS.md` is the instructions the agent's harness reads.
