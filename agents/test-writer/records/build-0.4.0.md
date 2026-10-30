@@ -22,7 +22,7 @@ Common Agent 0.39.0 section 12.4.1 (https://commonagent.net/spec.html#s12-4-1) m
 
 ## Review
 
-code-critic 0.1.2 delivered only its house-rule check (nothing found), twice: the model's answer was cut at its output limit. The owner accepted that, with a second review once code-critic 0.2.0 is on dev. A note outside the change (two credential-looking sample values in a reference) is technical debt 573.
+code-critic 0.1.2 delivered only its house-rule check (nothing found), twice: the model's answer was cut at its output limit. The owner accepted that, with a second review once code-critic 0.2.0 is on dev. A note outside the change (two credential-looking sample values in a reference) is technical debt 573. It reviewed the folded-in change (the files a change depends on) with no findings.
 
 ## Who held each step
 
