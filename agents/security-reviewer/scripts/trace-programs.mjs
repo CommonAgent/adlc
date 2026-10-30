@@ -27,6 +27,13 @@
 // extension, a test only when no program imports it, and a comment only where
 // it is one (a quote that does not close on its line opens no string).
 //
+// A call to an address the program is handed counts as a declared reach in
+// exactly three cases, and in no other (see matchReaches): the program reads a
+// setting a declared service lists as its address; it imports requestFor or
+// urlFor from ./model-caller.mjs and the package declares a system of kind
+// model; or a skill that carries it belongs to an offering with an input marked
+// external: true. Each is read off the text; nothing is run.
+//
 // A declared system of kind model (Common Agent 12.4.1) is reached through
 // four settings the install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and
 // MODEL_PROTOCOL: a program that reads them reaches that declared system, and
@@ -313,7 +320,22 @@ export function traceOne(path, text) {
     }
   });
   const browser = BROWSER.test(code) && /goto|newPage|launch/.test(code);
-  return { path, hosts, written, open, vars: [...vars].sort(), commands, browser, routes: browser && ROUTES.test(code) };
+  return { path, hosts, written, open, vars: [...vars].sort(), commands, browser, routes: browser && ROUTES.test(code), caller: callerUse(path, code, vars) };
+}
+
+/** How a program stands to the shared model caller, off its comment-free
+ *  text: `imports` when it imports requestFor or urlFor from ./model-caller.mjs
+ *  (`requestFor as rf` is the same import), and `is` when it is the shared
+ *  caller itself: a file named model-caller.mjs that defines requestFor or
+ *  urlFor and reads MODEL_ENDPOINT, which is where those two get the address. */
+export function callerUse(path, code, vars = new Set()) {
+  const names = [];
+  for (const m of code.matchAll(/\bimport\s*\{([^}]*)\}\s*from\s*["'`]\.\/model-caller\.mjs["'`]/g)) {
+    for (const part of m[1].split(",")) names.push(trim(part.split(/\s+as\s+/)[0]));
+  }
+  const imports = names.some((n) => n === "requestFor" || n === "urlFor");
+  const is = /(?:^|\/)model-caller\.mjs$/.test(path) && /\bexport\s+function\s+(?:requestFor|urlFor)\b/.test(code) && vars.has("MODEL_ENDPOINT");
+  return { imports, is };
 }
 
 /** The relative specifiers a program imports, re-exports or requires. */
@@ -405,7 +427,7 @@ export function domainOf(host) {
  *   undeclaredCommands, undeclaredModel }.
  * `egressHosts` are the further destinations the architecture record names.
  */
-export function matchReaches({ traced, systems = [], binaries = [], egressHosts = [] }) {
+export function matchReaches({ traced, systems = [], binaries = [], egressHosts = [], offerings = [] }) {
   const declared = new Set(systems.map((s) => s.name));
   // The package's own model system: one of kind model, or by a model's
   // reserved name. Its addresses are text-reasoning's, whatever it is called.
@@ -466,16 +488,45 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
     else if (!unmatched.some((u) => u.host === r.host)) { written.push(r); unmatched.push({ ...r, written: true }); }
   }
 
-  // A call to an address the program is handed. It is the call of the
-  // declared model system, when the program reads MODEL_ENDPOINT, the setting
-  // the install places that system's address in; or of an address this same
-  // program writes down (a model's door built from its host); or of a declared
-  // system whose reason says it fetches what it is handed (pages at a domain
-  // the person names); else it reaches whatever it is handed and nothing the
-  // declaration names covers it. A program that also writes down an address
-  // nothing covers is not excused by its others.
+  // A call to an address the program is handed. It is a declared reach in
+  // exactly three cases, and in no other:
+  //   (a) the program reads a setting a declared service lists under its
+  //       settings as its address: a name ending in _ENDPOINT, _URL, _BASE,
+  //       _HOST or _ADDRESS, or a purpose that says where the service is or
+  //       what its address is. Only a read of the setting counts: a literal
+  //       assigned to a variable of that name is a literal, an address the
+  //       strays below refuse and the warnings list;
+  //   (b) the program imports requestFor or urlFor from ./model-caller.mjs and
+  //       the package declares a system of kind model (the shared caller
+  //       itself, which defines them and reads MODEL_ENDPOINT, is the same
+  //       case);
+  //   (c) the program is carried by a skill whose offering declares an input
+  //       marked external: true.
+  // What stays as it was in 0.2.0: a call in a program that writes down an
+  // address this review matched is taken as that address, a call built from a
+  // written host being no handed one; and a program that also writes down an
+  // address nothing covers is not excused by any of the three.
+  // And two matches 0.2.0 had, which stay: a call in a program that writes
+  // down an address this review matched is taken as that address; and a
+  // declared read or trigger service whose stated reason is fetching what it
+  // is handed covers a handed call.
   const FETCHING = /\b(?:fetch(?:es|ing)?|download(?:s|ing)?|crawl(?:s|ing)?|brows(?:e|es|ing)|open(?:s|ing)? (?:the |those |each )?pages)\b/i;
   const fetchers = systems.filter((s) => s.kind === "service" && ["read", "trigger"].includes(s.access) && FETCHING.test(s.needs ?? ""));
+  const SETTING_NAME = /_(?:ENDPOINT|URL|BASE|HOST|ADDRESS)$/;
+  const SETTING_PURPOSE = /\bwhere\b[^.;]{0,60}\b(?:is|are|lives|runs|answers|can be (?:reached|found))\b|\b(?:address|url|endpoint|host)\s+(?:of|for)\b|\b(?:its|their|the|service'?s?|server'?s?)\s+(?:base\s+)?(?:address|url|endpoint)\b/i;
+  const addressSettings = new Map();
+  for (const s of systems.filter((x) => x.kind === "service")) {
+    for (const st of s.settings ?? []) {
+      if (!st?.env || addressSettings.has(st.env)) continue;
+      if (SETTING_NAME.test(st.env) || SETTING_PURPOSE.test(String(st.purpose ?? ""))) addressSettings.set(st.env, s.name);
+    }
+  }
+  const modelSystemKind = systems.find((s) => s.kind === "model") ?? null;
+  const externalOffering = (path) => {
+    const slug = /^skills\/([^/]+)\//.exec(path)?.[1];
+    if (!slug) return null;
+    return offerings.find((o) => (o.id === slug || (o.steps ?? []).some((st) => st.id === slug)) && (o.inputs ?? []).some((i) => i.external === true)) ?? null;
+  };
   const openFetches = [];
   const unmatchedOpen = [];
   for (const t of traced) {
@@ -483,8 +534,12 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
     const inFile = (r) => r.files.some((f) => f.startsWith(`${t.path}:`));
     const strays = [...unmatched, ...written].filter(inFile);
     const own = reaches.filter(inFile);
+    const setting = t.vars.find((v) => addressSettings.has(v));
+    const external = externalOffering(t.path);
     const by = strays.length ? ""
-      : modelSystem && t.vars.includes("MODEL_ENDPOINT") ? `${modelSystem.name}, the declared model system, reached through its four settings (MODEL_ENDPOINT)`
+      : setting ? `${addressSettings.get(setting)}, the declared service whose address setting ${setting} the program reads`
+      : modelSystemKind && (t.caller?.imports || t.caller?.is) ? `${modelSystemKind.name}, the declared model system, reached through the shared caller's requestFor or urlFor and its settings`
+      : external ? `${external.id}, an offering with an input marked external: true, whose address the caller grants`
       : own.length ? `the addresses this program writes down (${[...new Set(own.map((r) => r.host))].join(", ")})`
         : fetchers.length ? `${fetchers.map((s) => s.name).join(", ")}, whose stated reason is fetching what it is handed` : "";
     for (const o of t.open) (by ? openFetches : unmatchedOpen).push({ file: `${t.path}:${o.line}`, what: o.what, by, strays: strays.map((s) => s.host) });
