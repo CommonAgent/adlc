@@ -71,6 +71,10 @@ MODEL_KEY_VAR = "MODEL_KEY"
 # The three the instruction supplies as values; MODEL_KEY is a credential the
 # instruction names (or leaves empty, for a gateway on the agent's own host).
 MODEL_VALUES = ("MODEL_NAME", "MODEL_ENDPOINT", "MODEL_PROTOCOL")
+# Settings an install MAY give a model system, placed only when given: the
+# answer budget, a whole number of tokens above zero. Without it the shared
+# caller uses its own default.
+MODEL_OPTIONAL = ("MODEL_MAX_OUTPUT_TOKENS",)
 # For 0.39.0 only a host MAY set the former name beside the current one; the
 # platform's older scripts still read TEXT_MODEL, so it is placed too.
 MODEL_ALIASES = {"TEXT_MODEL": "MODEL_NAME"}
@@ -631,6 +635,10 @@ def check_model_instruction(s, creds, settings, store_has=None):
     for k in got:
         if k == MODEL_KEY_VAR:
             refusals.append(f"model {sysname}: MODEL_KEY is a credential; name it under credentials, never give it as a setting")
+        elif k in MODEL_OPTIONAL:
+            v = got.get(k)
+            if not (isinstance(v, (str, int)) and str(v).isdigit() and int(v) > 0):
+                refusals.append(f"model {sysname}: {k} must be a whole number of tokens above zero")
         elif k not in MODEL_VALUES:
             refusals.append(f"model {sysname}: the instruction supplies {k}, which a model system does not take")
     protocol = got.get("MODEL_PROTOCOL")
@@ -749,6 +757,9 @@ def plan_bindings(args, pkg, home):
             got = settings.get(s["name"]) if isinstance(settings, dict) else {}
             got = got if isinstance(got, dict) else {}
             b["settings"] = {k: str(got.get(k)) for k in MODEL_VALUES}
+            for k in MODEL_OPTIONAL:
+                if got.get(k) not in (None, ""):
+                    b["settings"][k] = str(got.get(k))
             for alias, of in MODEL_ALIASES.items():
                 b["settings"][alias] = b["settings"][of]
             if isinstance(creds, dict) and creds.get(s["name"]):

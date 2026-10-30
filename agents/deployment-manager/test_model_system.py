@@ -67,6 +67,13 @@ class TheInstruction(unittest.TestCase):
         r = install.check_instruction({"settings": {"text-reasoning": {**GOOD, "MODEL_ENDPOINT": "https://u:p@example.com"}}}, PKG)
         self.assertTrue(any("MODEL_ENDPOINT" in x for x in r), r)
 
+    def test_the_answer_budget_may_be_given_and_must_be_a_whole_number(self):
+        ok = {"settings": {"text-reasoning": {**GOOD, "MODEL_MAX_OUTPUT_TOKENS": "96000"}}}
+        self.assertEqual(install.check_instruction(ok, PKG), [])
+        for bad in ("lots", "0", "-5", "1.5"):
+            r = install.check_instruction({"settings": {"text-reasoning": {**GOOD, "MODEL_MAX_OUTPUT_TOKENS": bad}}}, PKG)
+            self.assertTrue(any("whole number of tokens above zero" in x for x in r), (bad, r))
+
     def test_a_credential_name_must_be_in_the_store(self):
         args = {"settings": {"text-reasoning": dict(GOOD)}, "credentials": {"text-reasoning": "model-key"}}
         self.assertEqual(install.check_instruction(args, PKG, store_has=lambda n: True), [])
@@ -82,6 +89,12 @@ class TheBinding(unittest.TestCase):
         text = install.env_file([b], {})
         self.assertIn("export MODEL_ENDPOINT='http://127.0.0.1:8788'", text)
         self.assertIn("export MODEL_KEY=''", text)
+
+    def test_the_answer_budget_is_placed_only_when_given(self):
+        [b] = install.plan_bindings({"settings": {"text-reasoning": {**GOOD, "MODEL_MAX_OUTPUT_TOKENS": "96000"}}}, PKG, "/home/a")
+        self.assertEqual(b["settings"]["MODEL_MAX_OUTPUT_TOKENS"], "96000")
+        [b] = install.plan_bindings({"settings": {"text-reasoning": dict(GOOD)}}, PKG, "/home/a")
+        self.assertNotIn("MODEL_MAX_OUTPUT_TOKENS", b["settings"])
 
     def test_a_named_key_is_placed_as_MODEL_KEY(self):
         args = {"settings": {"text-reasoning": dict(GOOD)}, "credentials": {"text-reasoning": "model-key"}}

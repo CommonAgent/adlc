@@ -1166,6 +1166,9 @@ def fetch_and_verify(name, url, expected_sha):
 #   model.key       the NAME of the credential placed as MODEL_KEY, or "" for
 #                   none, which a gateway on the agent's own host needs
 #   model.protocol  MODEL_PROTOCOL, one of install.MODEL_PROTOCOLS
+#   model.max_output_tokens  MODEL_MAX_OUTPUT_TOKENS, the answer budget, when
+#                   the host sets one (optional; the shared caller's default
+#                   otherwise)
 #   model.gateway   {vertex_project, vertex_region, gemini_region,
 #                   speech_project}: where a worker job's own gateway sends
 #                   Claude's and Gemini's calls and for which project it passes
@@ -1183,7 +1186,8 @@ def fetch_and_verify(name, url, expected_sha):
 # instruction check, naming the missing setting.
 MODEL_DEFAULT_KEYS = (("MODEL_NAME", "model.name", "DM_MODEL_NAME"),
                       ("MODEL_ENDPOINT", "model.endpoint", "DM_MODEL_ENDPOINT"),
-                      ("MODEL_PROTOCOL", "model.protocol", "DM_MODEL_PROTOCOL"))
+                      ("MODEL_PROTOCOL", "model.protocol", "DM_MODEL_PROTOCOL"),
+                      ("MODEL_MAX_OUTPUT_TOKENS", "model.max_output_tokens", "DM_MODEL_MAX_OUTPUT_TOKENS"))
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 
 
