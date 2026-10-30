@@ -411,6 +411,24 @@ class AnUpdateOfAPlacedAgentComposesBothHalves(unittest.TestCase):
         self.assertEqual(doc["error"], "the job would not update")
 
 
+class AReinstallThatChangesSettingsReachesTheJob(unittest.TestCase):
+    """Re-filing the same version to change its model (a proposed MODEL_NAME)
+    is a reinstall; it skipped the job and pitch-writer 2.13.0 stayed on the
+    environment's default model (2026-10-30). Now an instruction naming
+    settings or credentials re-places the job from the image it runs."""
+
+    def test_a_reinstall_with_settings_reapplies_and_one_without_does_not(self):
+        row = {"name": "pitch-writer", "image": "us-central1-docker.pkg.dev/p/deploymgr/pitch-writer:2.13.0", "image_digest": DIGEST}
+        self.assertTrue(steps.reinstall_reapplies(True, row, {"settings": {"text-reasoning": {"MODEL_NAME": "claude-haiku-5-5"}}}))
+        self.assertTrue(steps.reinstall_reapplies(True, row, {"credentials": {"speech": "speech-key"}}))
+        self.assertFalse(steps.reinstall_reapplies(True, row, {"name": "pitch-writer"}))
+        self.assertFalse(steps.reinstall_reapplies(False, row, {"settings": {"x": {"Y": "z"}}}), "a new version is placed in full anyway")
+        self.assertFalse(steps.reinstall_reapplies(True, None, {"settings": {"x": {"Y": "z"}}}), "no job, nothing to re-place")
+        self.assertEqual(steps.image_the_job_runs(row), f"us-central1-docker.pkg.dev/p/deploymgr/pitch-writer@{DIGEST}")
+        pinned = {"image": f"gcr.io/x/y@{DIGEST}"}
+        self.assertEqual(steps.image_the_job_runs(pinned), f"gcr.io/x/y@{DIGEST}")
+
+
 class RemovingAPlacedAgentTakesDownBothHalves(unittest.TestCase):
     """An owner who removed an agent and was left with a Cloud Run job still
     costing them money did not remove the agent, whatever the record said."""
