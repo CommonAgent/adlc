@@ -14,7 +14,7 @@ when a spec and its suite exist and the scripts do not, or exist only as a proto
 ## What this needs
 
 - the spec (document, required)
-- the suite (text/javascript, required unless the build folder came, which carries it)
+- the suite (text/javascript, optional)
 - a prototype, in any language (document, optional)
 
 ## What a good result looks like

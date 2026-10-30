@@ -49,13 +49,13 @@
         "--message",
         "{job_dir}/message.txt"
       ],
-      "message_file": "{job_dir}/message.txt",
-      "escalate_when": "json:escalate",
       "reply": "json:reply",
+      "escalate_when": "json:escalate",
       "per_file": [
         "--file",
         "{file_path}::{file_media_type}"
-      ]
+      ],
+      "message_file": "{job_dir}/message.txt"
     }
   },
   "verify": "skills/write-the-scripts/scripts/verify.mjs"
