@@ -124,6 +124,17 @@ Where the work runs decides what `MODEL_ENDPOINT` points at:
   to the platform's model gateway, so `MODEL_ENDPOINT` points there and no
   bridge is needed.
 
+The same gateway serves `MODEL_PROTOCOL` `gemini` (`POST /models/<MODEL_NAME>:generateContent`
+or `:streamGenerateContent`), sent to Vertex AI's Google models in its project
+and `BRIDGE_GEMINI_REGION` (else its region), with what differs between the
+Gemini API and Vertex mapped and any key header dropped. It also passes on
+Speech-to-Text v2 `recognize` calls
+(`POST /v2/projects/<project>/locations/<location>/recognizers/<recognizer>:recognize`)
+for its own project (`BRIDGE_SPEECH_PROJECT`, else the Vertex project) and for
+nothing else, so an agent whose `STT_ENDPOINT` points at the gateway needs no
+credential. `model.gateway.settings` in the environment file fills
+`STT_ENDPOINT` and `STT_PROJECT` for a service that declares them.
+
 The deployment manager binds the four settings for a package whose runtime
 requirements declare a system of kind `model`. The owner's instruction gives
 them under `settings` for that system (and the name of the credential placed as

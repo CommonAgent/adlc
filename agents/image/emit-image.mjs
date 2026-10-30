@@ -861,7 +861,7 @@ export function dockerfileText(pkg, opts = {}) {
     `COPY entrypoint.mjs ${AGENT_DIR}/entrypoint.mjs`,
     `COPY check-lockfile.mjs ${AGENT_DIR}/check-lockfile.mjs`);
   if (runSpec) say(`COPY run.json ${AGENT_DIR}/run.json`);
-  if (hasModelSystem(install)) {
+  if (usesGateway(install)) {
     say(`# The model gateway the entrypoint starts on loopback for a package whose`,
       `# model system's MODEL_ENDPOINT points there (Common Agent 12.4.1): the host's`,
       `# own facility, holding the job's sign-in, never the package's.`,
@@ -937,6 +937,13 @@ export function hasModelSystem(install) {
   return (install?.systems ?? []).some((s) => s && s.kind === "model");
 }
 
+/** Whether the package may be pointed at the job's gateway: it declares a model
+ *  system, or a service whose scripts read STT_ENDPOINT (the gateway's
+ *  Speech-to-Text v2 passthrough). */
+export function usesGateway(install) {
+  return hasModelSystem(install) || (install?.systems ?? []).some((s) => (s?.settings ?? []).some((st) => st?.env === "STT_ENDPOINT"));
+}
+
 // ── emit ──────────────────────────────────────────────────────────────────
 
 /** Write the build context: the Dockerfile, the files it copies, the package
@@ -980,9 +987,9 @@ export function emit(packageDir, outDir, opts = {}) {
   // for what reads as an account and not for addresses or path segments that
   // the loose credential sweep mistakes for a value. It holds no credential:
   // it asks for a token at run time.
-  if (hasModelSystem(pkg.install)) {
+  if (usesGateway(pkg.install)) {
     const gateway = gatewaySource();
-    if (!gateway) refuse(`${pkg.name} declares a model system and the model gateway (responses-bridge.mjs) is not beside this tool; nothing was written`);
+    if (!gateway) refuse(`${pkg.name} declares a model system or a Speech-to-Text endpoint and the model gateway (responses-bridge.mjs) is not beside this tool; nothing was written`);
     const bad = forbiddenIn(gateway, GATEWAY_FILE).filter((b) => !/carries an address|reads as a credential value/.test(b));
     if (bad.length) refuse(bad.join("; ") + ". Nothing was written.");
     writeFileSync(join(out, GATEWAY_FILE), gateway);

@@ -107,7 +107,7 @@ def _am_env(key, override=None, suffix=""):
         v = v.get(part) if isinstance(v, dict) else None
         if v is None:
             raise RuntimeError(f'{key} is not set for environment "{name}" in {path}')
-    return v + suffix
+    return v + suffix if suffix else v
 
 
 # Where this procedure keeps its own state. /opt/fleet on a host, and read from
@@ -1113,9 +1113,16 @@ def fetch_and_verify(name, url, expected_sha):
 #   model.key       the NAME of the credential placed as MODEL_KEY, or "" for
 #                   none, which a gateway on the agent's own host needs
 #   model.protocol  MODEL_PROTOCOL, one of install.MODEL_PROTOCOLS
-#   model.gateway   {vertex_project, vertex_region}: where a worker job's own
-#                   gateway sends Claude's calls, placed on the job as the
-#                   bridge's settings when MODEL_ENDPOINT is on loopback
+#   model.gateway   {vertex_project, vertex_region, gemini_region,
+#                   speech_project}: where a worker job's own gateway sends
+#                   Claude's and Gemini's calls and for which project it passes
+#                   Speech-to-Text v2 on, placed on the job as the bridge's
+#                   settings when a gateway endpoint (MODEL_ENDPOINT, or a
+#                   service's STT_ENDPOINT) is on loopback
+#   model.gateway.settings  {VARIABLE: value}: values for service settings that
+#                   point at the gateway (STT_ENDPOINT, STT_PROJECT), filled into
+#                   any service that declares the variable where the
+#                   instruction leaves it out
 #
 # The instruction wins key by key, so a deploy request that names its own
 # model or endpoint gets it. An environment with no `model` block fills
@@ -1139,11 +1146,52 @@ def host_model_defaults():
     return values, (cred.strip() if isinstance(cred, str) else "")
 
 
+def gateway_setting_defaults():
+    """The host's values for service settings that point at the gateway, as
+    {variable: value}; {} when the environment names none."""
+    try:
+        v = _am_env("model.gateway.settings")
+    except (RuntimeError, TypeError):
+        return {}
+    return {k: str(x) for k, x in v.items() if isinstance(k, str) and isinstance(x, (str, int, float)) and str(x).strip()} \
+        if isinstance(v, dict) else {}
+
+
+def with_gateway_settings(args, pkg):
+    """Fill a service's declared gateway settings (STT_ENDPOINT, STT_PROJECT)
+    the instruction left out, from model.gateway.settings, in place."""
+    fills = gateway_setting_defaults()
+    if not fills:
+        return args
+    settings = args.get("settings")
+    if settings is None:
+        settings = args["settings"] = {}
+    if not isinstance(settings, dict):
+        return args
+    for s in pkg.get("systems", []):
+        if s.get("kind") != "service":
+            continue
+        declared = {st["env"] for st in s.get("settings", []) if isinstance(st, dict) and st.get("env")}
+        wanted = {k: v for k, v in fills.items() if k in declared}
+        if not wanted:
+            continue
+        mine = settings.get(s["name"])
+        if mine is None:
+            mine = settings[s["name"]] = {}
+        if isinstance(mine, dict):
+            for k, v in wanted.items():
+                if mine.get(k) in (None, ""):
+                    mine[k] = v
+    return args
+
+
 def with_model_defaults(args, pkg):
     """Fill the model system's settings the instruction left out from this
     host's configuration (host_model_defaults), in place, and return args. A
     package with no model system is untouched. A setting the instruction gives
-    is never replaced."""
+    is never replaced. A service's gateway settings are filled too
+    (with_gateway_settings)."""
+    with_gateway_settings(args, pkg)
     system = INSTALL.model_system(pkg)
     if not system:
         return args
@@ -1165,26 +1213,37 @@ def with_model_defaults(args, pkg):
     return args
 
 
+GATEWAY_ENDPOINT_VARS = ("MODEL_ENDPOINT", "STT_ENDPOINT")
+
+
 def model_gateway_env(args, pkg):
-    """The variables a worker job's own model gateway reads, when the model
-    system's MODEL_ENDPOINT is on loopback: the container starts
+    """The variables a worker job's own gateway reads, when one of the
+    package's gateway settings (the model system's MODEL_ENDPOINT, or a
+    service's STT_ENDPOINT) is on loopback: the container starts
     responses-bridge.mjs there (image/one-message.mjs) and it sends Claude's
-    calls to Vertex in this project and region, signed in as the job's own
-    service account. {} when there is no model system, the endpoint is
-    elsewhere, or the host names no gateway project."""
-    system = INSTALL.model_system(pkg)
-    if not system:
-        return {}
-    mine = ((args.get("settings") or {}).get(system["name"]) or {}) if isinstance(args.get("settings"), dict) else {}
-    endpoint = str(mine.get("MODEL_ENDPOINT") or "") if isinstance(mine, dict) else ""
-    host = re.sub(r"^https?://", "", endpoint).split("/")[0].rsplit(":", 1)[0]
-    if host not in LOOPBACK_HOSTS:
+    and Gemini's calls to Vertex, and Speech-to-Text v2 recognize to Google,
+    in this project, signed in as the job's own service account. {} when no
+    such setting points at loopback."""
+    settings = args.get("settings") if isinstance(args.get("settings"), dict) else {}
+    endpoint = ""
+    for s in pkg.get("systems", []):
+        mine = settings.get(s["name"]) if isinstance(settings.get(s["name"]), dict) else {}
+        for var in GATEWAY_ENDPOINT_VARS:
+            v = str(mine.get(var) or "")
+            host = re.sub(r"^https?://", "", v).split("/")[0].rsplit(":", 1)[0]
+            if v and host in LOOPBACK_HOSTS and not endpoint:
+                endpoint = v
+    if not endpoint:
         return {}
     project = _optional_env("model.gateway.vertex_project", "DM_MODEL_GATEWAY_PROJECT") or VERTEX_PROJECT
     region = _optional_env("model.gateway.vertex_region", "DM_MODEL_GATEWAY_REGION") or "global"
-    port = endpoint.rsplit(":", 1)[1].split("/")[0] if re.search(r":\d+(/|$)", endpoint) else ""
+    gemini = _optional_env("model.gateway.gemini_region", "DM_MODEL_GATEWAY_GEMINI_REGION")
+    speech = _optional_env("model.gateway.speech_project", "DM_MODEL_GATEWAY_SPEECH_PROJECT")
+    port = endpoint.split("://", 1)[-1].split("/")[0].rsplit(":", 1)[1] if re.search(r"://[^/]+:\d+(/|$)", endpoint) else ""
     return {"BRIDGE_VERTEX_PROJECT": str(project), "BRIDGE_VERTEX_REGION": str(region),
-            **({"BRIDGE_PORT": port} if port else {})}
+            **({"BRIDGE_PORT": port} if port else {}),
+            **({"BRIDGE_GEMINI_REGION": str(gemini)} if gemini else {}),
+            **({"BRIDGE_SPEECH_PROJECT": str(speech)} if speech else {})}
 
 
 def check_before_touching(args, pkg):

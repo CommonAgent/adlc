@@ -868,6 +868,20 @@ export function modelCost(model, u = {}) {
 export function usageOf(url, text, gateway = null) {
   let u;
   try { u = new URL(String(url)); } catch { return null; }
+  // SPEECH-TO-TEXT V2 THROUGH THE GATEWAY (STT_ENDPOINT), counted by the seconds
+  // the service says it billed, at the price below, so the run's spend says it.
+  const sttBase = gateway && typeof gateway.stt === "string" ? gateway.stt.trim().replace(/\/+$/, "") : "";
+  const viaStt = !!sttBase && /^https?:\/\//i.test(sttBase) && String(url).startsWith(sttBase + "/") && /:recognize$/.test(u.pathname);
+  if (viaStt || (u.hostname.endsWith("speech.googleapis.com") && /:recognize$/.test(u.pathname))) {
+    let d;
+    try { d = JSON.parse(String(text ?? "")); } catch { return null; }
+    const billed = /^(\d+(?:\.\d+)?)s$/.exec(String(d?.metadata?.totalBilledDuration ?? ""));
+    if (!billed) return null;
+    const seconds = Number(billed[1]);
+    // Speech-to-Text v2, standard recognition: $0.016 a minute (Google's list
+    // price, read 2026-10-29), the dearest of its tiers so spend is never low.
+    return { model: "google-speech-v2", input: 0, output: 0, cache_write: 0, cache_read: 0, seconds, cost: Math.round(seconds / 60 * 0.016 * 1e8) / 1e8 };
+  }
   const host = u.hostname;
   const path = decodeURIComponent(u.pathname);
   const vertex = /(^|[.-])aiplatform(\.[a-z0-9-]+)*\.googleapis\.com$/.test(host);
@@ -958,14 +972,16 @@ function installUsageTap(usageOf) {
   // The job's model gateway, read on every call as the package reads it.
   const gateway = () => {
     const endpoint = String(process.env.MODEL_ENDPOINT ?? "").trim().replace(/\/+$/, "");
-    return endpoint ? { endpoint, model: String(process.env.MODEL_NAME ?? process.env.TEXT_MODEL ?? "").trim() } : null;
+    const stt = String(process.env.STT_ENDPOINT ?? "").trim().replace(/\/+$/, "");
+    return endpoint || stt ? { endpoint, stt, model: String(process.env.MODEL_NAME ?? process.env.TEXT_MODEL ?? "").trim() } : null;
   };
   const tapped = async function (input, init) {
     const res = await real.call(this, input, init);
     try {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input?.url;
       const gw = gateway();
-      const viaGateway = !!(url && gw && /^https?:\/\//i.test(gw.endpoint) && (String(url) === gw.endpoint || String(url).startsWith(gw.endpoint + "/")));
+      const under = (base) => !!(base && /^https?:\/\//i.test(base) && (String(url) === base || String(url).startsWith(base + "/")));
+      const viaGateway = !!(url && gw && (under(gw.endpoint) || under(gw.stt)));
       if (url && (/googleapis\.com/.test(String(url)) || viaGateway) && res && typeof res.text === "function") {
         const text = res.text.bind(res);
         let read = null;
@@ -1211,8 +1227,9 @@ export function writeJobUsage(jobDir, { calls = [], harness = [], memMb = 0 } = 
   try { own = JSON.parse(readFileSync(file, "utf8")); } catch { own = null; }
   const all = [...calls, ...harness];
   const byModel = new Map();
-  let tokensIn = 0, tokensOut = 0, cost = 0;
+  let tokensIn = 0, tokensOut = 0, cost = 0, speechSeconds = 0;
   for (const c of all) {
+    if (typeof c.seconds === "number" && c.seconds > 0) speechSeconds += c.seconds;
     const i = (c.input || 0) + (c.cache_write || 0) + (c.cache_read || 0);
     const o = c.output || 0;
     tokensIn += i;
@@ -1228,7 +1245,8 @@ export function writeJobUsage(jobDir, { calls = [], harness = [], memMb = 0 } = 
     if (!all.length && !(memMb > 0)) return null;
     doc = {
       tokens_in: tokensIn, tokens_out: tokensOut, cost_usd: Math.round(cost * 1e8) / 1e8,
-      ...(model ? { model } : {}), calls: all.length, ...(memMb > 0 ? { mem_mb: memMb } : {}),
+      ...(model ? { model } : {}), calls: all.length, ...(speechSeconds > 0 ? { speech_seconds: Math.round(speechSeconds * 1000) / 1000 } : {}),
+      ...(memMb > 0 ? { mem_mb: memMb } : {}),
     };
   }
   writeFileSync(file, JSON.stringify(doc, null, 2) + "\n");
@@ -1354,16 +1372,25 @@ function childEnv(env, where) {
 // MODEL_ENDPOINT is on loopback. Those settings are the gateway's and are not
 // handed to the work.
 export const GATEWAY_FILE = "model-gateway.mjs";
-const GATEWAY_VARS = ["BRIDGE_VERTEX_PROJECT", "BRIDGE_VERTEX_REGION", "BRIDGE_PORT"];
+const GATEWAY_VARS = ["BRIDGE_VERTEX_PROJECT", "BRIDGE_VERTEX_REGION", "BRIDGE_PORT", "BRIDGE_GEMINI_REGION", "BRIDGE_SPEECH_PROJECT"];
+/** The settings that may point a package at the job's gateway: the model
+ *  system's endpoint, and Speech-to-Text v2's (12.4.1; the gateway's
+ *  passthrough). */
+export const GATEWAY_ENDPOINT_VARS = ["MODEL_ENDPOINT", "STT_ENDPOINT"];
 
 /** Where the gateway listens, or null when this job has none to start:
  *  {port}. */
 export function gatewayPlan(env = process.env, { exists = existsSync, dir = env.AGENT_DIR || "/opt/agent" } = {}) {
   if (!String(env.BRIDGE_VERTEX_PROJECT ?? "").trim()) return null;
-  let u;
-  try { u = new URL(String(env.MODEL_ENDPOINT ?? "")); } catch { return null; }
-  if (!["127.0.0.1", "localhost", "[::1]"].includes(u.hostname)) return null;
-  const port = Number(u.port || env.BRIDGE_PORT || (u.protocol === "https:" ? 443 : 80));
+  // The first of the gateway's settings that points at loopback names the port.
+  let port = 0;
+  for (const name of GATEWAY_ENDPOINT_VARS) {
+    let u;
+    try { u = new URL(String(env[name] ?? "")); } catch { continue; }
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(u.hostname)) continue;
+    port = Number(u.port || env.BRIDGE_PORT || (u.protocol === "https:" ? 443 : 80));
+    break;
+  }
   if (!Number.isInteger(port) || port <= 0) return null;
   if (!exists(join(dir, GATEWAY_FILE))) return null;
   return { port, file: join(dir, GATEWAY_FILE) };
