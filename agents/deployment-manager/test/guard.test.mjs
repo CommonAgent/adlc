@@ -120,6 +120,25 @@ test("an update of an agent already on the node adds nothing to the node, even o
   assert.equal(precheck(facts, { agent: "new-one", node_root: "/opt/fleet/node-platform", package_bytes: 1000 }).ok, false);
 });
 
+test("agents placed earlier in the same landing are counted, because the node's credential does not carry them yet", () => {
+  const facts = survey(host({ n: 29 }), "/opt/fleet");
+  const per = facts.nodes[0].per_agent_bytes;
+  const alone = precheck(facts, { agent: "ride-maker", node_root: "/opt/fleet/node-platform", package_bytes: 1 });
+  const third = precheck(facts, { agent: "ride-maker", node_root: "/opt/fleet/node-platform", package_bytes: 1, also_adding: 2 });
+  assert.equal(alone.checks[0].after - alone.checks[0].now, per, "nothing changes when nothing else is landing");
+  assert.equal(third.checks[0].after - third.checks[0].now, 3 * per);
+  // The folders are already on the node, so the agent count is not doubled.
+  assert.equal(third.checks[1].after, alone.checks[1].after);
+  // An update in the same landing still counts the new agents before it.
+  const upd = precheck(facts, { agent: "agent-05", node_root: "/opt/fleet/node-platform", package_bytes: 1, update: true, also_adding: 2 });
+  assert.equal(upd.checks[0].after - upd.checks[0].now, 2 * per);
+  // And the sentence says so when it refuses.
+  facts.limits.max_control_line = Math.floor((facts.nodes[0].connect_bytes + 2 * per) / 0.8);
+  const r = precheck(facts, { agent: "ride-maker", node_root: "/opt/fleet/node-platform", package_bytes: 1, also_adding: 2 });
+  assert.equal(r.ok, false);
+  assert.match(r.refusal, /with ride-maker on it and the 2 placed before it in this landing/);
+});
+
 test("the host's disk and memory refuse on their own, with their numbers", () => {
   const facts = survey(host({ disk: { avail: 20.1 * GIB, size: 100 * GIB } }), "/opt/fleet");
   const r = precheck(facts, { agent: "x", node_root: "/opt/fleet/node-platform", package_bytes: 1 });

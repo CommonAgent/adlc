@@ -29,9 +29,15 @@ After a deploy or an update that worked, it starts the Conformance Checker on
 the agent it put in place (conform, below), and `backfill` gives an agent that
 already runs its deployment record and verdict without redeploying it.
 
+Requests are served oldest approval first (decided_at). By default each one
+runs whole before the next starts; DM_INSTALL_WORKERS and DM_LAND_BATCH let
+installs run side by side and land on the platform node in batches (see
+"installs side by side" below).
+
 Env: MESH_CONTROL_URL (default the environment's urls.app + /v1, env/prod.json),
 MESH_DEPLOY_EXECUTOR_TOKEN_FILE (one line, the bearer), POLL_SECONDS (60),
-DM_CONFORMANCE (on/off; default on everywhere but prod).
+DM_CONFORMANCE (on/off; default on everywhere but prod), DM_INSTALL_WORKERS (1),
+DM_LAND_BATCH (off), DM_LAND_BATCH_SECONDS (60), DM_LAND_BATCH_MOST (5).
 """
 import calendar
 import hashlib
@@ -42,9 +48,12 @@ import socket
 import stat
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 # The AgentMesh environment (env/<AGENTMESH_ENV>.json, default prod): the same
 # file and rules as env/load.cjs, read with the standard library because this
@@ -117,6 +126,45 @@ STEPS = f"{FLEET}/deploymgr-steps.py"
 # still has the build and the 900 seconds of smoke and watch after it.
 DEPLOY_TIMEOUT = (int(os.environ.get("DM_BUILD_MINUTES", "40")) * 60 + 900
                   + int(os.environ.get("DM_NODE_LOCK_SECONDS", "600")))
+
+# ── installs side by side, and landings in batches ────────────────────────
+#
+# Until these are set, each approved request runs whole, one after another,
+# exactly as before (serial_mode). Set, the parts of a host package install
+# that do not touch the platform node run side by side, and the node step is
+# done for several agents behind one restart of their node (Installs, below).
+#
+#   DM_INSTALL_WORKERS     how many requests may be working at once on the
+#                          parts that do not touch the node: checking and
+#                          fetching the package, building the image, placing
+#                          the Cloud Run job. Default 1.
+#   DM_LAND_BATCH          on: installs that are ready to land wait for others
+#                          and land together. Default off.
+#   DM_LAND_BATCH_SECONDS  how long the first ready install waits for others
+#                          while more are still being prepared. Default 60.
+#   DM_LAND_BATCH_MOST     the most agents in one landing. Default 5.
+#
+# DM_INSTALL_WORKERS=1 with DM_LAND_BATCH off is today's behaviour, and the
+# default.
+INSTALL_WORKERS = max(1, int(os.environ.get("DM_INSTALL_WORKERS") or 1))
+LAND_BATCH = (os.environ.get("DM_LAND_BATCH") or "off").strip().lower() in ("on", "1", "true", "yes")
+LAND_BATCH_SECONDS = max(0, int(os.environ.get("DM_LAND_BATCH_SECONDS") or 60))
+LAND_BATCH_MOST = max(1, int(os.environ.get("DM_LAND_BATCH_MOST") or 5))
+# The longest a landing of n agents may take: the wait for the node lock, then
+# for each agent its placement (deploymgr-steps.py PLACE_SECONDS, 900) and its
+# smoke check and probe, then the full watch and a recovery. Generous, because
+# a landing killed half way leaves agents placed and unwatched.
+LAND_PER_AGENT_SECONDS = 900 + 600
+
+
+def land_timeout(n):
+    return int(os.environ.get("DM_NODE_LOCK_SECONDS", "600")) + n * LAND_PER_AGENT_SECONDS + 1200
+
+
+def serial_mode():
+    return INSTALL_WORKERS <= 1 and not LAND_BATCH
+
+
 RECORD = f"{FLEET}/deploymgr-record.py"
 # The acts of the host procedure that end in a signed deployment record when
 # they succeed. A refusal is recorded too, whatever act it stopped.
@@ -674,13 +722,47 @@ def run_one(r):
     # project, through install-package, and never the host procedure below.
     if r.get("tenant"):
         return run_tenant_package(r)
+    job = host_package_job(r)
+    if "outcome" in job:
+        return job["outcome"]
+    rid, args, verb, token_path = job["rid"], job["args"], job["verb"], job["token_path"]
+
+    # 3. The fixed procedure, and nothing else. Its one-line JSON answer is
+    # the outcome, success or refusal alike.
+    print(f"[deploy-executor] {rid}: {verb} of {args['name']}", flush=True)
+    try:
+        p = subprocess.run(["python3", STEPS, verb, job["argfile"]],
+                           capture_output=True, text=True, timeout=DEPLOY_TIMEOUT)
+        lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip()]
+        result = json.loads(lines[-1]) if lines else {"ok": False, "error": (p.stderr or "no output")[:400]}
+    except Exception as e:  # noqa: BLE001
+        result = {"ok": False, "error": str(e)[:400]}
+    finally:
+        try:
+            os.remove(token_path)
+        except OSError:
+            pass
+    return host_outcome(job, result)
+
+
+def is_host_package(r):
+    """A package this host's procedure installs or updates (run_one's last
+    branch): not a container agent, not a version act, not a person's own."""
+    return not (r.get("container") or r.get("alongside") or r.get("retire") or r.get("tenant"))
+
+
+def host_package_job(r):
+    """Steps 1 and 2 of a host package request: the boot token placed by name
+    and the argfile written, and which procedure it is (deploy or update).
+    Returns {"outcome": ...} for a request that is missing its shape, which
+    places nothing."""
     rid = r["id"]
     args = r.get("args") or {}
     token = r.get("boot_token") or ""
     token_name = r.get("boot_token_name") or f"dr-{rid[3:15]}"
     harness = args.get("harness") or args.get("framework") or ""
     if not (token and args.get("name") and harness and r.get("package_url")):
-        return {"ok": False, "error": "request is missing its deploy shape or boot token"}
+        return {"outcome": {"ok": False, "error": "request is missing its deploy shape or boot token"}}
 
     # 1. The boot token, by NAME into the store the procedure reads. Removed
     # after the run either way: it was single-use the moment it was minted.
@@ -746,8 +828,6 @@ def run_one(r):
     with open(argfile, "w") as f:
         json.dump(arg, f)
 
-    # 3. The fixed procedure, and nothing else. Its one-line JSON answer is
-    # the outcome, success or refusal alike.
     # A name already in the inventory is a new version of an installed agent:
     # the update procedure (same subject, same home, restore on failure), not a
     # second deploy, which the procedure rightly refuses (the user exists).
@@ -757,20 +837,13 @@ def run_one(r):
     except (OSError, ValueError):
         installed = set()
     verb = "update" if args["name"] in installed else "deploy"
-    print(f"[deploy-executor] {rid}: {verb} of {args['name']}", flush=True)
-    try:
-        p = subprocess.run(["python3", STEPS, verb, argfile],
-                           capture_output=True, text=True, timeout=DEPLOY_TIMEOUT)
-        lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip()]
-        result = json.loads(lines[-1]) if lines else {"ok": False, "error": (p.stderr or "no output")[:400]}
-    except Exception as e:  # noqa: BLE001
-        result = {"ok": False, "error": str(e)[:400]}
-    finally:
-        try:
-            os.remove(token_path)
-        except OSError:
-            pass
+    return {"rid": rid, "args": args, "verb": verb, "argfile": argfile, "token_path": token_path}
 
+
+def host_outcome(job, result):
+    """What a host package request came to, from the procedure's answer: the
+    answer itself and, for an act that ran far enough, its signed record."""
+    args = job["args"]
     # 4. The signed deployment record, only for a deploy that ran far enough
     # to record. Kept under the deploymgr's own records like its manual ones.
     record = None
@@ -828,6 +901,8 @@ EVAL_WAIT_SECONDS = int(os.environ.get("DM_CONFORMANCE_WAIT_SECONDS") or 3 * 360
 EVAL_TIMEOUT = int(os.environ.get("DM_CONFORMANCE_SECONDS") or 3600)
 CONFORM_LOG = f"{DM_RECORDS}/conformance.log"
 _CHECKS = []
+# Installs that run side by side start checks from their own threads.
+_CHECKS_LOCK = threading.Lock()
 
 
 def conformance_wanted():
@@ -864,7 +939,8 @@ def conformance_subject(r, outcome):
 
 def reap_checks():
     """Collect the checks started earlier that have finished, so none lingers."""
-    _CHECKS[:] = [p for p in _CHECKS if p.poll() is None]
+    with _CHECKS_LOCK:
+        _CHECKS[:] = [p for p in _CHECKS if p.poll() is None]
 
 
 def start_conformance(subject):
@@ -879,7 +955,8 @@ def start_conformance(subject):
             p = subprocess.Popen([sys.executable or "python3", os.path.abspath(__file__), "conform", argfile],
                                  stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                  start_new_session=True, close_fds=True)
-        _CHECKS.append(p)
+        with _CHECKS_LOCK:
+            _CHECKS.append(p)
         print(f"[deploy-executor] {subject['request']}: conformance check of {subject['handle']} "
               f"{subject.get('version')} started (log {CONFORM_LOG})", flush=True)
     except Exception as e:  # noqa: BLE001
@@ -1280,6 +1357,15 @@ def serve_request(r, kept):
         # Kept BEFORE the post, so a post that fails cannot lead to a second run.
         kept[rid] = {"at": time.time(), "outcome": outcome}
         save_outcomes(kept)
+    return deliver(r, outcome, held)
+
+
+def deliver(r, outcome, held=None):
+    """Post one request's outcome and do what follows it, exactly once per
+    run: the log line, the answer to a run's gate and the conformance check.
+    `held` is the kept outcome being posted again, which does neither of the
+    last two. Returns whether the post landed."""
+    rid = r.get("id", "?")
     posted, why_not = post_result(rid, outcome)
     if posted:
         # Name the failing step and its words here too: the store has the full
@@ -1309,6 +1395,274 @@ def serve_request(r, kept):
         if subject:
             start_conformance(subject)
     return posted
+
+
+# ── oldest approval first (technical debt 593) ───────────────────────────
+
+def _decided_key(r):
+    """Sort key for a queued request: when it was approved, oldest first. A
+    request with no readable decided_at goes after those that have one, in the
+    order the queue gave."""
+    v = r.get("decided_at")
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return (0, float(v))
+    if isinstance(v, str) and v.strip():
+        try:
+            t = datetime.fromisoformat(v.strip().replace("Z", "+00:00"))
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            return (0, t.timestamp())
+        except ValueError:
+            pass
+    return (1, 0.0)
+
+
+def oldest_first(queue):
+    """The queue served the newest approval first; it is served oldest first."""
+    return sorted(queue, key=_decided_key)
+
+
+# ── installs side by side (DM_INSTALL_WORKERS, DM_LAND_BATCH) ────────────
+#
+# WHAT RUNS SIDE BY SIDE AND WHAT DOES NOT. A host package install has three
+# parts (deploymgr-steps.py prepare, land, finish). Preparing (the checks and
+# the fetch) and finishing (building the image, placing the Cloud Run job and
+# probing it) touch no node, and run in up to DM_INSTALL_WORKERS threads. The
+# landing (the unix user, the files, the agent added to its node, the node
+# restart, the smoke check and the watch) holds the host's node lock, so there
+# is one landing at a time, and with DM_LAND_BATCH on it takes several agents
+# behind one restart. The other kinds of request (a container agent, a
+# person's own package, a version kept alongside or retired) run whole, one at
+# a time, inside a worker: their own inventories are not written for two at
+# once.
+#
+# ONE REQUEST PER AGENT AT A TIME. A second request for an agent waits until
+# the first has finished all three parts and posted its outcome, so a later
+# version never lands before an earlier one, and the two never share the
+# staging folders that are named after the agent.
+#
+# EVERYTHING ELSE IS WHAT A REQUEST RUN WHOLE DOES: the outcome is kept before
+# it is posted, the record is signed the same way (host_outcome), and the post,
+# the run's gate and the conformance check follow it (deliver).
+
+_KEPT_LOCK = threading.Lock()
+# How long one pass of the loop waits for an install to finish before it asks
+# the queue again. The queue answers at once while any request is approved,
+# and requests being installed stay approved until their outcome is posted.
+PROGRESS_WAIT = 30
+
+
+def keep_outcome(rid, outcome):
+    """Keep one outcome on disk before it is posted, as serve_request does."""
+    with _KEPT_LOCK:
+        kept = load_outcomes()
+        kept[rid] = {"at": time.time(), "outcome": outcome}
+        save_outcomes(kept)
+
+
+def agent_of(r):
+    """The agent a request is for, so two requests for it never run at once."""
+    return (r.get("args") or {}).get("name") or r.get("id")
+
+
+def last_answer(p):
+    """The procedure's one-line JSON answer, as run_one reads it."""
+    lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip()]
+    return json.loads(lines[-1]) if lines else {"ok": False, "error": (p.stderr or "no output")[:400]}
+
+
+class Installs:
+    """Approved requests, run side by side within the bounds above."""
+
+    def __init__(self, workers=None, batch=None, batch_seconds=None, batch_most=None, now=time.time):
+        self.workers = INSTALL_WORKERS if workers is None else workers
+        self.batch = LAND_BATCH if batch is None else batch
+        self.batch_seconds = LAND_BATCH_SECONDS if batch_seconds is None else batch_seconds
+        self.batch_most = (LAND_BATCH_MOST if batch_most is None else batch_most) if self.batch else 1
+        self.now = now
+        self.pool = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="install")
+        self.cv = threading.Condition()
+        self.running = set()   # request ids being installed or waiting their turn
+        self.busy = set()      # agents with a request in progress
+        self.later = {}        # agent -> requests waiting behind an earlier one
+        self.coming = 0        # host package requests started and not yet ready to land
+        self.ready = []        # (job, since): prepared, waiting to land, oldest first
+        self.finished = 0
+        self.erred = False
+        self.others = threading.Lock()
+        threading.Thread(target=self._land_loop, name="land", daemon=True).start()
+
+    # -- the loop's side ---------------------------------------------------
+
+    def has(self, rid):
+        with self.cv:
+            return rid in self.running
+
+    def submit(self, r):
+        """Take one approved request. Its agent's earlier request, if any, goes
+        first."""
+        key = agent_of(r)
+        with self.cv:
+            self.running.add(r.get("id"))
+            if key in self.busy:
+                self.later.setdefault(key, []).append(r)
+                return
+            self.busy.add(key)
+            self._start(r)
+
+    def wait(self, timeout=PROGRESS_WAIT):
+        """Until an install finishes, or `timeout`. At once when none runs."""
+        with self.cv:
+            seen = self.finished
+            if self.running:
+                self.cv.wait_for(lambda: self.finished != seen, timeout=timeout)
+            erred, self.erred = self.erred, False
+            return erred
+
+    # -- the workers' side -------------------------------------------------
+
+    def _start(self, r):
+        # Called with self.cv held.
+        if is_host_package(r):
+            self.coming += 1
+        self.pool.submit(self._begin, r)
+
+    def _begin(self, r):
+        rid = r.get("id", "?")
+        print(f"[deploy-executor] deploying {rid}: {r.get('args', {}).get('name')}", flush=True)
+        try:
+            if is_host_package(r):
+                job, outcome = self._prepare(r)
+                if job is not None:
+                    with self.cv:
+                        self.coming -= 1
+                        self.ready.append((job, self.now()))
+                        self.cv.notify_all()
+                    return
+                with self.cv:
+                    self.coming -= 1
+                    self.cv.notify_all()
+            else:
+                with self.others:
+                    outcome = run_one(r)
+        except Exception as e:  # noqa: BLE001 - every request gets an outcome
+            outcome = {"ok": False, "error": f"the executor stopped on this request: {str(e)[:300]}"}
+        self._done(r, outcome)
+
+    def _prepare(self, r):
+        """The audit gate, the token and argfile, then deploymgr-steps.py
+        prepare. Returns (job, None) when it is ready to land, else (None,
+        outcome)."""
+        refused = audit_refusal(r)
+        if refused:
+            return None, refuse_by_audit_gate(r, refused)
+        job = host_package_job(r)
+        if "outcome" in job:
+            return None, job["outcome"]
+        job["r"] = r
+        print(f"[deploy-executor] {job['rid']}: {job['verb']} of {job['args']['name']}, prepared side by side", flush=True)
+        try:
+            result = last_answer(subprocess.run(["python3", STEPS, "prepare", job["verb"], job["argfile"]],
+                                                capture_output=True, text=True, timeout=DEPLOY_TIMEOUT))
+        except Exception as e:  # noqa: BLE001
+            result = {"ok": False, "error": str(e)[:400]}
+        if result.get("ok") and result.get("phase") == "prepared" and result.get("state"):
+            job["state"] = result["state"]
+            return job, None
+        self._drop_token(job)
+        return None, host_outcome(job, result)
+
+    def _land_loop(self):
+        while True:
+            with self.cv:
+                self.cv.wait_for(lambda: self.ready)
+                if self.batch:
+                    # Wait for others while more are on their way, up to the
+                    # batch's time or size, whichever comes first.
+                    deadline = self.ready[0][1] + self.batch_seconds
+                    while (len(self.ready) < self.batch_most and self.coming > 0
+                           and self.now() < deadline):
+                        self.cv.wait(timeout=max(0.05, deadline - self.now()))
+                take = [j for j, _ in self.ready[:self.batch_most]]
+                del self.ready[:len(take)]
+            try:
+                self._land(take)
+            except Exception as e:  # noqa: BLE001
+                for job in take:
+                    self.pool.submit(self._finish, job, {"ok": False, "error": f"the landing could not run: {str(e)[:300]}"})
+
+    def _land(self, jobs):
+        names = ", ".join(j["args"]["name"] for j in jobs)
+        print(f"[deploy-executor] landing {names} behind one node start", flush=True)
+        try:
+            result = last_answer(subprocess.run(["python3", STEPS, "land", *[j["state"] for j in jobs]],
+                                                capture_output=True, text=True, timeout=land_timeout(len(jobs))))
+        except Exception as e:  # noqa: BLE001
+            result = {"ok": False, "error": str(e)[:400]}
+        # A landing refused as a whole (the node lock, say) placed nothing, and
+        # that refusal is each request's answer. Otherwise each finish says
+        # what its own agent came to.
+        refusal = result if (not result.get("ok") and result.get("step")) else None
+        for job in jobs:
+            self.pool.submit(self._finish, job, refusal)
+
+    def _finish(self, job, refusal=None):
+        try:
+            if refusal is not None:
+                result = dict(refusal)
+                try:
+                    os.remove(job["state"])
+                except (OSError, KeyError):
+                    pass
+            else:
+                # A failed container half of an update puts the host half back
+                # and restarts it under the node lock; a landing may hold that
+                # lock for a while, so the put-back may wait for one.
+                env = {**os.environ, "DM_NODE_LOCK_SOFT_SECONDS": str(land_timeout(self.batch_most))}
+                try:
+                    result = last_answer(subprocess.run(["python3", STEPS, "finish", job["state"]], capture_output=True,
+                                                        text=True, timeout=DEPLOY_TIMEOUT + land_timeout(self.batch_most),
+                                                        env=env))
+                except Exception as e:  # noqa: BLE001
+                    result = {"ok": False, "error": str(e)[:400]}
+        finally:
+            self._drop_token(job)
+        try:
+            outcome = host_outcome(job, result)
+        except Exception as e:  # noqa: BLE001
+            outcome = {"ok": False, "result": result, "error": f"the record could not be made: {str(e)[:300]}"}
+        self._done(job["r"], outcome)
+
+    @staticmethod
+    def _drop_token(job):
+        try:
+            os.remove(job["token_path"])
+        except OSError:
+            pass
+
+    def _done(self, r, outcome):
+        """Keep, post and follow up one outcome, then let the agent's next
+        request start."""
+        rid = r.get("id", "?")
+        posted = False
+        try:
+            keep_outcome(rid, outcome)
+            posted = deliver(r, outcome)
+        except Exception as e:  # noqa: BLE001
+            print(f"[deploy-executor] {rid}: the outcome could not be delivered: {e}", flush=True)
+        key = agent_of(r)
+        with self.cv:
+            self.erred = self.erred or not posted
+            self.running.discard(rid)
+            waiting = self.later.get(key) or []
+            if waiting:
+                self._start(waiting.pop(0))
+                if not waiting:
+                    self.later.pop(key, None)
+            else:
+                self.busy.discard(key)
+            self.finished += 1
+            self.cv.notify_all()
 
 
 def one_round(state):
@@ -1341,14 +1695,38 @@ def one_round(state):
     except Exception as e:  # noqa: BLE001
         print(f"[deploy-executor] queue read failed: {e}", flush=True)
         erred = True
-    kept = load_outcomes()
-    if queue is not None:
-        pruned = prune_outcomes(kept, {r.get("id") for r in queue})
-        if len(pruned) != len(kept):
-            kept = pruned
-            save_outcomes(kept)
-    for r in queue or []:
-        if not serve_request(r, kept):
+    with _KEPT_LOCK:
+        kept = load_outcomes()
+        if queue is not None:
+            pruned = prune_outcomes(kept, {r.get("id") for r in queue})
+            if len(pruned) != len(kept):
+                kept = pruned
+                save_outcomes(kept)
+    if serial_mode():
+        for r in oldest_first(queue or []):
+            if not serve_request(r, kept):
+                erred = True
+    else:
+        installs = state.get("installs")
+        if installs is None:
+            installs = state["installs"] = Installs()
+        for r in oldest_first(queue or []):
+            rid = r.get("id")
+            if installs.has(rid):
+                continue
+            # Read again here, not at the top of the round: an install that
+            # finished a moment ago kept its outcome before it let go of its
+            # request id, so a request not running now has its outcome on disk
+            # if it ran at all.
+            with _KEPT_LOCK:
+                held = load_outcomes().get(rid)
+            if held:
+                # Ran before and its post never landed: posted, never run again.
+                if not serve_request(r, {rid: held}):
+                    erred = True
+                continue
+            installs.submit(r)
+        if installs.wait():
             erred = True
     # A beat between long polls, not the latency: the long poll above is
     # what answers promptly. The slow sleep applies only after an error,

@@ -26,7 +26,7 @@
 // for its subject list, and only byte counts leave this file.
 //
 //   node guard.mjs survey   [--fleet /opt/fleet]
-//   node guard.mjs precheck --agent <name> --package-bytes <n> [--node-root <dir> --proc <pm2 name>] [--fleet <dir>]
+//   node guard.mjs precheck --agent <name> --package-bytes <n> [--node-root <dir> --proc <pm2 name>] [--fleet <dir>] [--also-adding <n>]
 //   node guard.mjs mark     --proc <pm2 name> --log <file>
 //   node guard.mjs watch    --proc <pm2 name> --log <file> [--agent <name>] [--node-root <dir> | --session-file <file>]
 //                           [--seconds 120] [--sample 3] [--restarts-before <n>] [--log-from <byte offset>]
@@ -121,14 +121,19 @@ export function project(facts, install) {
   const limits = { ...DEFAULT_LIMITS, ...(facts?.limits ?? {}) };
   const node = install.node_root ? (facts?.nodes ?? []).find((n) => n.root === install.node_root) ?? null : null;
   const adding = node ? !(node.names ?? []).includes(install.agent) : !install.update;
+  // New agents a batched landing placed on this node before this one: their
+  // folders are already in `names`, but the credential on disk is minted at
+  // the node's next start and does not carry them yet (deploymgr steps.py land).
+  const also = node ? Math.max(0, Number(install.also_adding) || 0) : 0;
+  const joining = (adding ? 1 : 0) + also;
   const checks = [];
   if (node) {
-    const growth = adding ? (node.per_agent_bytes ?? FALLBACK_PER_AGENT) : 0;
+    const growth = joining * (node.per_agent_bytes ?? FALLBACK_PER_AGENT);
     const now = node.connect_bytes ?? ((node.jwt_bytes ?? 0) + CONNECT_OVERHEAD);
     checks.push({
       what: "connect", node: node.proc, limit: limits.max_control_line, now, after: now + growth,
       measured: node.jwt_bytes != null,
-      words: (after, p) => `${node.proc}'s NATS CONNECT would be ${num(after)} bytes${adding ? ` with ${install.agent} on it` : ""}, ${p}% of the broker's max_control_line of ${num(limits.max_control_line)} (${limits.max_control_line_source})`,
+      words: (after, p) => `${node.proc}'s NATS CONNECT would be ${num(after)} bytes${adding ? ` with ${install.agent} on it` : ""}${also ? ` and the ${also} placed before it in this landing` : ""}, ${p}% of the broker's max_control_line of ${num(limits.max_control_line)} (${limits.max_control_line_source})`,
     });
     checks.push({
       what: "agents", node: node.proc, limit: limits.max_agents, now: node.agents, after: node.agents + (adding ? 1 : 0),
@@ -147,11 +152,11 @@ export function project(facts, install) {
   }
   const mem = facts?.host?.memory;
   if (mem?.total > 0) {
-    const per = adding && node && node.agents > 0 && node.rss > 0 ? Math.ceil(node.rss / node.agents) : 0;
+    const per = joining && node && node.agents > 0 && node.rss > 0 ? Math.ceil(node.rss / node.agents) * joining : 0;
     const used = mem.total - mem.available;
     checks.push({
       what: "memory", limit: mem.total, now: used, after: used + per,
-      words: (after, p) => `the host's memory would be ${p}% in use (${gib(after)} of ${gib(mem.total)} GiB${per ? `, counting ${mib(per)} MiB for one more agent on ${node.proc}` : ""})`,
+      words: (after, p) => `the host's memory would be ${p}% in use (${gib(after)} of ${gib(mem.total)} GiB${per ? `, counting ${mib(per)} MiB for ${joining === 1 ? "one more agent" : `${joining} more agents`} on ${node.proc}` : ""})`,
     });
   }
   return { adding, node: node?.proc ?? null, checks };
@@ -403,7 +408,7 @@ async function main(argv) {
   if (verb === "precheck") {
     if (!f.agent) return { ok: false, error: "precheck needs --agent" };
     const facts = survey(hostIO, fleet);
-    return { ...precheck(facts, { agent: f.agent, node_root: f.node_root || null, package_bytes: int(f.package_bytes) ?? 0, update: f.update === "1" }), limits: facts.limits };
+    return { ...precheck(facts, { agent: f.agent, node_root: f.node_root || null, package_bytes: int(f.package_bytes) ?? 0, update: f.update === "1", also_adding: int(f.also_adding) ?? 0 }), limits: facts.limits };
   }
   if (verb === "mark") return mark(watchIO(hostIO, {}), { proc: f.proc, log: f.log });
   if (verb === "watch") {
