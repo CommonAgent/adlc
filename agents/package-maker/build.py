@@ -1943,11 +1943,23 @@ def ceiling_side(entry, package="?"):
     # caller, so its ceiling is applied by the runtime that makes the call.
     if entry.get("kind") == "model":
         return "runtime"
+    # A service the scripts call themselves at an address the install places
+    # (a declared setting whose variable ends in _ENDPOINT), holding no
+    # credential because the host supplies the sign-in, such as a gateway on
+    # the agent's own host, is capped like the model system: by the runtime
+    # that makes the call. Common Agent 12.4 keeps "platform" for a second
+    # party in the path that can refuse a charge, and a gateway that signs in
+    # and counts usage applies no ceiling of its own.
+    if entry.get("kind") == "service" and any(
+            isinstance(st, dict) and str(st.get("env", "")).endswith("_ENDPOINT")
+            for st in entry.get("settings") or []):
+        return "runtime"
     if entry.get("kind") == "mcp":
         return "platform"
     fail(f"system {system_name(entry)}: cannot tell which side applies its ceiling. A spending service the "
-         f"scripts call needs the credential they read and the variable they read it from; a system reached "
-         f"through something that is not the agent is kind mcp. Package {package!r}")
+         f"scripts call needs the credential they read and the variable they read it from, or, reached "
+         f"through a facility the host supplies, a declared setting naming its address (<NAME>_ENDPOINT); "
+         f"a system reached through something that is not the agent is kind mcp. Package {package!r}")
 
 
 #: What an agent's inside is made of (Common Agent 9.5.1). A closed set: a

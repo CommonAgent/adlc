@@ -548,6 +548,19 @@ class Ceilings(Harness):
     def test_a_ceiling_whose_side_cannot_be_told_is_refused(self):
         self.refused(self.spending(), "cannot tell which side applies its ceiling")
 
+    def test_a_service_reached_at_a_declared_endpoint_with_no_credential_is_enforced_by_the_runtime(self):
+        # The host supplies the sign-in (a gateway on the agent's own host) and
+        # the scripts make the call, so the runtime applies the ceiling, as for
+        # the model system; a gateway that only signs in and counts is not a
+        # party that can refuse a charge (Common Agent 12.4).
+        res, _ = self.build(self.spending(settings=[{"env": "A_SERVICE_ENDPOINT", "purpose": "where the service is"}]))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(self.ceilings_of(res), [{"system": "a-service", "per": "task", "enforced_by": "runtime"}])
+
+    def test_a_setting_that_is_not_an_endpoint_does_not_tell_the_side(self):
+        self.refused(self.spending(settings=[{"env": "A_SERVICE_MODEL", "purpose": "which model"}]),
+                     "cannot tell which side applies its ceiling")
+
     def test_an_enforcing_side_written_into_the_spec_is_refused(self):
         doc = self.spending(credential="a-key", env="A_KEY")
         doc["ceilings"] = [{"system": "a-service", "per": "task", "enforced_by": "platform"}]
