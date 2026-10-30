@@ -78,6 +78,49 @@ record and filed on the deploy request that filed that package
 (`POST /v1/deploy-requests/record`), and the check runs as it does after a
 deploy.
 
+## The order and speed of installs
+
+The executor serves approved requests oldest approval first (`decided_at`).
+
+By default it runs each request whole before it starts the next, as it always
+has. Each host package install builds an image, places a Cloud Run job and
+restarts the agent's platform node, so a queue of twenty takes well over an
+hour. Two settings on the executor change that:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `DM_INSTALL_WORKERS` | `1` | How many requests may work at once on the parts that do not touch the node: the checks and the fetch, the image build, the Cloud Run job and its probe. |
+| `DM_LAND_BATCH` | `off` | `on`: installs that are ready to land wait for each other and land together behind one node restart. |
+| `DM_LAND_BATCH_SECONDS` | `60` | How long the first ready install waits for others while more are still being prepared. |
+| `DM_LAND_BATCH_MOST` | `5` | The most agents in one landing. |
+
+`DM_INSTALL_WORKERS=1` with `DM_LAND_BATCH` off is the old behaviour exactly:
+the executor calls `deploymgr-steps.py deploy` or `update` once per request.
+
+With either set, a host package install runs as three acts of
+`deploymgr-steps.py`:
+
+1. `prepare` checks the instruction and fetches and verifies the package.
+   It touches no node, so several run at once.
+2. `land` holds the host's node lock and takes every install that is ready.
+   It places each agent in a process of its own, so a refusal stops that agent
+   and no other. Then it starts each node once, smoke checks every agent,
+   watches the node for the full two minutes once, and probes each other agent
+   briefly. An agent that fails its probe is taken back out the way it would
+   be alone, and the rest land. If the node itself does not stay well, nobody
+   can tell which agent caused it, so every agent in that landing is taken
+   back out. There is one landing at a time.
+3. `finish` builds the image, places the job and prints the act's one answer.
+   Several run at once.
+
+Two requests for the same agent never run at once, and the later one starts
+only after the earlier one's outcome is posted. Container agents, a person's
+own packages and version acts run whole, one at a time. Each request keeps its
+own outcome, its signed record, its conformance check and its answer to a
+run, exactly as before. The guard is told how many new agents were placed on
+the node earlier in the same landing, because the node's credential does not
+carry them until it restarts.
+
 ## The audit gate
 
 The deployment manager installs a package only with a current audit pass
