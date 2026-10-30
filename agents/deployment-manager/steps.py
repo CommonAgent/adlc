@@ -30,6 +30,10 @@ Commands (JSON out on stdout, always):
                      installed before the runtime record existed gets one
   rebind <name>      bind an installed agent's descriptor again from its package
   status             the inventory, with every placed file rehashed
+  prepare <deploy|update> <argfile>, land <state> ..., finish <state>
+                     a deploy or update in three acts, so the executor can land
+                     several agents behind one node restart (see land below).
+                     Run only by the executor, as root; not in the sudoers line.
 
 Deployed agents live in their own pm2 config (deploymgr-agents.config.js)
 driven by an inventory list (deploymgr-agents.json), so the hand-managed
@@ -712,8 +716,7 @@ def fail(step, error, state=None, **extra):
             state = f"{said}; {state}" if state else said
     if entry is not None:
         entry["state"] = f"failed at {step}"
-        agents = [a for a in load_list() if a["name"] != entry["name"]] + [entry]
-        save_list(agents)
+        replace_row(entry)
         # The half-made agent is named WHATEVER ELSE the step had to say. A step
         # that named its own state used to replace this line, which was harmless
         # while every step ran before the user existed and stopped being so when
@@ -743,19 +746,66 @@ def load_list():
     return json.load(open(LIST)) if os.path.exists(LIST) else []
 
 
+# ── the inventory lock ────────────────────────────────────────────────────
+#
+# The inventories (deploymgr-agents.json, deploymgr-containers.json,
+# deploymgr-images.json, the runtime records and the spend file) are read,
+# changed and written whole. While the executor ran one request at a time
+# nothing else wrote them during an act. With installs running side by side
+# (deploy-executor.py, DM_INSTALL_WORKERS), one act's image half can write the
+# container inventory while another act writes the agent inventory, so every
+# read-change-write of these files holds this host-wide lock for the few
+# milliseconds it takes. It is never held while anything slow runs, and an act
+# re-enters it, so it cannot wait on itself.
+INVENTORY_LOCK = os.environ.get("DM_INVENTORY_LOCK", f"{FLEET}/deploymgr-inventory.lock")
+_INVENTORY_LOCK = {"fd": None, "depth": 0}
+
+
+@contextlib.contextmanager
+def inventory_lock():
+    """Hold the inventory lock for a block. Re-entrant within one process."""
+    if _INVENTORY_LOCK["depth"] or fcntl is None:
+        _INVENTORY_LOCK["depth"] += 1
+        try:
+            yield
+        finally:
+            _INVENTORY_LOCK["depth"] -= 1
+        return
+    os.makedirs(os.path.dirname(INVENTORY_LOCK) or ".", exist_ok=True)
+    fd = os.open(INVENTORY_LOCK, os.O_RDONLY | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        _INVENTORY_LOCK.update(fd=fd, depth=1)
+        try:
+            yield
+        finally:
+            _INVENTORY_LOCK.update(fd=None, depth=0)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
 def save_list(agents):
-    with open(LIST + ".tmp", "w") as f:
-        json.dump(agents, f, indent=2)
-    os.replace(LIST + ".tmp", LIST)
-    # Rewritten every time: the file is generated from the template alone, so
-    # a template change reaches the host on the next inventory change.
-    with open(CONF + ".tmp", "w") as f:
-        # The catalog the nodes read comes from the environment (debt 151).
-        # The prod fleet host had https://agentcatalog.com patched in by hand
-        # over the old VM's internal address, which no host reaches any more
-        # (ported 2026-10-05).
-        f.write(PM2_CONF.replace("__CATALOG_URL__", _am_env("urls.catalog")))
-    os.replace(CONF + ".tmp", CONF)
+    with inventory_lock():
+        with open(LIST + ".tmp", "w") as f:
+            json.dump(agents, f, indent=2)
+        os.replace(LIST + ".tmp", LIST)
+        # Rewritten every time: the file is generated from the template alone, so
+        # a template change reaches the host on the next inventory change.
+        with open(CONF + ".tmp", "w") as f:
+            # The catalog the nodes read comes from the environment (debt 151).
+            # The prod fleet host had https://agentcatalog.com patched in by hand
+            # over the old VM's internal address, which no host reaches any more
+            # (ported 2026-10-05).
+            f.write(PM2_CONF.replace("__CATALOG_URL__", _am_env("urls.catalog")))
+        os.replace(CONF + ".tmp", CONF)
+
+
+def replace_row(entry):
+    """Write one agent's row into the inventory, read fresh under the lock, so
+    a row another act wrote a moment ago is kept."""
+    with inventory_lock():
+        save_list([a for a in load_list() if a["name"] != entry["name"]] + [entry])
 
 
 def spend_check_and_record(agents):
@@ -776,19 +826,20 @@ def spend_check_and_record(agents):
     if len(names) >= MAX_AGENTS:
         fail("spend", f"deploy refused: at the ceiling of {MAX_AGENTS} deployed agents "
                       f"(remove one first, or raise DEPLOYMGR_MAX_AGENTS)")
-    try:
-        hist = json.load(open(SPEND)).get("deploys", []) if os.path.exists(SPEND) else []
-    except Exception:  # noqa: BLE001
-        hist = []
-    now = time.time()
-    hist = [t for t in hist if isinstance(t, (int, float)) and now - t < 86400]
-    if len(hist) >= MAX_DEPLOYS_PER_DAY:
-        fail("spend", f"deploy refused: {MAX_DEPLOYS_PER_DAY} deploys already in the last 24h "
-                      f"(the daily ceiling; it resets as older deploys age out)")
-    hist.append(now)
-    with open(SPEND + ".tmp", "w") as f:
-        json.dump({"deploys": hist}, f)
-    os.replace(SPEND + ".tmp", SPEND)
+    with inventory_lock():
+        try:
+            hist = json.load(open(SPEND)).get("deploys", []) if os.path.exists(SPEND) else []
+        except Exception:  # noqa: BLE001
+            hist = []
+        now = time.time()
+        hist = [t for t in hist if isinstance(t, (int, float)) and now - t < 86400]
+        if len(hist) >= MAX_DEPLOYS_PER_DAY:
+            fail("spend", f"deploy refused: {MAX_DEPLOYS_PER_DAY} deploys already in the last 24h "
+                          f"(the daily ceiling; it resets as older deploys age out)")
+        hist.append(now)
+        with open(SPEND + ".tmp", "w") as f:
+            json.dump({"deploys": hist}, f)
+        os.replace(SPEND + ".tmp", SPEND)
 
 
 def canonical(obj):
@@ -864,9 +915,10 @@ def record_runtime(entry, agent, kind=None):
         doc = RUNTIME.build(entry, agent=agent, adapter_host=HOST, produced_at=now_iso(),
                             by=dm_identity_key(), kind=kind)
         doc = RUNTIME.signed(doc, sign_with_identity(DM_IDENTITY, RUNTIME.message(doc)), dm_identity_key())
-        save_json_list(RUNTIME_FILE,
-                       [r for r in load_json_list(RUNTIME_FILE)
-                        if (r.get("agent") or {}).get("key") != agent["key"]] + [doc])
+        with inventory_lock():
+            save_json_list(RUNTIME_FILE,
+                           [r for r in load_json_list(RUNTIME_FILE)
+                            if (r.get("agent") or {}).get("key") != agent["key"]] + [doc])
     except Exception as e:  # noqa: BLE001
         return {"recorded": False, "why": str(e)[:200]}
     ok, why = RUNTIME.publish(doc, CONTROL_URL, control_bearer())
@@ -896,8 +948,9 @@ def forget_runtime(agent_key, removed=False):
     if RUNTIME is None or not agent_key:
         return {"retracted": False}
     try:
-        save_json_list(RUNTIME_FILE, [r for r in load_json_list(RUNTIME_FILE)
-                                      if (r.get("agent") or {}).get("key") != agent_key])
+        with inventory_lock():
+            save_json_list(RUNTIME_FILE, [r for r in load_json_list(RUNTIME_FILE)
+                                          if (r.get("agent") or {}).get("key") != agent_key])
     except Exception:  # noqa: BLE001
         pass
     ok, why = RUNTIME.retract(agent_key, CONTROL_URL, control_bearer(), removed=removed)
@@ -1951,10 +2004,47 @@ def release_node_lock(all_of_it=False):
     _NODE_LOCK["depth"] = 0 if all_of_it else _NODE_LOCK["depth"] - 1
     if _NODE_LOCK["depth"] == 0 and _NODE_LOCK["fd"] is not None:
         fd, _NODE_LOCK["fd"] = _NODE_LOCK["fd"], None
+        if _NODE_LOCK.pop("handed", False):
+            # The landing's lock, not this process's to let go: the landing
+            # that handed it over still holds it, and lets go when it is done.
+            return
         try:
             fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
+
+
+# THE LOCK A LANDING HANDS EACH PLACEMENT. A batched landing (land, below)
+# takes the node lock once and places each agent in a process of its own, so a
+# refusal in one placement ends that agent's act and nobody else's. Each such
+# process is given the landing's open lock file by number (DM_NODE_LOCK_FD,
+# passed down with the descriptor itself). It is believed only when that
+# descriptor is the node lock file and holds the lock: flock on a descriptor
+# that shares the landing's open file succeeds at once, and on any other open
+# file it would have to wait. So nothing else can pass for the landing.
+NODE_LOCK_FD_VAR = "DM_NODE_LOCK_FD"
+
+
+def take_handed_node_lock():
+    """Hold the node lock the landing handed this process, or refuse at step
+    "lock" without placing anything."""
+    v = os.environ.get(NODE_LOCK_FD_VAR, "")
+    why = f"no node lock was handed to this placement ({NODE_LOCK_FD_VAR} is not set)"
+    if fcntl is None:
+        why = "this host has no flock, so a landing cannot hand its node lock to a placement"
+    elif v.isdigit():
+        fd = int(v)
+        try:
+            st, want = os.fstat(fd), os.stat(NODE_LOCK)
+            if (st.st_dev, st.st_ino) != (want.st_dev, want.st_ino):
+                why = f"descriptor {fd} is not the node lock ({NODE_LOCK})"
+            else:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _NODE_LOCK.update(fd=fd, depth=1, handed=True)
+                return
+        except OSError as e:
+            why = f"descriptor {fd} does not hold the node lock: {e}"
+    fail("lock", f"{why}; a placement runs only inside the landing that holds the node lock, so nothing was placed")
 
 
 @contextlib.contextmanager
@@ -2057,12 +2147,18 @@ def holder_of(name, node=None):
     return {"proc": f"{name}-adapter", "log": f"{LOGS}/{name}-adapter.log", "root": None}
 
 
-def capacity_check(name, pkg_dir, holder, update=False):
+def capacity_check(name, pkg_dir, holder, update=False, also_adding=0):
     """Step 2's last refusal: would the node or the host pass 80% of a limit
     with this install on it? Made before anything is placed, so a refusal here
-    leaves nothing behind."""
+    leaves nothing behind.
+
+    `also_adding` is set only by a batched landing: the new agents it placed on
+    this node earlier in the same landing. Their folders are on the node, but
+    the credential the node connects with is minted at its next start, so the
+    guard is told to count them as well as this one."""
     argv = ["precheck", "--agent", name, "--package-bytes", str(bytes_under(pkg_dir)), "--fleet", FLEET,
-            *(["--node-root", holder["root"]] if holder.get("root") else []), *(["--update", "1"] if update else [])]
+            *(["--node-root", holder["root"]] if holder.get("root") else []), *(["--update", "1"] if update else []),
+            *(["--also-adding", str(int(also_adding))] if also_adding else [])]
     res = guard(argv, "capacity", 180)
     if not res.get("ok"):
         fail("capacity", res.get("refusal") or res.get("error") or "the install guard refused without a reason",
@@ -2365,6 +2461,44 @@ def refuse_tenant_package(args):
 
 
 def deploy(argfile):
+    """The whole deploy in one act, as the executor has always run it: prepare,
+    place, start and watch under the node lock, then the work's placement.
+
+    A batched landing (deploy-executor.py with DM_LAND_BATCH on) runs the same
+    three halves in separate acts instead (prepare, land, finish below), so
+    several agents land behind one node restart. This path is unchanged by it."""
+    ctx = deploy_prepare(argfile)
+    name, holder = ctx["name"], ctx["holder"]
+    # The node lock, from before anything exists to the end of the watch: an
+    # agent added to its node is served from that moment, so a lock refused
+    # after `agent add` would leave it served and unwatched (node_lock).
+    acquire_node_lock(f"the deploy of {name}")
+    deploy_place(ctx)
+    # Held (since before anything was placed) to the end of the watch and any
+    # rollback in it, so no removal runs while this node is coming up.
+    with node_lock(f"the deploy of {name}"):
+        before = watch_mark(holder)
+        processes = start_processes(name)
+        smoke = start_and_smoke(name)
+
+        # 9b. The watch. Two minutes of the node holding its connection with this
+        # agent on it, and the agent and three neighbours answering, before anything
+        # says deployed; otherwise the agent is taken back out and the node is
+        # confirmed well without it. Before the work is placed, so a rolled-back
+        # install builds no image.
+        watched = watch_new_install(name, holder, before, act="deploy", package=ctx["pkg_name"],
+                                    version=ctx["pkg_version"], host=HOST, agent_key=ctx["agent_key"],
+                                    handle=ctx["handle"], capacity=ctx["capacity"], smoke=smoke)
+
+    release_node_lock()  # the hold taken before capacity_check
+    ctx.update(processes=processes, smoke=smoke, watched=watched)
+    deploy_finish(ctx)
+
+
+def deploy_prepare(argfile):
+    """Steps 1 and 2: the instruction read and checked, the spend ceiling, the
+    package fetched and verified, the host and the placement checked. Nothing
+    exists yet and the node is not touched. Returns what the later halves need."""
     # The argfile must be the brain's own: under its home, owned by it.
     if not argfile.startswith(f"{DM_HOME}/tmp/"):
         fail("validate", "argfile outside the deploymgr tmp dir")
@@ -2430,11 +2564,25 @@ def deploy(argfile):
     # agent on them, before the unix user exists (guard.mjs precheck).
     on_node_first, _ = node_here()
     holder = holder_of(name, node_for_owner(args.get("owner")) if on_node_first else None)
-    # The node lock, from before anything exists to the end of the watch: an
-    # agent added to its node is served from that moment, so a lock refused
-    # after `agent add` would leave it served and unwatched (node_lock).
-    acquire_node_lock(f"the deploy of {name}")
-    capacity = capacity_check(name, pkg_dir, holder)
+    return {"act": "deploy", "args": args, "name": name, "harness": harness, "url": url,
+            "interaction": interaction, "admit": admit, "model": model, "environment": environment,
+            "stack_bindings": stack_bindings, "a2a": a2a, "placement": placement, "jobs_at_once": jobs_at_once,
+            "token_file": token_file, "staging": staging, "pkg_dir": pkg_dir, "sha256": sha256, "pkg": pkg,
+            "pkg_name": pkg_name, "pkg_version": pkg_version, "holder": holder}
+
+
+def deploy_place(ctx, also_adding=0):
+    """Steps 2 (capacity) to 9's inventory row: the unix user, the package and
+    its dependencies, the environment, the harness, the identity on its node,
+    the descriptor, the price and the ledger. Runs under the node lock, which
+    the caller holds. Starts nothing; the agent is served from the node's next
+    start."""
+    args, name, pkg, pkg_dir = ctx["args"], ctx["name"], ctx["pkg"], ctx["pkg_dir"]
+    harness, model, interaction = ctx["harness"], ctx["model"], ctx["interaction"]
+    admit, a2a, url, sha256 = ctx["admit"], ctx["a2a"], ctx["url"], ctx["sha256"]
+    pkg_name, pkg_version = ctx["pkg_name"], ctx["pkg_version"]
+    token_file, holder = ctx["token_file"], ctx["holder"]
+    capacity = capacity_check(name, pkg_dir, holder, also_adding=also_adding)
     home = f"/home/{name}"
     bindings = INSTALL.plan_bindings(args, pkg, home)
     names = INSTALL.placed_names(bindings)
@@ -2448,15 +2596,16 @@ def deploy(argfile):
     # place_model_key (dev, 2026-10-05, quiz-maker 0.5.1).
     entry = {"name": name, "package": pkg_name, "version": pkg_version, "sha256": sha256, "url": url,
              "harness": harness, "model": model, "interaction": interaction, "admitted_at_start": admit,
-             "exposed_a2a": a2a, "placement": placement,
+             "exposed_a2a": a2a, "placement": ctx["placement"],
              **({"job_seconds": job_seconds} if job_seconds else {}),
              **({"wants_replies": True} if wants_replies_of(pkg) else {}),
              **({"run_spec": True} if run_spec_of(name, home, pkg) else {}),
-             **({"jobs_at_once": jobs_at_once} if jobs_at_once else {}),
+             **({"jobs_at_once": ctx["jobs_at_once"]} if ctx["jobs_at_once"] else {}),
              "state": "installing", "deployed_at": now_iso(),
-             **({"environment": environment} if environment else {})}
+             **({"environment": ctx["environment"]} if ctx["environment"] else {})}
     CURRENT["entry"] = entry
-    save_list(load_list() + [entry])
+    with inventory_lock():
+        save_list(load_list() + [entry])
     directories = [d["name"] for d in (pkg["install"] or {}).get("directories", []) or []
                    if isinstance(d, dict) and d.get("name")] or ["records", "work"]
     for d in directories:
@@ -2477,7 +2626,7 @@ def deploy(argfile):
     secret = place_model_key(name, home, harness, model)
     placed, links = translate_for_harness(name, home, pkg_dir, pkg_name, pkg, harness, model, bindings)
     write_brain(name, harness, model)
-    run_spec_path = write_run_spec(name, home, pkg)
+    write_run_spec(name, home, pkg)
     run(["chown", "-R", f"{name}:{name}", home], "chown")
 
     # 8. Identity: redeem the named token, then burn the name's file.
@@ -2575,23 +2724,21 @@ def deploy(argfile):
                   **({"price": price} if price else {}),
                   **({"trial_allowance": trial_allowance} if trial_allowance else {}),
                   "state": "running"})
-    save_list([a for a in load_list() if a["name"] != name] + [entry])
-    # Held (since before anything was placed) to the end of the watch and any
-    # rollback in it, so no removal runs while this node is coming up.
-    with node_lock(f"the deploy of {name}"):
-        before = watch_mark(holder)
-        processes = start_processes(name)
-        smoke = start_and_smoke(name)
+    replace_row(entry)
+    ctx.update(capacity=capacity, names=names, entry=entry, secret=secret, dependencies=dependencies,
+               agent_key=agent_key, handle=handle, key_custody=key_custody, descriptor=descriptor,
+               price=price, trial_allowance=trial_allowance, ledger=ledger)
+    return ctx
 
-        # 9b. The watch. Two minutes of the node holding its connection with this
-        # agent on it, and the agent and three neighbours answering, before anything
-        # says deployed; otherwise the agent is taken back out and the node is
-        # confirmed well without it. Before the work is placed, so a rolled-back
-        # install builds no image.
-        watched = watch_new_install(name, holder, before, act="deploy", package=pkg_name, version=pkg_version,
-                                    host=HOST, agent_key=agent_key, handle=handle, capacity=capacity, smoke=smoke)
 
-    release_node_lock()  # the hold taken before capacity_check
+def deploy_finish(ctx):
+    """Step 10 and the answer: where the work runs, after the agent landed and
+    its node was watched. `ctx` carries `processes`, `smoke` and `watched`."""
+    args, name, entry = ctx["args"], ctx["name"], ctx["entry"]
+    placement, names = ctx["placement"], ctx["names"]
+    agent_key, handle = ctx["agent_key"], ctx["handle"]
+    price, trial_allowance = ctx["price"], ctx["trial_allowance"]
+    stack_bindings, environment = ctx["stack_bindings"], ctx["environment"]
     # 10. Where the work runs. On a host placement the answer is "the same
     # machine as the adapter", which is the boring case and is exactly why it
     # has to be said: an owner reading a page that says nothing cannot tell a
@@ -2608,22 +2755,22 @@ def deploy(argfile):
     else:
         runtime = record_runtime(entry, {"key": agent_key, "handle": handle, "name": name}, kind="host")
     CURRENT["entry"] = None
-    shutil.rmtree(staging, ignore_errors=True)
+    shutil.rmtree(ctx["staging"], ignore_errors=True)
 
-    out({"ok": True, "act": "deploy", "name": name, "package": pkg_name,
-         "version": pkg_version, "sha256": sha256, "url": url,
-         "host": HOST, "harness": harness, "interaction": interaction,
+    out({"ok": True, "act": "deploy", "name": name, "package": ctx["pkg_name"],
+         "version": ctx["pkg_version"], "sha256": ctx["sha256"], "url": ctx["url"],
+         "host": HOST, "harness": ctx["harness"], "interaction": ctx["interaction"],
          "egress": dict(EGRESS_OPEN),
          # The model the agent runs with as placed, which is not always the
          # one asked for (technical debt 456).
-         **model_placed_of(work, model),
+         **model_placed_of(work, ctx["model"]),
          # Where the work runs, and on a placed deploy the build and the job
          # that were made for it, including the job's own probe under `check`.
          # It is reported beside the smoke check below and not folded into it,
          # because the two observed different things on different machines and
          # a single passed/failed over both would be a grade nobody took.
          "placement": placement, **({"work": work} if work else {}),
-         "processes": processes,
+         "processes": ctx["processes"],
          # The digest of the image this deploy started, where it started one
          # (8.3), so the deployment record names it beside the package it was
          # built from and a reader can compare the two. It is what the JOB
@@ -2634,14 +2781,14 @@ def deploy(argfile):
          # member's to say, and `host` above is the adapter's host as it always
          # was; the two sides are stated separately by the runtime record.
          **({"image_digest": work["image_digest"]} if work else {}),
-         "agent_key": agent_key, "handle": handle, "key_custody": key_custody,
-         "admitted_at_start": admit, "exposed_a2a": a2a,
-         "secret_placed": secret, "credentials_placed": names["credentials"],
+         "agent_key": agent_key, "handle": handle, "key_custody": ctx["key_custody"],
+         "admitted_at_start": ctx["admit"], "exposed_a2a": ctx["a2a"],
+         "secret_placed": ctx["secret"], "credentials_placed": names["credentials"],
          "settings_placed": names["settings"], "ceilings": names["ceilings"],
          # What the account's stack bound, per system, with the precedence step
          # that supplied it. Absent when this deploy was not filled from a stack.
          **({"bindings": stack_bindings} if stack_bindings else {}),
-         "dependencies": dependencies, "descriptor": descriptor, "ledger": ledger,
+         "dependencies": ctx["dependencies"], "descriptor": ctx["descriptor"], "ledger": ctx["ledger"],
          # What this agent charges, as placed. Absent means the package
          # declared no price, which is FREE and is the default: a record that
          # said nothing either way would leave a reader unable to tell that
@@ -2657,10 +2804,10 @@ def deploy(argfile):
          # work runs on our own machines, which is every deploy but this route.
          **cloud_report(),
          "runtime": runtime,
-         "smoke": smoke,
+         "smoke": ctx["smoke"],
          # The numbers the install was measured against, and the two minutes
          # watched after it (guard.mjs).
-         "capacity": capacity, "watch": watched})
+         "capacity": ctx["capacity"], "watch": ctx["watched"]})
 
 
 # ── update ────────────────────────────────────────────────────────────────
@@ -3015,6 +3162,68 @@ def wants_replies_of(pkg):
 
 
 def update(argfile):
+    """The whole update in one act, as the executor has always run it. A
+    batched landing runs the same halves in separate acts (see deploy)."""
+    ctx = update_prepare(argfile)
+    name, holder, entry = ctx["name"], ctx["holder"], ctx["entry"]
+    home, pkg_name, pkg_version = ctx["home"], ctx["pkg_name"], ctx["pkg_version"]
+    # The node lock, from before the new version is placed to the end of the
+    # watch, so a refusal to wait places nothing (node_lock).
+    acquire_node_lock(f"the update of {name}")
+    update_place(ctx)
+
+    # 9. Restart and check; a failed check restores the old version.
+    #
+    # Deleted and started, not restarted. pm2 keeps a running process's
+    # environment across a restart even when the restart names a config file,
+    # so a variable the new version needs never reaches it: 2026-09-10, a
+    # package that gained a command had run_spec true in the inventory, the
+    # command placed on disk, and an attendant running without RUN_SPEC, which
+    # is silent and looks exactly like the feature not working. Deleting first
+    # costs a few seconds of downtime and removes the whole class.
+    #
+    # BOTH are deleted and only what this host starts comes back. An update used
+    # to name the attendant on the way in as well, which is how five of them
+    # returned to a host whose work the supervisor had taken over; deleting the
+    # name either way means an update also clears one an earlier install left.
+    # Held (since before the new version was placed) to the end of the watch
+    # and any rollback in it, so no removal runs while this node comes up.
+    with node_lock(f"the update of {name}"):
+        before = watch_mark(holder)
+        for proc in (f"{name}-adapter", f"{name}-attendant"):
+            subprocess.run(["pm2", "delete", proc], capture_output=True, text=True)
+        processes = start_processes(name)
+        smoke = start_and_smoke(name, ask_model=not ctx["reinstall"])
+        shutil.rmtree(ctx["staging"], ignore_errors=True)
+        common = update_common(ctx, processes, smoke)
+        if not smoke["passed"]:
+            restore(name, home, ctx["old_ledger"], ctx["prev"], pkg_name)
+            # The processes this host starts, and no other: restarting a name pm2
+            # does not hold fails, and on a supervisor host the attendant is such a
+            # name. The restore has to put back what was running, not what an older
+            # copy of this procedure used to run.
+            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+            fail("check", f"the smoke check failed on {pkg_version}; {entry.get('version')} was restored from the snapshot",
+                 state=f"restored to {entry.get('version')}; processes restarted", act="update", restored=True, **common)
+
+        # The watch, as a deploy has it: two minutes of the node staying well with
+        # the new version before anything says updated. Otherwise the old version
+        # is put back exactly as a failed smoke check puts it back, and the node is
+        # confirmed well again.
+        def put_old_back():
+            restore(name, home, ctx["old_ledger"], ctx["prev"], pkg_name)
+            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
+            return f"{entry.get('version')} was restored from the snapshot and restarted"
+        common["watch"] = watch_update(name, holder, before, put_old_back, pkg_version, common)
+
+    release_node_lock()  # the hold taken before capacity_check
+    update_finish(ctx, common)
+
+
+def update_prepare(argfile):
+    """Steps 1 and 2 of an update: the instruction, the inventory row, the new
+    version fetched and verified and checked against the running one. Nothing
+    is placed and the node is not touched."""
     if not argfile.startswith(f"{DM_HOME}/tmp/"):
         fail("validate", "argfile outside the deploymgr tmp dir")
     args = json.load(open(argfile))
@@ -3085,10 +3294,20 @@ def update(argfile):
     holder = holder_of(name, {"root": entry["node_root"], "proc": entry.get("node_proc") or NODE_PROC,
                               "user": entry.get("node_user") or NODE_USER}
                        if entry.get("node_root") else None)
-    # The node lock, from before the new version is placed to the end of the
-    # watch, so a refusal to wait places nothing (node_lock).
-    acquire_node_lock(f"the update of {name}")
-    capacity = capacity_check(name, pkg_dir, holder, update=True)
+    return {"act": "update", "args": args, "name": name, "url": url, "stack_bindings": stack_bindings,
+            "entry": entry, "in_container": in_container, "harness": harness, "model": model, "home": home,
+            "old_ledger": old_ledger, "staging": staging, "pkg_dir": pkg_dir, "sha256": sha256, "pkg": pkg,
+            "pkg_name": pkg_name, "pkg_version": pkg_version, "reinstall": reinstall, "holder": holder}
+
+
+def update_place(ctx, also_adding=0):
+    """Steps 2 (capacity) to 8 of an update, under the node lock the caller
+    holds: the old version snapshotted, the new one placed over it, the same
+    subject re-bound. Restarts nothing."""
+    args, name, entry, home = ctx["args"], ctx["name"], ctx["entry"], ctx["home"]
+    pkg, pkg_dir, pkg_name, pkg_version = ctx["pkg"], ctx["pkg_dir"], ctx["pkg_name"], ctx["pkg_version"]
+    harness, model, sha256 = ctx["harness"], ctx["model"], ctx["sha256"]
+    capacity = capacity_check(name, pkg_dir, ctx["holder"], update=True, also_adding=also_adding)
     bindings = INSTALL.plan_bindings(args, pkg, home)
     names = INSTALL.placed_names(bindings)
 
@@ -3096,7 +3315,7 @@ def update(argfile):
     drift_before = ledger_drift(name) or []
 
     # The old version, kept until the check passes.
-    prev = snapshot(name, home, old_ledger)
+    prev = snapshot(name, home, ctx["old_ledger"])
     old_desc = entry.get("descriptor") or {}
 
     # 3 through 7 against the new version.
@@ -3181,82 +3400,62 @@ def update(argfile):
             as_user(name, f"env MESH_CREDS_FILE={home}/.config/fleet/mesh.creds "
                           f"/usr/bin/mesh-adapter contacts default a2a {'allow' if args['a2a'] else 'block'}", "expose", 60)
         entry["exposed_a2a"] = args["a2a"]
+    ctx.update(capacity=capacity, names=names, drift_before=drift_before, prev=prev, old_desc=old_desc,
+               dependencies=dependencies, env_files=env_files, placed=placed, links=links,
+               agent_key=ident["public_key"], descriptor=descriptor, price=price, trial_allowance=trial_allowance)
+    return ctx
 
-    # 9. Restart and check; a failed check restores the old version.
-    #
-    # Deleted and started, not restarted. pm2 keeps a running process's
-    # environment across a restart even when the restart names a config file,
-    # so a variable the new version needs never reaches it: 2026-09-10, a
-    # package that gained a command had run_spec true in the inventory, the
-    # command placed on disk, and an attendant running without RUN_SPEC, which
-    # is silent and looks exactly like the feature not working. Deleting first
-    # costs a few seconds of downtime and removes the whole class.
-    #
-    # BOTH are deleted and only what this host starts comes back. An update used
-    # to name the attendant on the way in as well, which is how five of them
-    # returned to a host whose work the supervisor had taken over; deleting the
-    # name either way means an update also clears one an earlier install left.
-    # Held (since before the new version was placed) to the end of the watch
-    # and any rollback in it, so no removal runs while this node comes up.
-    with node_lock(f"the update of {name}"):
-        before = watch_mark(holder)
-        for proc in (f"{name}-adapter", f"{name}-attendant"):
-            subprocess.run(["pm2", "delete", proc], capture_output=True, text=True)
-        processes = start_processes(name)
-        smoke = start_and_smoke(name, ask_model=not reinstall)
-        shutil.rmtree(staging, ignore_errors=True)
-        common = {"name": name, "package": pkg_name, "harness": harness, "egress": dict(EGRESS_OPEN),
-                  "agent_key": ident["public_key"], "handle": entry.get("handle"),
-                  "previous": {"version": entry.get("version"), "sha256": entry.get("sha256"),
-                               "descriptor": old_desc},
-                  "version": pkg_version, "sha256": sha256, "url": url,
-                  "exposed_a2a": entry.get("exposed_a2a", False),
-                  **({"price": price} if price else {}),
-                  **({"trial_allowance": trial_allowance} if trial_allowance else {}),
-                  "descriptor": descriptor, "credentials_placed": names["credentials"],
-                  "settings_placed": names["settings"], "ceilings": names["ceilings"],
-                  # What the account's stack bound for this version, per system.
-                  **({"bindings": stack_bindings} if stack_bindings else {}),
-                  "dependencies": dependencies, "drift_before": drift_before,
-                  "processes": processes, "smoke": smoke, "capacity": capacity,
-                  **({"reinstall": True} if reinstall else {})}
-        if not smoke["passed"]:
-            restore(name, home, old_ledger, prev, pkg_name)
-            # The processes this host starts, and no other: restarting a name pm2
-            # does not hold fails, and on a supervisor host the attendant is such a
-            # name. The restore has to put back what was running, not what an older
-            # copy of this procedure used to run.
-            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
-            fail("check", f"the smoke check failed on {pkg_version}; {entry.get('version')} was restored from the snapshot",
-                 state=f"restored to {entry.get('version')}; processes restarted", act="update", restored=True, **common)
 
-        # The watch, as a deploy has it: two minutes of the node staying well with
-        # the new version before anything says updated. Otherwise the old version
-        # is put back exactly as a failed smoke check puts it back, and the node is
-        # confirmed well again.
-        def put_old_back():
-            restore(name, home, old_ledger, prev, pkg_name)
-            subprocess.run(["pm2", "restart", *processes["started"]], capture_output=True)
-            return f"{entry.get('version')} was restored from the snapshot and restarted"
-        common["watch"] = watch_update(name, holder, before, put_old_back, pkg_version, common)
+def update_common(ctx, processes, smoke):
+    """The members every answer of an update carries from step 9 on, success
+    or refusal alike."""
+    entry, names = ctx["entry"], ctx["names"]
+    price, trial_allowance, stack_bindings = ctx["price"], ctx["trial_allowance"], ctx["stack_bindings"]
+    return {"name": ctx["name"], "package": ctx["pkg_name"], "harness": ctx["harness"], "egress": dict(EGRESS_OPEN),
+            "agent_key": ctx["agent_key"], "handle": entry.get("handle"),
+            "previous": {"version": entry.get("version"), "sha256": entry.get("sha256"),
+                         "descriptor": ctx["old_desc"]},
+            "version": ctx["pkg_version"], "sha256": ctx["sha256"], "url": ctx["url"],
+            "exposed_a2a": entry.get("exposed_a2a", False),
+            **({"price": price} if price else {}),
+            **({"trial_allowance": trial_allowance} if trial_allowance else {}),
+            "descriptor": ctx["descriptor"], "credentials_placed": names["credentials"],
+            "settings_placed": names["settings"], "ceilings": names["ceilings"],
+            # What the account's stack bound for this version, per system.
+            **({"bindings": stack_bindings} if stack_bindings else {}),
+            "dependencies": ctx["dependencies"], "drift_before": ctx["drift_before"],
+            "processes": processes, "smoke": smoke, "capacity": ctx["capacity"],
+            **({"reinstall": True} if ctx["reinstall"] else {})}
 
-    release_node_lock()  # the hold taken before capacity_check
-    ledger = write_ledger(name, home, [pkg_name, *placed, *env_files, ".agentmesh/adapter/descriptor.json",
+
+def update_finish(ctx, common):
+    """After the node was watched with the new version: the ledger, the
+    inventory row, the container half where the work runs in a job, and the
+    answer."""
+    args, name, entry, home = ctx["args"], ctx["name"], ctx["entry"], ctx["home"]
+    pkg_name, pkg_version, names = ctx["pkg_name"], ctx["pkg_version"], ctx["names"]
+    harness, model, price = ctx["harness"], ctx["model"], ctx["price"]
+    in_container, reinstall, prev = ctx["in_container"], ctx["reinstall"], ctx["prev"]
+    processes = common["processes"]
+    ledger = write_ledger(name, home, [pkg_name, *ctx["placed"], *ctx["env_files"], ".agentmesh/adapter/descriptor.json",
                                        *([".agentmesh/adapter/price.json"] if price else [])],
                           withhold={".config/fleet/env"})
     before = {k: entry.get(k) for k in ("version", "sha256", "url", "model", "credentials_placed", "settings_placed",
                                         "ceilings", "dependencies", "descriptor", "ledger", "skills_linked",
                                         "updated_at", "state", "price", "jobs_at_once")}
-    entry.update({"version": pkg_version, "sha256": sha256, "url": url, "model": model,
+    entry.update({"version": pkg_version, "sha256": ctx["sha256"], "url": ctx["url"], "model": model,
                   "credentials_placed": names["credentials"], "settings_placed": names["settings"],
-                  "ceilings": names["ceilings"], "dependencies": dependencies,
-                  "descriptor": descriptor, "ledger": ledger, "skills_linked": links,
+                  "ceilings": names["ceilings"], "dependencies": ctx["dependencies"],
+                  "descriptor": ctx["descriptor"], "ledger": ledger, "skills_linked": ctx["links"],
                   "updated_at": now_iso(), "state": "running"})
     if price:
         entry["price"] = price
     else:
         entry.pop("price", None)
-    save_list([a for a in agents if a["name"] != name] + [entry])
+    # Read fresh under the lock rather than from the list read at the start:
+    # with installs running side by side another act may have written a row
+    # since then.
+    replace_row(entry)
 
     # 10. Where the work runs. An agent whose work runs in Cloud Run gets its
     # new version as a new image and a re-created job, composed here the way
@@ -3276,7 +3475,7 @@ def update(argfile):
     reapply = reinstall_reapplies(reinstall, in_container, args)
     if in_container and (not reinstall or reapply):
         def put_back(step):
-            restore(name, home, old_ledger, prev, pkg_name)
+            restore(name, home, ctx["old_ledger"], prev, pkg_name)
             busy = ""
             try:
                 with node_lock(f"putting {name}'s host half back", soft=True):
@@ -3288,7 +3487,7 @@ def update(argfile):
                     entry.pop(k, None)
                 else:
                     entry[k] = v
-            save_list([a for a in load_list() if a["name"] != name] + [entry])
+            replace_row(entry)
             return (f"the container half failed at {step}; the host half was put back to {before.get('version')}, "
                     f"which is the version job {in_container.get('job')} still runs{busy}")
         CURRENT["on_fail"] = put_back
@@ -3480,9 +3679,10 @@ def load_json_list(path):
 
 def save_json_list(path, rows):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path + ".tmp", "w", encoding="utf-8") as f:
-        json.dump(rows, f, indent=2)
-    os.replace(path + ".tmp", path)
+    with inventory_lock():
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(rows, f, indent=2)
+        os.replace(path + ".tmp", path)
 
 
 # -- the one place this deployer starts gcloud -----------------------------
@@ -3884,12 +4084,13 @@ def image_step(args, alongside=False):
     entry = {"name": name, "package": pkg_name, "version": pkg_version, "sha256": sha256, "url": url,
              "image": image, "image_digest": digest, "pinned": pinned,
              "base": emitted.get("base"), "built_at": now_iso()}
-    if alongside:
-        entry["alongside"] = True
-        kept = [e for e in load_json_list(IMAGES) if not (e.get("name") == name and e.get("version") == pkg_version)]
-    else:
-        kept = [e for e in load_json_list(IMAGES) if e.get("name") != name or e.get("alongside")]
-    save_json_list(IMAGES, kept + [entry])
+    with inventory_lock():
+        if alongside:
+            entry["alongside"] = True
+            kept = [e for e in load_json_list(IMAGES) if not (e.get("name") == name and e.get("version") == pkg_version)]
+        else:
+            kept = [e for e in load_json_list(IMAGES) if e.get("name") != name or e.get("alongside")]
+        save_json_list(IMAGES, kept + [entry])
     shutil.rmtree(staging, ignore_errors=True)
 
     return {"ok": True, "act": "build", "name": name, "package": pkg_name, "version": pkg_version,
@@ -4253,7 +4454,8 @@ def container_step(args, count_against_ceiling=True, alongside=None):
              # money, with our inventory saying the agent was gone.
              **({"cloud": cloud_now()["grant"]} if cloud_now() else {}),
              **({"environment": environment} if environment else {})}
-    save_json_list(CONTAINERS, [e for e in load_json_list(CONTAINERS) if e.get("name") != name] + [entry])
+    with inventory_lock():
+        save_json_list(CONTAINERS, [e for e in load_json_list(CONTAINERS) if e.get("name") != name] + [entry])
     shutil.rmtree(staging, ignore_errors=True)
     # THE CASE THE RUNTIME RECORD EXISTS FOR. Nothing about this deploy reaches
     # the owner's page any other way: the container holds no inbox, checks in
@@ -4455,13 +4657,14 @@ def alongside_placed(name, version, row, spec, bucket, binding_name, smoke, f):
              "credentials_placed": f["names"]["credentials"], "settings_placed": f["names"]["settings"],
              "job_vars_placed": f["job_vars_placed"], "ceilings": f["names"]["ceilings"],
              "installed_at": now_iso(), "state": "running"}
-    rows = load_json_list(CONTAINERS)
-    current = None
-    for r in rows:
-        if r.get("name") == name and (r.get("state") or "running") == "running":
-            r["alongside"] = [a for a in r.get("alongside") or [] if a.get("version") != f["version"]] + [entry]
-            current = r
-    save_json_list(CONTAINERS, rows)
+    with inventory_lock():
+        rows = load_json_list(CONTAINERS)
+        current = None
+        for r in rows:
+            if r.get("name") == name and (r.get("state") or "running") == "running":
+                r["alongside"] = [a for a in r.get("alongside") or [] if a.get("version") != f["version"]] + [entry]
+                current = r
+        save_json_list(CONTAINERS, rows)
     shutil.rmtree(f["staging"], ignore_errors=True)
     agent = agent_identity(name) or {}
     record = write_alongside_record(name, alongside_versions(current), package=f["package"])
@@ -4590,9 +4793,14 @@ def retire_version(argfile):
     row["alongside"] = [a for a in row.get("alongside") or [] if a.get("version") != version]
     if not row["alongside"]:
         row.pop("alongside", None)
-    save_json_list(CONTAINERS, rows)
-    save_json_list(IMAGES, [e for e in load_json_list(IMAGES)
-                            if not (e.get("name") == name and e.get("version") == version and e.get("alongside"))])
+    # Read again under the lock and only this agent's row replaced, so a row
+    # another act wrote during the calls above is kept.
+    with inventory_lock():
+        save_json_list(CONTAINERS, [row if e.get("name") == name and (e.get("state") or "running") == "running" else e
+                                    for e in load_json_list(CONTAINERS)])
+    with inventory_lock():
+        save_json_list(IMAGES, [e for e in load_json_list(IMAGES)
+                                if not (e.get("name") == name and e.get("version") == version and e.get("alongside"))])
     record = write_alongside_record(name, alongside_versions(row), package=row.get("package"))
     removed.append(f"version {version} from alongside.json")
     agent = agent_identity(name) or {}
@@ -4778,7 +4986,8 @@ def take_down_container(name, entry):
         left = remove_observe_rule(name, spec.get("project"))
         if left:
             remaining.append(left)
-    save_json_list(CONTAINERS, [e for e in load_json_list(CONTAINERS) if e.get("name") != name])
+    with inventory_lock():
+        save_json_list(CONTAINERS, [e for e in load_json_list(CONTAINERS) if e.get("name") != name])
     # The credentials were placed as variables ON the job, so they go with it,
     # and the job folders of messages already answered stay on the bucket
     # because they are the record of work that was done.
@@ -5259,7 +5468,8 @@ def set_container_model(name, model, row):
     if isinstance(row.get("job_vars_placed"), list):
         row["job_vars_placed"] = sorted((set(row["job_vars_placed"]) - {removed} - set(unset))
                                         | set(here) | ({key_env} if key_env else set()))
-    save_json_list(CONTAINERS, [r for r in load_json_list(CONTAINERS) if r.get("name") != name] + [row])
+    with inventory_lock():
+        save_json_list(CONTAINERS, [r for r in load_json_list(CONTAINERS) if r.get("name") != name] + [row])
     check = probe_container(name, spec, row.get("bucket") or BUCKET)
     return {"job": spec["job"], "region": spec["region"], "was": was, "now": model,
             "secret": secret, **({"removed": removed} if removed else {}), "check": check}
@@ -5356,7 +5566,353 @@ def reledger_brain(name):
 # job. Giving them root would be power nothing in them uses.
 # `runtime` is here for one reason: the bearer it posts with is a root-owned
 # file in the fleet's secret store. It makes and unmakes nothing.
-AS_ROOT = ("deploy", "update", "alongside", "retire-version", "remove", "model", "status", "runtime", "jobs-at-once", "attest")
+# ── a batched landing (deploy-executor.py with DM_LAND_BATCH on) ─────────
+#
+# The executor used to run each approved deploy or update whole, one after the
+# other, and each one restarted its agent's node for itself. With batching on,
+# the same procedure runs as three acts, so several agents land behind one
+# restart of their node:
+#
+#   prepare <deploy|update> <argfile>  steps 1 and 2 (deploy_prepare and
+#                                      update_prepare): the checks and the
+#                                      fetch. It touches no node, so the
+#                                      executor runs several side by side.
+#   land <state> [<state> ...]         under the node lock, once for the lot:
+#                                      each agent placed in a process of its
+#                                      own (place), so a refusal stops that
+#                                      agent and no other; then one start of
+#                                      each node, a smoke check of each agent,
+#                                      the full watch once and a short probe
+#                                      of every other agent.
+#   finish <state>                     the rest of each act, side by side: the
+#                                      image and the job where the work runs in
+#                                      Cloud Run, and the one answer the whole
+#                                      act always printed, success or refusal,
+#                                      with the same members.
+#
+# What the next act needs is kept between them in a state file under STATES,
+# which only root can write: it names a package that was already verified, so
+# it must not be something the brain could swap. A deploy into a customer's own
+# project (an instruction with a `cloud` grant) never runs this way.
+
+STATES = os.environ.get("DM_STATES", f"{FLEET}/deploymgr-states")
+# How long each agent after the first is watched in a batched landing. The
+# first agent gets the full WATCH_SECONDS; every other one gets this, which is
+# enough for its own probe and three neighbours' (guard.mjs watch).
+LAND_PROBE_SECONDS = int(os.environ.get("DM_LAND_PROBE_SECONDS", "10"))
+# The longest one agent's placement may take inside a landing.
+PLACE_SECONDS = int(os.environ.get("DM_PLACE_SECONDS", "900"))
+
+
+def state_path_for(argfile):
+    return os.path.join(STATES, os.path.basename(argfile))
+
+
+def write_state(path, ctx):
+    """Keep what the next act needs. The package facts are left out and read
+    again from the verified package folder (with_package)."""
+    os.makedirs(STATES, mode=0o700, exist_ok=True)
+    tmp = path + ".tmp"
+    try:
+        os.unlink(tmp)
+    except FileNotFoundError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump({k: v for k, v in ctx.items() if k != "pkg"}, f)
+    os.replace(tmp, path)
+
+
+def load_state(path):
+    """(state, None), or (None, why) when the file is not a landing state."""
+    real = os.path.realpath(path)
+    if not (real.startswith(os.path.realpath(STATES) + os.sep) and real.endswith(".json")):
+        return None, f"{path} is not a landing state under {STATES}"
+    try:
+        with open(real, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError) as e:
+        return None, f"the landing state {path} could not be read: {e}"
+    if not (isinstance(doc, dict) and doc.get("act") in ("deploy", "update") and doc.get("name")):
+        return None, f"the landing state {path} names no deploy or update"
+    return doc, None
+
+
+def read_state(path):
+    doc, why = load_state(path)
+    if doc is None:
+        fail("validate", why)
+    return doc
+
+
+def with_package(ctx):
+    """The package facts, read again from the folder the prepare verified."""
+    if INSTALL is None:
+        fail("verify", "the installer module is missing beside steps.py; a package cannot be verified without it")
+    if not os.path.isdir(ctx.get("pkg_dir") or ""):
+        fail("verify", f"the verified package is no longer at {ctx.get('pkg_dir')}")
+    ctx["pkg"] = INSTALL.read_package(ctx["pkg_dir"])
+    return ctx
+
+
+def prepare(verb, argfile):
+    """The first act of a batched deploy or update."""
+    if verb not in ("deploy", "update"):
+        fail("usage", "prepare deploy <argfile> | prepare update <argfile>")
+    if not argfile.startswith(f"{DM_HOME}/tmp/"):
+        fail("validate", "argfile outside the deploymgr tmp dir")
+    with open(argfile, encoding="utf-8") as f:
+        grant = json.load(f).get("cloud")
+    if grant:
+        fail("validate", "an instruction for a customer's own project runs whole (deploy or update), never in a "
+                         "batched landing; nothing was done")
+    ctx = deploy_prepare(argfile) if verb == "deploy" else update_prepare(argfile)
+    path = state_path_for(argfile)
+    write_state(path, ctx)
+    out({"ok": True, "act": "prepare", "phase": "prepared", "verb": verb, "name": ctx["name"],
+         "node": ctx["holder"]["proc"], "state": path})
+
+
+def place(path):
+    """One agent's placement inside a landing, under the lock the landing
+    handed down. A refusal here is that act's answer, printed as always."""
+    take_handed_node_lock()
+    ctx = with_package(read_state(path))
+    also = os.environ.get("DM_ALSO_ADDING", "")
+    also = int(also) if also.isdigit() else 0
+    if ctx["act"] == "deploy":
+        deploy_place(ctx, also_adding=also)
+    else:
+        update_place(ctx, also_adding=also)
+    ctx["phase"] = "placed"
+    write_state(path, ctx)
+    out({"ok": True, "act": "place", "phase": "placed", "name": ctx["name"]})
+
+
+def run_placement(path, ctx, fd, also):
+    """Run place for one state in a process of its own, handing it the lock.
+    Returns its one answer, or a refusal that says it gave none."""
+    env = {**os.environ, "DM_ALSO_ADDING": str(also)}
+    if fd is not None:
+        env[NODE_LOCK_FD_VAR] = str(fd)
+    if ctx["act"] == "deploy":
+        left = f"the user and home may exist; run remove {ctx['name']} to clean"
+    else:
+        left = (f"{ctx['entry'].get('version')} may be partly replaced by {ctx.get('pkg_version')}; "
+                f"its snapshot is in {PREV}/{ctx['name']}")
+    try:
+        p = subprocess.run([sys.executable or "python3", os.path.abspath(__file__), "place", path],
+                           capture_output=True, text=True, timeout=PLACE_SECONDS, env=env,
+                           **({"pass_fds": (fd,)} if fd is not None else {}))
+        lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip().startswith("{")]
+        if lines:
+            return json.loads(lines[-1])
+        return {"ok": False, "step": "place", "error": f"the placement gave no answer: {(p.stderr or '')[-400:]}",
+                "state": left}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "step": "place", "error": f"the placement did not finish within {PLACE_SECONDS}s",
+                "state": left}
+    except (OSError, ValueError) as e:
+        return {"ok": False, "step": "place", "error": f"the placement could not be run: {str(e)[:300]}",
+                "state": left}
+
+
+def land(paths):
+    """The second act: place each agent, then start each node once, smoke
+    check every agent, and watch. Each agent's outcome goes into its own
+    state, for its finish to print."""
+    loaded = []
+    for p in paths:
+        ctx, why = load_state(p)
+        if ctx is not None:
+            loaded.append((p, ctx))
+    if not loaded:
+        fail("validate", "no landing state to land")
+    acquire_node_lock(f"the landing of {', '.join(c['name'] for _, c in loaded)}")
+    fd = _NODE_LOCK["fd"]
+    said, placed, joining = {}, [], {}
+    for p, ctx in loaded:
+        root = (ctx.get("holder") or {}).get("root")
+        answer = run_placement(p, ctx, fd, joining.get(root, 0) if root else 0)
+        after, _why = load_state(p)
+        if answer.get("ok") and answer.get("phase") == "placed" and after and after.get("phase") == "placed":
+            placed.append((p, after))
+            said[ctx["name"]] = "placed"
+            if after["act"] == "deploy" and root:
+                joining[root] = joining.get(root, 0) + 1
+        else:
+            ctx["outcome"] = answer
+            write_state(p, ctx)
+            said[ctx["name"]] = f"refused at {answer.get('step', '?')}"
+    groups = {}
+    for p, ctx in placed:
+        groups.setdefault(ctx["holder"]["proc"], []).append((p, ctx))
+    for group in groups.values():
+        try:
+            land_on_node(group)
+        except Exception as e:  # noqa: BLE001 - each agent still gets an answer from its finish
+            for p, ctx in group:
+                if not ctx.get("landing"):
+                    ctx["land_error"] = f"the landing stopped: {repr(e)[:300]}"
+                    write_state(p, ctx)
+        for p, ctx in group:
+            lg = ctx.get("landing") or {}
+            said[ctx["name"]] = ("rolled back" if lg.get("rolled_back") else "smoke check failed" if lg.get("check_failed")
+                                 else f"refused at {lg['failed']['step']}" if lg.get("failed")
+                                 else "landed" if lg else "not finished")
+    out({"ok": True, "act": "land", "agents": said})
+
+
+def land_on_node(group):
+    """One node's share of a landing: every agent in `group` is placed on the
+    node that `holder` names. One start of the node, a smoke check of each
+    agent, then the watch: the full one for the first agent and a short one
+    for each other, every one against the mark taken before the start."""
+    holder = group[0][1]["holder"]
+    names = [c["name"] for _, c in group]
+    before = watch_mark(holder)
+    for _, c in group:
+        if c["act"] == "update":
+            # As an update alone does: deleted, then started (update()).
+            for proc in (f"{c['name']}-adapter", f"{c['name']}-attendant"):
+                subprocess.run(["pm2", "delete", proc], capture_output=True, text=True)
+    procs_of = {n: agent_procs(n) for n in names}
+    every = []
+    for n in names:
+        every += [p for p in procs_of[n][0] if p not in every]
+    cmd = ["pm2", "start", CONF, "--only", ",".join(every)]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        bad = None if p.returncode == 0 else (p.stderr or p.stdout or "nonzero exit").strip()[:400]
+    except subprocess.TimeoutExpired:
+        bad = f"timed out after 90s: {' '.join(cmd[:4])}"
+    if bad:
+        for path, c in group:
+            c["landing"] = {"failed": {"step": "pm2", "error": bad}}
+            write_state(path, c)
+        return
+    processes = {n: {"started": procs_of[n][0],
+                     "attendant": f"not started: {procs_of[n][2]}" if procs_of[n][1] else f"started: {procs_of[n][2]}"}
+                 for n in names}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(group)) as pool:
+        smokes = dict(zip(names, pool.map(lambda c: start_and_smoke(c["name"], ask_model=not c.get("reinstall")),
+                                          [c for _, c in group])))
+    together = {n: [m for m in names if m != n] for n in names}
+    # An update whose smoke check failed gets its old version back before
+    # anything is watched, as it does alone, and the node is started again
+    # once for all of them; the watch below then counts from that start.
+    failed = [(p, c) for p, c in group if c["act"] == "update" and not smokes[c["name"]]["passed"]]
+    for p, c in failed:
+        restore(c["name"], c["home"], c["old_ledger"], c["prev"], c["pkg_name"])
+        c["landing"] = {"processes": processes[c["name"]], "smoke": smokes[c["name"]], "check_failed": True}
+    if failed:
+        before = watch_mark(holder)
+        again = []
+        for _, c in failed:
+            again += [p for p in processes[c["name"]]["started"] if p not in again]
+        subprocess.run(["pm2", "restart", *again], capture_output=True)
+        for p, c in failed:
+            write_state(p, c)
+    live = [(p, c) for p, c in group if not c.get("landing")]
+    for i, (p, c) in enumerate(live):
+        if c.get("landing"):
+            continue  # taken back out with the first agent's watch
+        n = c["name"]
+        watched = watch_after(n, holder, before, seconds=None if i == 0 else LAND_PROBE_SECONDS)
+        c["landing"] = {"processes": processes[n], "smoke": smokes[n], "watched": watched,
+                        **({"with": together[n]} if together[n] else {})}
+        if not watched.get("ok"):
+            # The first watch is the node's: if it fails, nobody can say which
+            # agent did it, so every agent still in this landing goes back out.
+            # A later probe names one agent, and only that one goes.
+            out_now = [(q, d) for q, d in live[i:] if d is c or not d.get("landing")] if i == 0 else [(p, c)]
+            for q, d in out_now:
+                if d is not c:
+                    d["landing"] = {"processes": processes[d["name"]], "smoke": smokes[d["name"]], "watched": watched,
+                                    **({"with": together[d["name"]]} if together[d["name"]] else {})}
+            take_back(out_now, holder, processes)
+            before = watch_mark(holder)
+    for p, c in live:
+        write_state(p, c)
+
+
+def take_back(items, holder, processes):
+    """Take agents of a landing back out after a failed watch, as each would
+    be taken out alone: a new agent paused on its node, an update's old version
+    restored; then the node started once without them and its neighbours
+    watched (recovered)."""
+    whats = {}
+    for _, c in items:
+        if c["act"] == "deploy":
+            whats[c["name"]] = pause_new_agent(c["name"], holder)
+        else:
+            restore(c["name"], c["home"], c["old_ledger"], c["prev"], c["pkg_name"])
+            whats[c["name"]] = f"{c['entry'].get('version')} was restored from the snapshot and restarted"
+    if holder.get("root"):
+        recovery = recovered(holder, restart=True)
+    else:
+        for _, c in items:
+            if c["act"] == "update":
+                subprocess.run(["pm2", "restart", *processes[c["name"]]["started"]], capture_output=True)
+        recovery = recovered(holder, restart=False)
+    for _, c in items:
+        c["landing"]["rolled_back"] = {"what": whats[c["name"]], "recovery": recovery}
+
+
+def finish(path):
+    """The third act: the answer the whole deploy or update always printed."""
+    ctx = read_state(path)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    if ctx.get("outcome"):
+        out(ctx["outcome"])
+    name, act = ctx["name"], ctx["act"]
+    if ctx.get("phase") != "placed":
+        fail("land", f"{name} was prepared and never placed: {ctx.get('land_error') or 'its landing never reached it'}")
+    landing = ctx.get("landing")
+    if act == "deploy":
+        # The row fail() marks, exactly as when the deploy runs whole.
+        CURRENT["entry"] = ctx["entry"]
+    if not landing:
+        why = ctx.get("land_error") or "the landing gave no answer for it"
+        if act == "deploy":
+            fail("land", f"{name} was placed and its landing stopped before it was started and watched: {why}")
+        restore(name, ctx["home"], ctx["old_ledger"], ctx["prev"], ctx["pkg_name"])
+        fail("land", f"{name} {ctx['pkg_version']} was placed and its landing stopped before it was started and "
+                     f"watched: {why}", state=f"{ctx['entry'].get('version')} was restored from the snapshot; its "
+                                          f"processes were not restarted", act="update", restored=True, name=name)
+    if landing.get("failed"):
+        fail(landing["failed"]["step"], landing["failed"]["error"])
+    processes, smoke, watched = landing["processes"], landing["smoke"], landing.get("watched")
+    with_others = f" (it landed in one start of the node with {', '.join(landing['with'])})" if landing.get("with") else ""
+    rb = landing.get("rolled_back")
+    if act == "deploy":
+        if rb:
+            fail("watch", watch_failure(f"{name} was placed", watched) + with_others,
+                 state=rolled_back_state(rb["what"], rb["recovery"]), rolled_back=True, name=name, watch=watched,
+                 recovery=rb["recovery"], act="deploy", package=ctx["pkg_name"], version=ctx["pkg_version"],
+                 host=HOST, agent_key=ctx["agent_key"], handle=ctx["handle"], capacity=ctx["capacity"], smoke=smoke)
+        ctx.update(processes=processes, smoke=smoke, watched=watched)
+        deploy_finish(ctx)
+    shutil.rmtree(ctx["staging"], ignore_errors=True)
+    common = update_common(ctx, processes, smoke)
+    old = ctx["entry"].get("version")
+    if landing.get("check_failed"):
+        fail("check", f"the smoke check failed on {ctx['pkg_version']}; {old} was restored from the snapshot",
+             state=f"restored to {old}; processes restarted", act="update", restored=True, **common)
+    if rb:
+        fail("watch", watch_failure(f"{name} {ctx['pkg_version']} was placed", watched) + with_others,
+             state=rolled_back_state(rb["what"], rb["recovery"]), act="update", restored=True, rolled_back=True,
+             recovery=rb["recovery"], **{**common, "watch": watched})
+    common["watch"] = watched
+    update_finish(ctx, common)
+
+
+AS_ROOT = ("deploy", "update", "alongside", "retire-version", "remove", "model", "status", "runtime", "jobs-at-once",
+           "attest", "prepare", "land", "place", "finish")
 
 
 def main():
@@ -5399,11 +5955,20 @@ def main():
         rebind(sys.argv[2])
     elif cmd == "jobs-at-once" and len(sys.argv) == 4:
         set_jobs_at_once(sys.argv[2], sys.argv[3])
+    elif cmd == "prepare" and len(sys.argv) == 4:
+        prepare(sys.argv[2], sys.argv[3])
+    elif cmd == "land" and len(sys.argv) >= 3:
+        land(sys.argv[2:])
+    elif cmd == "place" and len(sys.argv) == 3:
+        place(sys.argv[2])
+    elif cmd == "finish" and len(sys.argv) == 3:
+        finish(sys.argv[2])
     else:
         fail("usage", "deploy <argfile> | update <argfile> | alongside <argfile> | retire-version <argfile> | "
                       "image <argfile> | container <argfile> | "
                       "model <name> <model> [harness] | jobs-at-once <name> <n|default> | remove <name> | "
-                      "runtime <name> | rebind <name> | attest <name> | status")
+                      "runtime <name> | rebind <name> | attest <name> | status | "
+                      "prepare <deploy|update> <argfile> | land <state> ... | finish <state>")
 
 
 if __name__ == "__main__":
