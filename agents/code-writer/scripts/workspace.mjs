@@ -416,16 +416,26 @@ export function lockedDigests(lock) {
   return Object.fromEntries(Object.entries(d ?? {}).filter(([, v]) => typeof v === "string"));
 }
 
-/** Every pinned file in a build folder's entries that is missing or differs
- *  from build.lock.json, as {path, what}. Pure: reads nothing from disk. */
+/** Every problem a build folder's entries have against build.lock.json, as
+ *  {path, what}: a pinned file that is missing or differs, and any file outside
+ *  scripts/ that the lock does not pin (the lock itself and records/, which
+ *  neither the lock nor the fence holds, are not counted). Pure: reads nothing
+ *  from disk. */
 export function lockProblems(entries) {
   const byPath = new Map(entries.filter((e) => e.type === "file").map((e) => [e.path.replace(/^(\.\/)+/, ""), e.bytes]));
   let lock;
   try { lock = JSON.parse(byPath.get(LOCK_FILE)?.toString("utf8") ?? ""); } catch { return [{ path: LOCK_FILE, what: "is not valid JSON" }]; }
   const out = [];
-  for (const [p, d] of Object.entries(lockedDigests(lock))) {
+  const pinned = lockedDigests(lock);
+  for (const [p, d] of Object.entries(pinned)) {
     if (!byPath.has(p)) out.push({ path: p, what: "is missing" });
     else if (digestOf(byPath.get(p)) !== d) out.push({ path: p, what: "differs from its digest" });
+  }
+  // A file outside scripts/ that the lock does not pin would be unpacked and
+  // then taken into the fence's baseline, so it is refused here, by name.
+  for (const p of byPath.keys()) {
+    if (p in pinned || p === LOCK_FILE || p.startsWith("scripts/") || p.startsWith("records/")) continue;
+    out.push({ path: p, what: "is outside scripts/ and not pinned by the lock" });
   }
   return out;
 }

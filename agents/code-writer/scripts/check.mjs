@@ -30,7 +30,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { LOCK_FILE, listing, lockedDigests, roundsMaxOf, scriptsOf } from "./workspace.mjs";
+import { LOCK_FILE, digestOf, listing, lockedDigests, roundsMaxOf, scriptsOf } from "./workspace.mjs";
 import { specOfFolder } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
@@ -212,11 +212,16 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const recordPath = join(RECORDS, "workspace.json");
   if (!existsSync(recordPath) && existsSync(join(WORKSPACE, LOCK_FILE))) {
     // A build folder worked in place has no workspace record yet: its lock is
-    // the record, and the listing now is what it held when it was handed over.
+    // the record, and the baseline is what the lock pins, never the folder as
+    // it stands, so a file added outside scripts/ before the first run is still
+    // reported as added. Only the lock itself, which pins nothing of itself, is
+    // taken as it is.
     const lock = JSON.parse(readFileSync(join(WORKSPACE, LOCK_FILE), "utf8"));
+    const baseline = { ...lockedDigests(lock) };
+    baseline[LOCK_FILE] = digestOf(readFileSync(join(WORKSPACE, LOCK_FILE)));
     mkdirSync(RECORDS, { recursive: true });
     writeFileSync(recordPath, JSON.stringify({ workspace: "v1", at: new Date().toISOString(), folder: WORKSPACE, rounds_max: roundsMaxOf(env), from_build_folder: true,
-      scripts: Array.isArray(lock.scripts) ? lock.scripts : [], digests: lockedDigests(lock), listing: listing(WORKSPACE, { skip: ["records"] }) }, null, 2) + "\n");
+      scripts: Array.isArray(lock.scripts) ? lock.scripts : [], digests: lockedDigests(lock), listing: baseline }, null, 2) + "\n");
   }
   if (!existsSync(recordPath)) { console.error(`no workspace record at ${recordPath}: run workspace.mjs first`); process.exit(2); }
   try {

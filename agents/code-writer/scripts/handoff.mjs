@@ -143,7 +143,7 @@ export function layOutBuildFolder({ dir, agent = {}, suite = {}, prototype = {},
   for (const f of ADLC_FILES) {
     const from = join(scriptsDir, f);
     if (!existsSync(from)) throw new Error(`the check needs ${f} beside handoff.mjs and it is not there`);
-    put(join(".adlc", f), readFileSync(from), false);
+    put(join(".adlc", f), readFileSync(from));
   }
   return { scripts, prototype: prototypeFiles, laid, stood_in: stoodIn, unnamed: [...wanted.keys()].filter((s) => !scriptsOf(spec).includes(s)) };
 }
