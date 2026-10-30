@@ -10,17 +10,27 @@
 // not notice is recorded and said, not held against the harness, because
 // fixing it means writing a test and that is not the harness's to do.
 //
+// A new test file under test/ is allowed and runs with the rest. A pinned
+// test or agent file that is changed or removed is not, and the round says
+// the work goes back to the spec and test steps, because those files are
+// theirs and never the writer's.
+//
+// Run from a build folder's .adlc/, with no variables, it checks the folder
+// it sits in against build.lock.json and keeps its records under records/.
+//
 // Exit codes are the harness's instructions: 0 done, 1 not yet with each
 // failing test named, 3 the fence was broken with what was touched named,
 // 4 the rounds are used up.
 //
 //   needs: node >= 22; python3 and the builder, or it says the package-maker will build it
 //   WORKSPACE=<folder> RECORDS=<records folder> [BUILDER=<path to the builder>] node check.mjs
+//   or, in a build folder: node .adlc/check.mjs
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { listing, scriptsOf } from "./workspace.mjs";
+import { fileURLToPath } from "node:url";
+import { LOCK_FILE, listing, lockedDigests, roundsMaxOf, scriptsOf } from "./workspace.mjs";
 import { specOfFolder } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
@@ -92,12 +102,13 @@ export function fenceOf(record, dir) {
   const pinned = record?.digests ?? {};
   const broken = [];
   const free = (p) => p.startsWith("scripts/");
+  const newTest = (p) => p.startsWith("test/") && !(p in was);
   for (const [p, d] of Object.entries(pinned)) {
     if (!(p in now)) broken.push({ path: p, what: "removed" });
     else if (now[p] !== d) broken.push({ path: p, what: "changed" });
   }
   for (const p of Object.keys(now)) {
-    if (p in pinned || free(p)) continue;
+    if (p in pinned || free(p) || newTest(p)) continue;
     if (!(p in was)) broken.push({ path: p, what: "added" });
     else if (was[p] !== now[p]) broken.push({ path: p, what: "changed" });
   }
@@ -167,7 +178,12 @@ export function buildRun({ dir, builder, run = null, stoodIn = [] } = {}) {
 /** The words the record and the reply carry. */
 export function verdict({ run = null, blanks = [], build = null, round = 0, roundsMax = 0, fence = null, stop = null } = {}) {
   if (stop === "ceiling") return `The rounds are used up: ${roundsMax} of ${roundsMax}, and the suite still fails${run ? ` (${run.fail} of ${run.tests})` : ""}. Nothing is delivered.`;
-  if (stop === "fence") return `The fence was broken: ${(fence?.broken ?? []).map((b) => `${b.path} ${b.what}`).join(", ")}. Put it back; nothing is delivered until the check passes with the fence whole.`;
+  if (stop === "fence") {
+    const broken = fence?.broken ?? [];
+    const said = `The fence was broken: ${broken.map((b) => `${b.path} ${b.what}`).join(", ")}. Put it back; nothing is delivered until the check passes with the fence whole.`;
+    const pinned = broken.filter((b) => b.what !== "added" && (/^test\//.test(b.path) || /^(agent-descriptor|agent-runtime-requirements|plugin)\.json$|^skills\//.test(b.path)));
+    return pinned.length ? `${said} A pinned test or agent file is the spec and test steps' to change, never this job's: if it is wrong, the work goes back to the spec and test steps.` : said;
+  }
   const lines = [];
   if (run && run.fails) {
     lines.push(`Round ${round}${roundsMax ? ` of ${roundsMax}` : ""}: ${run.timed_out ? `the suite did not finish in ${RUN_SECONDS} seconds` : `${run.fail} of ${run.tests} fail`}.`);
@@ -187,9 +203,21 @@ export function verdict({ run = null, blanks = [], build = null, round = 0, roun
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
 if (thisFile && import.meta.url.endsWith(thisFile)) {
   const env = process.env;
-  const { WORKSPACE, RECORDS } = env;
+  let { WORKSPACE, RECORDS } = env;
+  // Run from a build folder's .adlc/ with nothing set, it checks the folder
+  // it sits in and keeps its records under records/, which the fence skips.
+  const here = dirname(fileURLToPath(import.meta.url));
+  if (!WORKSPACE && !RECORDS && basename(here) === ".adlc") { WORKSPACE = dirname(here); RECORDS = join(WORKSPACE, "records"); }
   if (!WORKSPACE || !RECORDS) { console.error("WORKSPACE and RECORDS are required"); process.exit(2); }
   const recordPath = join(RECORDS, "workspace.json");
+  if (!existsSync(recordPath) && existsSync(join(WORKSPACE, LOCK_FILE))) {
+    // A build folder worked in place has no workspace record yet: its lock is
+    // the record, and the listing now is what it held when it was handed over.
+    const lock = JSON.parse(readFileSync(join(WORKSPACE, LOCK_FILE), "utf8"));
+    mkdirSync(RECORDS, { recursive: true });
+    writeFileSync(recordPath, JSON.stringify({ workspace: "v1", at: new Date().toISOString(), folder: WORKSPACE, rounds_max: roundsMaxOf(env), from_build_folder: true,
+      scripts: Array.isArray(lock.scripts) ? lock.scripts : [], digests: lockedDigests(lock), listing: listing(WORKSPACE, { skip: ["records"] }) }, null, 2) + "\n");
+  }
   if (!existsSync(recordPath)) { console.error(`no workspace record at ${recordPath}: run workspace.mjs first`); process.exit(2); }
   try {
     const record = JSON.parse(readFileSync(recordPath, "utf8"));
@@ -211,9 +239,12 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       console.log(said);
       process.exit(3);
     }
-    const spec = existsSync(join(WORKSPACE, "agent-descriptor.json"))
-      ? specOfFolder(WORKSPACE)
-      : JSON.parse(readFileSync(join(WORKSPACE, "spec.json"), "utf8"));
+    const declared = existsSync(join(WORKSPACE, "agent-descriptor.json")) || existsSync(join(WORKSPACE, "spec.json"));
+    // Where no declaration came (a folder with only scripts and a suite), the
+    // scripts are the ones the workspace record names, or all under scripts/.
+    const scriptsToBlank = declared
+      ? scriptsOf(existsSync(join(WORKSPACE, "agent-descriptor.json")) ? specOfFolder(WORKSPACE) : JSON.parse(readFileSync(join(WORKSPACE, "spec.json"), "utf8")))
+      : (record.scripts?.length ? record.scripts.map((x) => x.path) : Object.keys(listing(join(WORKSPACE, "scripts"))).map((r) => `scripts/${r}`));
     const paths = suitePaths(WORKSPACE);
     const run = runSuite(WORKSPACE, paths);
     runs.push({ round, at: new Date().toISOString(), tests: run.tests, pass: run.pass, fail: run.fail, failing: run.failing, seconds: run.seconds, timed_out: run.timed_out });
@@ -228,8 +259,10 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       else console.log(run.tail);
       process.exit(1);
     }
-    const blanks = blankRuns({ dir: WORKSPACE, scripts: scriptsOf(spec), paths });
-    const build = buildRun({ dir: WORKSPACE, builder: builderAt(env), stoodIn: record.stood_in ?? [] });
+    const blanks = blankRuns({ dir: WORKSPACE, scripts: scriptsToBlank.filter((p) => existsSync(join(WORKSPACE, p))), paths });
+    const build = declared
+      ? buildRun({ dir: WORKSPACE, builder: builderAt(env), stoodIn: record.stood_in ?? [] })
+      : { checked: false, ok: null, said: "No declaration came with the folder, so whether the package builds was not checked here; the package-maker builds it and refuses what does not." };
     if (build.checked && !build.ok) {
       const said = `${verdict({ run, round, blanks })} ${build.said}`;
       writeVerdict({ done: false, stop: null, round, said, blanks, build });

@@ -22,6 +22,15 @@
 // is not a module (package.json) is laid out from the prototype or left
 // empty, never given a JavaScript stub.
 //
+// When the prototype is itself a package (it carries the agent's files or a
+// file under scripts/), every file it carries outside scripts/ is also laid
+// out at its own path, read-only and pinned, so a sample or a data file is
+// where the suite reads it. When one of the attached files is a build folder
+// (a gzip tar archive carrying build.lock.json), the script unpacks it with
+// archive.mjs, checks every pinned file against the lock before anything
+// else, refuses naming the file that differs, and uses the folder as the
+// workspace.
+//
 //   needs: node >= 22
 //   WORKSPACE=<folder> FILES=<each attached path, with ::media_type, comma separated>
 //   RECORDS=<records folder> [ROUNDS_MAX=30] node workspace.mjs
@@ -32,8 +41,13 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, 
 import { createHash } from "node:crypto";
 import { basename, dirname, join, relative } from "node:path";
 import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, agentFilesAmongTexts, specOfFolder } from "./agent-folder.mjs";
+// archive.mjs is not carried by every step that runs check.mjs, which imports
+// this file, so it is loaded where it is and its absence only means a build
+// folder archive cannot be read here.
+const archive = await import("./archive.mjs").catch(() => null);
 
 const trim = (s) => String(s ?? "").trim();
+export const LOCK_FILE = "build.lock.json";
 export const digestOf = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
 /** How many rounds the harness may take before the check says stop. */
@@ -223,6 +237,7 @@ export function layOut({ workspace, spec, specText, agent = null, suite = [], co
   // extension is taken as a folder.
   const extras = [];
   const stoodIn = [];
+  const flatCarried = (rel) => [...codeByPath.keys()].find((p) => !p.includes("/") && p === basename(rel)) ?? null;
   for (const rel of extrasOf(spec)) {
     if (!staysInside(rel) || rel.startsWith("scripts/")) throw new Error(`the spec names a reference or asset it may not: ${rel}`);
     const at = join(workspace, rel);
@@ -236,6 +251,16 @@ export function layOut({ workspace, spec, specText, agent = null, suite = [], co
         tests[p] = digestOf(codeByPath.get(p));
       }
       extras.push({ path: rel, from: "prototype" });
+    } else if (/\.[a-z0-9]+$/i.test(basename(rel)) && flatCarried(rel)) {
+      // A prototype that came as loose files has no folders, so a reference
+      // it carries is found by its file name, the way the delivery check
+      // finds one.
+      const bytes = codeByPath.get(flatCarried(rel));
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, bytes);
+      readOnly(at);
+      tests[rel] = digestOf(bytes);
+      extras.push({ path: rel, from: "prototype" });
     } else if (/\.[a-z0-9]+$/i.test(basename(rel))) {
       mkdirSync(dirname(at), { recursive: true });
       writeFileSync(at, "");
@@ -247,6 +272,22 @@ export function layOut({ workspace, spec, specText, agent = null, suite = [], co
       mkdirSync(at, { recursive: true });
       extras.push({ path: rel, from: "stand-in" });
       stoodIn.push(rel);
+    }
+  }
+  // A prototype that is itself a package keeps its own layout: every file it
+  // carries outside scripts/ goes at its own path too, read-only and pinned,
+  // unless the declaration, the suite or an earlier step already holds that
+  // path. The old copies of those stay under prototype/ to be read.
+  const isPackage = [...codeByPath.keys()].some((p) => p.startsWith("scripts/") || p === DESCRIPTOR_FILE);
+  if (isPackage) {
+    for (const [p, bytes] of codeByPath) {
+      if (!staysInside(p) || p.startsWith("scripts/") || p.startsWith("test/") || p.startsWith("records/") || p.startsWith("prototype/") || p.startsWith("skills/") || [DESCRIPTOR_FILE, RUNTIME_FILE, MANIFEST_FILE, "spec.json"].includes(p)) continue;
+      if (p in tests || p in declared) continue;
+      const to = join(workspace, p);
+      mkdirSync(dirname(to), { recursive: true });
+      writeFileSync(to, bytes);
+      readOnly(to);
+      tests[p] = digestOf(bytes);
     }
   }
   // Scripts the suite imports that the spec never named are said, not made:
@@ -334,6 +375,17 @@ export function sortAttachments(paths = [], read = (p) => readFileSync(p)) {
     try { bytes = read(p); } catch { continue; }
     got.push({ from: p, name: plainName(p), bytes: Buffer.from(bytes), text: Buffer.from(bytes).toString("utf8") });
   }
+  // A build folder is a gzip tar archive that carries build.lock.json. It is
+  // the whole workspace, so when one came nothing else is sorted.
+  for (const f of got) {
+    if (f.bytes[0] !== 0x1f || f.bytes[1] !== 0x8b) continue;
+    let entries;
+    try { entries = archive?.entriesIn(f.bytes); } catch { continue; }
+    if (!entries) continue;
+    if (entries.some((e) => e.type === "file" && e.path.replace(/^(\.\/)+/, "") === LOCK_FILE)) {
+      return { spec: null, agent: null, suite: [], code: [], build: { from: f.from, entries } };
+    }
+  }
   // The agent's own files are preferred; a spec.json is read where they did
   // not come. Neither is a test, a helper or the prototype.
   const agent = agentAmong(got);
@@ -357,6 +409,27 @@ export function sortAttachments(paths = [], read = (p) => readFileSync(p)) {
   return { spec: spec ? { from: spec.from, text: spec.text } : null, agent: agent ? files : null, suite, code };
 }
 
+/** The pinned digests a build folder's lock holds: {path: digest}. The lock
+ *  keeps them under "digests", or is itself the map. */
+export function lockedDigests(lock) {
+  const d = lock && typeof lock === "object" && lock.digests && typeof lock.digests === "object" ? lock.digests : lock;
+  return Object.fromEntries(Object.entries(d ?? {}).filter(([, v]) => typeof v === "string"));
+}
+
+/** Every pinned file in a build folder's entries that is missing or differs
+ *  from build.lock.json, as {path, what}. Pure: reads nothing from disk. */
+export function lockProblems(entries) {
+  const byPath = new Map(entries.filter((e) => e.type === "file").map((e) => [e.path.replace(/^(\.\/)+/, ""), e.bytes]));
+  let lock;
+  try { lock = JSON.parse(byPath.get(LOCK_FILE)?.toString("utf8") ?? ""); } catch { return [{ path: LOCK_FILE, what: "is not valid JSON" }]; }
+  const out = [];
+  for (const [p, d] of Object.entries(lockedDigests(lock))) {
+    if (!byPath.has(p)) out.push({ path: p, what: "is missing" });
+    else if (digestOf(byPath.get(p)) !== d) out.push({ path: p, what: "differs from its digest" });
+  }
+  return out;
+}
+
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
 if (thisFile && import.meta.url.endsWith(thisFile)) {
   const env = process.env;
@@ -367,9 +440,39 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     if (FILES) {
       // The attached files, sorted here by what is in them.
       const sorted = sortAttachments(FILES.split(",").map((e) => e.trim()).filter(Boolean).map((e) => e.split("::")[0]));
-      if (!sorted.spec && !sorted.agent) {
+      if (!sorted.spec && !sorted.agent && !sorted.build) {
         console.log(JSON.stringify({ ok: false, code: 3, reply: "Nothing attached is the agent's files or a spec: the scripts are written from the files the package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files), and from the suite written from them. Attach both and ask again." }));
         process.exit(3);
+      }
+      if (sorted.build) {
+        const problems = lockProblems(sorted.build.entries);
+        if (problems.length) {
+          console.log(JSON.stringify({ ok: false, code: 3, reply: `The build folder does not match its build.lock.json, so nothing is laid out: ${problems.map((p) => `${p.path} ${p.what}`).join("; ")}. Whoever made the folder has to hand it over again.` }));
+          process.exit(3);
+        }
+        const unpacked = archive.unpack(sorted.build.from, WORKSPACE);
+        for (const d of ["scripts", "test", "records"]) mkdirSync(join(WORKSPACE, d), { recursive: true });
+        const lock = JSON.parse(readFileSync(join(WORKSPACE, LOCK_FILE), "utf8"));
+        const hasAgent = existsSync(join(WORKSPACE, DESCRIPTOR_FILE));
+        const spec = hasAgent ? specOfFolder(WORKSPACE) : null;
+        const suiteFiles = Object.keys(listing(join(WORKSPACE, "test"))).filter((rel) => /^[^/]+\.test\.mjs$/.test(rel));
+        if (!suiteFiles.length) {
+          console.log(JSON.stringify({ ok: false, code: 3, reply: "The build folder carries no suite: nothing named test/<name>.test.mjs. The test-writer writes it from the spec, and the scripts are written to it, so nothing can be written yet." }));
+          process.exit(3);
+        }
+        const named = spec ? scriptsOf(spec) : Object.keys(listing(join(WORKSPACE, "scripts"))).map((r) => `scripts/${r}`);
+        const lockScripts = new Map((Array.isArray(lock.scripts) ? lock.scripts : []).map((s) => [s.path, s]));
+        const scripts = named.map((p) => lockScripts.get(p) ?? { path: p, from: "build folder" });
+        mkdirSync(RECORDS, { recursive: true });
+        const record = {
+          workspace: "v1", at: new Date().toISOString(), folder: WORKSPACE, rounds_max: roundsMaxOf(env),
+          from_attachments: true, from_build_folder: true, prototype_given: false, prototype_found: false,
+          scripts, prototype: [], extras: [], stood_in: [], unnamed: [],
+          digests: lockedDigests(lock), listing: listing(WORKSPACE, { skip: ["records"] }),
+        };
+        writeFileSync(join(RECORDS, "workspace.json"), JSON.stringify(record, null, 2) + "\n");
+        console.log(JSON.stringify({ ok: true, code: 0, workspace: WORKSPACE, said: `the build folder unpacked, ${unpacked.files.length} files checked against build.lock.json (${Object.keys(record.digests).length} pinned); ${scripts.length} script${scripts.length === 1 ? "" : "s"} to write; ${suiteFiles.length} test file${suiteFiles.length === 1 ? "" : "s"}` }));
+        process.exit(0);
       }
       agent = sorted.agent;
       specText = sorted.spec?.text;
