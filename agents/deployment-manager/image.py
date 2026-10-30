@@ -142,6 +142,14 @@ def needs_model_key(install):
     harness: its image stays the plain one, since nothing in it wakes one."""
     if wakes_a_model(install):
         return True
+    # A package with a model system (Common Agent 12.4.1) reaches its model
+    # through MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, which the
+    # binding places; a script that calls a model is not given a harness model
+    # and a provider key beside them (AGENT_MODEL and GOOGLE_GENERATIVE_AI_API_KEY
+    # were, 2026-10-30, on every model-system worker job). A service that
+    # declares its own key still gets that credential, through its binding.
+    if any((s or {}).get("kind") == "model" for s in (install or {}).get("systems") or []):
+        return False
     runs = (install or {}).get("run") or {}
     return any(bool((spec or {}).get("calls_model")) for spec in runs.values())
 

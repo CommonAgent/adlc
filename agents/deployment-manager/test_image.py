@@ -301,6 +301,12 @@ class WhatTheJobIsGiven(unittest.TestCase):
         self.assertFalse(image.wakes_a_model(scripted))
         self.assertTrue(image.needs_model_key(scripted))
         self.assertTrue(image.needs_model_key({}))
+        # With a model system (Common Agent 12.4.1) the scripts reach the model
+        # through its four settings, so no harness model and no provider key.
+        modelled = {**scripted, "systems": [{"name": "text-reasoning", "kind": "model", "protocols": ["gemini"]}]}
+        self.assertFalse(image.needs_model_key(modelled))
+        # A job with no command still wakes the harness, model system or not.
+        self.assertTrue(image.needs_model_key({"systems": modelled["systems"]}))
 
     def test_the_question_is_asked_of_the_work_and_not_of_the_package(self):
         # Two ways a container wakes a model, and both have to count. A package
