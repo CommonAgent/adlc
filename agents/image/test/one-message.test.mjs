@@ -438,8 +438,8 @@ test("a write that still fails is labelled storage, an infrastructure failure th
 // text-reasoning system and a credit setting after these were first written,
 // and the copies did not follow.
 const FILLED = {
-  TEXT_API_KEY: "x", TTS_API_KEY: "x",
-  EXPLAINER_CREDIT: "on", STORY_MODEL: "a-story-model", TTS_MODEL: "a-speech-model",
+  TTS_API_KEY: "x",
+  EXPLAINER_CREDIT: "on", TTS_MODEL: "a-speech-model", TTS_ENDPOINT: "http://127.0.0.1:9", MESH_API_BASE: "http://127.0.0.1:9",
 };
 const CEILINGS = { "text-reasoning": { limit: 40 }, "text-to-speech": { limit: 20000 } };
 
@@ -447,7 +447,10 @@ test("a container missing what the binding fills refuses before any work runs, a
   const install = installOf(builtPackage("explainer-maker"));
   const missing = missingBindings(install, {}, {});
   assert.ok(missing.some((m) => m.includes("TTS_API_KEY") && m.includes("fleet-gemini-api-key")));
-  assert.ok(missing.some((m) => m.includes("TEXT_API_KEY") && m.includes("text-reasoning-key")));
+  // Since explainer-maker 0.18.0 text-reasoning is a system of kind model: it
+  // names no credential of its own, so none is missing for it.
+  assert.ok(!missing.some((m) => m.includes("TEXT_API_KEY")), "a model system names no credential");
+  assert.ok(missing.some((m) => m.includes("TTS_ENDPOINT")), "the voice service's address is a setting the binding fills");
   assert.ok(missing.some((m) => /text-to-speech spends and no ceiling was set/.test(m)));
   const bound = { records: "/mesh/state/explainer/records", work: "/mesh/state/explainer/work" };
   assert.equal(missingBindings(install, FILLED, CEILINGS, {}, bound).length, 0);

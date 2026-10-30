@@ -9,6 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { GATEWAY_FILE, gatewaySource, hasModelSystem } from "../emit-image.mjs";
 import { emit, forbiddenIn, isImageRef, readPackage, Refusal, requiredVariables } from "../emit-image.mjs";
 import { readEnvironment, fillArgv } from "../one-message.mjs";
 import { builtPackage, copyLines, copyOfPackage, messageAndJob, rewriteAuthored, runLines, tmp } from "./helpers.mjs";
@@ -24,6 +25,13 @@ test("no credential value, address, endpoint or account identifier is written in
   for (const name of FIXTURES) {
     const { out, record } = emitTo(name);
     for (const rel of readdirSync(out)) {
+      // The model gateway is the host's own program, copied as it is for a
+      // package that declares a model system (12.4.1), and for no other.
+      if (rel === GATEWAY_FILE) {
+        assert.ok(hasModelSystem(readPackage(builtPackage(name)).install), `${name} carries the model gateway and declares no model system`);
+        assert.equal(readFileSync(join(out, rel), "utf8"), gatewaySource(), "the gateway is copied as it is");
+        continue;
+      }
       if (!AUTHORED.includes(rel)) {
         assert.equal(rel, "package", `${rel} is neither the package nor a file this tool authors`);
         continue;
@@ -129,8 +137,10 @@ test("nothing from the package is executed at build time except the install from
     }
     // And what is copied in is the package, the entrypoint, the lockfile
     // check and the command spec, and nothing else at all.
+    // ... and the host's model gateway, for a package that declares a model system.
+    const gateway = hasModelSystem(readPackage(builtPackage(name)).install) ? [GATEWAY_FILE] : [];
     for (const [from] of copyLines(df)) {
-      assert.ok(["package/", "entrypoint.mjs", "check-lockfile.mjs", "run.json"].includes(from), `unexpected copy of ${from}`);
+      assert.ok(["package/", "entrypoint.mjs", "check-lockfile.mjs", "run.json", ...gateway].includes(from), `unexpected copy of ${from}`);
     }
   }
 });

@@ -198,12 +198,15 @@ test("the emitted record names the package, its digests, and every variable the 
   assert.equal(record.job_seconds, 1500);
   assert.deepEqual(record.binaries, ["chromium", "ffmpeg", "ffprobe"].map((name) => ({ name, checked_at_build: true, installed_here: false })));
   const vars = requiredVariables(readPackage(builtPackage("explainer-maker")).install);
-  // draft-host is brokered since explainer-maker 0.12.0: no key of its own;
-  // since 0.14.1 text-reasoning carries one setting, the story model; since
-  // 0.16.0 text-to-speech carries one too, the speech model, because no model
-  // is named in the package's code any more.
-  assert.deepEqual(vars.credentials.map((c) => c.env), ["TEXT_API_KEY", "TTS_API_KEY"]);
-  assert.deepEqual(vars.settings.map((s) => s.env), ["STORY_MODEL", "TTS_MODEL"]);
+  // draft-host is brokered since explainer-maker 0.12.0: no key of its own.
+  // Since 0.18.0 text-reasoning is a system of kind model (Common Agent
+  // 12.4.1): it names no credential and no setting, because its four settings
+  // are the same in every agent and the deployment manager binds them. The
+  // voice service stays a service with its key, its model and its address
+  // (TTS_ENDPOINT), and the draft host's address is a setting (MESH_API_BASE).
+  assert.deepEqual(vars.credentials.map((c) => c.env), ["TTS_API_KEY"]);
+  assert.deepEqual(vars.settings.map((s) => s.env), ["TTS_MODEL", "TTS_ENDPOINT", "MESH_API_BASE"]);
+  assert.equal(vars.credentials.some((c) => c.name === "text-reasoning"), false, "a model system names no credential");
   assert.deepEqual(vars.ceilings, [
     { name: "text-reasoning", per: "task", env: "CEILING_TEXT_REASONING", unit: "calls" },
     { name: "text-to-speech", per: "task", env: "CEILING_TEXT_TO_SPEECH", unit: "characters" },
