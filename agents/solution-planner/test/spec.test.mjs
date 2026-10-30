@@ -8,7 +8,9 @@
 // the harness command names the arguments plan.mjs takes; went-without.json
 // is declared as a record under the name the shared script writes; the pieces
 // script files each piece under a step that is a job of this spec; and the
-// only settings are TEXT_MODEL and NEW_AGENT_USD.
+// package declares no settings of its own: its one system is text-reasoning, a
+// model spoken to in anthropic-messages, reached through the four MODEL_*
+// settings the install places, and no NEW_AGENT_USD is declared.
 // Nothing here touches a network or a model.
 // Run: node --test test/spec.test.mjs
 import { test } from "node:test";
@@ -46,7 +48,9 @@ test("each job's how is what it claims: only the plan and the ask step call a mo
 
 test("every script the spec names exists and loads without running anything", async () => {
   const named = new Set(spec.jobs.flatMap((j) => j.scripts ?? []));
-  assert.equal(named.size, 6);
+  // 0.4.0: the shared model caller is named beside the six scripts the job had.
+  assert.equal(named.size, 7);
+  assert.ok(named.has("scripts/model-caller.mjs"), "the shared model caller is named");
   for (const s of named) {
     assert.ok(existsSync(join(root, s)), `${s} is named in the spec and is not there`);
     await import(pathToFileURL(join(root, s)).href);
@@ -85,8 +89,16 @@ test("every kind of piece is filed under a step that is a job of this spec", () 
   for (const s of steps) assert.ok(job(s), `${s} is not a job in this spec`);
 });
 
-test("the only settings are the model and the price of building one new agent", () => {
-  const envs = spec.systems.flatMap((s) => (s.settings ?? []).map((x) => x.env)).sort();
-  assert.deepEqual(envs, ["NEW_AGENT_USD", "TEXT_MODEL"]);
-  assert.deepEqual(spec.systems.map((s) => s.env).filter(Boolean), ["TEXT_API_KEY"]);
+test("the only system is the install's model, reached through the four MODEL settings, and no setting is declared", () => {
+  assert.deepEqual(spec.systems.map((s) => s.name), ["text-reasoning"]);
+  const model = spec.systems[0];
+  assert.equal(model.kind, "model");
+  assert.deepEqual(model.protocols, ["anthropic-messages", "openai-chat", "gemini"]);
+  const envs = spec.systems.flatMap((s) => (s.settings ?? []).map((x) => x.env));
+  assert.deepEqual(envs, [], "the package declares no settings of its own, NEW_AGENT_USD included");
+  assert.deepEqual(spec.systems.map((s) => s.env).filter(Boolean), [], "no credential variable of its own");
+  const instructions = job("make-a-plan").skill;
+  for (const name of ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL"]) {
+    assert.ok(instructions.includes(name), `the plan job names ${name}`);
+  }
 });

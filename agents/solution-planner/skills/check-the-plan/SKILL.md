@@ -30,7 +30,7 @@ If nothing in the plan survives the checks, the plan is still written with its p
 
 ## How to do it
 
-Mark every step new. Remove any agent or offering the model wrote and record it with the step. Give each step a new_agent of a short lower-case hyphenated name and one line. Read its needs: the takes and gives each named once, a kind from the fixed list (an unknown kind becomes text, and the change is recorded). Make the outputs the gives. Drop input lines whose name is not one of the step's takes, or whose source is not a Start field or an earlier step's give, and add a sentence to missing. List required takes with no line in missing. Validate the schedule. Set to_build_usd to 0 and ready_minutes to 1, and new_agent_usd to NEW_AGENT_USD (default 1.50): the platform counts what is to build after Source. Clamp per_run_usd to 0..5 and run_minutes to 1..120.
+Mark every step new. Remove any agent or offering the model wrote and record it with the step. Give each step a new_agent of a short lower-case hyphenated name and one line. Read its needs: the takes and gives each named once, a kind from the fixed list (an unknown kind becomes text, and the change is recorded). Make the outputs the gives. Drop input lines whose name is not one of the step's takes, or whose source is not a Start field or an earlier step's give, and add a sentence to missing. List required takes with no line in missing. Validate the schedule. Set to_build_usd to 0 and ready_minutes to 1, and new_agent_usd to 1.50: the platform counts what is to build after Source. Clamp per_run_usd to 0..5 and run_minutes to 1..120.
 
 ## Scripts
 

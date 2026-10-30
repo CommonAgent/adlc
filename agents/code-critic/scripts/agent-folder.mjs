@@ -172,7 +172,7 @@ export function specOfFolder(dir) {
     const e = bound.get(systemName(d)) ?? {};
     const s = { name: systemName(d), access: d.access };
     for (const k of ["needs", "leaves"]) if (k in d) s[k] = d[k];
-    for (const k of ["kind", "credential", "env", "spends", "settings"]) if (k in e) s[k] = e[k];
+    for (const k of ["kind", "credential", "env", "spends", "settings", "protocols"]) if (k in e) s[k] = e[k];
     return s;
   });
   for (const k of ["can_use", "run_config"]) if (k in desc) spec[k] = desc[k];

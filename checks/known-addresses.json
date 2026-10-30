@@ -12,16 +12,6 @@
       "what": "comment: a link to where the lifecycle's stages are published, never fetched"
     },
     {
-      "file": "agents/code-critic/scripts/caller.mjs",
-      "address": "https://generativelanguage.googleapis.com/v1beta/models",
-      "what": "real call: the Gemini API; wave 2 replaces it with MODEL_ENDPOINT and MODEL_PROTOCOL gemini"
-    },
-    {
-      "file": "agents/code-critic/scripts/caller.mjs",
-      "address": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      "what": "real call: the Google token for Claude on Vertex AI, from the metadata server; wave 2 replaces it with MODEL_ENDPOINT and the host's gateway"
-    },
-    {
       "file": "agents/image/bases/agentmesh-harness/opencode-config.mjs",
       "address": "https://opencode.ai/config.json",
       "what": "schema identifier: the $schema value of the opencode config the image writes, never fetched"
@@ -140,66 +130,6 @@
       "file": "agents/publisher/scripts/place.mjs",
       "address": "https://api.agentmesh.ai/v1",
       "what": "real call: the platform's address, used when no setting is placed"
-    },
-    {
-      "file": "agents/security-reviewer/scripts/caller.mjs",
-      "address": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      "what": "real call: the Google token for Claude on Vertex AI, from the metadata server; wave 2 replaces it with MODEL_ENDPOINT and the host's gateway"
-    },
-    {
-      "file": "agents/security-reviewer/scripts/caller.mjs",
-      "address": "https://generativelanguage.googleapis.com/v1beta/models/${model}:${door}",
-      "what": "real call: the Gemini API; wave 2 replaces it with MODEL_ENDPOINT and MODEL_PROTOCOL gemini"
-    },
-    {
-      "file": "agents/security-reviewer/scripts/caller.mjs",
-      "address": "https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(name)}",
-      "what": "real call: asks the Gemini API whether a run config's model is offered; wave 2 replaces it with MODEL_ENDPOINT"
-    },
-    {
-      "file": "agents/solution-architect/scripts/caller.mjs",
-      "address": "https://generativelanguage.googleapis.com/v1beta/models",
-      "what": "real call: the Gemini API; wave 2 replaces it with MODEL_ENDPOINT and MODEL_PROTOCOL gemini"
-    },
-    {
-      "file": "agents/solution-architect/scripts/caller.mjs",
-      "address": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      "what": "real call: the Google token for Claude on Vertex AI, from the metadata server; wave 2 replaces it with MODEL_ENDPOINT and the host's gateway"
-    },
-    {
-      "file": "agents/solution-planner/scripts/ask.mjs",
-      "address": "https://generativelanguage.googleapis.com/v1beta/models",
-      "what": "real call: the Gemini API; wave 2 replaces it with MODEL_ENDPOINT and MODEL_PROTOCOL gemini"
-    },
-    {
-      "file": "agents/solution-planner/scripts/ask.mjs",
-      "address": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      "what": "real call: the Google token for Claude on Vertex AI, from the metadata server; wave 2 replaces it with MODEL_ENDPOINT and the host's gateway"
-    },
-    {
-      "file": "agents/spec-writer/scripts/draft.mjs",
-      "address": "https://generativelanguage.googleapis.com/v1beta/models",
-      "what": "real call: the Gemini API; wave 2 replaces it with MODEL_ENDPOINT and MODEL_PROTOCOL gemini"
-    },
-    {
-      "file": "agents/spec-writer/scripts/draft.mjs",
-      "address": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      "what": "real call: the Google token for Claude on Vertex AI, from the metadata server; wave 2 replaces it with MODEL_ENDPOINT and the host's gateway"
-    },
-    {
-      "file": "agents/spec-writer/scripts/files.mjs",
-      "address": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-      "what": "schema identifier: the $schema value a built plugin.json carries, never fetched"
-    },
-    {
-      "file": "agents/test-writer/scripts/write-suite.mjs",
-      "address": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      "what": "real call: the Google token for Claude on Vertex AI, from the metadata server; wave 2 replaces it with MODEL_ENDPOINT and the host's gateway"
-    },
-    {
-      "file": "agents/test-writer/scripts/write-suite.mjs",
-      "address": "https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent",
-      "what": "real call: the Gemini API; wave 2 replaces it with MODEL_ENDPOINT and MODEL_PROTOCOL gemini"
     }
   ]
 }

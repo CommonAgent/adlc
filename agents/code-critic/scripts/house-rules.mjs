@@ -5,8 +5,12 @@
 // and every finding here names a file, a line, a claim and a consequence:
 //
 //   model-in-code       a model's name or version written into a script, a
-//                       skill or a declaration, or a script that calls a
-//                       model without reading the configured one;
+//                       skill or a declaration; a script that reaches a model
+//                       except through the four model settings (MODEL_NAME,
+//                       MODEL_ENDPOINT, MODEL_KEY, MODEL_PROTOCOL) and the
+//                       shared caller, model-caller.mjs; or a model system
+//                       that names a credential, a variable or settings of
+//                       its own (Common Agent 12.4.1);
 //   hard-coded-address  an address written into a script where a bound
 //                       system belongs;
 //   kind-mismatch       a delivered piece whose media type is not its
@@ -16,6 +20,17 @@
 //   claims-match-code   a record, a credential or a `how` the declarations
 //                       state and the code does not do, or the other way
 //                       round.
+//
+// Besides the findings, every address literal (Common Agent 12.10: http,
+// https, ws or wss, then :// and a letter, a digit or [, or an IPv4 address in
+// the link-local 169.254 block; comments included; outside the seven identifier prefixes
+// 12.10 excepts) and the metadata server's host name, in every file under a
+// skill's scripts/ folder, every file a run command names and every script a
+// skill's build entry in plugin.json lists, is listed as a
+// warning with its file, its line and the literal. A model service's own
+// address is no exception. The warnings are the same on every run, in an order
+// of their own; they are a section apart, a reason does not close one, and
+// they are not counted among the open findings.
 //
 // What is checked is what can be seen in the text: a name built at run time
 // is not seen, and nothing here runs the package. A finding is a claim for a
@@ -30,7 +45,7 @@ const trim = (s) => String(s ?? "").trim();
 const base = (kind) => trim(kind).split(";")[0].trim().toLowerCase();
 
 export const RULES = {
-  "model-in-code": "no model name or version in code; scripts read the configured model through the shared caller",
+  "model-in-code": "no model name or version in code; a model is reached only through the four model settings and the shared caller",
   "hard-coded-address": "no address hard-coded where a bound system belongs",
   "kind-mismatch": "every delivered piece matches its declared kind",
   "undeclared-output": "no undeclared outputs",
@@ -55,8 +70,11 @@ export const MODEL_NAME_RE = new RegExp(
 const COMMENT_LINE_RE = /^\s*(\/\/|\/\*|\*|#(?!#|!))/;
 
 // The model providers' own endpoints: a call to one of them is a call to a
-// model. They are the binding's wire, inside the shared caller, and not an
-// address a bound system should hold.
+// model. The shared caller names none of them (the install places
+// MODEL_ENDPOINT), so a script that does reaches a model on its own. These
+// are host names this file must recognize in someone else's package, never
+// one it calls; the address findings leave them to this rule, and the
+// warnings list them like any other address.
 const MODEL_HOSTS = /(generativelanguage\.googleapis\.com|aiplatform\.googleapis\.com|aiplatform\.[a-z]+\.rep\.googleapis\.com|api\.anthropic\.com|api\.openai\.com)/;
 // Addresses that are not a system anybody binds: this machine, the metadata
 // server, documentation and schema hosts, the lifecycle's published pages,
@@ -71,8 +89,16 @@ const NOT_A_SYSTEM = [
 const URL_RE = /\bhttps?:\/\/([^\s"'`)<>\\]+)/g;
 const PLATFORM_HOST_RE = /(?<![@\w.-])((?:[a-z0-9-]+\.)+(?:agentmesh\.ai|run\.app))\b/g;
 const CREDENTIAL_ENV = /(_KEY|_TOKEN|_SECRET|_PASSWORD|_CREDS|_CREDENTIALS?)$/;
-const PROVIDER_KEYS = new Set(["GOOGLE_GENERATIVE_AI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"]);
-const CALLS_A_MODEL = /\b(callModel|askModel|askJson|lookJson)\s*\(|from\s+["']\.\/(caller|model|look|vertex)\.m?js["']/;
+// A provider's own key, and the variables the retired callers chose a model
+// or a place with: a script that reads one reaches a model outside the four
+// model settings. Names to recognize in someone else's package, written as
+// patterns ([_]) so this package's own scripts never read or carry them.
+const PROVIDER_KEY_RE = /^(?:GOOGLE[_]GENERATIVE_AI|ANTHROPIC|OPENAI)[_]API_KEY$/;
+const OLD_MODEL_VARS_RE = /\b((?:GOOGLE[_]GENERATIVE_AI|ANTHROPIC|OPENAI)[_]API_KEY|AGENT[_]MODEL|VERTEX[_]WHERE|GOOGLE[_]CLOUD_(?:PROJECT|LOCATION))\b/;
+// The settings a system of kind model is read through (12.4.1), and the
+// names this version of the shared caller still reads in their place.
+const MODEL_SETTINGS = ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL", "TEXT_MODEL", "TEXT_API_KEY"];
+const CALLS_A_MODEL = /\b(callModel|askModel|askJson|lookJson)\s*\(|from\s+["']\.\/(model-caller|caller|model|look|vertex)\.m?js["']/;
 
 const isScript = (f) => f.role === "script";
 const lineList = (text) => String(text ?? "").split(/\r?\n/);
@@ -117,14 +143,51 @@ export function modelFindings(files, texts) {
           `${f.path} names the model ${name}.`,
           f.role === "declaration"
             ? `Every install of this package is told to run ${name}, and when that model is retired the package has to be rebuilt to change a setting. A declaration says the capability the job needs (text, vision, long context); the install chooses the model.`
-            : `This script runs ${name} whatever the install configured, so changing the model is a new version rather than a setting, and the day ${name} is retired the job fails (Brand reader answered 404 that way). Read the model from TEXT_MODEL or AGENT_MODEL through the shared caller.`));
+            : `This script runs ${name} whatever the install configured, so changing the model is a new version rather than a setting, and the day ${name} is retired the job fails (Brand reader answered 404 that way). Read the model from the four model settings through the shared caller.`));
       }
     }
-    if (isScript(f) && MODEL_HOSTS.test(text) && !/\b(TEXT_MODEL|AGENT_MODEL|[A-Z]+_MODEL)\b/.test(text)) {
-      const n = lineOf(text, MODEL_HOSTS);
-      out.push(finding("model-in-code", f.path, n,
-        `${f.path} calls a model's endpoint and never reads the configured model.`,
-        "Whatever model this call reaches was chosen here and not by the install, so a run config or an owner who changes the model changes nothing for this step. The call belongs in the shared caller, which reads TEXT_MODEL or AGENT_MODEL."));
+    if (!isScript(f)) continue;
+    const host = codeLines(text, f.path).find(([, l]) => MODEL_HOSTS.test(l));
+    const old = host ? null : codeLines(text, f.path).map(([n, l]) => [n, OLD_MODEL_VARS_RE.exec(l)]).find(([, m]) => m);
+    if (host) {
+      out.push(finding("model-in-code", f.path, host[0],
+        `${f.path} calls a model provider's endpoint itself, not through the shared caller and the four model settings.`,
+        "Whatever model and service this call reaches were chosen here and not by the install, so a run config or an owner who changes MODEL_NAME or MODEL_ENDPOINT changes nothing for this step, and a host that offers its model only through a gateway cannot run it. The call belongs in the shared caller, scripts/model-caller.mjs, which reads the four settings on every call."));
+    } else if (old) {
+      out.push(finding("model-in-code", f.path, old[0],
+        `${f.path} reads ${old[1][1]}, so it reaches a model outside the four model settings and the shared caller.`,
+        `No install places ${old[1][1]} for this package, so the step works only on a host somebody set it on by hand, and the model or the credential it chooses is not the one the install placed. Read the model through the shared caller, scripts/model-caller.mjs, from MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL.`));
+    }
+  }
+  return out;
+}
+
+/** A system of kind model that names a credential, a variable or settings of
+ *  its own: it is read through the four model settings and nothing else. */
+export function modelSystemFindings(runtime, rtext = "") {
+  const out = [];
+  const file = "agent-runtime-requirements.json";
+  for (const s of runtime?.systems ?? []) {
+    if (s?.kind !== "model") continue;
+    const name = trim(s.name) || "the model system";
+    const from = lineOf(rtext, `"${trim(s.name)}"`) ?? 1;
+    const at = (key) => lineOf(rtext, new RegExp(`"${key}"\\s*:`), from) ?? from;
+    const consequence = (what) => `The install places the model through MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, the same four in every agent, so ${what} is placed by no install, and the package reads its model or credential from somewhere the install did not put it. A model system declares its kind and the protocols it speaks, and nothing else.`;
+    if (s.credential !== undefined) {
+      out.push(finding("model-in-code", file, at("credential"),
+        `${file} gives the model system ${name} a credential of its own.`,
+        consequence("that credential")));
+    }
+    if (s.env !== undefined) {
+      out.push(finding("model-in-code", file, at("env"),
+        `${file} gives the model system ${name} an env variable of its own, ${trim(s.env) || "unnamed"}.`,
+        consequence(trim(s.env) || "that variable")));
+    }
+    if (s.settings !== undefined) {
+      const envs = (Array.isArray(s.settings) ? s.settings : []).map((x) => trim(x?.env)).filter(Boolean);
+      out.push(finding("model-in-code", file, at("settings"),
+        `${file} gives the model system ${name} settings of its own${envs.length ? `: ${envs.join(", ")}` : ""}.`,
+        consequence(envs.length ? envs.join(", ") : "each of those settings")));
     }
   }
   return out;
@@ -164,6 +227,105 @@ export function addressFindings(files, texts) {
           `Every install reaches ${host}, in dev, in a customer's account and in prod alike${fallback ? " whenever the setting is missing, which is the case nobody notices" : ""}, and moving that system means a new version of the package. A system the package reaches is declared in agent-runtime-requirements.json and its address read from what the install places.`));
       }
     }
+  }
+  return out;
+}
+
+// An address literal as Common Agent 12.10 defines it, and the metadata
+// server's host name. These are patterns for finding addresses in someone
+// else's file, never an address this script calls, so none is written out
+// whole: the host name and the link-local range are escaped patterns.
+const ADDRESS_LITERAL_RE = /\b(?:https?|wss?):\/\/[A-Za-z0-9[][^\s"'`<>\\]*/gi;
+const METADATA_HOST_RE = /\bmetadata\.google\.internal\b/gi;
+const OCTET = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+const LINK_LOCAL_RE = new RegExp(`(?<![\\w.])169\\.254\\.${OCTET}\\.${OCTET}(?![\\w.])`, "g");
+// The seven identifier prefixes 12.10 excepts, a format's name spelled as an
+// address. They are data to recognize in someone else's file and never an
+// address this script calls, so each is built from its scheme and its host.
+const IDENTIFIER_PREFIXES = [
+  ["http", "www.w3.org/"], ["https", "www.w3.org/"], ["http", "json-schema.org/"], ["https", "json-schema.org/"],
+  ["http", "purl.org/"], ["http", "schemas.openxmlformats.org/"], ["http", "schemas.microsoft.com/"],
+].map(([scheme, host]) => `${scheme}:${"//"}${host}`);
+const LOCKFILE_RE = /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|uv\.lock|Pipfile\.lock)$/;
+const SKILL_SCRIPT_RE = /(^|\/)skills\/[^/]+\/scripts\//;
+
+/** Every address literal on one line, in the order they stand: [{at, literal}].
+ *  An address inside a URL is counted once, as the URL; an excepted
+ *  identifier is not counted; a credential in an address is left out. */
+export function addressLiterals(line) {
+  const out = [];
+  let rest = String(line ?? "");
+  for (const m of rest.matchAll(ADDRESS_LITERAL_RE)) {
+    const literal = m[0].replace(/[.,;:)]+$/, "");
+    if (!IDENTIFIER_PREFIXES.some((p) => literal.toLowerCase().startsWith(p))) out.push({ at: m.index, literal });
+  }
+  rest = rest.replace(ADDRESS_LITERAL_RE, (m) => " ".repeat(m.length));
+  for (const re of [LINK_LOCAL_RE, METADATA_HOST_RE]) for (const m of rest.matchAll(re)) out.push({ at: m.index, literal: m[0] });
+  return out
+    .sort((a, b) => a.at - b.at)
+    .map((x) => ({ at: x.at, literal: x.literal.replace(/^([a-z]+:\/\/)[^/@\s]*@/i, "$1[left out]@") }));
+}
+
+/** The files a run command in agent-runtime-requirements.json names, as
+ *  paths of the package given: the built path when it came, else the script
+ *  plugin.json's build entry copies there. */
+export function runCommandFiles(files, runtime, manifest) {
+  const have = new Set(files.map((f) => f.path));
+  const skills = manifest?.extensions?.["net.agentdoc.package"]?.build?.skills ?? {};
+  const out = new Set();
+  for (const r of Object.values(runtime?.run ?? {})) {
+    for (const part of Array.isArray(r?.command) ? r.command : []) {
+      const rel = String(part ?? "").replace(/^(?:\{home\}\/)?\{package\}\//, "");
+      if (/[{}\s]/.test(rel) || !/\/[^/]+\.[A-Za-z0-9]+$/.test(rel)) continue;
+      if (have.has(rel)) { out.add(rel); continue; }
+      const m = /^skills\/([^/]+)\/(.+)$/.exec(rel);
+      if (!m) continue;
+      const name = m[2].split("/").pop();
+      const source = (skills[m[1]]?.scripts ?? []).find((s) => s === m[2] || s.split("/").pop() === name);
+      if (source && have.has(source)) out.add(source);
+      else if (have.has(m[2])) out.add(m[2]);
+    }
+  }
+  return out;
+}
+
+/** Every address literal in the files under a skill's scripts/ folder, the
+ *  files a run command names and the scripts any skill's build entry in
+ *  plugin.json lists, each a warning with its file, its line and the
+ *  literal: the same on every run, in file, line and column order. A comment,
+ *  a reason or the message never removes one, and a model service's address
+ *  is listed like any other. */
+export function addressWarnings(files, texts) {
+  const parse = (p) => { try { return texts[p] ? JSON.parse(texts[p]) : null; } catch { return null; } };
+  const manifest = parse("plugin.json");
+  const named = runCommandFiles(files, parse("agent-runtime-requirements.json") ?? parse("install.json"), manifest);
+  // In a package source the builder copies exactly the scripts each skill's
+  // build entry lists into skills/<slug>/scripts/, so those are read too.
+  for (const s of Object.values(manifest?.extensions?.["net.agentdoc.package"]?.build?.skills ?? {})) {
+    for (const p of Array.isArray(s?.scripts) ? s.scripts : []) named.add(String(p));
+  }
+  const read = files
+    .map((f) => f.path)
+    .filter((p) => texts[p] != null && !LOCKFILE_RE.test(p) && (SKILL_SCRIPT_RE.test(p) || named.has(p)))
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const out = [];
+  for (const p of [...new Set(read)]) {
+    lineList(texts[p]).forEach((line, i) => {
+      const told = new Set();
+      for (const { literal } of addressLiterals(line)) {
+        if (told.has(literal)) continue;
+        told.add(literal);
+        const metadata = /metadata\.google\.internal|(^|[/@])169\.254\./i.test(literal);
+        out.push({
+          source: "house rule", rule: "hard-coded-address", warning: true,
+          place: { file: p, line: i + 1 }, literal,
+          claim: `${p} carries the address ${literal} on line ${i + 1}.`,
+          consequence: metadata
+            ? "A script that asks the machine's metadata server takes a credential from around the agent rather than the one the install placed, and runs only on that provider's machines (Common Agent 12.4.1, 12.10)."
+            : "Every install reaches this address as written, whatever it placed, and a depot refuses a package that carries one (Common Agent 12.10). Where a system is, a model included, is the install's to place.",
+        });
+      }
+    });
   }
   return out;
 }
@@ -321,6 +483,9 @@ export function claimFindings(files, texts, descriptor, runtime, manifest) {
     for (const st of s?.settings ?? []) if (st?.env) bound.add(st.env);
   }
   for (const st of runtime?.settings ?? []) if (st?.env) bound.add(st.env);
+  // A system of kind model is read through the four model settings, which
+  // every install places for it.
+  if ((runtime?.systems ?? []).some((s) => s?.kind === "model")) for (const n of MODEL_SETTINGS) bound.add(n);
   for (const f of scripts) {
     const text = texts[f.path];
     const names = new Map();
@@ -330,7 +495,7 @@ export function claimFindings(files, texts, descriptor, runtime, manifest) {
     for (const m of text.matchAll(/\benv\.([A-Z][A-Z0-9_]*)/g)) add(m[1], m.index);
     for (const m of text.matchAll(/(?:const|let|var)\s*\{([^}]*)\}\s*=\s*process\.env/g)) for (const n of m[1].split(",")) { const k = trim(n.split(":")[0].split("=")[0]); if (/^[A-Z][A-Z0-9_]*$/.test(k)) add(k, m.index); }
     for (const [n, line] of names) {
-      if (!CREDENTIAL_ENV.test(n) || bound.has(n) || PROVIDER_KEYS.has(n) || /^(MESH|AGENT)_/.test(n)) continue;
+      if (!CREDENTIAL_ENV.test(n) || bound.has(n) || PROVIDER_KEY_RE.test(n) || /^(MESH|AGENT)_/.test(n)) continue;
       out.push(finding("claims-match-code", f.path, line,
         `${f.path} reads the credential ${n}, and no system in agent-runtime-requirements.json binds it.`,
         `No install places ${n}, so the step fails on every host but the one somebody set it on by hand, and the package's declarations do not say it reaches whatever that credential opens. Bind it as a system's credential, or stop reading it.`));
@@ -437,6 +602,7 @@ export function checkHouseRules(read, texts) {
   const all = [
     ...credentialFindings(read),
     ...modelFindings(files, texts),
+    ...modelSystemFindings(runtime, texts["agent-runtime-requirements.json"] ?? ""),
     ...addressFindings(files, texts),
     ...pieceFindings(files, texts, descriptor),
     ...claimFindings(files, texts, descriptor, runtime, manifest),
@@ -444,7 +610,7 @@ export function checkHouseRules(read, texts) {
   ];
   const inside = [], outside = [];
   for (const f of all) (inChange(f, read) ? inside : outside).push(f);
-  return { house_rules: "v1", rules: RULES, findings: inside, outside_the_change: outside };
+  return { house_rules: "v1", rules: RULES, findings: inside, outside_the_change: outside, warnings: addressWarnings(files, texts) };
 }
 
 /** The laid-out package's texts, by path. */

@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import {
   INSTRUCTION, TRIES, answerFrom, blanksOf, draftRequest, modelOf, requestParts, wentWithoutOf,
 } from "../scripts/draft.mjs";
+import { modelSettings } from "../scripts/model-caller.mjs";
 
 const ASKED = {
   asked: "v1",
@@ -39,11 +40,14 @@ const GOOD_SPEC = {
 
 test("the model is a setting, and the package names none of its own", () => {
   assert.equal(modelOf({}), "", "the package names no model of its own");
-  assert.equal(modelOf({ TEXT_MODEL: "gemini-3.8-flash-cyber" }), "gemini-3.8-flash-cyber");
-  assert.equal(modelOf({ AGENT_MODEL: "gemini-3.8-flash" }), "gemini-3.8-flash", "the host's model when the install sets none");
-  assert.equal(modelOf({ TEXT_MODEL: "x", AGENT_MODEL: "y" }), "x", "the text-reasoning setting comes first");
-  assert.equal(modelOf({ TEXT_MODEL: "  " }), "", "a blank setting is not a model");
-  assert.equal(draftRequest({ env: { TEXT_MODEL: "x" } }).model, "x");
+  assert.equal(modelOf({ MODEL_NAME: "model-of-the-install" }), "model-of-the-install");
+  assert.equal(modelOf({ AGENT_MODEL: "gemini-3.8-flash" }), "", "a host's own model variable is not a setting this package reads");
+  assert.equal(modelOf({ MODEL_NAME: "x", AGENT_MODEL: "y" }), "x", "MODEL_NAME is the model, whatever else is set");
+  assert.equal(modelOf({ MODEL_NAME: "  " }), "", "a blank setting is not a model");
+  for (const env of [{}, { MODEL_NAME: "x" }, { MODEL_NAME: "x", AGENT_MODEL: "y" }]) {
+    assert.equal(modelOf(env), modelSettings(env).name, "the model is the one the shared caller reads");
+  }
+  assert.equal(draftRequest({ env: { MODEL_NAME: "x" } }).model, "x");
 });
 
 test("the request is the instruction, the request, the reference, and a spec that works", () => {

@@ -23,14 +23,14 @@ If the service will not answer, or answers with something that is not an archite
 
 Nothing in this folder is run on its own; the write-the-architecture and revise-the-architecture skills name the commands that do the whole job, and this skill only explains what its command does for this step.
 
-name.mjs sends one request to the text-reasoning service as the model TEXT_MODEL names: the instruction, the statement, the reserved system names, in a revision the record with the answers and the change, the architecture standard, and an example record. It checks the answer with standard.mjs and asks once more with the findings, never a third time. Then code takes out every model name, address and credential, renames a system named by its product, and turns each commitment the answer filled in (a spending limit, a destination beyond the derived set, a system the statement does not call for) into a question. It writes records/<job>/named.json and records/<job>/calls.json.
+name.mjs sends one request to the text-reasoning model, reached through the four settings the install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, read on every run through the shared model caller (scripts/model-caller.mjs), and asks for JSON: the instruction, the statement, the reserved system names, in a revision the record with the answers and the change, the architecture standard, and an example record. It checks the answer with standard.mjs and asks once more with the findings, never a third time. Then code takes out every model name, address and credential, renames a system named by its product, and turns each commitment the answer filled in (a spending limit, a destination beyond the derived set, a system the statement does not call for) into a question. It writes records/<job>/named.json and records/<job>/calls.json.
 
 ## Scripts
 
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/name.mjs
-- scripts/caller.mjs
+- scripts/model-caller.mjs
 - scripts/standard.mjs
 - scripts/options.mjs
 - scripts/architecture-record.mjs

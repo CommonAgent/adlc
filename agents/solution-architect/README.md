@@ -60,11 +60,14 @@ spec writer carries a copy to read the record its Design is given.
 ## What it needs
 
 - Node 22 or later. The scripts use only node's own modules.
-- A text model for the one judgment in the job, bound as the `text-reasoning`
-  system: `TEXT_API_KEY`, and `TEXT_MODEL`, which the install places from the
-  binding. The package names no model and refuses to call one when
-  `TEXT_MODEL` is empty. A name starting `google-vertex-anthropic/` is Claude on
-  Google Vertex AI; a bare name is a Gemini model at Google.
+- A text model for the one judgment in the job: the system of kind `model` named
+  `text-reasoning`, reached through the shared caller
+  (`scripts/model-caller.mjs`) and the four settings the install places:
+  `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` (empty for a gateway on the
+  host) and `MODEL_PROTOCOL` (`anthropic-messages`, `openai-chat` or `gemini`, the three
+  formats the shared caller speaks), read on every run. The
+  package names no model and no address of its own. With a setting
+  missing it refuses to call one.
 - The platform's defaults, attached, or the copy in
   [references/house-stack.json](references/house-stack.json) (the system
   vocabulary as AgentMesh published it on 2026-10-27).

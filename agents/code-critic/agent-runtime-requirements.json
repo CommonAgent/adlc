@@ -11,14 +11,11 @@
   "systems": [
     {
       "name": "text-reasoning",
-      "kind": "service",
-      "credential": "text-reasoning-key",
-      "env": "TEXT_API_KEY",
-      "settings": [
-        {
-          "env": "TEXT_MODEL",
-          "purpose": "the model this agent runs, so that changing it is a setting and not a new version. It must read text and hold a whole package in one context. The package names no model of its own: absent, the model the host runs agents on (AGENT_MODEL) is used, and with neither the review goes without the model and says so. A name starting google-vertex-anthropic/ is Claude on Google Vertex AI, paid for with a token from the machine it runs on, and the credential is then where to call, written <project>/<location>; a bare name, or one starting google/, is a Gemini model reached at Google, and the credential is then its key; any other provider is refused in words"
-        }
+      "kind": "model",
+      "protocols": [
+        "anthropic-messages",
+        "openai-chat",
+        "gemini"
       ]
     }
   ],

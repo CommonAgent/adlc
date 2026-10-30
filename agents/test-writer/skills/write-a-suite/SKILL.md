@@ -63,6 +63,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/job.mjs
 - scripts/declared.mjs
 - scripts/write-suite.mjs
+- scripts/model-caller.mjs
 - scripts/check-suite.mjs
 - scripts/reply.mjs
 - scripts/went-without.mjs

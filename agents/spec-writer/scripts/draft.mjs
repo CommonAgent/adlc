@@ -25,17 +25,20 @@
 // job ends in words and never runs on to the job's own time limit
 // (2026-10-28: three of four runs on dev did).
 //
-// The service is chosen by the model's name, which the install sets as
-// TEXT_MODEL or AGENT_MODEL; the package names none. A google-vertex-anthropic/
-// name is Claude on Google Vertex AI (paid for with the job's own token;
-// TEXT_API_KEY then says <project>/<location>); a bare Gemini name is
-// reached at Google with TEXT_API_KEY as its key. Any other name with a provider
-// in front is refused in words (owner, 2026-10-03: every Claude call goes
-// through Vertex).
+// The model is reached through the shared model caller (model-caller.mjs,
+// Common Agent 12.4.1) and nothing else: which model, where it is, the
+// credential and the request format are the four settings the install places,
+// MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, read on every
+// call, and the package names no model and no address of its own. The prompt
+// goes as plain text, each call limited to the seconds the step has left. With
+// a setting missing, a protocol the package's text-reasoning system does not
+// declare, or the declared protocols unreadable, no call is made and the job
+// is refused in words.
 //
-//   needs: node >= 22; TEXT_API_KEY for the text-reasoning service
+//   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY
+//   where the endpoint asks for one
 //   ASKED=<asked.json> RECORDS=<records folder> [REFERENCE=<md>] [WORKED=<spec.json>]
-//   [ANSWERS=<answers.json>] TEXT_MODEL=<model> (or AGENT_MODEL) node draft.mjs
+//   [ANSWERS=<answers.json>] node draft.mjs
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -44,6 +47,7 @@ import { checkDraft, earlierBareJson } from "./check-spec.mjs";
 import { CAN_USE_RULE, canUseProblems, fitCanUse, loadSchemas } from "./can-use.mjs";
 import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
+import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -51,14 +55,41 @@ const trim = (s) => String(s ?? "").trim();
 /** The digest a draft is delivered against: sha256 over its bytes. */
 export const digestOf = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-/** The model, from the install's settings: TEXT_MODEL, the text-reasoning
- *  system's own setting, else AGENT_MODEL, the model the host runs agents on.
- *  The package names no model of its own, because a model named in a package
- *  is a rebuild waiting to happen: models are retired on somebody else's
- *  schedule. With neither set, the job is refused in words (NO_MODEL). */
-export const MODEL_SETTINGS = ["TEXT_MODEL", "AGENT_MODEL"];
-export const modelOf = (env = {}) => MODEL_SETTINGS.map((k) => trim(env[k])).find(Boolean) ?? "";
-export const NO_MODEL = "no model is configured: the install sets TEXT_MODEL (the text-reasoning system's model) or AGENT_MODEL (the model the host runs agents on), and this package names none of its own";
+/** The model, as the shared caller reads it from the install's settings. The
+ *  package names no model of its own, because a model named in a package is a
+ *  rebuild waiting to happen: models are retired on somebody else's schedule.
+ *  With none set, the job is refused in the caller's words. */
+export const modelOf = (env = {}) => modelSettings(env).name;
+
+/** The request formats the package's text-reasoning system declares, read
+ *  from agent-runtime-requirements.json beside the package (one level up in
+ *  the source, three in a built package's skills/<slug>/scripts/). Where the
+ *  declaration is not found, cannot be read or names none, null, and then
+ *  nothing is sent and the job is refused (PROTOCOLS_UNREAD). `here` is the
+ *  scripts folder the file is looked for above, so a test can point it at
+ *  another file. */
+export function declaredProtocols(here = HERE) {
+  for (const at of [join(here, "..", "agent-runtime-requirements.json"), join(here, "..", "..", "..", "agent-runtime-requirements.json")]) {
+    if (!existsSync(at)) continue;
+    try {
+      const sys = (JSON.parse(readFileSync(at, "utf8"))?.systems ?? []).find((s) => s?.name === "text-reasoning");
+      if (Array.isArray(sys?.protocols) && sys.protocols.length) return sys.protocols.map(String);
+    } catch { /* an unreadable declaration is no declaration */ }
+  }
+  return null;
+}
+
+/** Why the job is refused when the declared protocols could not be read:
+ *  without them the caller would hold MODEL_PROTOCOL to nothing and send
+ *  whatever it speaks (Common Agent 12.4.1), so nothing is sent. */
+export const PROTOCOLS_UNREAD = "the model system's declared protocols could not be read from agent-runtime-requirements.json, so nothing was sent to the model";
+
+/** Why no call is made, or "" when one can be: a setting the caller refuses,
+ *  or the declared protocols unread. */
+export function whyNoCall(env = process.env, { protocols = declaredProtocols() } = {}) {
+  const read = Array.isArray(protocols) && protocols.length;
+  return cannotCall(env, { protocols: read ? protocols : undefined }) || (read ? "" : PROTOCOLS_UNREAD);
+}
 
 /** Two goes and no more. The second carries the findings from the first. */
 export const TRIES = 2;
@@ -167,10 +198,16 @@ never inputs.
 A job that calls a model reaches it as a bound system with access "trigger":
 "text-reasoning" for text, "image-reading" for pictures, "speech-to-text" or
 "text-to-speech" for speech. Its "purpose" says the capability the job needs
-(text, vision, long context). The scripts read the model from AGENT_MODEL or
-TEXT_MODEL through the shared caller, so the install and a run config choose
-it. Never name a model or a version anywhere in the spec: not in a setting's
-default, an instruction or a sentence.
+(text, vision, long context). The system is of kind "model" with "protocols",
+the request formats its scripts speak: list all three the shared caller speaks,
+"anthropic-messages", "openai-chat" and "gemini", so a customer's own model
+gateway works, unless the job relies on something one of them cannot carry;
+then leave that one out and say in the spec which it is and why. It takes no
+credential, env or settings: the scripts
+reach the model through the shared caller and the four settings the install
+places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, so the
+install and a run config choose it. Never name a model or a version anywhere
+in the spec: not in a setting's default, an instruction or a sentence.
 
 No address goes anywhere in "systems": not in a setting, not in a purpose.
 A product somebody binds is named by its system and credential. A public read
@@ -311,112 +348,32 @@ export function draftRequest(opts = {}) {
  *
  *  A whole spec is long, and an answer cut in the middle of its JSON reads as
  *  "not JSON", which hides the real reason. The limit is set well above the
- *  longest spec written so far and is the same on both services. */
+ *  longest spec written so far, and an answer cut at it is refused by the
+ *  shared caller as cut, never read as whole. */
 export const OUTPUT_TOKENS = 64000;
 
-/** Which service a model is reached through. A google-vertex-anthropic/ name is
- *  Claude on Vertex; a bare name is a Gemini model at Google; any other name
- *  with a provider in front is "none", which no call is made for, and so is
- *  a blank name: there is no default model. */
-export const serviceOf = (model) => {
-  const m = trim(model);
-  if (!m) return "none";
-  if (m.startsWith(`${VERTEX}/`)) return "vertex";
-  return m.includes("/") ? "none" : "google";
-};
+/** The request as the plain text the model is sent: its parts, in order. */
+export const promptOf = (request) => (request?.body?.contents?.[0]?.parts ?? []).map((p) => p?.text ?? "").join("\n\n");
 
-export const GOOGLE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-
-/** Claude on Google Vertex AI (2026-09-29). A model named
- *  google-vertex-anthropic/<id> is called at Vertex with a token from the
- *  job's own service account (the metadata server), and the credential is not
- *  a key but where to call: "<project>/<location>". Vertex reports tokens and
- *  not money, so no cost is stated. */
-export const VERTEX = "google-vertex-anthropic";
-export const METADATA_TOKEN_URL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-
-export function vertexWhere(key) {
-  const [project, location] = trim(key).split("/");
-  if (!project || !location) throw new Error("the text-reasoning credential for a Vertex model is <project>/<location>");
-  return { project, location };
-}
-
-export function vertexUrl(model, key) {
-  const { project, location } = vertexWhere(key);
-  const id = trim(model).slice(VERTEX.length + 1).replace(/@default$/, "");
-  const host = location === "global" ? "aiplatform.googleapis.com"
-    : location === "us" || location === "eu" ? `aiplatform.${location}.rep.googleapis.com` : `${location}-aiplatform.googleapis.com`;
-  return `https://${host}/v1/projects/${project}/locations/${location}/publishers/anthropic/models/${id}:rawPredict`;
-}
-
-/** Vertex reports tokens and not money, and a price table would name models,
- *  so the cost is not stated here: the tokens are recorded, and the money is
- *  the platform's spend report's. */
-export function vertexCost() {
-  return null;
-}
-
-/** A token from the metadata server of the machine the job runs on. */
-export async function metadataToken(fetchImpl = fetch) {
-  const r = await fetchImpl(METADATA_TOKEN_URL, { headers: { "Metadata-Flavor": "Google" } });
-  if (!r.ok) throw new Error(`the metadata server answered ${r.status}, so there is no token for Vertex`);
-  const d = await r.json();
-  if (!trim(d?.access_token)) throw new Error("the metadata server gave no token for Vertex");
-  return d.access_token;
-}
-
-/** The call as HTTP: url, headers and body. The key goes in a header and
- *  nowhere else, so nothing that logs a body can carry it. Pure; main sends.
- *  For a Vertex model `key` is where to call and `token` pays. */
-export function httpRequestFor(request, key, token = "") {
-  const model = trim(request?.model);
-  if (!model) throw new Error(NO_MODEL);
-  if (serviceOf(model) === "vertex") {
-    const text = (request?.body?.contents?.[0]?.parts ?? []).map((p) => p.text).join("\n\n");
-    return {
-      url: vertexUrl(model, key),
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ anthropic_version: "vertex-2023-10-16", max_tokens: OUTPUT_TOKENS, messages: [{ role: "user", content: text }] }),
-    };
-  }
-  if (serviceOf(model) === "none") {
-    throw new Error(`the model ${model} is not one this agent reaches: name a ${VERTEX}/<id> model (Claude on Vertex AI) or a bare Gemini name`);
-  }
-  return {
-    url: `${GOOGLE_URL}/${encodeURIComponent(model)}:generateContent`,
-    headers: { "content-type": "application/json", "x-goog-api-key": key },
-    // JSON mode: the service answers with one JSON object and no prose or
-    // fence around it, which is what the answer is read as.
-    body: JSON.stringify({ ...request.body, generationConfig: { maxOutputTokens: OUTPUT_TOKENS, responseMimeType: "application/json" } }),
-  };
-}
-
-const count = (n) => (Number.isFinite(Number(n)) && n !== null && n !== undefined && n !== "" ? Number(n) : null);
-
-/** What came back, whichever service sent it: the text, the model that
- *  answered and what the call used. An answer cut at the output limit is
- *  refused by name, because a cut JSON answer would otherwise be reported as
- *  "not JSON" and the real reason would be lost. `cost` is null where the
- *  service does not report one. */
-export function textOf(service, data, model = "") {
-  if (service === "vertex") {
-    if (data?.stop_reason === "max_tokens") throw new Error("the service's answer was cut at the output limit");
-    const text = (Array.isArray(data?.content) ? data.content : []).filter((c) => c?.type === "text").map((c) => c.text ?? "").join("");
-    const u = data?.usage ?? {};
-    const tin = count(u.input_tokens), tout = count(u.output_tokens);
-    return {
-      text,
-      answered_by: trim(data?.model) ? `${VERTEX}/${trim(data.model)}` : null,
-      usage: { tokens_in: tin, tokens_out: tout, cost: vertexCost(model || data?.model, tin, tout) },
-    };
-  }
-  const candidate = data?.candidates?.[0];
-  if (candidate?.finishReason === "MAX_TOKENS") throw new Error("the service's answer was cut at the output limit");
-  const u = data?.usageMetadata ?? {};
-  return {
-    text: (candidate?.content?.parts ?? []).map((p) => p?.text ?? "").join(""),
-    answered_by: trim(data?.modelVersion) || null,
-    usage: { tokens_in: count(u.promptTokenCount), tokens_out: count(u.candidatesTokenCount), cost: null },
+/** The call askForSpec makes when it is handed none: the prompt as plain text
+ *  through the shared caller, with this env and the package's declared
+ *  protocols, limited to the seconds the step has left. It answers the text,
+ *  the model that answered and what the call used; the service reports tokens
+ *  and not money, and a price table would name models, so no cost is stated.
+ *  With the declared protocols unread it throws PROTOCOLS_UNREAD before
+ *  anything is sent. */
+export function callFor(env = process.env, { protocols = declaredProtocols(), fetchImpl } = {}) {
+  return async (request, { seconds = DRAFT_SECONDS } = {}) => {
+    if (!(Array.isArray(protocols) && protocols.length)) throw new Error(PROTOCOLS_UNREAD);
+    const got = await callModel(promptOf(request), {
+      env,
+      protocols,
+      ...(fetchImpl ? { fetchImpl } : {}),
+      maxOutputTokens: OUTPUT_TOKENS,
+      json: true,
+      timeoutMs: Math.max(1, Math.floor(seconds * 1000)),
+    });
+    return { text: got.text, answered_by: got.answered_by ?? null, usage: { tokens_in: got.tokens_in, tokens_out: got.tokens_out, cost: null } };
   };
 }
 
@@ -520,6 +477,9 @@ export async function askForSpec({
   call, check = null, tries = TRIES, jsonRetries = JSON_RETRIES,
   seconds = null, minCallSeconds = MIN_CALL_SECONDS, now = Date.now, ...opts
 } = {}) {
+  // With no call handed in and the settings handed in as env, the shared
+  // caller is the call, with that env. With neither, there is nothing to ask.
+  if ((call === undefined || call === null) && opts.env && typeof opts.env === "object") call = callFor(opts.env);
   if (typeof call !== "function") throw new Error("askForSpec needs a call");
   const deadline = now() + 1000 * (seconds ?? draftSecondsOf(opts.env ?? {}));
   const left = () => (deadline - now()) / 1000;
@@ -655,35 +615,25 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const env = process.env;
   const { ASKED, RECORDS, ANSWERS } = env;
   if (!ASKED || !RECORDS) { console.error("ASKED and RECORDS are required"); process.exit(2); }
-  const key = trim(env.TEXT_API_KEY);
-  if (!key) { console.error("TEXT_API_KEY is required: the text-reasoning credential the install placed"); process.exit(2); }
   const read = (p) => (p && existsSync(p) ? readFileSync(p, "utf8") : "");
   try {
     const asked = JSON.parse(readFileSync(ASKED, "utf8"));
     const answers = ANSWERS && existsSync(ANSWERS) ? JSON.parse(readFileSync(ANSWERS, "utf8")) : null;
-    const model = modelOf(env);
-    if (!model) {
-      console.log(JSON.stringify({ ok: false, code: 1, reply: `The spec was not drafted: ${NO_MODEL}.` }));
-      console.error(NO_MODEL);
+    // The four model settings are the install's; with one missing, a
+    // protocol this package does not declare, or the declared protocols
+    // unreadable, nothing is sent and the job is refused in words.
+    // MODEL_KEY may be empty.
+    const protocols = declaredProtocols();
+    const why = whyNoCall(env, { protocols });
+    if (why) {
+      console.log(JSON.stringify({ ok: false, code: 1, reply: `The spec was not drafted: ${why}.` }));
+      console.error(why);
       process.exit(1);
     }
-    const call = async (request, { seconds = DRAFT_SECONDS } = {}) => {
-      const token = serviceOf(request.model) === "vertex" ? await metadataToken() : "";
-      const http = httpRequestFor(request, key, token);
-      // Cut at the seconds the step has left, so no call outlives the step.
-      const signal = AbortSignal.timeout(Math.max(1, Math.floor(seconds * 1000)));
-      let r, d;
-      try {
-        r = await fetch(http.url, { method: "POST", headers: http.headers, body: http.body, signal });
-        if (!r.ok) throw new Error(`the text-reasoning service answered ${r.status}`);
-        d = await r.json();
-      } catch (e) {
-        if (e?.name === "TimeoutError" || e?.name === "AbortError") throw new Error(`the text-reasoning service did not answer within ${Math.round(seconds)} seconds`);
-        throw e;
-      }
-      if (d?.error) throw new Error(`the text-reasoning service refused: ${trim(d.error.message) || "no reason given"}`);
-      return textOf(serviceOf(request.model), d, request.model);
-    };
+    const model = modelOf(env);
+    // The prompt goes as plain text, each call cut at the seconds the step
+    // has left, so no call outlives the step.
+    const call = callFor(env, { protocols });
     const out = await askForSpec({
       call, asked, answers,
       reference: read(referenceAt(env)),
@@ -697,7 +647,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const draftText = JSON.stringify(out.spec, null, 2) + "\n";
     writeFileSync(join(RECORDS, "draft.json"), draftText);
     writeFileSync(join(RECORDS, "calls.json"), JSON.stringify({
-      calls: "v1", model, service: serviceOf(model), made: out.calls,
+      calls: "v1", model, service: modelSettings(env).protocol, made: out.calls,
       // The digest of the draft as this step wrote it. pieces.mjs delivers
       // the draft only while it still matches, so a draft edited by hand
       // after this step (a harness's file tool cuts lines over 2000

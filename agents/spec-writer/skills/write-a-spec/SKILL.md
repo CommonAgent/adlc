@@ -65,6 +65,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/asked.mjs
 - scripts/draft.mjs
+- scripts/model-caller.mjs
 - scripts/check-spec.mjs
 - scripts/builds.mjs
 - scripts/files.mjs
@@ -82,3 +83,4 @@ Run these from this skill's folder; each one says what it needs at the top.
 - references/a-spec-that-works.json
 - references/rules.md
 - references/standing-asset-schemas.json
+- references/plugin-manifest-schema.json

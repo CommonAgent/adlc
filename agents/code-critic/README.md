@@ -21,9 +21,11 @@ security reviewer, the next stage.
 First, with a program and no model, the house architecture rules
 ([references/the-house-rules.md](references/the-house-rules.md)):
 
-- no model name or version in code: scripts read the configured model
-  (`TEXT_MODEL` or `AGENT_MODEL`) through the shared caller;
-- no address hard-coded where a bound system belongs;
+- no model name or version in code: scripts reach the model only through the
+  four model settings and the shared caller;
+- every network address a script carries is listed as a warning, found by a
+  program before the model is asked, the same on every run; a reason does not
+  remove it, and a warning is not a refusal;
 - every delivered piece matches its declared kind, and no kind is a bare
   `application/json`;
 - no undeclared outputs;
@@ -44,11 +46,15 @@ reason kept in the job's records.
 ## What it needs
 
 - Node 22 or later. The scripts use only node's own modules.
-- A text model, bound as the `text-reasoning` system: `TEXT_API_KEY`, and
-  `TEXT_MODEL` for the model, which must hold a whole package in one
-  context. The package names no model of its own; with none configured it
-  delivers the house-rule findings and says the review went without the
-  model.
+- A text model that holds a whole package in one context: the system of kind `model` named
+  `text-reasoning`, reached through the shared caller
+  (`scripts/model-caller.mjs`) and the four settings the install places:
+  `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` (empty for a gateway on the
+  host) and `MODEL_PROTOCOL` (`anthropic-messages`, `openai-chat` or `gemini`, the three
+  formats the shared caller speaks), read on every run. The
+  package names no model and no address of its own. With a setting
+  missing it delivers the house-rule findings and says the review went
+  without the model.
 
 ## Running it
 

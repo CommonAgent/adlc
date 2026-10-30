@@ -7,8 +7,10 @@
 // and its digest, the verdict, whether the architecture record was given,
 // the owner's spending limit, each reach (system, access, reason), each spend
 // ceiling (with its reason), each never-do (with its reason), each permission
-// with no recorded reason, and what stopped the package when it was refused.
-// The body says the same for a reader, under fixed headings:
+// with no recorded reason, what stopped the package when it was refused, and
+// each address warning (file, line and address), whatever the verdict.
+// The body says the same for a reader, under fixed headings, the address
+// warnings under ## Programs:
 //
 //   ## Verdict, ## Reaches, ## Spends, ## Never does, ## No reason recorded,
 //   ## Programs, ## Parts, ## Accepted knowingly, ## Reasons weighed,
@@ -45,6 +47,11 @@ export function header({ pkg, a, reviewedAt }) {
   list("never_does", a.neverDos, [["act", "act"], ["reason", "reason"]]);
   list("no_reason_recorded", a.unreasoned, [["permission", "permission"], ["asked_in", "asked_in"], ["flagged", "why_flagged"]]);
   if (a.refusals.length) { L.push("refused_for:"); for (const r of a.refusals) L.push(`  - ${q(r)}`); } else L.push("refused_for: []");
+  const warnings = a.warnings ?? [];
+  if (warnings.length) {
+    L.push("warnings:");
+    for (const w of warnings) L.push(`  - file: ${q(w.file)}`, `    line: ${Number(w.line) || 0}`, `    address: ${q(w.address)}`);
+  } else L.push("warnings: []");
   L.push("---");
   return L.join("\n");
 }
@@ -106,10 +113,16 @@ export function reviewMarkdown({ pkg, a, traced, weighed = null, reviewedAt, not
     for (const b of t.browsers ?? []) L.push(`- ${b.file} drives a browser${b.routes ? " and routes its requests" : ", and routes none of its requests"}.`);
     for (const c of t.undeclaredCommands ?? []) L.push(`- ${c.file} starts ${c.what}, which the runtime requirements do not declare.`);
     for (const k of t.meshKeys ?? []) L.push(`- ${k.file} reads ${k.name}, a mesh credential the host places for every job.`);
-    for (const k of t.modelKeys ?? []) L.push(`- ${k.file} reads ${k.name}, the model key the deployment manager places beside AGENT_MODEL for the model it gives the agent.`);
+    for (const k of t.modelKeys ?? []) L.push(`- ${k.file} reads ${k.name}, the model key the install places for the model it gives the agent.`);
     for (const v of t.credentialVars ?? []) L.push(`- **${v.files.join(", ")} read${v.files.length === 1 ? "s" : ""} ${v.name}, a credential no system declares.**`);
     if (!t.reaches.length && !t.unmatched.length && !t.openFetches.length && !t.unmatchedOpen?.length) L.push("- No program reaches the network.");
   }
+  L.push("");
+  const warnings = a.warnings ?? [];
+  if (warnings.length) {
+    L.push(`**Address ${warnings.length === 1 ? "warning" : "warnings"}.** ${warnings.length === 1 ? "This network address is" : `These ${warnings.length} network addresses are`} written into the package's scripts (Common Agent 12.10), found by a program before any model was asked. A package carries no address of its own: where a system is, a model included, is the install's to place. A warning refuses nothing on its own, and no reason or comment removes it.`, "");
+    for (const w of warnings) L.push(`- Warning: \`${w.file}\`, line ${w.line}: \`${w.address}\`.`);
+  } else L.push("No script carries a network address literal (Common Agent 12.10).");
   L.push("");
 
   L.push("## Parts", "");

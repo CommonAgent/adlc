@@ -36,7 +36,7 @@
 // 2026-10-07.
 //
 //   needs: node >= 22
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
@@ -170,7 +170,9 @@ export const reusedCount = () => reusedCalls;
 /**
  * One model call, recorded, or answered from the saved record in a replay.
  *
- *   service  "gemini-api" or "vertex", for the reader of the record
+ *   service  the protocol the call speaks (MODEL_PROTOCOL: anthropic-messages,
+ *            openai-chat or gemini), for the reader of the record; a replay
+ *            matches a call by its model and request, never by this name
  *   model    the model's name as called
  *   body     the request body as sent
  *   call     async () => ({ status, text }): the real call, made only when
@@ -243,4 +245,45 @@ export function resetReplay() {
   headed.clear();
   callNumber = 0;
   reusedCalls = 0;
+}
+
+/** The file one kept exchange is saved to, in the folder it is kept in. */
+export const EXCHANGE_FILE = "model-exchange.json";
+
+/**
+ * An exchange that keeps one call whole in memory, for the shared caller's
+ * `exchange` option: the service (the protocol), the request as sent and the
+ * answer as the service gave it, read back from `.data`. Made with
+ * replay: true it answers from the exchange saved in `dir` and sends nothing.
+ */
+export function createExchange({ dir = "", replay = false } = {}) {
+  const data = { service: null, request: null, response: null };
+  const exchange = async ({ service, body, call }) => {
+    data.service = service;
+    data.request = body;
+    if (replay) {
+      const kept = loadExchange(dir);
+      if (!kept) throw new NotInRecord(`Model failure: this is a replay and no exchange is saved in ${dir}, so it was not answered and no model was called.`);
+      data.response = kept.response;
+      return { status: 200, text: typeof kept.response === "string" ? kept.response : JSON.stringify(kept.response), replayed: true };
+    }
+    const got = await call();
+    try { data.response = JSON.parse(got.text); } catch { data.response = got.text; }
+    return { ...got, replayed: false };
+  };
+  exchange.data = data;
+  return exchange;
+}
+
+/** Save an exchange (one made by createExchange, or its data) in `dir`. */
+export function saveExchange(dir, exchangeOrData) {
+  const data = typeof exchangeOrData === "function" ? exchangeOrData.data : exchangeOrData;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, EXCHANGE_FILE), JSON.stringify(data, null, 2) + "\n");
+}
+
+/** The exchange saved in `dir`, or null when none is. */
+export function loadExchange(dir) {
+  const p = join(dir, EXCHANGE_FILE);
+  return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
 }

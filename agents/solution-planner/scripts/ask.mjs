@@ -5,87 +5,78 @@
 // of work each is, what it takes and what it hands back. Since 0.3.0 it is
 // handed no catalog and names no agent, because the catalog agent answers each
 // step at Source; everything else about the plan is checked in code
-// afterwards. The model is the one the install sets, TEXT_MODEL or else
-// AGENT_MODEL; this package names none of its own, and with neither set no
-// call is made. A google-vertex-anthropic/ name is Claude on Vertex AI (see
-// VERTEX below). A bare name is a Gemini model at Google. Any other name with a provider in
-// front is refused in words, with nothing fetched: since 2026-10-03 (owner)
-// every Claude call goes through Vertex and no other model service is reached.
+// afterwards. Since 0.4.0 the model is reached only through the shared model
+// caller (model-caller.mjs, Common Agent 12.4.1), from the four settings the
+// install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL,
+// read on every call. This package names no model and no address of its own.
+// The request formats the text-reasoning system declares are read from the
+// package's own agent-runtime-requirements.json on every ask (it lists all
+// three the shared caller speaks, anthropic-messages, openai-chat and gemini,
+// so a customer's own model gateway works): with a setting missing, a
+// MODEL_PROTOCOL the system does not declare, or the declared protocols
+// unreadable, nothing is sent and the refusal says why.
 // The description sits between marker lines as content, never as instructions.
 // An answer that is not JSON, or fails the shape checks, is asked again once
 // with the problems appended and never a third time; after two failures there
 // is no plan, and nothing here writes one to fill the gap. Every call is
-// recorded with model and tokens; the cost of a Vertex call is not stated here
-// (Vertex reports tokens, and the platform prices them). The fetch is handed in and the key is
-// passed in, never read from the environment here.
+// recorded with model and tokens; the cost is recorded only where the service
+// states one, and the shared caller's answer states none (the platform prices
+// the tokens). The environment is handed in, and so is the fetch when
+// a job wants its own.
 //
 // 0.2.0 (docs/handoff-audit.md P15): each candidate's description goes whole
-// into the prompt (it was cut at 200 characters); both model services are
-// given the same output budget, OUTPUT_TOKENS (Gemini had none), and an
-// answer that stopped at it (Claude's stop_reason max_tokens, Gemini's
-// finishReason MAX_TOKENS) is a failure that says "the model's answer was cut
-// at its limit of N tokens". It is never read as whole, and it is not asked
+// into the prompt (it was cut at 200 characters); the call is given an output
+// budget, OUTPUT_TOKENS, and an answer that stopped at it is a failure that
+// says "the model's answer was cut at its limit of N tokens" (the shared
+// caller marks it cutAtLimit). It is never read as whole, and it is not asked
 // again with the same budget.
 //
-//   needs: node >= 22
-//   (no command line; plan.mjs calls askModel)
+//   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL (one the
+//   text-reasoning system declares), and MODEL_KEY where the endpoint asks
+//   for one (no command line; plan.mjs calls askModel)
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
 
-export const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 export const TIMEOUT_MS = 100000;
 export const TRIES = 2;
-/** The plan's output budget, for either model service: a build-plan-v1 object, with room to think. */
+/** The plan's output budget: a build-plan-v1 object, with room to think. */
 export const OUTPUT_TOKENS = 32000;
 const STATUSES = ["exists", "named", "new"];
 
 const isObject = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 
-/** Claude on Google Vertex AI. A google-vertex-anthropic/<id> name is called
- *  at Vertex with a token from the job's own service account (the metadata
- *  server, fetched with the same fetch), and the credential is not a key but
- *  where to call: "<project>/<location>". */
-export const VERTEX = "google-vertex-anthropic";
-export const METADATA_TOKEN_URL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-
-/** The model, from the install's settings: TEXT_MODEL, the text-reasoning
- *  system's own setting, else AGENT_MODEL, the model the host runs agents on.
- *  The package names no model of its own, because a model named in a package
- *  is a rebuild waiting to happen: models are retired on somebody else's
- *  schedule. With neither set, the job is refused in words (NO_MODEL). */
-export const MODEL_SETTINGS = ["TEXT_MODEL", "AGENT_MODEL"];
-export const modelOf = (env = {}) => MODEL_SETTINGS.map((k) => String(env[k] ?? "").trim()).find(Boolean) ?? "";
-export const NO_MODEL = "no model is configured: the install sets TEXT_MODEL (the text-reasoning system's model) or AGENT_MODEL (the model the host runs agents on), and this package names none of its own";
-
-/** Vertex reports tokens and not money, and a price table would name models,
- *  so the cost is not stated here: the tokens are recorded, and the platform
- *  prices them against the planner's day budget. */
-export function vertexCost() {
+/** The request formats the package's text-reasoning system declares, read
+ *  from agent-runtime-requirements.json beside the package (one level up in
+ *  the source, three in a built package's skills/<slug>/scripts/). Where the
+ *  declaration is not found, cannot be read or names none, null, and then
+ *  nothing is sent and the plan is refused (PROTOCOLS_UNREAD). `here` is the
+ *  scripts folder the file is looked for above, so a test can point it at
+ *  another file. */
+export function declaredProtocols(here = HERE) {
+  for (const at of [join(here, "..", "agent-runtime-requirements.json"), join(here, "..", "..", "..", "agent-runtime-requirements.json")]) {
+    if (!existsSync(at)) continue;
+    try {
+      const sys = (JSON.parse(readFileSync(at, "utf8"))?.systems ?? []).find((s) => s?.name === "text-reasoning");
+      if (Array.isArray(sys?.protocols) && sys.protocols.length) return sys.protocols.map(String);
+    } catch { /* an unreadable declaration is no declaration */ }
+  }
   return null;
 }
 
-function vertexUrl(model, where) {
-  const [project, location] = String(where ?? "").trim().split("/");
-  if (!project || !location) throw new Error("the text-reasoning credential for a Vertex model is <project>/<location>");
-  const id = model.slice(VERTEX.length + 1).replace(/@default$/, "");
-  const host = location === "global" ? "aiplatform.googleapis.com"
-    : location === "us" || location === "eu" ? `aiplatform.${location}.rep.googleapis.com` : `${location}-aiplatform.googleapis.com`;
-  return `https://${host}/v1/projects/${project}/locations/${location}/publishers/anthropic/models/${id}:rawPredict`;
-}
+/** Why the plan is refused when the declared protocols could not be read:
+ *  without them the caller would hold MODEL_PROTOCOL to nothing and send
+ *  whatever it speaks (Common Agent 12.4.1), so nothing is sent. */
+export const PROTOCOLS_UNREAD = "the model system's declared protocols could not be read from agent-runtime-requirements.json, so nothing was sent to the model";
 
-async function metadataToken(fetchImpl, signal) {
-  const res = await fetchImpl(METADATA_TOKEN_URL, { headers: { "Metadata-Flavor": "Google" }, signal });
-  if (!res || !res.ok) throw new Error(`the metadata server answered ${res?.status ?? "nothing"}, so there is no token for the model`);
-  const token = (await res.json())?.access_token;
-  if (typeof token !== "string" || !token) throw new Error("the metadata server gave no token for the model");
-  return token;
-}
-
-/** Where a model name is reached. */
-export function modelRoute(model) {
-  const name = String(model ?? "").trim();
-  if (!name) return { provider: "none", url: "", model: "" };
-  if (name.startsWith(`${VERTEX}/`)) return { provider: "vertex", url: "", model: name };
-  if (name.includes("/")) return { provider: "none", url: "", model: name };
-  return { provider: "gemini", url: `${GEMINI_BASE}/${encodeURIComponent(name)}:generateContent`, model: name };
+/** Why no call can be made with these settings, or "" when one can: a
+ *  setting the caller refuses, or the declared protocols unread. */
+export function cannotAsk(env = {}, { protocols = declaredProtocols() } = {}) {
+  const read = Array.isArray(protocols) && protocols.length;
+  return cannotCall(env, { protocols: read ? protocols : undefined }) || (read ? "" : PROTOCOLS_UNREAD);
 }
 
 /** The kinds a take or a give may be (spec, make-a-plan). */
@@ -191,8 +182,8 @@ export function readAnswer(text) {
 }
 
 /** The model block of a plan, from the calls made. The cost is each call's
- *  stated cost, added up, or null when no call stated one (a Vertex call
- *  states none: the platform prices its tokens). */
+ *  stated cost, added up, or null when no call stated one (the
+ *  shared caller's answer states none: the platform prices its tokens). */
 export function modelSummary(calls = []) {
   const sum = (k) => calls.reduce((n, c) => n + (Number.isFinite(c[k]) ? c[k] : 0), 0);
   const named = [...calls].reverse().find((c) => c.model && !c.error);
@@ -206,105 +197,63 @@ export function modelSummary(calls = []) {
   };
 }
 
-function requestFor(route, key, prompt, token) {
-  if (route.provider === "vertex") {
-    return {
-      url: vertexUrl(route.model, key),
-      init: {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ anthropic_version: "vertex-2023-10-16", max_tokens: OUTPUT_TOKENS, messages: [{ role: "user", content: prompt }] }),
-      },
-    };
-  }
-  return {
-    url: route.url,
-    init: {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", maxOutputTokens: OUTPUT_TOKENS } }),
-    },
-  };
+/** The draft as the model wrote it, when its answer was JSON at all, so a
+ *  caller can see what came back even when the shape checks refused it. */
+function draftOf(text) {
+  let raw = String(text ?? "").trim();
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(raw);
+  if (fenced) raw = fenced[1].trim();
+  try { const x = JSON.parse(raw); return isObject(x) ? x : null; } catch { return null; }
 }
 
-function answerOf(route, doc) {
-  if (route.provider === "vertex") {
-    const blocks = Array.isArray(doc?.content) ? doc.content : [];
-    const tin = doc?.usage?.input_tokens, tout = doc?.usage?.output_tokens;
-    return {
-      text: blocks.length ? blocks.filter((b) => b?.type === "text").map((b) => b.text ?? "").join("") : undefined,
-      // The full name, so the platform knows the price it is counted at.
-      model: route.model,
-      tokens_in: tin,
-      tokens_out: tout,
-      cost_usd: vertexCost(),
-      cut: doc?.stop_reason === "max_tokens",
-    };
-  }
-  const parts = doc?.candidates?.[0]?.content?.parts;
-  return {
-    // Every part's text, the model's thinking left out.
-    text: Array.isArray(parts) ? parts.filter((p) => p?.thought !== true).map((p) => p?.text ?? "").join("") : undefined,
-    model: route.model,
-    tokens_in: doc?.usageMetadata?.promptTokenCount,
-    tokens_out: doc?.usageMetadata?.candidatesTokenCount,
-    cost_usd: null,
-    cut: doc?.candidates?.[0]?.finishReason === "MAX_TOKENS",
-  };
-}
+const num = (x) => (Number.isFinite(x) ? x : 0);
+const clean = (e) => String(e?.message ?? e).replace(/Bearer\s+\S+/gi, "Bearer [left out]");
 
-async function callOnce({ route, key, prompt, fetchImpl, timeoutMs }) {
-  const controller = new AbortController();
-  let timer;
-  const limit = new Promise((_, reject) => {
-    timer = setTimeout(() => { controller.abort(); reject(new Error("the model did not answer in time")); }, timeoutMs);
+/** Ask for a plan, at most twice. { plan, draft, failed, calls, problems,
+ *  tries, error }: `plan` is null and `failed` true when both tries gave
+ *  nothing usable, and `error` then says why in one sentence. `draft` is the
+ *  last answer that was JSON, whatever its shape, or null. The prompt is built
+ *  from the reading (or the description) when none is handed in. */
+export async function askModel({ prompt, reading = null, description = "", env = {}, fetchImpl, timeoutMs = TIMEOUT_MS, protocols = declaredProtocols() } = {}) {
+  const asked = prompt ?? buildPrompt({
+    description: reading?.description ?? description,
+    earlier: reading?.earlier ?? null,
+    change: reading?.change ?? "",
   });
-  try {
-    const go = (async () => {
-      if (route.provider === "none" && !route.model) throw new Error(NO_MODEL);
-      if (route.provider === "none") throw new Error(`the model ${route.model} is not one this agent reaches: name a ${VERTEX}/<id> model (Claude on Vertex AI) or a bare Gemini name`);
-      const token = route.provider === "vertex" ? await metadataToken(fetchImpl, controller.signal) : "";
-      const { url, init } = requestFor(route, key, prompt, token);
-      const res = await fetchImpl(url, { ...init, signal: controller.signal });
-      if (!res || !res.ok) throw new Error(`the model service answered ${res?.status ?? "nothing"}`);
-      return answerOf(route, await res.json());
-    })();
-    go.catch(() => {});
-    return await Promise.race([go, limit]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** Ask for a plan, at most twice. { plan, failed, calls, problems, tries }:
- *  `plan` is null and `failed` true when both tries gave nothing usable. */
-export async function askModel({ prompt, model, key, fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = {}) {
-  const route = modelRoute(model);
   const calls = [];
   const tries = [];
-  let sent = prompt;
+  const why = cannotAsk(env, { protocols });
+  if (why) {
+    tries.push({ try: 1, problems: [why] });
+    return { plan: null, draft: null, failed: true, calls, problems: [why], tries, error: `the model was not asked: ${why}` };
+  }
+  const options = { env, json: true, maxOutputTokens: OUTPUT_TOKENS, timeoutMs, protocols, ...(fetchImpl ? { fetchImpl } : {}) };
+  let draft = null;
+  let sent = asked;
   for (let n = 1; n <= TRIES; n++) {
     let problems;
     try {
-      const a = await callOnce({ route, key, prompt: sent, fetchImpl, timeoutMs });
-      const num = (x) => (Number.isFinite(x) ? x : 0);
-      calls.push({ model: a.model, tokens_in: num(a.tokens_in), tokens_out: num(a.tokens_out), cost_usd: a.cost_usd, ...(a.cut ? { cut: true } : {}) });
-      if (a.cut) {
-        // Never read as whole, and not asked again with the same budget.
-        const cut = [`the model's answer was cut at its limit of ${OUTPUT_TOKENS} tokens`];
-        tries.push({ try: n, problems: cut });
-        return { plan: null, failed: true, calls, problems: cut, tries };
-      }
+      const a = await callModel(sent, options);
+      calls.push({ model: a.model, tokens_in: num(a.tokens_in), tokens_out: num(a.tokens_out), cost_usd: null });
+      draft = draftOf(a.text) ?? draft;
       const read = readAnswer(a.text);
-      if (read.plan) return { plan: read.plan, failed: false, calls, problems: [], tries };
+      if (read.plan) return { plan: read.plan, draft: read.plan, failed: false, calls, problems: [], tries };
       problems = read.problems;
     } catch (e) {
-      const said = String(e?.message ?? e).replace(/Bearer\s+\S+/gi, "Bearer [left out]");
-      calls.push({ model: route.model, tokens_in: 0, tokens_out: 0, cost_usd: null, error: said });
+      if (e?.cutAtLimit) {
+        // Never read as whole, and not asked again with the same budget.
+        const cut = [`the model's answer was cut at its limit of ${OUTPUT_TOKENS} tokens`];
+        calls.push({ model: modelSettings(env).name, tokens_in: 0, tokens_out: 0, cost_usd: null, cut: true });
+        tries.push({ try: n, problems: cut });
+        return { plan: null, draft: null, failed: true, calls, problems: cut, tries, error: cut[0] };
+      }
+      const said = clean(e);
+      calls.push({ model: modelSettings(env).name, tokens_in: 0, tokens_out: 0, cost_usd: null, error: said });
       problems = [said];
     }
     tries.push({ try: n, problems });
-    sent = `${prompt}\n\nYour previous answer could not be used. Problems:\n${problems.map((p) => `- ${p}`).join("\n")}\nAnswer again with the JSON object only.`;
+    sent = `${asked}\n\nYour previous answer could not be used. Problems:\n${problems.map((p) => `- ${p}`).join("\n")}\nAnswer again with the JSON object only.`;
   }
-  return { plan: null, failed: true, calls, problems: tries[tries.length - 1].problems, tries };
+  const problems = tries[tries.length - 1].problems;
+  return { plan: null, draft, failed: true, calls, problems, tries, error: `the model did not give a usable answer on either try (${problems.join("; ")})` };
 }

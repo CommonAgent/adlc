@@ -14,7 +14,7 @@ The scripts do not exist, so the functions the suite imports are the functions t
 
 It never passes with the scripts absent. Every suite is run against empty stand-ins for every script the spec names before it is taken, and it has to fail. A suite that passes with every function gone has asserted nothing, and no reply calls it a suite.
 
-It never touches a network, a model or a real host. A test that fails is a decision that failed, never a host that was down.
+It never touches a network, a model or a real host. A test that fails is a decision that failed, never a host that was down. A script that calls a model is tested against a stand-in model server the test starts on the local machine and reaches through MODEL_ENDPOINT, the way the install would point the script at a model, and never against a real model service.
 
 It never depends on anything outside node. `node --test test/<file>` is the whole of how it runs.
 

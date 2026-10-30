@@ -75,10 +75,13 @@ export const pieceNameOf = (rel) => {
 
 /** What to list and what to copy. Pure, so it can be checked without a folder;
  *  the caller does the copying. `files` is builds.json's list ({path,
- *  sha256}) and `filesDir` the folder it was written under. */
-export function plan({ files = [], filesDir = "", blanks = [], container = null } = {}) {
+ *  sha256}) and `filesDir` the folder it was written under. `container` is
+ *  the container agent's checked spec, by its path, or true with the path as
+ *  `specPath`. */
+export function plan({ files = [], filesDir = "", blanks = [], container = null, specPath = null } = {}) {
   const entries = [];
   const copies = [];
+  if (container === true && specPath) container = specPath;
   // A container agent's draft makes no package and has no files: what a
   // container deploy is filed with is the checked spec, until container
   // agents carry the two files (the plan's milestone 2). It is the one

@@ -20,7 +20,9 @@
 // a credential no system declares; its owner set no spending limit; an access
 // has no reason; it carries something that looks like a credential; or its
 // two halves do not declare the same systems. Anything it lets through that
-// carries a risk is listed as accepted knowingly.
+// carries a risk is listed as accepted knowingly. Every address warning the
+// trace found is carried through as it was found: it refuses nothing, and
+// nothing here removes one.
 //
 //   needs: node >= 22
 //   import { assess } from "./assess.mjs"
@@ -33,7 +35,7 @@ export const ACCESS = ["read", "write", "trigger"];
  *  An empty string, a dash, or one word is not a reason. */
 export const hasReason = (s) => {
   const t = trim(s).replace(/^[-–—.]+$/, "");
-  return t.split(/\s+/).filter(Boolean).length >= 3;
+  return t.split(/\s+/).filter(Boolean).length >= 2;
 };
 
 /** A refusal line, split into the act and the reason after it. The format
@@ -67,7 +69,8 @@ function authorityReason(word, d, arch) {
 /**
  * The assessment. Pure: everything it reads is passed in.
  *  declared   what read-package.mjs read off the package (fromFiles)
- *  traced     what trace-programs.mjs matched (matchReaches), plus { tests }
+ *  traced     what trace-programs.mjs matched (matchReaches), plus { tests,
+ *             warnings }, the address warnings, which change no verdict
  *  arch       what architecture.mjs read (readArchitecture)
  *  limit      the owner's spending limit ({ said, from }) or null
  *  found      { credentials, links, climbing, problems }
@@ -128,7 +131,9 @@ export function assess({ declared: d, traced, arch, limit, found = {} }) {
 
   // ── what the programs reach that nothing names ──
   for (const u of traced.unmatched) {
-    refusals.push(u.written ? `a program writes down ${u.host} (${u.files.join(", ")}), and no system the declaration names covers it; a program may go to any address it holds, so a system whose reason names it, or the architecture record's egress, must` : `a program reaches ${u.host} (${u.files.join(", ")}), and no system the declaration names covers it`);
+    // The refusal names the address as written and the file and line it is on.
+    const at = u.addresses?.length ? `, written as ${u.addresses.join(", ")}` : "";
+    refusals.push(u.written ? `a program writes down ${u.host} (${u.files.join(", ")})${at}, and no system the declaration names covers it; a program may go to any address it holds, so a system whose reason names it, or the architecture record's egress, must` : `a program reaches ${u.host} (${u.files.join(", ")})${at}, and no system the declaration names covers it`);
     unreasoned.push({ said: true, permission: `${u.written ? "holding the address" : "reaching"} ${u.host}`, asked_in: u.files.join(", "), why_flagged: "the programs reach it and the declaration does not name it" });
   }
   for (const v of traced.credentialVars) {
@@ -151,7 +156,7 @@ export function assess({ declared: d, traced, arch, limit, found = {} }) {
     const files = openFiles(traced.openFetches);
     accepted.push(`${many(traced.openFetches.length, "call")} in ${files.join(", ")} go${traced.openFetches.length === 1 ? "es" : ""} to an address the program is handed rather than one written down. Each is taken as ${[...new Set(traced.openFetches.map((f) => f.by))].join("; ")}, and nothing on the platform checks the address: ${PLATFORM.enforcement.egress}.`);
   }
-  if (traced.undeclaredModel) accepted.push("The programs call the model the platform gives the agent (AGENT_MODEL) and the package declares no text-reasoning or image-reading system, so a caller is not told that what it hands over may go to a model. Declaring text-reasoning at trigger access, with leaves and a reason, would tell them.");
+  if (traced.undeclaredModel) accepted.push("The programs call the model the platform gives the agent (the model settings the install places) and the package declares no model system, so a caller is not told that what it hands over may go to a model. Declaring text-reasoning at trigger access, with leaves and a reason, would tell them.");
   if (traced.meshKeys?.length) accepted.push(`The programs read ${traced.meshKeys.map((k) => k.name).join(", ")}, the mesh credentials the host places for every job, which reach the platform as this agent.`);
   if (traced.modelKeys?.length) accepted.push(`The programs read ${traced.modelKeys.map((k) => k.name).join(" and ")}, the model key the platform places with the model it gives the agent. It is held on the host for as long as the agent is installed, and the kill switch does not revoke it.`);
   for (const b of traced.browsers ?? []) {
@@ -240,5 +245,8 @@ export function assess({ declared: d, traced, arch, limit, found = {} }) {
   if (left.length) refusals.push(`${many(left.length, "permission")} ${left.length === 1 ? "has" : "have"} no recorded reason (${left.map((u) => u.permission).join("; ")})`);
   const verdict = refusals.length ? "refused" : "passed";
   for (const u of unreasoned) delete u.said;
-  return { verdict, reaches, spends, neverDos, unreasoned, refusals, accepted, notes, parts, architecture: arch, limit };
+  // The address warnings, as the trace found them: listed whatever the
+  // verdict, and never a reason for one.
+  const warnings = [...(traced.warnings ?? [])];
+  return { verdict, reaches, spends, neverDos, unreasoned, refusals, accepted, notes, parts, architecture: arch, limit, warnings };
 }

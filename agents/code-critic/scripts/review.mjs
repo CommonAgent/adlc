@@ -15,12 +15,21 @@
 // carries what was wrong with the first. What the check step drops is
 // dropped with its reason and is not asked for again.
 //
-//   needs: node >= 22; the text-reasoning system (caller.mjs says how it is configured)
+// The model is the one the install placed in the four model settings
+// (MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY, MODEL_PROTOCOL), read on every run
+// through the shared caller, model-caller.mjs, with the protocols this
+// package's text-reasoning system declares; this file names no model and no
+// address. A call handed in (a test's stand-in, or a replay) takes the place
+// of the shared caller's send, so then only the model's name is needed: the
+// endpoint, key and protocol are the send's, and it is the one handed in.
+//
+//   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY
+//   where the endpoint asks for one
 //   RECORDS=<this job's records folder> [RULES_REF=<the house rules reference>] [FINDING_REF=<what a finding is>] node review.mjs
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { callModel, cannotCall, configuredModel } from "./caller.mjs";
+import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
 import { textsOf } from "./house-rules.mjs";
 import { note } from "./went-without.mjs";
 
@@ -112,20 +121,54 @@ export function findingsFrom(text) {
   throw new Error("it held no <<<FINDING>>> block and no <<<NONE>>>");
 }
 
+/** The request formats this package's text-reasoning system declares, read
+ *  from agent-runtime-requirements.json beside the scripts (the package's own
+ *  folder, or the built package's root), or [] when it is not there or names
+ *  none. `dirs` are the folders looked in, in order, so a test can point it
+ *  at another file. An empty list is never taken as no limit: the review then
+ *  goes without the model (PROTOCOLS_UNREAD). */
+export function declaredProtocols(dirs = [join(HERE, ".."), join(HERE, "..", "..", "..")]) {
+  for (const d of dirs) {
+    try {
+      const rt = JSON.parse(readFileSync(join(d, "agent-runtime-requirements.json"), "utf8"));
+      const sys = (rt.systems ?? []).find((s) => s?.kind === "model");
+      if (sys) return Array.isArray(sys.protocols) ? sys.protocols.map(String) : [];
+    } catch { /* the next place */ }
+  }
+  return [];
+}
+
+/** Why the review goes without the model when the declared protocols could
+ *  not be read: without them the caller would hold MODEL_PROTOCOL to nothing
+ *  and send whatever it speaks (Common Agent 12.4.1), so nothing is sent. */
+export const PROTOCOLS_UNREAD = "the model system's declared protocols could not be read from agent-runtime-requirements.json, so nothing was sent to the model";
+
+/** Why the review goes without the model, or "" when it can be asked. With
+ *  the shared caller's send every setting must make a call; with a call
+ *  handed in, only the model's name, which the record keeps. Either way the
+ *  package's declared protocols must have been read. */
+export function withoutModel(env = process.env, { handedIn = false, protocols = declaredProtocols() } = {}) {
+  let why = handedIn ? (modelSettings(env).name ? "" : cannotCall(env)) : cannotCall(env, { protocols });
+  if (!why && !(Array.isArray(protocols) && protocols.length)) why = PROTOCOLS_UNREAD;
+  if (!why) return "";
+  return modelSettings(env).name ? why : `no model is configured: ${why}`;
+}
+
 /** Ask. Returns {findings, none, calls, error}. Never throws: a review the
  *  model could not give is said, and the house-rule findings still go. */
-export async function review(input, { env = process.env, fetchImpl = fetch, call = callModel } = {}) {
+export async function review(input, { env = process.env, fetchImpl = fetch, call, protocols = declaredProtocols() } = {}) {
   const calls = [];
-  const why = cannotCall(env);
+  const why = withoutModel(env, { handedIn: typeof call === "function", protocols });
   if (why) return { findings: [], none: false, calls, error: why };
+  const ask = typeof call === "function" ? call : (prompt, options) => callModel(prompt, { ...options, protocols });
   let problem = "";
   for (let go = 1; go <= TRIES; go++) {
     const prompt = reviewPrompt({ ...input, problem });
     let answer;
     try {
-      answer = await call(prompt, { env, fetchImpl });
+      answer = await ask(prompt, { env, fetchImpl });
     } catch (e) {
-      calls.push({ go, model: configuredModel(env)?.model ?? null, prompt_chars: prompt.length, error: e.message });
+      calls.push({ go, model: modelSettings(env).name || null, prompt_chars: prompt.length, error: e.message });
       return { findings: [], none: false, calls, error: e.message };
     }
     calls.push({ go, model: answer.model, answered_by: answer.answered_by ?? null, prompt_chars: prompt.length, tokens_in: answer.tokens_in ?? null, tokens_out: answer.tokens_out ?? null });

@@ -167,7 +167,7 @@ export function bindAll(arch, { stack = null, vocabulary = [], answers = {}, tar
       const beside = parts.filter(({ b, envs }) => b.org_elsewhere && envs.some((e) => e !== "dev"));
       const deployNote = beside.map(({ b, envs }) => `The organization bound ${b.org_elsewhere.product} for ${list(b.org_elsewhere.environments)}, so the AgentMesh deploy refuses ${list(envs.filter((e) => e !== "dev"))} on the default today until the organization binds ${s.name} there too`).join(". ");
       const follows = ["text-reasoning", "image-reading", "speech-to-text", "text-to-speech"].includes(s.name)
-        ? "The install places the model from this binding as TEXT_MODEL (or AGENT_MODEL), and the scripts read it through the caller and name no model, so changing the model is a setting and not a rebuild"
+        ? "The install places the model from this binding in the four settings MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, and the scripts read them on every call through the shared model caller and name no model, so changing the model is a setting and not a rebuild"
         : "The install places the credential and address this binding names; the package names neither";
       decisions.push({
         decided,

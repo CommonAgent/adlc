@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "test-writer",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something.",
   "license": "Apache-2.0",
   "author": {
@@ -26,6 +26,7 @@
               "scripts/job.mjs",
               "scripts/declared.mjs",
               "scripts/write-suite.mjs",
+              "scripts/model-caller.mjs",
               "scripts/check-suite.mjs",
               "scripts/reply.mjs",
               "scripts/went-without.mjs",
@@ -61,6 +62,7 @@
           "write-the-suite": {
             "scripts": [
               "scripts/write-suite.mjs",
+              "scripts/model-caller.mjs",
               "scripts/check-suite.mjs",
               "scripts/declared.mjs",
               "scripts/went-without.mjs",

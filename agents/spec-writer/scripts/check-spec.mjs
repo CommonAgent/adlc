@@ -225,7 +225,7 @@ export function modelProblems(spec) {
       const key = `${where}:${m[1].toLowerCase()}`;
       if (told.has(key)) continue;
       told.add(key);
-      out.push(`${where || "the spec"} names the model ${JSON.stringify(m[1])}; a model is a bound system (text-reasoning, image-reading and the like, access trigger) that the scripts read from AGENT_MODEL or TEXT_MODEL, so say the capability the job needs in the system's purpose and never a model or a version`);
+      out.push(`${where || "the spec"} names the model ${JSON.stringify(m[1])}; a model is a bound system (text-reasoning, image-reading and the like, access trigger, of kind model) that the install chooses through the four model settings it places, so say the capability the job needs in the system's purpose and never a model or a version`);
     }
   }
   return out;
@@ -268,7 +268,10 @@ function stringsIn(v, at, out = []) {
 
 /** What a package's systems may not carry. An address anywhere in them ends
  *  in the install file, which the builder refuses whole (debt 67); a brokered
- *  system given a key asks for one no host holds. */
+ *  system given a key asks for one no host holds; and a model system (kind
+ *  model, Common Agent 12.4.1) names the request formats its scripts speak
+ *  and no credential, variable or setting, because the installer places the
+ *  four model settings, the same names in every agent, without being told. */
 export function systemProblems(systems = []) {
   const out = [];
   for (const s of Array.isArray(systems) ? systems : []) {
@@ -281,6 +284,12 @@ export function systemProblems(systems = []) {
     }
     if (BROKERED.includes(name) && (s.credential || s.env || (Array.isArray(s.settings) && s.settings.length))) {
       out.push(`system ${name} is brokered: the agent asks the mesh for a short-lived grant each time it writes, so the entry names its access and what it needs, and no credential, env or settings`);
+    }
+    if (trim(s?.kind) === "model") {
+      const named = ["credential", "env", "settings"].filter((k) => s[k] !== undefined && s[k] !== null);
+      if (named.length) {
+        out.push(`system ${name} is a model system and names ${named.join(", ")}: a model system takes no credential, env or settings, because the installer places MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL for it; it names the request formats its scripts speak under protocols`);
+      }
     }
   }
   return out;

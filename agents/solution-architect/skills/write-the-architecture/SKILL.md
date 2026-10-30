@@ -62,7 +62,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/asked.mjs
 - scripts/name.mjs
-- scripts/caller.mjs
+- scripts/model-caller.mjs
 - scripts/standard.mjs
 - scripts/options.mjs
 - scripts/bind.mjs

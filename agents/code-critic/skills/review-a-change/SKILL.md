@@ -40,7 +40,7 @@ The package is installed at ~/code-critic, so the command is always node ~/code-
 
 1. Read the change (read-change.mjs). A tar.gz of the package folder is unpacked with its paths; loose files are put back where the package's plugin.json says they live, and the agent's own files are found by content. A unified diff, the Code stage's account and an earlier findings document are found by content too. Everything is laid out under records/<job>/package and described in records/<job>/read.json.
 2. Check the house rules (house-rules.mjs), with no model: no model named in code, no address where a bound system belongs, every piece its declared kind, no undeclared output, records, credentials and how claims that match the code, and with a diff any access a declaration adds.
-3. Review the code (review.mjs, through caller.mjs): one call to the configured model with every file line-numbered and the house-rule findings already made; a second only when the first answer could not be read.
+3. Review the code (review.mjs, through model-caller.mjs): one call to the model the install placed with every file line-numbered and the house-rule findings already made; a second only when the first answer could not be read.
 4. Check the findings (check-findings.mjs): each model finding without a real file and line, a claim and a consequence, or that grades the work, writes a fix or repeats another, is dropped with its reason.
 5. Write the findings (write-findings.mjs, then pieces.mjs): the document, the reply and pieces.json.
 
@@ -57,7 +57,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/read-change.mjs
 - scripts/house-rules.mjs
 - scripts/review.mjs
-- scripts/caller.mjs
+- scripts/model-caller.mjs
 - scripts/check-findings.mjs
 - scripts/write-findings.mjs
 - scripts/pieces.mjs

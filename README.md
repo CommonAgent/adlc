@@ -44,14 +44,14 @@ replaced by any agent that holds the same role.
 
 | Stage | Role | Folder | Runs on its own? |
 |---|---|---|---|
-| Architecture and Design (architecture) | [solution architect](https://agentroles.ai/solution-architect.html) | [agents/solution-architect](agents/solution-architect) | Yes, with a model key |
-| Requirements, Architecture and Design (design) | [spec writer](https://agentroles.ai/spec-writer.html) | [agents/spec-writer](agents/spec-writer) | Yes, with a model key |
-| Requirements, Architecture and Design (design) | [solution planner](https://agentroles.ai/solution-planner.html) | [agents/solution-planner](agents/solution-planner) | Yes, with a model key |
+| Architecture and Design (architecture) | [solution architect](https://agentroles.ai/solution-architect.html) | [agents/solution-architect](agents/solution-architect) | Yes, with a model endpoint (the four model settings) |
+| Requirements, Architecture and Design (design) | [spec writer](https://agentroles.ai/spec-writer.html) | [agents/spec-writer](agents/spec-writer) | Yes, with a model endpoint (the four model settings) |
+| Requirements, Architecture and Design (design) | [solution planner](https://agentroles.ai/solution-planner.html) | [agents/solution-planner](agents/solution-planner) | Yes, with a model endpoint (the four model settings) |
 | Impact | [impact analyst](https://agentroles.ai/impact-analyst.html) | [agents/impact-analyst](agents/impact-analyst) | Yes; filing what is owed needs the platform's ledger |
 | Source | [catalog](https://agentroles.ai/catalog.html) | [agents/catalog](agents/catalog) | The matching logic does; the agent runs inside the AgentMesh services |
-| Test | [test writer](https://agentroles.ai/test-writer.html) | [agents/test-writer](agents/test-writer) | Yes, with a model key |
+| Test | [test writer](https://agentroles.ai/test-writer.html) | [agents/test-writer](agents/test-writer) | Yes, with a model endpoint (the four model settings) |
 | Code | [code writer](https://agentroles.ai/code-writer.html) | [agents/code-writer](agents/code-writer) | Yes, with a coding harness |
-| Review | [code critic](https://agentroles.ai/code-critic.html) | [agents/code-critic](agents/code-critic) | Yes, with a model key |
+| Review | [code critic](https://agentroles.ai/code-critic.html) | [agents/code-critic](agents/code-critic) | Yes, with a model endpoint (the four model settings) |
 | Security review | [security reviewer](https://agentroles.ai/security-reviewer.html) | [agents/security-reviewer](agents/security-reviewer) | Yes; one judgment uses the model the install places, and it reviews without one |
 | Package, Release | [package maker](https://agentroles.ai/package-maker.html) | [agents/package-maker](agents/package-maker) | The builder does; packing a run's work needs a fleet host |
 | Deploy, Update, Rollback, Reconfigure, Decommission | [deployment manager](https://agentroles.ai/deployment-manager.html) | [agents/deployment-manager](agents/deployment-manager) | No, it needs an AgentMesh fleet host |
