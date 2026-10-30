@@ -37,7 +37,14 @@
 // The key is never in the address or the body.
 //
 // What a job gets: callModel(prompt, options) sends one prompt and answers
-// {text, model, protocol, answered_by, tokens_in, tokens_out}. Options:
+// {text, model, protocol, answered_by, tokens_in, tokens_out}. The prompt is a
+// string, or a list of parts for a prompt that carries pictures: {type: "text",
+// text} and {type: "image", media_type, data}, the picture's bytes in base64
+// and its media type one of IMAGE_TYPES. The parts go in order as one user
+// turn, in each protocol's own form: content blocks, image_url parts holding a
+// data address, inline data parts. A string is sent exactly as before. A part
+// that is neither, or a picture with no bytes or another media type, is refused
+// before anything is sent. Options:
 // maxOutputTokens (the answer's budget, OUTPUT_TOKENS when not given), json
 // (ask for one JSON value), system (a system prompt), effort (anthropic-messages
 // only: low, medium, high, or off for no thinking), stream (the answer comes as
@@ -81,6 +88,31 @@ export const ANTHROPIC_VERSION = "2023-06-01";
 export const JSON_SYSTEM = "Answer with JSON only: one JSON value, with no words before or after it and no code fence.";
 /** The effort levels an anthropic-messages call may ask for, and "off" for no thinking. */
 export const EFFORTS = ["off", "low", "medium", "high"];
+/** The media types a picture in a prompt may have: the ones all three formats take. */
+export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/** A prompt given as a list of parts, checked and in order: [{type: "text",
+ *  text}, {type: "image", media_type, data}]. A string answers null, because
+ *  it is sent as it is. A part this caller cannot send is refused in words. */
+export function partsOf(prompt) {
+  if (!Array.isArray(prompt)) return null;
+  if (!prompt.length) throw new Error("the prompt is an empty list of parts");
+  return prompt.map((p, i) => {
+    const at = `prompt part ${i + 1}`;
+    if (p?.type === "text") {
+      if (typeof p.text !== "string") throw new Error(`${at} is a text part with no text`);
+      return { type: "text", text: p.text };
+    }
+    if (p?.type === "image") {
+      const media = trim(p.media_type).toLowerCase();
+      if (!IMAGE_TYPES.includes(media)) throw new Error(`${at} is a picture of media type ${trim(p.media_type) || "none"}, and a picture is one of ${IMAGE_TYPES.join(", ")}`);
+      const data = String(p.data ?? "").replace(/\s+/g, "");
+      if (!data || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new Error(`${at} is a picture whose bytes are not base64`);
+      return { type: "image", media_type: media, data };
+    }
+    throw new Error(`${at} is neither a text part nor a picture: its type is ${JSON.stringify(p?.type ?? null)}`);
+  });
+}
 
 const has = (env, name) => Object.prototype.hasOwnProperty.call(env ?? {}, name) && env[name] !== undefined && env[name] !== null;
 
@@ -127,7 +159,8 @@ export function urlFor(settings, { stream = false } = {}) {
 /** The HTTP call for one prompt, as plain values: {url, headers, body}, the
  *  body an object. Nothing is sent here. */
 export function requestFor(prompt, settings, { maxOutputTokens = OUTPUT_TOKENS, json = false, system = "", effort, stream = false } = {}) {
-  const text = String(prompt ?? "");
+  const parts = partsOf(prompt);
+  const text = parts ? "" : String(prompt ?? "");
   const limit = Math.max(1, Math.ceil(Number(maxOutputTokens) || OUTPUT_TOKENS));
   const sys = [trim(system), json ? JSON_SYSTEM : ""].filter(Boolean).join("\n\n");
   const headers = { "content-type": "application/json", ...(stream ? { accept: "text/event-stream" } : {}) };
@@ -135,7 +168,10 @@ export function requestFor(prompt, settings, { maxOutputTokens = OUTPUT_TOKENS, 
     if (effort !== undefined && !EFFORTS.includes(effort)) throw new Error(`effort ${effort} is not one of ${EFFORTS.join(", ")}`);
     headers["anthropic-version"] = ANTHROPIC_VERSION;
     if (settings.key) headers["x-api-key"] = settings.key;
-    const body = { model: settings.name, max_tokens: limit, messages: [{ role: "user", content: text }] };
+    const content = parts
+      ? parts.map((p) => (p.type === "text" ? { type: "text", text: p.text } : { type: "image", source: { type: "base64", media_type: p.media_type, data: p.data } }))
+      : text;
+    const body = { model: settings.name, max_tokens: limit, messages: [{ role: "user", content }] };
     if (sys) body.system = sys;
     if (effort === "off") body.thinking = { type: "disabled" };
     else if (effort) body.output_config = { effort };
@@ -144,13 +180,19 @@ export function requestFor(prompt, settings, { maxOutputTokens = OUTPUT_TOKENS, 
   }
   if (settings.protocol === "openai-chat") {
     if (settings.key) headers.authorization = `Bearer ${settings.key}`;
-    const body = { model: settings.name, max_tokens: limit, messages: [...(sys ? [{ role: "system", content: sys }] : []), { role: "user", content: text }] };
+    const content = parts
+      ? parts.map((p) => (p.type === "text" ? { type: "text", text: p.text } : { type: "image_url", image_url: { url: `data:${p.media_type};base64,${p.data}` } }))
+      : text;
+    const body = { model: settings.name, max_tokens: limit, messages: [...(sys ? [{ role: "system", content: sys }] : []), { role: "user", content }] };
     if (json) body.response_format = { type: "json_object" };
     if (stream) Object.assign(body, { stream: true, stream_options: { include_usage: true } });
     return { url: urlFor(settings), headers, body };
   }
   if (settings.key) headers["x-goog-api-key"] = settings.key;
-  const body = { contents: [{ role: "user", parts: [{ text }] }], generationConfig: { maxOutputTokens: limit } };
+  const geminiParts = parts
+    ? parts.map((p) => (p.type === "text" ? { text: p.text } : { inlineData: { mimeType: p.media_type, data: p.data } }))
+    : [{ text }];
+  const body = { contents: [{ role: "user", parts: geminiParts }], generationConfig: { maxOutputTokens: limit } };
   if (sys) body.systemInstruction = { parts: [{ text: sys }] };
   if (json) body.generationConfig.responseMimeType = "application/json";
   // A streamed call asks for thought summaries too, only so bytes flow while
