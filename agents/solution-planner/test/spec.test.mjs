@@ -93,7 +93,7 @@ test("the only system is the install's model, reached through the four MODEL set
   assert.deepEqual(spec.systems.map((s) => s.name), ["text-reasoning"]);
   const model = spec.systems[0];
   assert.equal(model.kind, "model");
-  assert.deepEqual(model.protocols, ["anthropic-messages"]);
+  assert.deepEqual(model.protocols, ["anthropic-messages", "openai-chat", "gemini"]);
   const envs = spec.systems.flatMap((s) => (s.settings ?? []).map((x) => x.env));
   assert.deepEqual(envs, [], "the package declares no settings of its own, NEW_AGENT_USD included");
   assert.deepEqual(spec.systems.map((s) => s.env).filter(Boolean), [], "no credential variable of its own");

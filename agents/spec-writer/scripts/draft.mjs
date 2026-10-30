@@ -31,8 +31,9 @@
 // MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, read on every
 // call, and the package names no model and no address of its own. The prompt
 // goes as plain text, each call limited to the seconds the step has left. With
-// a setting missing, or a protocol the package's text-reasoning system does
-// not declare, no call is made and the job is refused in words.
+// a setting missing, a protocol the package's text-reasoning system does not
+// declare, or the declared protocols unreadable, no call is made and the job
+// is refused in words.
 //
 //   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY
 //   where the endpoint asks for one
@@ -63,8 +64,10 @@ export const modelOf = (env = {}) => modelSettings(env).name;
 /** The request formats the package's text-reasoning system declares, read
  *  from agent-runtime-requirements.json beside the package (one level up in
  *  the source, three in a built package's skills/<slug>/scripts/). Where the
- *  declaration is not found, none are passed and the caller holds the
- *  protocol to its own list. */
+ *  declaration is not found, cannot be read or names none, null, and then
+ *  nothing is sent and the job is refused (PROTOCOLS_UNREAD). `here` is the
+ *  scripts folder the file is looked for above, so a test can point it at
+ *  another file. */
 export function declaredProtocols(here = HERE) {
   for (const at of [join(here, "..", "agent-runtime-requirements.json"), join(here, "..", "..", "..", "agent-runtime-requirements.json")]) {
     if (!existsSync(at)) continue;
@@ -74,6 +77,18 @@ export function declaredProtocols(here = HERE) {
     } catch { /* an unreadable declaration is no declaration */ }
   }
   return null;
+}
+
+/** Why the job is refused when the declared protocols could not be read:
+ *  without them the caller would hold MODEL_PROTOCOL to nothing and send
+ *  whatever it speaks (Common Agent 12.4.1), so nothing is sent. */
+export const PROTOCOLS_UNREAD = "the model system's declared protocols could not be read from agent-runtime-requirements.json, so nothing was sent to the model";
+
+/** Why no call is made, or "" when one can be: a setting the caller refuses,
+ *  or the declared protocols unread. */
+export function whyNoCall(env = process.env, { protocols = declaredProtocols() } = {}) {
+  const read = Array.isArray(protocols) && protocols.length;
+  return cannotCall(env, { protocols: read ? protocols : undefined }) || (read ? "" : PROTOCOLS_UNREAD);
 }
 
 /** Two goes and no more. The second carries the findings from the first. */
@@ -184,8 +199,11 @@ A job that calls a model reaches it as a bound system with access "trigger":
 "text-reasoning" for text, "image-reading" for pictures, "speech-to-text" or
 "text-to-speech" for speech. Its "purpose" says the capability the job needs
 (text, vision, long context). The system is of kind "model" with "protocols",
-the request formats its scripts speak (one or more of "anthropic-messages",
-"openai-chat" and "gemini"), and no credential, env or settings: the scripts
+the request formats its scripts speak: list all three the shared caller speaks,
+"anthropic-messages", "openai-chat" and "gemini", so a customer's own model
+gateway works, unless the job relies on something one of them cannot carry;
+then leave that one out and say in the spec which it is and why. It takes no
+credential, env or settings: the scripts
 reach the model through the shared caller and the four settings the install
 places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, so the
 install and a run config choose it. Never name a model or a version anywhere
@@ -341,12 +359,15 @@ export const promptOf = (request) => (request?.body?.contents?.[0]?.parts ?? [])
  *  through the shared caller, with this env and the package's declared
  *  protocols, limited to the seconds the step has left. It answers the text,
  *  the model that answered and what the call used; the service reports tokens
- *  and not money, and a price table would name models, so no cost is stated. */
+ *  and not money, and a price table would name models, so no cost is stated.
+ *  With the declared protocols unread it throws PROTOCOLS_UNREAD before
+ *  anything is sent. */
 export function callFor(env = process.env, { protocols = declaredProtocols(), fetchImpl } = {}) {
   return async (request, { seconds = DRAFT_SECONDS } = {}) => {
+    if (!(Array.isArray(protocols) && protocols.length)) throw new Error(PROTOCOLS_UNREAD);
     const got = await callModel(promptOf(request), {
       env,
-      ...(protocols ? { protocols } : {}),
+      protocols,
       ...(fetchImpl ? { fetchImpl } : {}),
       maxOutputTokens: OUTPUT_TOKENS,
       json: true,
@@ -598,11 +619,12 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   try {
     const asked = JSON.parse(readFileSync(ASKED, "utf8"));
     const answers = ANSWERS && existsSync(ANSWERS) ? JSON.parse(readFileSync(ANSWERS, "utf8")) : null;
-    // The four model settings are the install's; with one missing, or a
-    // protocol this package does not declare, nothing is sent and the job is
-    // refused in the caller's words. MODEL_KEY may be empty.
+    // The four model settings are the install's; with one missing, a
+    // protocol this package does not declare, or the declared protocols
+    // unreadable, nothing is sent and the job is refused in words.
+    // MODEL_KEY may be empty.
     const protocols = declaredProtocols();
-    const why = cannotCall(env, { protocols: protocols ?? undefined });
+    const why = whyNoCall(env, { protocols });
     if (why) {
       console.log(JSON.stringify({ ok: false, code: 1, reply: `The spec was not drafted: ${why}.` }));
       console.error(why);

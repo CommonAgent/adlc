@@ -1,10 +1,12 @@
-// The shared model caller connects to an anthropic-messages service.
+// The shared model caller connects to the service in the format MODEL_PROTOCOL names.
 //   node --test test/model-caller.test.mjs
 //
 // What is worth pinning: requests use POST /v1/messages with the anthropic-version
 // header, the model in the body, and the key in x-api-key only when MODEL_KEY is
-// non-empty; missing or empty MODEL_NAME, MODEL_ENDPOINT, or MODEL_PROTOCOL, or a
-// protocol other than the package's declared anthropic-messages, stops before sending
+// non-empty; the package declares anthropic-messages, openai-chat and gemini, and
+// each is sent in its own format; missing or empty MODEL_NAME, MODEL_ENDPOINT, or
+// MODEL_PROTOCOL, a protocol outside the caller's list, one outside a narrower
+// declared list, or declared protocols that cannot be read, stops before sending
 // anything; the settings are read on every run (callModel's `env` option) so
 // different endpoints reach different stand-ins in the same process; an answer cut
 // at max_tokens is a failure (cutAtLimit) that is never treated as whole;
@@ -24,7 +26,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { callModel, cannotCall, modelSettings } from "../scripts/model-caller.mjs";
-import { review } from "../scripts/review.mjs";
+import { PROTOCOLS_UNREAD, declaredProtocols, review } from "../scripts/review.mjs";
 import { badPackage, readOf } from "./helpers.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -184,20 +186,61 @@ test("a run with MODEL_PROTOCOL unset or empty stops before sending and its word
   }
 });
 
-test("a run with MODEL_PROTOCOL other than anthropic-messages stops before sending and its words name MODEL_PROTOCOL", async () => {
+// Each format's own answer, as a stand-in for that format gives it.
+function answerFor(url, text = "<<<NONE>>>") {
+  if (url.startsWith("/v1/messages")) {
+    return { id: "msg_standin", type: "message", role: "assistant", model: "test-model", content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 10 } };
+  }
+  if (url.startsWith("/chat/completions")) {
+    return { id: "chat_standin", model: "test-model", choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 10 } };
+  }
+  return { candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 10 }, modelVersion: "test-model" };
+}
+
+test("the package's model system declares exactly anthropic-messages, openai-chat and gemini, and the review sends each in its own format", async () => {
+  assert.deepEqual(DECLARED, ["anthropic-messages", "openai-chat", "gemini"]);
+  const standIn = await startStandIn({ reply: (req) => answerFor(req.url) });
+  try {
+    const expected = {
+      "anthropic-messages": "/v1/messages",
+      "openai-chat": "/chat/completions",
+      gemini: "/models/test-model:generateContent",
+    };
+    const { read, texts } = readOf(badPackage());
+    for (const [protocol, path] of Object.entries(expected)) {
+      const before = standIn.requests.length;
+      const env = { MODEL_NAME: "test-model", MODEL_ENDPOINT: standIn.endpoint, MODEL_PROTOCOL: protocol, MODEL_KEY: "k-1234" };
+      // review.mjs reads the declared protocols itself.
+      const out = await review({ read, texts, sent: [] }, { env });
+      assert.equal(out.error, null, `${protocol}: ${out.error}`);
+      assert.equal(out.none, true, protocol);
+      assert.equal(standIn.requests.length, before + 1, `${protocol} sent one request`);
+      const req = standIn.requests[before];
+      assert.equal(req.method, "POST", protocol);
+      assert.equal(req.url, path, protocol);
+    }
+    const [anthropic, openai, gemini] = standIn.requests;
+    assert.equal(anthropic.body.model, "test-model");
+    assert.ok(anthropic.headers["anthropic-version"]);
+    assert.equal(anthropic.headers["x-api-key"], "k-1234");
+    assert.equal(openai.body.model, "test-model");
+    assert.ok(Array.isArray(openai.body.messages));
+    assert.equal(openai.headers.authorization, "Bearer k-1234");
+    assert.ok(Array.isArray(gemini.body.contents));
+    assert.equal(gemini.headers["x-goog-api-key"], "k-1234");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("a MODEL_PROTOCOL outside the caller's list stops before sending and its words name MODEL_PROTOCOL", async () => {
   const standIn = await startStandIn();
   try {
-    assert.deepEqual(DECLARED, ["anthropic-messages"], "the package's model system declares anthropic-messages only");
-    const envWrong = {
-      MODEL_NAME: "test-model",
-      MODEL_ENDPOINT: standIn.endpoint,
-      MODEL_PROTOCOL: "openai-chat",
-    };
-    // The caller speaks other formats too; the package's declared protocols are what refuse this one.
+    const envWrong = { MODEL_NAME: "test-model", MODEL_ENDPOINT: standIn.endpoint, MODEL_PROTOCOL: "bedrock" };
+    await assert.rejects(async () => callModel("test", { env: envWrong }), /MODEL_PROTOCOL/);
     await assert.rejects(async () => callModel("test", { env: envWrong, protocols: DECLARED }), /MODEL_PROTOCOL/);
     assert.equal(standIn.requests.length, 0);
 
-    // review.mjs passes the declared protocols itself, so the review goes without the model.
     const { read, texts } = readOf(badPackage());
     const out = await review({ read, texts, sent: [] }, { env: envWrong });
     assert.match(out.error, /MODEL_PROTOCOL/);
@@ -205,6 +248,45 @@ test("a run with MODEL_PROTOCOL other than anthropic-messages stops before sendi
     assert.equal(standIn.requests.length, 0, "the review sent nothing to the stand-in");
   } finally {
     await standIn.close();
+  }
+});
+
+test("a declared protocols list is enforced: with a narrower list passed, a protocol outside it stops before sending and names MODEL_PROTOCOL", async () => {
+  const standIn = await startStandIn();
+  try {
+    const narrower = ["anthropic-messages"];
+    const env = { MODEL_NAME: "test-model", MODEL_ENDPOINT: standIn.endpoint, MODEL_PROTOCOL: "openai-chat" };
+    await assert.rejects(async () => callModel("test", { env, protocols: narrower }), /MODEL_PROTOCOL/);
+    assert.equal(standIn.requests.length, 0);
+
+    const { read, texts } = readOf(badPackage());
+    const out = await review({ read, texts, sent: [] }, { env, protocols: narrower });
+    assert.match(out.error, /MODEL_PROTOCOL/);
+    assert.deepEqual(out.calls, []);
+    assert.equal(standIn.requests.length, 0, "the review sent nothing to the stand-in");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("when the declared protocols cannot be read, the review sends nothing and its words are PROTOCOLS_UNREAD", async () => {
+  const standIn = await startStandIn();
+  const missing = mkdtempSync(join(tmpdir(), "code-critic-noreqs-"));
+  const empty = mkdtempSync(join(tmpdir(), "code-critic-noprotocols-"));
+  try {
+    writeFileSync(join(empty, "agent-runtime-requirements.json"), JSON.stringify({ systems: [{ name: "text-reasoning", kind: "model" }] }));
+    const env = { MODEL_NAME: "test-model", MODEL_ENDPOINT: standIn.endpoint, MODEL_PROTOCOL: "anthropic-messages" };
+    const { read, texts } = readOf(badPackage());
+    for (const dir of [missing, empty]) {
+      const out = await review({ read, texts, sent: [] }, { env, protocols: declaredProtocols([dir]) });
+      assert.equal(out.error, PROTOCOLS_UNREAD, dir);
+      assert.deepEqual(out.calls, []);
+    }
+    assert.equal(standIn.requests.length, 0, "nothing reached the stand-in");
+  } finally {
+    await standIn.close();
+    rmSync(missing, { recursive: true, force: true });
+    rmSync(empty, { recursive: true, force: true });
   }
 });
 

@@ -201,7 +201,7 @@ caller (scripts/model-caller.mjs), so the install binds it and a run config
 can override which model.
 
     { "name": "text-reasoning", "access": "trigger", "kind": "model",
-      "protocols": ["anthropic-messages"],
+      "protocols": ["anthropic-messages", "openai-chat", "gemini"],
       "purpose": "judges which sentences on the page are its key points; needs text only" }
 
 A spec never names a model or a version: not in a setting's default, not in

@@ -13,7 +13,9 @@
       "name": "text-reasoning",
       "kind": "model",
       "protocols": [
-        "anthropic-messages"
+        "anthropic-messages",
+        "openai-chat",
+        "gemini"
       ]
     }
   ],

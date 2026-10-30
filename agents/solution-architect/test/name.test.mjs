@@ -82,8 +82,11 @@ test("the caller reads the model from configuration and refuses without one", ()
   assert.equal(modelSettings({ MODEL_NAME: "y", AGENT_MODEL: "x" }).name, "y");
   assert.throws(() => callerFor({ MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: "k" }), /MODEL_NAME is not set/);
   assert.doesNotThrow(() => callerFor({ MODEL_NAME: "some-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "anthropic-messages" }), "an unset MODEL_KEY is no refusal: the endpoint may need none");
-  assert.deepEqual(declaredProtocols(), ["anthropic-messages"], "name.mjs reads the protocols its text-reasoning system declares");
-  assert.throws(() => callerFor({ MODEL_NAME: "some-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "openai-chat", MODEL_KEY: "k" }, fetch, { protocols: declaredProtocols() }), /MODEL_PROTOCOL openai-chat is not one this package's model system declares/);
+  assert.deepEqual(declaredProtocols(), ["anthropic-messages", "openai-chat", "gemini"], "name.mjs reads the protocols its text-reasoning system declares");
+  for (const protocol of declaredProtocols()) assert.doesNotThrow(() => callerFor({ MODEL_NAME: "some-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: protocol, MODEL_KEY: "k" }, fetch, { protocols: declaredProtocols() }), protocol);
+  assert.throws(() => callerFor({ MODEL_NAME: "some-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "bedrock", MODEL_KEY: "k" }, fetch, { protocols: declaredProtocols() }), /MODEL_PROTOCOL bedrock is not one this caller speaks/);
+  // A narrower declared list, passed explicitly, is what the caller holds to.
+  assert.throws(() => callerFor({ MODEL_NAME: "some-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "openai-chat", MODEL_KEY: "k" }, fetch, { protocols: ["anthropic-messages"] }), /MODEL_PROTOCOL openai-chat is not one this package's model system declares/);
   const r = requestFor("hi", modelSettings({ MODEL_NAME: "some-model", MODEL_ENDPOINT: `${endpoint}/`, MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: "k" }));
   assert.equal(r.url, `${endpoint}/v1/messages`);
   assert.equal(r.body.model, "some-model");

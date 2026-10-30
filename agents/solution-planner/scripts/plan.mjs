@@ -15,7 +15,7 @@
 // agent the plan carries is check.mjs's default, 1.50; no setting changes it.
 //
 //   needs: node >= 22
-//   MODEL_NAME=<model> MODEL_ENDPOINT=<address> MODEL_PROTOCOL=anthropic-messages [MODEL_KEY=<key>] \
+//   MODEL_NAME=<model> MODEL_ENDPOINT=<address> MODEL_PROTOCOL=<anthropic-messages|openai-chat|gemini> [MODEL_KEY=<key>] \
 //     node plan.mjs --job <job folder> --records <records folder> --work <work folder> \
 //       --text-file <message file> [--file <path>::<media type>]...
 //   exit 0 a plan was written, 2 arguments missing, 3 nothing to plan (the reply says why)
@@ -131,7 +131,8 @@ export async function makePlan({ env = process.env, argv = process.argv.slice(2)
     if (!request.ok) return stop(3, request.reply);
 
     // The install's model, from the four settings, read now: there is no default,
-    // and with one missing or a protocol the package does not declare nothing is called.
+    // and with one missing, a protocol the package does not declare, or the
+    // declared protocols unreadable, nothing is called.
     const why = cannotAsk(env);
     if (why) {
       const said = `no model is configured: ${why}`;

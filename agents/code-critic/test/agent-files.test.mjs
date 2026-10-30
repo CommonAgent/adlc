@@ -79,7 +79,7 @@ test("the one system is text-reasoning with access trigger, and no model is name
   assert.deepEqual(descriptor.systems.map((s) => [s.name, s.access]), [["text-reasoning", "trigger"]]);
   // The model is reached through the four MODEL_* settings the install places, so the
   // system declares its kind and protocols and no credential, env or settings of its own.
-  assert.deepEqual(runtime.systems.map((s) => [s.name, s.kind, s.protocols]), [["text-reasoning", "model", ["anthropic-messages"]]]);
+  assert.deepEqual(runtime.systems.map((s) => [s.name, s.kind, s.protocols]), [["text-reasoning", "model", ["anthropic-messages", "openai-chat", "gemini"]]]);
   for (const s of runtime.systems) for (const k of ["credential", "env", "settings"]) assert.equal(s[k], undefined, `${s.name} names ${k}`);
   const read = ["agent-descriptor.json", "agent-runtime-requirements.json", "plugin.json", ...readdirSync(join(ROOT, "skills")).map((s) => `skills/${s}/SKILL.md`), ...readdirSync(join(ROOT, "scripts")).map((s) => `scripts/${s}`)];
   for (const p of read) {

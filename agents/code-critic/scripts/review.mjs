@@ -123,8 +123,10 @@ export function findingsFrom(text) {
 
 /** The request formats this package's text-reasoning system declares, read
  *  from agent-runtime-requirements.json beside the scripts (the package's own
- *  folder, or the built package's root), or [] when it is not there, and then
- *  the shared caller holds MODEL_PROTOCOL to its own list. */
+ *  folder, or the built package's root), or [] when it is not there or names
+ *  none. `dirs` are the folders looked in, in order, so a test can point it
+ *  at another file. An empty list is never taken as no limit: the review then
+ *  goes without the model (PROTOCOLS_UNREAD). */
 export function declaredProtocols(dirs = [join(HERE, ".."), join(HERE, "..", "..", "..")]) {
   for (const d of dirs) {
     try {
@@ -136,11 +138,18 @@ export function declaredProtocols(dirs = [join(HERE, ".."), join(HERE, "..", "..
   return [];
 }
 
+/** Why the review goes without the model when the declared protocols could
+ *  not be read: without them the caller would hold MODEL_PROTOCOL to nothing
+ *  and send whatever it speaks (Common Agent 12.4.1), so nothing is sent. */
+export const PROTOCOLS_UNREAD = "the model system's declared protocols could not be read from agent-runtime-requirements.json, so nothing was sent to the model";
+
 /** Why the review goes without the model, or "" when it can be asked. With
  *  the shared caller's send every setting must make a call; with a call
- *  handed in, only the model's name, which the record keeps. */
-export function withoutModel(env = process.env, { handedIn = false, protocols = [] } = {}) {
-  const why = handedIn ? (modelSettings(env).name ? "" : cannotCall(env)) : cannotCall(env, { protocols });
+ *  handed in, only the model's name, which the record keeps. Either way the
+ *  package's declared protocols must have been read. */
+export function withoutModel(env = process.env, { handedIn = false, protocols = declaredProtocols() } = {}) {
+  let why = handedIn ? (modelSettings(env).name ? "" : cannotCall(env)) : cannotCall(env, { protocols });
+  if (!why && !(Array.isArray(protocols) && protocols.length)) why = PROTOCOLS_UNREAD;
   if (!why) return "";
   return modelSettings(env).name ? why : `no model is configured: ${why}`;
 }

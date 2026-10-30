@@ -7,7 +7,8 @@
 // declared model system via MODEL_NAME/ENDPOINT/KEY/PROTOCOL is recognized;
 // reviews proceed without a model when none is configured; no deprecated Google
 // or Vertex variables, endpoints, or network address literals appear in scripts;
-// runtime requirements and plugin manifest declare text-reasoning under anthropic-messages.
+// runtime requirements and plugin manifest declare text-reasoning under anthropic-messages,
+// openai-chat and gemini, every format the shared caller speaks.
 // Nothing here touches a real network or model.
 // Run: node --test test/address-warnings.test.mjs
 import { test } from "node:test";
@@ -53,12 +54,12 @@ test("no script under scripts/ carries a network address literal under common ag
   }
 });
 
-test("agent-runtime-requirements and plugin.json declare text-reasoning under anthropic-messages", () => {
+test("agent-runtime-requirements and plugin.json declare text-reasoning under anthropic-messages, openai-chat and gemini", () => {
   const req = json(join(AGENT, "agent-runtime-requirements.json"));
   const modelSys = req.systems.find((s) => s.name === "text-reasoning");
   assert.ok(modelSys, "text-reasoning system is declared in requirements");
   assert.equal(modelSys.kind, "model");
-  assert.deepEqual(modelSys.protocols, ["anthropic-messages"]);
+  assert.deepEqual(modelSys.protocols, ["anthropic-messages", "openai-chat", "gemini"]);
   assert.equal(modelSys.credential, undefined);
   assert.equal(modelSys.env, undefined);
   assert.equal(modelSys.settings, undefined);

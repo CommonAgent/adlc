@@ -231,7 +231,11 @@ test("no model is named in this agent's code: the model is the one the install p
     const code = stripComments(readFileSync(join(AGENT, "scripts", f), "utf8"), f);
     assert.doesNotMatch(code, /["'`][^"'`\n]*(?:claude|gemini|gpt)-\d[^"'`\n]*["'`]/i, f);
   }
-  assert.doesNotMatch(JSON.stringify(json(join(AGENT, "agent-runtime-requirements.json"))), /claude|gemini/i);
+  // A model system's protocols name request formats (gemini is one), not models, so
+  // the protocols member is left out of what is scanned for a model name.
+  const runtime = json(join(AGENT, "agent-runtime-requirements.json"));
+  const scanned = { ...runtime, systems: (runtime.systems ?? []).map(({ protocols, ...rest }) => rest) };
+  assert.doesNotMatch(JSON.stringify(scanned), /claude|gemini/i);
 });
 
 test("every script plugin.json names is in scripts/, and every script is named by a skill", () => {

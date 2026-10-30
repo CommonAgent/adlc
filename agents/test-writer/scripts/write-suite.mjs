@@ -43,8 +43,9 @@
 // Common Agent 12.4.1) and nothing else: which model, where it is, the
 // credential and the request format are the four settings the install places,
 // read on every call, and the package names no model and no address of its
-// own. With a setting missing or a protocol the package does not declare, no
-// call is made and the job is refused in words. The service is sent a
+// own. With a setting missing, a protocol the package does not declare, or
+// the declared protocols unreadable, no call is made and the job is refused
+// in words. The service is sent a
 // generous output limit, and an answer cut at that limit is refused as cut,
 // because a cut answer otherwise reads as a malformed one.
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -67,8 +68,10 @@ export const modelOf = (env = {}) => modelSettings(env).name;
 /** The request formats the package's text-reasoning system declares, read
  *  from agent-runtime-requirements.json beside the package (one level up in
  *  the source, three in a built package's skills/<slug>/scripts/). Where the
- *  declaration is not found, none are passed and the caller holds the
- *  protocol to its own list. */
+ *  declaration is not found, cannot be read or names none, null, and then
+ *  nothing is sent and the job is refused (PROTOCOLS_UNREAD). `here` is the
+ *  scripts folder the file is looked for above, so a test can point it at
+ *  another file. */
 export function declaredProtocols(here = HERE) {
   for (const at of [join(here, "..", "agent-runtime-requirements.json"), join(here, "..", "..", "..", "agent-runtime-requirements.json")]) {
     if (!existsSync(at)) continue;
@@ -78,6 +81,32 @@ export function declaredProtocols(here = HERE) {
     } catch { /* an unreadable declaration is no declaration */ }
   }
   return null;
+}
+
+/** Why the job is refused when the declared protocols could not be read:
+ *  without them the caller would hold MODEL_PROTOCOL to nothing and send
+ *  whatever it speaks (Common Agent 12.4.1), so nothing is sent. */
+export const PROTOCOLS_UNREAD = "the model system's declared protocols could not be read from agent-runtime-requirements.json, so nothing was sent to the model";
+
+/** Why no call is made, or "" when one can be: a setting the caller refuses,
+ *  or the declared protocols unread. */
+export function whyNoCall(env = process.env, { protocols = declaredProtocols() } = {}) {
+  const read = Array.isArray(protocols) && protocols.length;
+  return cannotCall(env, { protocols: read ? protocols : undefined }) || (read ? "" : PROTOCOLS_UNREAD);
+}
+
+/** The call the job makes: the prompt as plain text through the shared
+ *  caller, streamed, with this env and the package's declared protocols,
+ *  noting what each call used in `used`. With the declared protocols unread
+ *  it throws PROTOCOLS_UNREAD before anything is sent. */
+export function callFor(env = process.env, { protocols = declaredProtocols(), fetchImpl, used = [] } = {}) {
+  return async (request) => {
+    if (!(Array.isArray(protocols) && protocols.length)) throw new Error(PROTOCOLS_UNREAD);
+    // Streamed, so a long suite is never lost to a wait for headers.
+    const got = await callModel(promptOf(request), { env, protocols, ...(fetchImpl ? { fetchImpl } : {}), maxOutputTokens: OUTPUT_TOKENS, stream: true });
+    used.push({ service: got.protocol, asked: got.model, answered_by: got.answered_by, tokens_in: got.tokens_in, tokens_out: got.tokens_out, cost: null });
+    return got.text;
+  };
 }
 
 /** The most the service may write in one answer. A whole suite for a package
@@ -471,11 +500,11 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   try {
     const declared = JSON.parse(readFileSync(DECLARED, "utf8"));
     const spec = loadSpec(SPEC);
-    // The four model settings are the install's; with one missing, or a
-    // protocol this package does not declare, nothing is sent and the job is
-    // refused in the caller's words.
+    // The four model settings are the install's; with one missing, a
+    // protocol this package does not declare, or the declared protocols
+    // unreadable, nothing is sent and the job is refused in words.
     const protocols = declaredProtocols();
-    const why = cannotCall(env, { protocols });
+    const why = whyNoCall(env, { protocols });
     if (why) {
       console.log(JSON.stringify({ ok: false, code: 1, reply: `The suite was not written: ${why}.` }));
       console.error(why);
@@ -502,12 +531,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // which model answered. The service reports tokens and not money, and a
     // price table would name models, so no cost is stated.
     const used = [];
-    const call = async (request) => {
-      // Streamed, so a long suite is never lost to a wait for headers.
-      const got = await callModel(promptOf(request), { env, protocols: protocols ?? undefined, maxOutputTokens: OUTPUT_TOKENS, stream: true });
-      used.push({ service: got.protocol, asked: got.model, answered_by: got.answered_by, tokens_in: got.tokens_in, tokens_out: got.tokens_out, cost: null });
-      return got.text;
-    };
+    const call = callFor(env, { protocols, used });
     // The suite the package already has, when one came with the message: it
     // is added to and never rewritten.
     const existing = trim(env.EXISTING) ? suiteFiles(env.EXISTING) : [];

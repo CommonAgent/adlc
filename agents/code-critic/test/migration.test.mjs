@@ -97,7 +97,7 @@ test("agent-runtime-requirements.json declares the text-reasoning model system w
   const modelSys = reqs.systems.find((s) => s.name === "text-reasoning");
   assert.ok(modelSys, "text-reasoning system is declared");
   assert.equal(modelSys.kind, "model");
-  assert.deepEqual(modelSys.protocols, ["anthropic-messages"]);
+  assert.deepEqual(modelSys.protocols, ["anthropic-messages", "openai-chat", "gemini"]);
   assert.equal(modelSys.credential, undefined);
   assert.equal(modelSys.env, undefined);
   assert.equal(modelSys.settings, undefined);

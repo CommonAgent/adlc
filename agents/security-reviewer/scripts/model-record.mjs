@@ -170,8 +170,8 @@ export const reusedCount = () => reusedCalls;
 /**
  * One model call, recorded, or answered from the saved record in a replay.
  *
- *   service  the protocol the call speaks (MODEL_PROTOCOL, such as
- *            anthropic-messages), for the reader of the record; a replay
+ *   service  the protocol the call speaks (MODEL_PROTOCOL: anthropic-messages,
+ *            openai-chat or gemini), for the reader of the record; a replay
  *            matches a call by its model and request, never by this name
  *   model    the model's name as called
  *   body     the request body as sent

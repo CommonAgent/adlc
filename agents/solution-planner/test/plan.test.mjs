@@ -153,11 +153,11 @@ test("with no model configured the job is refused in words, no model is called a
   });
 });
 
-test("with MODEL_ENDPOINT or MODEL_PROTOCOL not set, or a protocol other than anthropic-messages, the job is refused and nothing is called", async () => {
+test("with MODEL_ENDPOINT or MODEL_PROTOCOL not set, or a protocol outside the caller's list, the job is refused and nothing is called", async () => {
   const cases = [
     [{ ...ENV, MODEL_ENDPOINT: "" }, /MODEL_ENDPOINT/],
     [{ ...ENV, MODEL_PROTOCOL: "" }, /MODEL_PROTOCOL/],
-    [{ ...ENV, MODEL_PROTOCOL: "openai-chat" }, /MODEL_PROTOCOL openai-chat/],
+    [{ ...ENV, MODEL_PROTOCOL: "bedrock" }, /MODEL_PROTOCOL bedrock/],
   ];
   for (const [env, setting] of cases) {
     await folders(async (d) => {

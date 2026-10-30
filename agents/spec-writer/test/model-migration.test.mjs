@@ -65,7 +65,7 @@ test("agent-runtime-requirements.json declares the text-reasoning model system w
   const system = rr.systems.find((s) => s.name === "text-reasoning");
   assert.ok(system, "text-reasoning system missing from agent-runtime-requirements.json");
   assert.equal(system.kind, "model");
-  assert.deepEqual(system.protocols, ["anthropic-messages"]);
+  assert.deepEqual(system.protocols, ["anthropic-messages", "openai-chat", "gemini"]);
   assert.equal("credential" in system, false, "model system must not declare credential");
   assert.equal("env" in system, false, "model system must not declare env");
   assert.equal("settings" in system, false, "model system must not declare settings");

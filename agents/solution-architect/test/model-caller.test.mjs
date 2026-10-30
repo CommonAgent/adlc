@@ -3,12 +3,14 @@
 //
 // What is worth pinning: the model is reached through POST /v1/messages with
 // the anthropic-version header and model name in the body; x-api-key is sent
-// only when MODEL_KEY is not empty; missing or empty settings, or a protocol
-// outside the caller's list or the package's declared anthropic-messages, stop
-// before sending any request; settings are read on every run;
+// only when MODEL_KEY is not empty; the package declares anthropic-messages,
+// openai-chat and gemini, and each is sent in its own format; missing or empty
+// settings, a protocol outside the caller's list, one outside a narrower list
+// passed, or declared protocols that cannot be read, stop before sending any
+// request; settings are read on every run;
 // an answer cut at its limit fails, marked cutAtLimit, naming the limit; old Google
-// Vertex, Gemini and AGENT_MODEL variables are never read; declarations match
-// the anthropic-messages protocol for text-reasoning; name.mjs asks for JSON
+// Vertex, Gemini and AGENT_MODEL variables are never read; declarations name
+// the three protocols for text-reasoning; name.mjs asks for JSON
 // with json: true; replayCaller answers without TEXT_API_KEY; and architecture
 // records binding a model system state that the install places the model in
 // MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL and never name
@@ -21,12 +23,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { callerFor, replayCaller } from "../scripts/model-caller.mjs";
 import { bindAll } from "../scripts/bind.mjs";
-import { declaredProtocols } from "../scripts/name.mjs";
+import { PROTOCOLS_UNREAD, declaredProtocols, modelCaller } from "../scripts/name.mjs";
 import { renderRecord } from "../scripts/architecture-record.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -201,35 +204,58 @@ test("missing or empty model_protocol stops before sending and names the setting
   }
 });
 
-test("unsupported model_protocol stops before sending and names model_protocol", async () => {
+// Each format's own answer, as a stand-in for that format gives it.
+function answerFor(url, text) {
+  if (url.startsWith("/v1/messages")) return { id: "msg_1", type: "message", role: "assistant", model: "test-model", content: [{ type: "text", text }], stop_reason: "end_turn" };
+  if (url.startsWith("/chat/completions")) return { id: "c_1", model: "test-model", choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }] };
+  return { candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }], modelVersion: "test-model" };
+}
+
+test("the package declares anthropic-messages, openai-chat and gemini, and modelCaller sends each in its own format", async () => {
+  assert.deepEqual(declaredProtocols(), ["anthropic-messages", "openai-chat", "gemini"]);
+  const standIn = standInServer(async (req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(answerFor(req.url, JSON.stringify({ systems: [] }))));
+  });
+  const endpoint = await standIn.start();
+  try {
+    const expected = {
+      "anthropic-messages": "/v1/messages",
+      "openai-chat": "/chat/completions",
+      gemini: "/models/test-model:generateContent",
+    };
+    for (const [protocol, path] of Object.entries(expected)) {
+      const before = standIn.requests.length;
+      // modelCaller reads the declared protocols itself.
+      const caller = modelCaller({ MODEL_NAME: "test-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: protocol, MODEL_KEY: "k-1234" }, fetch);
+      const out = await caller.ask("Hello", { json: true });
+      assert.deepEqual(JSON.parse(out.text), { systems: [] }, protocol);
+      assert.equal(standIn.requests.length, before + 1, `${protocol} sent one request`);
+      assert.equal(standIn.requests[before].method, "POST", protocol);
+      assert.equal(standIn.requests[before].url, path, protocol);
+    }
+    const [anthropic, openai, gemini] = standIn.requests;
+    assert.ok(anthropic.headers["anthropic-version"]);
+    assert.equal(anthropic.headers["x-api-key"], "k-1234");
+    assert.equal(anthropic.body.model, "test-model");
+    assert.equal(openai.headers.authorization, "Bearer k-1234");
+    assert.equal(openai.body.model, "test-model");
+    assert.ok(Array.isArray(gemini.body.contents));
+    assert.equal(gemini.headers["x-goog-api-key"], "k-1234");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("a model_protocol outside the caller's list stops before sending and names model_protocol", async () => {
   const standIn = standInServer();
   const endpoint = await standIn.start();
   try {
-    // The shared caller speaks openai-chat itself; the package refuses it
-    // because its text-reasoning system declares only anthropic-messages,
-    // and name.mjs passes those declared protocols to the caller.
-    assert.deepEqual(declaredProtocols(), ["anthropic-messages"]);
+    const env = { MODEL_NAME: "test-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "bedrock" };
+    assert.throws(() => modelCaller(env, fetch), /MODEL_PROTOCOL/);
     await assert.rejects(
       async () => {
-        const caller = callerFor({
-          MODEL_NAME: "test-model",
-          MODEL_ENDPOINT: endpoint,
-          MODEL_PROTOCOL: "openai-chat",
-        }, fetch, { protocols: declaredProtocols() });
-        await caller.ask("Hello");
-      },
-      (err) => {
-        assert.match(err.message, /MODEL_PROTOCOL/);
-        return true;
-      }
-    );
-    await assert.rejects(
-      async () => {
-        const caller = callerFor({
-          MODEL_NAME: "test-model",
-          MODEL_ENDPOINT: endpoint,
-          MODEL_PROTOCOL: "not-a-protocol",
-        });
+        const caller = callerFor(env);
         await caller.ask("Hello");
       },
       (err) => {
@@ -240,6 +266,53 @@ test("unsupported model_protocol stops before sending and names model_protocol",
     assert.equal(standIn.requests.length, 0, "stand-in must see no request");
   } finally {
     await standIn.close();
+  }
+});
+
+test("a declared protocols list is enforced: with a narrower list passed, a protocol outside it stops before sending and names model_protocol", async () => {
+  const standIn = standInServer();
+  const endpoint = await standIn.start();
+  try {
+    const narrower = ["anthropic-messages"];
+    const env = { MODEL_NAME: "test-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "openai-chat" };
+    assert.throws(() => modelCaller(env, fetch, { protocols: narrower }), /MODEL_PROTOCOL openai-chat is not one this package's model system declares/);
+    await assert.rejects(
+      async () => {
+        const caller = callerFor(env, fetch, { protocols: narrower });
+        await caller.ask("Hello");
+      },
+      /MODEL_PROTOCOL/
+    );
+    assert.equal(standIn.requests.length, 0, "stand-in must see no request");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("when the declared protocols cannot be read, modelCaller sends nothing and its words are PROTOCOLS_UNREAD", async () => {
+  const standIn = standInServer();
+  const endpoint = await standIn.start();
+  const missing = mkdtempSync(join(tmpdir(), "solution-architect-noreqs-"));
+  const empty = mkdtempSync(join(tmpdir(), "solution-architect-noprotocols-"));
+  try {
+    mkdirSync(join(missing, "scripts"));
+    mkdirSync(join(empty, "scripts"));
+    writeFileSync(join(empty, "agent-runtime-requirements.json"), JSON.stringify({ systems: [{ name: "text-reasoning", kind: "model" }] }));
+    const env = { MODEL_NAME: "test-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "anthropic-messages" };
+    for (const dir of [missing, empty]) {
+      assert.throws(
+        () => modelCaller(env, fetch, { protocols: declaredProtocols(join(dir, "scripts")) }),
+        (err) => {
+          assert.equal(err.message, PROTOCOLS_UNREAD, dir);
+          return true;
+        }
+      );
+    }
+    assert.equal(standIn.requests.length, 0, "nothing reached the stand-in");
+  } finally {
+    await standIn.close();
+    rmSync(missing, { recursive: true, force: true });
+    rmSync(empty, { recursive: true, force: true });
   }
 });
 
@@ -368,14 +441,14 @@ test("no script names the metadata server or carries forbidden network address l
   }
 });
 
-test("agent-runtime-requirements declares text-reasoning with anthropic-messages and no credential, env or settings", () => {
+test("agent-runtime-requirements declares text-reasoning with anthropic-messages, openai-chat and gemini and no credential, env or settings", () => {
   const reqs = JSON.parse(readFileSync(join(ROOT, "agent-runtime-requirements.json"), "utf8"));
   const tr = (reqs.systems ?? []).find((s) => s.name === "text-reasoning");
   assert.ok(tr, "text-reasoning must be declared in agent-runtime-requirements.json");
   assert.deepEqual(tr, {
     name: "text-reasoning",
     kind: "model",
-    protocols: ["anthropic-messages"],
+    protocols: ["anthropic-messages", "openai-chat", "gemini"],
   });
   assert.equal(tr.credential, undefined);
   assert.equal(tr.env, undefined);

@@ -1,10 +1,12 @@
-// The shared model caller: reaching the model over anthropic-messages protocol.
+// The shared model caller: reaching the model in the format MODEL_PROTOCOL names.
 //
 // What is worth pinning: the model is reached through POST /v1/messages with
 // anthropic-version, model name in JSON body, and x-api-key only when MODEL_KEY
 // is not empty; missing or invalid MODEL_NAME, MODEL_ENDPOINT, or MODEL_PROTOCOL
-// stops before sending any request, and a MODEL_PROTOCOL outside the protocols
-// this package's model system declares is refused when the job passes them;
+// stops before sending any request, as does a MODEL_PROTOCOL outside the caller's
+// list; the package declares anthropic-messages, openai-chat and gemini, and weigh
+// sends each in its own format; a narrower protocols list passed is enforced, and
+// declared protocols that cannot be read stop weigh before it sends (PROTOCOLS_UNREAD);
 // settings are read on every run so endpoints can change within one process;
 // answers cut at max_tokens fail immediately, marked cutAtLimit; the process
 // contract exits 2 when PROMPT_FILE is missing, and a run whose settings cannot
@@ -23,6 +25,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { callModel } from "../scripts/model-caller.mjs";
+import { PROTOCOLS_UNREAD, declaredProtocols, weigh } from "../scripts/weigh.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const scriptPath = join(here, "..", "scripts", "model-caller.mjs");
@@ -163,7 +166,7 @@ test("a run with model_endpoint unset or empty stops before sending and names th
   assert.equal(calls, 0, "nothing was sent");
 });
 
-test("a run with model_protocol unset, empty, or other than anthropic-messages stops before sending and names the setting", async () => {
+test("a run with model_protocol unset, empty, or outside the caller's list stops before sending and names the setting", async () => {
   let calls = 0;
   const standIn = await startStandIn((req, res) => {
     calls += 1;
@@ -172,23 +175,120 @@ test("a run with model_protocol unset, empty, or other than anthropic-messages s
   });
 
   try {
-    assert.deepEqual(DECLARED_PROTOCOLS, ["anthropic-messages"]);
-    for (const val of [undefined, "", "openai-chat", "vertex-ai"]) {
-      await assert.rejects(
-        () => callModel("test", {
-          env: {
-            MODEL_NAME: "test-model",
-            MODEL_ENDPOINT: standIn.endpoint,
-            MODEL_PROTOCOL: val,
-          },
-          protocols: DECLARED_PROTOCOLS,
-        }),
-        /MODEL_PROTOCOL/,
-      );
+    for (const val of [undefined, "", "bedrock"]) {
+      for (const protocols of [undefined, DECLARED_PROTOCOLS]) {
+        await assert.rejects(
+          () => callModel("test", {
+            env: {
+              MODEL_NAME: "test-model",
+              MODEL_ENDPOINT: standIn.endpoint,
+              MODEL_PROTOCOL: val,
+            },
+            protocols,
+          }),
+          /MODEL_PROTOCOL/,
+        );
+      }
     }
+    const w = await weigh({ a: ONE_REASON, pkg: { name: "p" }, env: { MODEL_NAME: "test-model", MODEL_ENDPOINT: standIn.endpoint, MODEL_PROTOCOL: "bedrock" } });
+    assert.match(w.skipped, /MODEL_PROTOCOL/);
     assert.equal(calls, 0, "stand-in received no requests");
   } finally {
     await standIn.close();
+  }
+});
+
+// A permission with a recorded reason, so weigh has one item to put to the model.
+const ONE_REASON = { reaches: [{ system: "weather", access: "read", reason: "reads the forecast for the city the person names" }], spends: [] };
+const JUDGED = JSON.stringify({ judgments: [{ id: "reach-1", holds: "holds", says: "Reading a forecast needs read access." }] });
+
+// Each format's own answer, as a stand-in for that format gives it.
+function answerFor(url, text) {
+  if (url.startsWith("/v1/messages")) return { id: "msg_1", type: "message", role: "assistant", model: "test-model", content: [{ type: "text", text }], stop_reason: "end_turn" };
+  if (url.startsWith("/chat/completions")) return { id: "c_1", model: "test-model", choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }] };
+  return { candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP" }], modelVersion: "test-model" };
+}
+
+test("the package's model system declares exactly anthropic-messages, openai-chat and gemini, and weigh sends each in its own format", async () => {
+  assert.deepEqual(DECLARED_PROTOCOLS, ["anthropic-messages", "openai-chat", "gemini"]);
+  const received = [];
+  const standIn = await startStandIn(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    received.push({ method: req.method, url: req.url, headers: req.headers, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(answerFor(req.url, JUDGED)));
+  });
+  try {
+    const expected = {
+      "anthropic-messages": "/v1/messages",
+      "openai-chat": "/chat/completions",
+      gemini: "/models/test-model:generateContent",
+    };
+    for (const [protocol, path] of Object.entries(expected)) {
+      const before = received.length;
+      // weigh reads the declared protocols itself.
+      const w = await weigh({ a: ONE_REASON, pkg: { name: "p" }, env: { MODEL_NAME: "test-model", MODEL_ENDPOINT: standIn.endpoint, MODEL_PROTOCOL: protocol, MODEL_KEY: "k-1234" } });
+      assert.equal(w.skipped, undefined, `${protocol}: ${w.skipped}`);
+      assert.equal(w.weighed.judgments[0].holds, "holds", protocol);
+      assert.equal(received.length, before + 1, `${protocol} sent one request`);
+      assert.equal(received[before].method, "POST", protocol);
+      assert.equal(received[before].url, path, protocol);
+    }
+    const [anthropic, openai, gemini] = received;
+    assert.ok(anthropic.headers["anthropic-version"]);
+    assert.equal(anthropic.headers["x-api-key"], "k-1234");
+    assert.equal(anthropic.body.model, "test-model");
+    assert.equal(openai.headers.authorization, "Bearer k-1234");
+    assert.equal(openai.body.model, "test-model");
+    assert.ok(Array.isArray(gemini.body.contents));
+    assert.equal(gemini.headers["x-goog-api-key"], "k-1234");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("a declared protocols list is enforced: with a narrower list passed, a protocol outside it stops before sending and names MODEL_PROTOCOL", async () => {
+  let calls = 0;
+  const standIn = await startStandIn((req, res) => {
+    calls += 1;
+    res.writeHead(200);
+    res.end();
+  });
+  try {
+    const narrower = ["anthropic-messages"];
+    const env = { MODEL_NAME: "test-model", MODEL_ENDPOINT: standIn.endpoint, MODEL_PROTOCOL: "gemini" };
+    await assert.rejects(() => callModel("test", { env, protocols: narrower }), /MODEL_PROTOCOL/);
+    const w = await weigh({ a: ONE_REASON, pkg: { name: "p" }, env, protocols: narrower });
+    assert.match(w.skipped, /MODEL_PROTOCOL/);
+    assert.equal(calls, 0, "stand-in received no requests");
+  } finally {
+    await standIn.close();
+  }
+});
+
+test("when the declared protocols cannot be read, weigh sends nothing and its words are PROTOCOLS_UNREAD", async () => {
+  let calls = 0;
+  const standIn = await startStandIn((req, res) => {
+    calls += 1;
+    res.writeHead(200);
+    res.end();
+  });
+  const dir = mkdtempSync(join(tmpdir(), "security-reviewer-protocols-"));
+  try {
+    const missing = join(dir, "missing", "agent-runtime-requirements.json");
+    const empty = join(dir, "agent-runtime-requirements.json");
+    writeFileSync(empty, JSON.stringify({ systems: [{ name: "text-reasoning", kind: "model" }] }));
+    const env = { MODEL_NAME: "test-model", MODEL_ENDPOINT: standIn.endpoint, MODEL_PROTOCOL: "anthropic-messages" };
+    for (const file of [missing, empty]) {
+      const w = await weigh({ a: ONE_REASON, pkg: { name: "p" }, env, protocols: declaredProtocols([file]) });
+      assert.equal(w.skipped, PROTOCOLS_UNREAD, file);
+      assert.equal(w.weighed, undefined);
+    }
+    assert.equal(calls, 0, "nothing reached the stand-in");
+  } finally {
+    await standIn.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

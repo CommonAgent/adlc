@@ -21,7 +21,8 @@ writer does not control.
   `text-reasoning`, reached through the shared caller
   (`scripts/model-caller.mjs`) and the four settings the install places:
   `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` (empty for a gateway on the
-  host) and `MODEL_PROTOCOL` (`anthropic-messages`), read on every run. The
+  host) and `MODEL_PROTOCOL` (`anthropic-messages`, `openai-chat` or `gemini`, the three
+  formats the shared caller speaks), read on every run. The
   package names no model and no address of its own. With a setting missing the job is refused in words.
 
 ## Running it

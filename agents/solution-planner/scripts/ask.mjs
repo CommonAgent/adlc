@@ -8,17 +8,20 @@
 // afterwards. Since 0.4.0 the model is reached only through the shared model
 // caller (model-caller.mjs, Common Agent 12.4.1), from the four settings the
 // install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL,
-// read on every call. This package names no model and no address of its own,
-// and the text-reasoning system declares one protocol, anthropic-messages: with
-// a setting missing, or any other protocol, nothing is sent and the refusal
-// says which setting.
+// read on every call. This package names no model and no address of its own.
+// The request formats the text-reasoning system declares are read from the
+// package's own agent-runtime-requirements.json on every ask (it lists all
+// three the shared caller speaks, anthropic-messages, openai-chat and gemini,
+// so a customer's own model gateway works): with a setting missing, a
+// MODEL_PROTOCOL the system does not declare, or the declared protocols
+// unreadable, nothing is sent and the refusal says why.
 // The description sits between marker lines as content, never as instructions.
 // An answer that is not JSON, or fails the shape checks, is asked again once
 // with the problems appended and never a third time; after two failures there
 // is no plan, and nothing here writes one to fill the gap. Every call is
 // recorded with model and tokens; the cost is recorded only where the service
-// states one, and the anthropic-messages answer states none (the platform
-// prices the tokens). The environment is handed in, and so is the fetch when
+// states one, and the shared caller's answer states none (the platform prices
+// the tokens). The environment is handed in, and so is the fetch when
 // a job wants its own.
 //
 // 0.2.0 (docs/handoff-audit.md P15): each candidate's description goes whole
@@ -28,24 +31,53 @@
 // caller marks it cutAtLimit). It is never read as whole, and it is not asked
 // again with the same budget.
 //
-//   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL
-//   (anthropic-messages), and MODEL_KEY where the endpoint asks for one
-//   (no command line; plan.mjs calls askModel)
+//   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL (one the
+//   text-reasoning system declares), and MODEL_KEY where the endpoint asks
+//   for one (no command line; plan.mjs calls askModel)
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 export const TIMEOUT_MS = 100000;
 export const TRIES = 2;
 /** The plan's output budget: a build-plan-v1 object, with room to think. */
 export const OUTPUT_TOKENS = 32000;
-/** The protocols the text-reasoning system declares
- *  (agent-runtime-requirements.json); any other MODEL_PROTOCOL is refused. */
-export const MODEL_PROTOCOLS = ["anthropic-messages"];
 const STATUSES = ["exists", "named", "new"];
 
 const isObject = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 
-/** Why no call can be made with these settings, or "" when one can. */
-export const cannotAsk = (env = {}) => cannotCall(env, { protocols: MODEL_PROTOCOLS });
+/** The request formats the package's text-reasoning system declares, read
+ *  from agent-runtime-requirements.json beside the package (one level up in
+ *  the source, three in a built package's skills/<slug>/scripts/). Where the
+ *  declaration is not found, cannot be read or names none, null, and then
+ *  nothing is sent and the plan is refused (PROTOCOLS_UNREAD). `here` is the
+ *  scripts folder the file is looked for above, so a test can point it at
+ *  another file. */
+export function declaredProtocols(here = HERE) {
+  for (const at of [join(here, "..", "agent-runtime-requirements.json"), join(here, "..", "..", "..", "agent-runtime-requirements.json")]) {
+    if (!existsSync(at)) continue;
+    try {
+      const sys = (JSON.parse(readFileSync(at, "utf8"))?.systems ?? []).find((s) => s?.name === "text-reasoning");
+      if (Array.isArray(sys?.protocols) && sys.protocols.length) return sys.protocols.map(String);
+    } catch { /* an unreadable declaration is no declaration */ }
+  }
+  return null;
+}
+
+/** Why the plan is refused when the declared protocols could not be read:
+ *  without them the caller would hold MODEL_PROTOCOL to nothing and send
+ *  whatever it speaks (Common Agent 12.4.1), so nothing is sent. */
+export const PROTOCOLS_UNREAD = "the model system's declared protocols could not be read from agent-runtime-requirements.json, so nothing was sent to the model";
+
+/** Why no call can be made with these settings, or "" when one can: a
+ *  setting the caller refuses, or the declared protocols unread. */
+export function cannotAsk(env = {}, { protocols = declaredProtocols() } = {}) {
+  const read = Array.isArray(protocols) && protocols.length;
+  return cannotCall(env, { protocols: read ? protocols : undefined }) || (read ? "" : PROTOCOLS_UNREAD);
+}
 
 /** The kinds a take or a give may be (spec, make-a-plan). */
 const KIND_LIST = "url|text|document|identifier|application/json|text/html|image|audio|video";
@@ -150,8 +182,8 @@ export function readAnswer(text) {
 }
 
 /** The model block of a plan, from the calls made. The cost is each call's
- *  stated cost, added up, or null when no call stated one (an
- *  anthropic-messages answer states none: the platform prices its tokens). */
+ *  stated cost, added up, or null when no call stated one (the
+ *  shared caller's answer states none: the platform prices its tokens). */
 export function modelSummary(calls = []) {
   const sum = (k) => calls.reduce((n, c) => n + (Number.isFinite(c[k]) ? c[k] : 0), 0);
   const named = [...calls].reverse().find((c) => c.model && !c.error);
@@ -182,7 +214,7 @@ const clean = (e) => String(e?.message ?? e).replace(/Bearer\s+\S+/gi, "Bearer [
  *  nothing usable, and `error` then says why in one sentence. `draft` is the
  *  last answer that was JSON, whatever its shape, or null. The prompt is built
  *  from the reading (or the description) when none is handed in. */
-export async function askModel({ prompt, reading = null, description = "", env = {}, fetchImpl, timeoutMs = TIMEOUT_MS } = {}) {
+export async function askModel({ prompt, reading = null, description = "", env = {}, fetchImpl, timeoutMs = TIMEOUT_MS, protocols = declaredProtocols() } = {}) {
   const asked = prompt ?? buildPrompt({
     description: reading?.description ?? description,
     earlier: reading?.earlier ?? null,
@@ -190,12 +222,12 @@ export async function askModel({ prompt, reading = null, description = "", env =
   });
   const calls = [];
   const tries = [];
-  const why = cannotAsk(env);
+  const why = cannotAsk(env, { protocols });
   if (why) {
     tries.push({ try: 1, problems: [why] });
     return { plan: null, draft: null, failed: true, calls, problems: [why], tries, error: `the model was not asked: ${why}` };
   }
-  const options = { env, json: true, maxOutputTokens: OUTPUT_TOKENS, timeoutMs, protocols: MODEL_PROTOCOLS, ...(fetchImpl ? { fetchImpl } : {}) };
+  const options = { env, json: true, maxOutputTokens: OUTPUT_TOKENS, timeoutMs, protocols, ...(fetchImpl ? { fetchImpl } : {}) };
   let draft = null;
   let sent = asked;
   for (let n = 1; n <= TRIES; n++) {

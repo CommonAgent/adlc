@@ -32,12 +32,19 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
 export const VERDICTS = ["holds", "thin", "does-not-cover"];
 
+/** Why the reasons go unweighed when the declared protocols could not be
+ *  read: without them the caller would hold MODEL_PROTOCOL to nothing and
+ *  send whatever it speaks (Common Agent 12.4.1), so nothing is sent. */
+export const PROTOCOLS_UNREAD = "the model system's declared protocols could not be read from agent-runtime-requirements.json, so nothing was sent to the model";
+
 /** The protocols this package's own model system declares, read from its
  *  agent-runtime-requirements.json wherever the package keeps it, so a
  *  MODEL_PROTOCOL outside them is refused by the caller before anything is
- *  sent; [] (no further limit) when the file is not found. */
-export function declaredProtocols() {
-  for (const p of [join(HERE, "..", "agent-runtime-requirements.json"), join(HERE, "..", "..", "..", "agent-runtime-requirements.json")]) {
+ *  sent. [] when the file is not found, cannot be read or names none, and
+ *  then weigh goes without the model (PROTOCOLS_UNREAD). `paths` are the
+ *  files looked for, in order, so a test can point it at another file. */
+export function declaredProtocols(paths = [join(HERE, "..", "agent-runtime-requirements.json"), join(HERE, "..", "..", "..", "agent-runtime-requirements.json")]) {
+  for (const p of paths) {
     if (!existsSync(p)) continue;
     try {
       const sys = (JSON.parse(readFileSync(p, "utf8")).systems ?? []).find((s) => s?.kind === "model");
@@ -99,17 +106,19 @@ export function prompt({ pkg, items, does }) {
  * `ask` is the call, for tests; by default the shared caller's askJson, which
  * is asked only when the four settings can make a call, with the protocols
  * the package declares and the job's model record as its exchange.
+ * `protocols` are those declared protocols (declaredProtocols() by default);
+ * when they are empty, nothing is asked, whichever `ask` was handed in.
  */
-export async function weigh({ a, pkg, does = "", env = process.env, ask = askJson }) {
+export async function weigh({ a, pkg, does = "", env = process.env, ask = askJson, protocols = declaredProtocols() }) {
   const items = itemsOf(a);
   if (!items.length) return { skipped: "there was no recorded reason to weigh" };
   const ceiling = trim(env?.CEILING_TEXT_REASONING);
   if (ceiling && !(Number(ceiling) >= 1)) return { skipped: `the ceiling on text-reasoning (${ceiling}) allows no call` };
-  const protocols = declaredProtocols();
   if (ask === askJson) {
     const why = cannotCall(env, { protocols });
     if (why) return { skipped: why };
   }
+  if (!(Array.isArray(protocols) && protocols.length)) return { skipped: PROTOCOLS_UNREAD };
   let answer;
   try {
     answer = await ask(prompt({ pkg, items, does }), { env, protocols, maxOutputTokens: Math.min(16000, 400 + items.length * 200), effort: "low", exchange: modelExchange });
