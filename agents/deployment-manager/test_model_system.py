@@ -127,6 +127,53 @@ class TheHostFillsTheGaps(unittest.TestCase):
         far = {"settings": {"text-reasoning": {**GOOD, "MODEL_ENDPOINT": "https://models.example.com/v1"}}}
         self.assertEqual(steps.model_gateway_env(far, PKG), {})
 
+    def test_an_agent_picks_gemini_through_its_instruction_and_still_reaches_the_gateway_with_no_key(self):
+        pkg = {"systems": [{**MODEL, "protocols": ["anthropic-messages", "gemini"]}], "install": {"ceilings": []}}
+        args = steps.with_model_defaults({"settings": {"text-reasoning": {"MODEL_PROTOCOL": "gemini", "MODEL_NAME": "gemini-3.8-flash"}}}, pkg)
+        self.assertEqual(install.check_instruction(args, pkg), [])
+        [b] = install.plan_bindings(args, pkg, "/home/a")
+        self.assertEqual(b["settings"], {"MODEL_NAME": "gemini-3.8-flash", "MODEL_ENDPOINT": "http://127.0.0.1:8788",
+                                         "MODEL_PROTOCOL": "gemini", "TEXT_MODEL": "gemini-3.8-flash", "MODEL_KEY": ""})
+        self.assertEqual(steps.model_gateway_env(args, pkg)["BRIDGE_PORT"], "8788")
+        # A package whose model system does not speak gemini is refused it.
+        args = steps.with_model_defaults({"settings": {"text-reasoning": {"MODEL_PROTOCOL": "gemini"}}}, PKG)
+        self.assertTrue(any("not one this package's model system speaks" in r for r in install.check_instruction(args, PKG)))
+
+
+class TheSpeechPassthrough(unittest.TestCase):
+    SPEECH = {"name": "speech-to-text", "kind": "service", "access": "read", "credential": None, "env": None, "spends": None,
+              "settings": [{"env": "STT_ENDPOINT"}, {"env": "STT_PROJECT"}, {"env": "STT_MODEL"}]}
+
+    def setUp(self):
+        self.was = os.environ.get("AGENTMESH_ENV_FILE")
+        os.environ["AGENTMESH_ENV_FILE"] = with_env_file({
+            "vertex": {"project": "p-vertex"},
+            "model": {"name": "claude-sonnet-5-5", "endpoint": "http://127.0.0.1:8788", "key": "", "protocol": "anthropic-messages",
+                      "gateway": {"vertex_project": "p-gw", "vertex_region": "global", "gemini_region": "global", "speech_project": "p-gw",
+                                  "settings": {"STT_ENDPOINT": "http://127.0.0.1:8788", "STT_PROJECT": "p-gw"}}}})
+
+    def tearDown(self):
+        if self.was is None:
+            os.environ.pop("AGENTMESH_ENV_FILE", None)
+        else:
+            os.environ["AGENTMESH_ENV_FILE"] = self.was
+
+    def test_a_speech_service_is_pointed_at_the_gateway_and_the_job_gets_its_gateway(self):
+        pkg = {"systems": [self.SPEECH], "install": {"ceilings": []}}
+        args = steps.with_model_defaults({"settings": {"speech-to-text": {"STT_MODEL": "chirp_3"}}}, pkg)
+        self.assertEqual(args["settings"]["speech-to-text"], {"STT_MODEL": "chirp_3", "STT_ENDPOINT": "http://127.0.0.1:8788", "STT_PROJECT": "p-gw"})
+        self.assertEqual(install.check_instruction(args, pkg), [])
+        self.assertEqual(steps.model_gateway_env(args, pkg), {"BRIDGE_VERTEX_PROJECT": "p-gw", "BRIDGE_VERTEX_REGION": "global", "BRIDGE_PORT": "8788",
+                                                              "BRIDGE_GEMINI_REGION": "global", "BRIDGE_SPEECH_PROJECT": "p-gw"})
+
+    def test_what_the_instruction_gives_wins_and_a_service_that_declares_neither_is_untouched(self):
+        pkg = {"systems": [self.SPEECH], "install": {"ceilings": []}}
+        args = steps.with_model_defaults({"settings": {"speech-to-text": {"STT_ENDPOINT": "https://speech.example.com", "STT_MODEL": "x"}}}, pkg)
+        self.assertEqual(args["settings"]["speech-to-text"]["STT_ENDPOINT"], "https://speech.example.com")
+        self.assertEqual(steps.model_gateway_env(args, pkg), {})
+        other = {"systems": [{**self.SPEECH, "settings": [{"env": "TTS_VOICE"}]}], "install": {"ceilings": []}}
+        self.assertEqual(steps.with_model_defaults({}, other), {"settings": {}})
+
 
 if __name__ == "__main__":
     unittest.main()

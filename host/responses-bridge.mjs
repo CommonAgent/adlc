@@ -31,6 +31,29 @@
 // come back unchanged. A key the agent sends is never passed on. It listens on loopback
 // only, so only what runs on this machine reaches it.
 //
+// GEMINI'S FORMAT, THE SAME WAY. The bridge also serves MODEL_PROTOCOL gemini as
+// Common Agent 12.4.1's table defines it: POST /models/<MODEL_NAME>:generateContent,
+// or :streamGenerateContent for an answer that streams, under MODEL_ENDPOINT. The
+// x-goog-api-key header, where a caller sends one, is ignored and never passed on.
+// Each call goes to Vertex AI's publishers/google/models/<model> in the bridge's
+// project and its Gemini region (BRIDGE_GEMINI_REGION, else the region it was
+// started with), signed in as the machine. What differs between the Gemini API
+// and Vertex is mapped (vertexGeminiRequest): a content with no role is the
+// user's, as the Gemini API reads it and Vertex refuses it; the snake_case
+// spellings the Gemini API takes are given their Vertex names; a system
+// instruction given as words is made a content; the tool google_search is
+// googleSearch; and no query parameter but alt=sse is passed, so a key written
+// into the address goes nowhere.
+//
+// SPEECH-TO-TEXT V2, AND NOTHING ELSE OF GOOGLE'S. An agent that turns speech into
+// words reaches Speech-to-Text v2 at a declared setting (STT_ENDPOINT, this
+// bridge) with no credential: POST /v2/projects/<project>/locations/<location>/
+// recognizers/<recognizer>:recognize goes to <location>-speech.googleapis.com with
+// the machine's token added. Only that path, and only for the bridge's own
+// project (BRIDGE_SPEECH_PROJECT, else the Vertex project): any other project,
+// recognizer action or Google API is refused, so the bridge is never a way into
+// some other project or service.
+//
 // BRIDGE_LISTEN=0 loads the file without serving, for its tests.
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
@@ -38,6 +61,11 @@ import { execFileSync } from "node:child_process";
 const PORT = Number(process.env.RIG_BRIDGE_PORT ?? process.env.BRIDGE_PORT ?? 8788);
 const PROJECT = process.env.RIG_VERTEX_PROJECT ?? process.env.BRIDGE_VERTEX_PROJECT;
 const REGION = process.env.RIG_VERTEX_REGION ?? process.env.BRIDGE_VERTEX_REGION ?? "global";
+const GEMINI_REGION = process.env.BRIDGE_GEMINI_REGION || REGION;
+const SPEECH_PROJECT = process.env.BRIDGE_SPEECH_PROJECT || PROJECT;
+/** The largest request the bridge reads: a Speech-to-Text v2 recognize carries at
+ *  most ten megabytes of sound, which base64 makes about fourteen. */
+export const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 
 /** Where Vertex AI is reached for a region: the global host, a multi-region's own host
  *  (us, eu), or the region's host. */
@@ -191,14 +219,152 @@ async function messagesDoor(raw, res, deps) {
   res.end();
 }
 
+// ── Gemini's format ──────────────────────────────────────────────────────
+
+/** POST /models/<model>:generateContent or :streamGenerateContent (12.4.1), with the
+ *  Gemini API's own /v1beta or /v1 in front accepted too: {model, method, alt} or null. */
+export function geminiPath(url) {
+  const m = /^\/(?:v1beta\/|v1\/)?models\/([^/:?]+):(generateContent|streamGenerateContent)(?:\?(.*))?$/.exec(String(url ?? ""));
+  if (!m) return null;
+  const query = new URLSearchParams(m[3] ?? "");
+  return { model: vertexGeminiModelId(decodeURIComponent(m[1])), method: m[2], alt: query.get("alt") === "sse" ? "sse" : null };
+}
+
+/** The model id Vertex is asked for: the id alone, without google/ or models/ in front. */
+export const vertexGeminiModelId = (name) => String(name ?? "").trim().replace(/^google\//, "").replace(/^models\//, "");
+
+const camel = (k) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+/** An object's own keys in camelCase, one level, values untouched. */
+const camelKeys = (o) => (o && typeof o === "object" && !Array.isArray(o)
+  ? Object.fromEntries(Object.entries(o).map(([k, v]) => [camel(k), v])) : o);
+const camelPart = (p) => {
+  const q = camelKeys(p);
+  if (q && typeof q === "object") {
+    for (const k of ["inlineData", "fileData", "functionCall", "functionResponse", "executableCode", "codeExecutionResult", "videoMetadata"]) {
+      if (q[k] && typeof q[k] === "object") q[k] = camelKeys(q[k]);
+    }
+  }
+  return q;
+};
+const camelContent = (c, role) => {
+  const q = camelKeys(typeof c === "string" ? { parts: [{ text: c }] } : c) ?? {};
+  return { ...q, ...(role && !q.role ? { role } : {}), parts: (Array.isArray(q.parts) ? q.parts : []).map(camelPart) };
+};
+/** generationConfig's own keys and those of its few small members; a response
+ *  schema's property names are the caller's and are never touched. */
+const camelConfig = (g) => {
+  const q = camelKeys(g);
+  if (q && typeof q === "object") {
+    for (const k of ["thinkingConfig", "speechConfig", "imageConfig", "mediaResolution"]) if (q[k] && typeof q[k] === "object") q[k] = camelKeys(q[k]);
+  }
+  return q;
+};
+const TOOL_NAMES = { google_search: "googleSearch", google_search_retrieval: "googleSearchRetrieval", code_execution: "codeExecution",
+  url_context: "urlContext", function_declarations: "functionDeclarations", enterprise_web_search: "enterpriseWebSearch" };
+const camelTool = (t) => (t && typeof t === "object" && !Array.isArray(t)
+  ? Object.fromEntries(Object.entries(t).map(([k, v]) => [TOOL_NAMES[k] ?? camel(k), k === "function_declarations" || k === "functionDeclarations" ? v : camelKeys(v)])) : t);
+
+/** A Gemini API generateContent body as Vertex takes it (see GEMINI'S FORMAT above). */
+export function vertexGeminiBody(body) {
+  const b = camelKeys(body ?? {}) ?? {};
+  const out = { ...b };
+  out.contents = (Array.isArray(b.contents) ? b.contents : b.contents ? [b.contents] : []).map((c) => camelContent(c, "user"));
+  if (b.systemInstruction !== undefined) out.systemInstruction = camelContent(b.systemInstruction);
+  if (b.generationConfig !== undefined) out.generationConfig = camelConfig(b.generationConfig);
+  if (Array.isArray(b.tools)) out.tools = b.tools.map(camelTool);
+  if (b.toolConfig !== undefined) out.toolConfig = camelKeys(b.toolConfig);
+  if (Array.isArray(b.safetySettings)) out.safetySettings = b.safetySettings.map(camelKeys);
+  // The model is in the address on both sides; a body naming one is not Vertex's.
+  delete out.model;
+  return out;
+}
+
+/** The call Vertex takes for one Gemini request: {model, url, body}. */
+export function vertexGeminiRequest(path, body, { origin, project, region }) {
+  const id = path.model;
+  const url = `${origin}/v1/projects/${project}/locations/${region}/publishers/google/models/${encodeURIComponent(id)}:${path.method}${path.alt ? "?alt=sse" : ""}`;
+  return { model: id, url, body: vertexGeminiBody(body) };
+}
+
+const googleError = (res, status, message, reason = "INVALID_ARGUMENT") => {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify({ error: { code: status, message, status: reason } }));
+};
+
+/** Pass Vertex's answer back as it came, streamed when it streams. */
+async function passBack(r, res, streamed) {
+  res.writeHead(r.status, { "content-type": r.headers.get("content-type") ?? "application/json", ...(streamed ? { "cache-control": "no-cache" } : {}) });
+  if (r.body) for await (const chunk of r.body) res.write(chunk);
+  res.end();
+}
+
+/** POST /models/<model>:generateContent: a Gemini call, to Vertex as the machine. */
+async function geminiDoor(path, raw, res, deps) {
+  let body;
+  try { body = JSON.parse(raw); } catch { return googleError(res, 400, "the request is not JSON"); }
+  if (!path.model) return googleError(res, 400, "the request names no model: the agent's MODEL_NAME is the Gemini model's id");
+  const v = vertexGeminiRequest(path, body, { origin: deps.geminiOrigin ?? deps.origin, project: deps.project, region: deps.geminiRegion ?? deps.region });
+  let r;
+  try {
+    r = await deps.fetchImpl(v.url, { method: "POST", headers: { authorization: `Bearer ${await deps.token()}`, "content-type": "application/json" }, body: JSON.stringify(v.body) });
+  } catch (e) {
+    console.error(`responses-bridge: gemini ${v.model}: ${e.message}`);
+    return googleError(res, 502, `the model gateway could not reach Vertex AI: ${String(e?.cause?.message ?? e?.message ?? e).replace(/Bearer\s+\S+/gi, "Bearer [left out]")}`, "UNAVAILABLE");
+  }
+  console.error(`responses-bridge: gemini ${v.model} ${path.method}${path.alt ? " (sse)" : ""} -> ${r.status}`);
+  return passBack(r, res, path.method === "streamGenerateContent");
+}
+
+// ── Speech-to-Text v2 ────────────────────────────────────────────────────
+
+/** POST /v2/projects/<project>/locations/<location>/recognizers/<recognizer>:recognize:
+ *  {project, location, path} or null for anything else. */
+export function speechPath(url) {
+  const m = /^\/v2\/projects\/([a-z][a-z0-9-]{4,61}[a-z0-9])\/locations\/([a-z][a-z0-9-]{0,30})\/recognizers\/([A-Za-z0-9_-]{1,63}):recognize$/.exec(String(url ?? ""));
+  return m ? { project: m[1], location: m[2], path: m[0] } : null;
+}
+
+/** Where Speech-to-Text v2 is reached for a location: the global host, or the location's own. */
+export const speechOrigin = (location) => `https://${location === "global" ? "" : `${location}-`}speech.googleapis.com`;
+
+/** The Speech-to-Text v2 passthrough: only recognize, only for the bridge's own project. */
+async function speechDoor(url, raw, res, deps) {
+  const p = speechPath(url);
+  if (!p) return googleError(res, 403, "this gateway passes on Speech-to-Text v2 recognize calls only (/v2/projects/<project>/locations/<location>/recognizers/<recognizer>:recognize), and nothing else", "PERMISSION_DENIED");
+  if (p.project !== deps.speechProject) return googleError(res, 403, `this gateway passes on Speech-to-Text calls for project ${deps.speechProject} only`, "PERMISSION_DENIED");
+  const target = `${(deps.speechOrigin ?? speechOrigin)(p.location)}${p.path}`;
+  let r;
+  try {
+    r = await deps.fetchImpl(target, { method: "POST", headers: { authorization: `Bearer ${await deps.token()}`, "content-type": "application/json" }, body: raw });
+  } catch (e) {
+    console.error(`responses-bridge: speech ${p.location}: ${e.message}`);
+    return googleError(res, 502, `the gateway could not reach Speech-to-Text: ${String(e?.cause?.message ?? e?.message ?? e).replace(/Bearer\s+\S+/gi, "Bearer [left out]")}`, "UNAVAILABLE");
+  }
+  console.error(`responses-bridge: speech ${p.location} recognize -> ${r.status}`);
+  return passBack(r, res, false);
+}
+
 /** The bridge's request handler, given where Vertex is, the project and region, the token
  *  and the fetch it uses. */
 export function bridgeHandler(deps) {
   return async (req, res) => {
     if (req.method !== "POST") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ object: "list", data: [], models: [] })); return; }
-    let raw = "";
-    for await (const chunk of req) raw += chunk;
-    if (/^\/v1\/messages(\?|$)/.test(req.url ?? "")) return messagesDoor(raw, res, deps);
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > MAX_REQUEST_BYTES) { res.writeHead(413, { "content-type": "application/json" }); res.end(JSON.stringify({ error: { code: 413, message: "the request is larger than this gateway takes" } })); req.destroy(); return; }
+      chunks.push(chunk);
+    }
+    const raw = Buffer.concat(chunks).toString("utf8");
+    const url = req.url ?? "";
+    if (/^\/v1\/messages(\?|$)/.test(url)) return messagesDoor(raw, res, deps);
+    const gemini = geminiPath(url);
+    if (gemini) return geminiDoor(gemini, raw, res, deps);
+    if (/^\/v2\//.test(url)) return speechDoor(url, raw, res, deps);
+    // A Gemini or Google address this bridge does not serve is refused, never
+    // taken for a Codex call.
+    if (/^\/(v1beta|v1\/projects|models)\//.test(url)) return googleError(res, 404, `this gateway does not serve ${url.split("?")[0]}`, "NOT_FOUND");
     let body;
     try { body = JSON.parse(raw); } catch { res.writeHead(400); res.end("bad json"); return; }
     // What Codex offered, by kind and name, so a run whose model "cannot find" a tool can be read.
@@ -234,6 +400,7 @@ export function bridgeHandler(deps) {
 
 if (process.env.BRIDGE_LISTEN !== "0") {
   if (!PROJECT) { console.error("responses-bridge: RIG_VERTEX_PROJECT (or BRIDGE_VERTEX_PROJECT) is not set"); process.exit(2); }
-  createServer(bridgeHandler({ origin: vertexOrigin(REGION), project: PROJECT, region: REGION, token, fetchImpl: fetch }))
-    .listen(PORT, "127.0.0.1", () => console.error(`responses-bridge: 127.0.0.1:${PORT} -> Claude on Vertex (${PROJECT}, ${REGION}): /v1/responses for Codex, /v1/messages for agents`));
+  createServer(bridgeHandler({ origin: vertexOrigin(REGION), project: PROJECT, region: REGION, token, fetchImpl: fetch,
+    geminiOrigin: vertexOrigin(GEMINI_REGION), geminiRegion: GEMINI_REGION, speechProject: SPEECH_PROJECT }))
+    .listen(PORT, "127.0.0.1", () => console.error(`responses-bridge: 127.0.0.1:${PORT} -> Vertex (${PROJECT}, ${REGION}; Gemini ${GEMINI_REGION}): /v1/responses for Codex, /v1/messages and /models/<model>:generateContent for agents, Speech-to-Text v2 recognize for ${SPEECH_PROJECT}`));
 }

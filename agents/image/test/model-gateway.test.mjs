@@ -66,3 +66,23 @@ test("an image of a package with a model system carries the gateway", () => {
   assert.equal(hasModelSystem({ systems: [{ name: "x", kind: "service" }] }), false);
   assert.match(gatewaySource(), /\/v1\/messages/);
 });
+
+test("a gemini call through the gateway is counted, named by the model that answered", () => {
+  const answer = { candidates: [{ content: { parts: [{ text: "x" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 4, thoughtsTokenCount: 6 }, modelVersion: "gemini-3.8-flash" };
+  const u = usageOf("http://127.0.0.1:8788/models/gemini-3.8-flash:generateContent", JSON.stringify(answer), { endpoint: "http://127.0.0.1:8788", model: "gemini-3.8-flash" });
+  assert.deepEqual(u, { model: "gemini-3.8-flash", input: 30, output: 10, cache_write: 0, cache_read: 0 });
+});
+
+test("a Speech-to-Text v2 call through the gateway is counted by its billed seconds", () => {
+  const gw = { endpoint: "", stt: "http://127.0.0.1:8788", model: "" };
+  const u = usageOf("http://127.0.0.1:8788/v2/projects/p/locations/us/recognizers/_:recognize", JSON.stringify({ results: [], metadata: { totalBilledDuration: "90s" } }), gw);
+  assert.equal(u.model, "google-speech-v2");
+  assert.equal(u.seconds, 90);
+  assert.equal(u.cost, 0.024);
+  assert.equal(usageOf("http://127.0.0.1:8788/v2/projects/p/locations/us/recognizers/_:recognize", "{}", gw), null);
+});
+
+test("the gateway starts for a job whose only gateway setting is STT_ENDPOINT", () => {
+  const plan = gatewayPlan({ BRIDGE_VERTEX_PROJECT: "p", STT_ENDPOINT: "http://127.0.0.1:8788" }, { exists: () => true, dir: "/opt/agent" });
+  assert.equal(plan.port, 8788);
+});

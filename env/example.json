@@ -15,7 +15,10 @@
     "endpoint": "http://127.0.0.1:8788",
     "key": "",
     "protocol": "anthropic-messages",
-    "gateway": { "vertex_project": "example-project", "vertex_region": "global" }
+    "gateway": {
+      "vertex_project": "example-project", "vertex_region": "global", "gemini_region": "global", "speech_project": "example-project",
+      "settings": { "STT_ENDPOINT": "http://127.0.0.1:8788", "STT_PROJECT": "example-project" }
+    }
   },
   "urls": {
     "app": "https://app.mesh.example.com",
