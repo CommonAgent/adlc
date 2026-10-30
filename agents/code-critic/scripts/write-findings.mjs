@@ -12,6 +12,11 @@
 // by a reason, which by a change (the finding no longer holds), and which are
 // still open.
 //
+// Every address a script carries is listed under Warnings, each with its file,
+// its line and the literal, as the house-rule check found it. A warning is not
+// a finding: it is not counted among the findings or the open ones, it has no
+// Answer line, and a reason written anywhere does not take it away.
+//
 // The reply leads with the count and the open number, names the first few
 // findings by place, says what the job went without, and says, when the
 // message asked for a fix, that this role does not make one.
@@ -72,7 +77,7 @@ export function answerAgainst(current, earlier) {
 const firstSentence = (s) => { const t = trim(s); const m = /^(.{20,160}?[.!?])(\s|$)/.exec(t); return m ? m[1] : t.slice(0, 160); };
 
 /** The document. */
-export function findingsDocument({ read, findings = [], outside = [], dropped = [], earlier = [], leftOut = [], wentWithout = "", reviewer = "code-critic", version = "", now = new Date().toISOString(), modelError = null }) {
+export function findingsDocument({ read, findings = [], warnings = [], outside = [], dropped = [], earlier = [], leftOut = [], wentWithout = "", reviewer = "code-critic", version = "", now = new Date().toISOString(), modelError = null }) {
   const who = `${read.package?.name ?? "the package"}${read.package?.version ? ` ${read.package.version}` : ""}`;
   const open = findings.filter((f) => !trim(f.answer)).length;
   const change = read.change?.scope === "diff"
@@ -99,8 +104,18 @@ export function findingsDocument({ read, findings = [], outside = [], dropped = 
     L.push(`- Answer: ${trim(f.answer) ? `${trim(f.answer)} (carried from the earlier review)` : "open"}`);
     L.push("");
   });
+  if (warnings.length) {
+    L.push("## Warnings", "");
+    L.push("Every network address written into a script is listed here, the same on every run. A warning is not a finding: it is not counted above, it is not answered, and a reason does not remove it.", "");
+    for (const w of warnings) L.push(`- \`${placeText(w.place)}\`: \`${trim(w.literal) || trim(w.claim)}\`${trim(w.consequence) ? ` ${trim(w.consequence)}` : ""}`);
+    L.push("");
+  }
+  // Both sections stand in every document, so it always carries the
+  // convention its output declares; without a diff or an earlier review each
+  // says so in a line.
+  L.push("## Answers to the earlier review", "");
+  if (!earlier.length) L.push("No earlier findings came with this change.", "");
   if (earlier.length) {
-    L.push("## Answers to the earlier review", "");
     for (const e of earlier) {
       const at = e.place ? ` at \`${placeText(e.place)}\`` : "";
       if (e.outcome === "reason") L.push(`- ${e.id}${at}: answered by a reason: ${e.answer}`);
@@ -109,8 +124,9 @@ export function findingsDocument({ read, findings = [], outside = [], dropped = 
     }
     L.push("");
   }
+  L.push("## Outside the change", "");
+  if (read.change?.scope !== "diff") L.push("No diff came, so the whole package is the change and nothing is outside it.", "");
   if (read.change?.scope === "diff") {
-    L.push("## Outside the change", "");
     if (!outside.length) L.push("Nothing.");
     for (const f of outside) L.push(`- \`${placeText(f.place)}\` (${f.rule}): ${trim(f.claim)}`);
     L.push("");
@@ -167,7 +183,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const { findings, earlier } = answerAgainst(current, earlierFindings(earlierText));
   const wentWithout = paragraph(RECORDS);
   const doc = findingsDocument({
-    read, findings, outside: [...(house.outside_the_change ?? []), ...(checked.outside_the_change ?? [])],
+    read, findings, warnings: house.warnings ?? [], outside: [...(house.outside_the_change ?? []), ...(checked.outside_the_change ?? [])],
     dropped: checked.dropped ?? [], earlier, leftOut: rev.left ?? [], wentWithout, modelError: rev.error ?? null,
     version: process.env.VERSION ?? "", now: process.env.NOW || new Date().toISOString(),
   });

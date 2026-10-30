@@ -25,9 +25,14 @@ import { checkDelivered } from "./delivered-formats.test.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+// The address-carrying script belongs to a skill the test package has: badPackage()
+// carries the skills make, read and think, so tool.mjs goes in make's scripts folder
+// and make's build entry lists it.
+const TOOL = "skills/make/scripts/tool.mjs";
+
 function packageWithAddresses() {
   const base = badPackage();
-  base["skills/review-a-change/scripts/tool.mjs"] = [
+  base[TOOL] = [
     "// tool script",
     "const API = \"https://api.anthropic.com/v1/messages\";",
     "const META = \"metadata.google.internal\";",
@@ -35,9 +40,7 @@ function packageWithAddresses() {
     "export const run = () => true;",
   ].join("\n");
   const manifest = JSON.parse(base["plugin.json"]);
-  manifest.extensions["net.agentdoc.package"].build.skills["review-a-change"].scripts.push(
-    "skills/review-a-change/scripts/tool.mjs",
-  );
+  manifest.extensions["net.agentdoc.package"].build.skills.make.scripts.push(TOOL);
   base["plugin.json"] = JSON.stringify(manifest, null, 2);
   return base;
 }
@@ -48,12 +51,16 @@ test("address literals and metadata hostname in skill scripts are listed as warn
   const out = checkHouseRules(read, texts);
   const warnings = out.warnings ?? addressWarnings(read.files, texts);
   assert.ok(warnings.length >= 3, `expected at least 3 warnings, got ${warnings.length}`);
-  const literals = warnings.map((w) => w.literal || w.claim);
-  assert.ok(literals.some((l) => l.includes("https://api.anthropic.com/v1/messages")));
-  assert.ok(literals.some((l) => l.includes("metadata.google.internal")));
-  assert.ok(literals.some((l) => l.includes("http://10.0.0.1:8080/hook")));
+  const inTool = warnings.filter((w) => w.place.file === TOOL);
+  const at = (needle) => inTool.find((w) => (w.literal || w.claim).includes(needle));
+  assert.equal(at("https://api.anthropic.com/v1/messages")?.place.line, 2);
+  assert.equal(at("metadata.google.internal")?.place.line, 3);
+  assert.equal(at("http://10.0.0.1:8080/hook")?.place.line, 4);
+  // Every warning is in a script the package's skills carry: tool.mjs, and make.mjs,
+  // which make's build entry lists and whose address on line 5 is a warning too.
+  const carried = new Set(Object.values(JSON.parse(files["plugin.json"]).extensions["net.agentdoc.package"].build.skills).flatMap((s) => s.scripts ?? []));
   for (const w of warnings) {
-    assert.equal(w.place.file, "skills/review-a-change/scripts/tool.mjs");
+    assert.ok(carried.has(w.place.file), `${w.place.file} is a script no skill carries`);
     assert.ok(Number.isInteger(w.place.line) && w.place.line > 0);
   }
 });
@@ -144,6 +151,7 @@ test("a warning is never removed when an earlier review answers it with a reason
   for (const w of warnings) {
     const lit = w.literal || w.claim;
     assert.ok(doc.includes(w.place.file), `doc missing file ${w.place.file}`);
+    assert.ok(doc.includes(lit), `doc missing the answered address ${lit}`);
   }
 });
 

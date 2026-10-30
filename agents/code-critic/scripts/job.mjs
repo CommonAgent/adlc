@@ -4,10 +4,12 @@
 // A job whose every step is a script is a job that runs as one script, so
 // the package names this file as the job's command (12.3 `run`) and nothing
 // is left to a harness to improvise. The one model call is the one review.mjs
-// makes, through caller.mjs, with the model the install configured.
+// makes, through model-caller.mjs, with the model the install placed in the
+// four model settings.
 //
 //   read the change        read-change.mjs      no model
-//   check the house rules  house-rules.mjs      no model
+//   check the house rules  house-rules.mjs      no model; every address a
+//                                               script carries is a warning
 //   review the code        review.mjs           the text-reasoning system, once or twice
 //   check the findings     check-findings.mjs   no model
 //   write the findings     write-findings.mjs   no model, then pieces.mjs
@@ -101,7 +103,7 @@ export async function runJob({ job, records, work, files = [], textFile = "", en
   // 3. Review the code.
   const { sent, left } = chooseFiles(read, texts);
   const rev = await review({
-    read, texts, sent, houseFindings: [...house.findings, ...house.outside_the_change],
+    read, texts, sent, houseFindings: [...house.findings, ...house.outside_the_change, ...house.warnings],
     rulesRef: reference("the-house-rules.md"), findingRef: reference("what-a-finding-is.md"),
     account: r.account_text, diff: r.diff_text, earlier: r.earlier_text,
   }, { env, fetchImpl, ...(call ? { call } : {}) });
@@ -111,14 +113,14 @@ export async function runJob({ job, records, work, files = [], textFile = "", en
   writeFileSync(join(RECORDS, "calls.json"), JSON.stringify({ calls: rev.calls }, null, 2) + "\n");
 
   // 4. Check the findings.
-  const checked = checkFindings(rev.findings, read, [...house.findings, ...house.outside_the_change]);
+  const checked = checkFindings(rev.findings, read, [...house.findings, ...house.outside_the_change, ...house.warnings]);
   writeFileSync(join(RECORDS, "checked.json"), JSON.stringify(checked, null, 2) + "\n");
 
   // 5. Write the findings.
   const { findings, earlier } = answerAgainst([...house.findings, ...checked.kept], earlierFindings(r.earlier_text));
   const wentWithout = paragraph(RECORDS);
   const doc = findingsDocument({
-    read, findings, outside: [...house.outside_the_change, ...checked.outside_the_change], dropped: checked.dropped,
+    read, findings, warnings: house.warnings, outside: [...house.outside_the_change, ...checked.outside_the_change], dropped: checked.dropped,
     earlier, leftOut: left, wentWithout, modelError: rev.error, version: ownVersion(), now: now(),
   });
   writeFileSync(join(RECORDS, "findings.md"), doc);

@@ -52,7 +52,7 @@ test("every how is a program calling a model at named points, and only the revie
     assert.deepEqual(o.steps.filter((s) => s.how.intelligence === "called").map((s) => s.id), ["review-the-code"]);
   }
   for (const [id, s] of Object.entries(skills)) {
-    const callsModel = (s.scripts ?? []).includes("scripts/caller.mjs");
+    const callsModel = (s.scripts ?? []).includes("scripts/model-caller.mjs");
     const step = descriptor.offerings[0].steps.find((x) => x.id === id);
     if (step) assert.equal(callsModel, step.how.intelligence === "called", `${id} carries the caller ${callsModel ? "and declares no model" : "nowhere"}`);
   }
@@ -77,7 +77,10 @@ test("the run command names the offering's own job script", () => {
 
 test("the one system is text-reasoning with access trigger, and no model is named where a build reads", () => {
   assert.deepEqual(descriptor.systems.map((s) => [s.name, s.access]), [["text-reasoning", "trigger"]]);
-  assert.deepEqual(runtime.systems.map((s) => [s.name, s.env, s.settings.map((x) => x.env)]), [["text-reasoning", "TEXT_API_KEY", ["TEXT_MODEL"]]]);
+  // The model is reached through the four MODEL_* settings the install places, so the
+  // system declares its kind and protocols and no credential, env or settings of its own.
+  assert.deepEqual(runtime.systems.map((s) => [s.name, s.kind, s.protocols]), [["text-reasoning", "model", ["anthropic-messages"]]]);
+  for (const s of runtime.systems) for (const k of ["credential", "env", "settings"]) assert.equal(s[k], undefined, `${s.name} names ${k}`);
   const read = ["agent-descriptor.json", "agent-runtime-requirements.json", "plugin.json", ...readdirSync(join(ROOT, "skills")).map((s) => `skills/${s}/SKILL.md`), ...readdirSync(join(ROOT, "scripts")).map((s) => `scripts/${s}`)];
   for (const p of read) {
     const lines = readFileSync(join(ROOT, p), "utf8").split("\n").filter((l) => p.endsWith(".md") || p.endsWith(".json") || !/^\s*(\/\/|\/\*|\*)/.test(l));

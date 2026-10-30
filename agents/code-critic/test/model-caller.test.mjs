@@ -4,12 +4,14 @@
 // What is worth pinning: requests use POST /v1/messages with the anthropic-version
 // header, the model in the body, and the key in x-api-key only when MODEL_KEY is
 // non-empty; missing or empty MODEL_NAME, MODEL_ENDPOINT, or MODEL_PROTOCOL, or a
-// protocol other than anthropic-messages stops before sending anything; the settings
-// are read on every run so different endpoints reach different stand-ins in the same
-// process; an answer cut at max_tokens is a failure that is never treated as whole;
-// review.mjs reads modelSettings from the shared caller and reports which setting was
-// missing when going without the model; and running the caller directly with missing
-// settings exits 2.
+// protocol other than the package's declared anthropic-messages, stops before sending
+// anything; the settings are read on every run (callModel's `env` option) so
+// different endpoints reach different stand-ins in the same process; an answer cut
+// at max_tokens is a failure (cutAtLimit) that is never treated as whole;
+// modelSettings returns the plain settings and cannotCall names the missing one;
+// review.mjs reads the shared caller and reports which setting was missing when
+// going without the model; and running the caller directly without PROMPT_FILE
+// exits 2, while missing model settings exit 1 naming the setting.
 //
 // Nothing here touches a public network or real model service: all calls target a
 // local stand-in server on 127.0.0.1.
@@ -17,14 +19,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { callModel, modelSettings } from "../scripts/model-caller.mjs";
+import { callModel, cannotCall, modelSettings } from "../scripts/model-caller.mjs";
 import { review } from "../scripts/review.mjs";
 import { badPackage, readOf } from "./helpers.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
+// The formats the package's model system declares, as a job passes them to the caller.
+const DECLARED = JSON.parse(readFileSync(join(ROOT, "agent-runtime-requirements.json"), "utf8"))
+  .systems.find((s) => s.kind === "model").protocols;
 
 function startStandIn({ reply, status = 200 } = {}) {
   const defaultReply = {
@@ -78,7 +85,7 @@ test("the stand-in receives POST /v1/messages with model in body, anthropic-vers
       MODEL_PROTOCOL: "anthropic-messages",
       MODEL_KEY: "secret-key-123",
     };
-    const res = await callModel("hello world", env);
+    const res = await callModel("hello world", { env: env });
     assert.equal(standIn.requests.length, 1);
     const req = standIn.requests[0];
     assert.equal(req.method, "POST");
@@ -101,7 +108,7 @@ test("the x-api-key header is absent when MODEL_KEY is empty or omitted", async 
       MODEL_PROTOCOL: "anthropic-messages",
       MODEL_KEY: "",
     };
-    await callModel("hello", env);
+    await callModel("hello", { env: env });
     assert.equal(standIn.requests.length, 1);
     assert.equal(standIn.requests[0].headers["x-api-key"], undefined);
 
@@ -110,7 +117,7 @@ test("the x-api-key header is absent when MODEL_KEY is empty or omitted", async 
       MODEL_ENDPOINT: standIn.endpoint,
       MODEL_PROTOCOL: "anthropic-messages",
     };
-    await callModel("hello again", envWithoutKey);
+    await callModel("hello again", { env: envWithoutKey });
     assert.equal(standIn.requests.length, 2);
     assert.equal(standIn.requests[1].headers["x-api-key"], undefined);
   } finally {
@@ -125,7 +132,7 @@ test("a run with MODEL_NAME unset or empty stops before sending and its words na
       MODEL_ENDPOINT: standIn.endpoint,
       MODEL_PROTOCOL: "anthropic-messages",
     };
-    await assert.rejects(async () => callModel("test", envUnset), /MODEL_NAME/);
+    await assert.rejects(async () => callModel("test", { env: envUnset }), /MODEL_NAME/);
     assert.equal(standIn.requests.length, 0, "stand-in saw no request");
 
     const envEmpty = {
@@ -133,7 +140,7 @@ test("a run with MODEL_NAME unset or empty stops before sending and its words na
       MODEL_ENDPOINT: standIn.endpoint,
       MODEL_PROTOCOL: "anthropic-messages",
     };
-    await assert.rejects(async () => callModel("test", envEmpty), /MODEL_NAME/);
+    await assert.rejects(async () => callModel("test", { env: envEmpty }), /MODEL_NAME/);
     assert.equal(standIn.requests.length, 0);
   } finally {
     await standIn.close();
@@ -145,14 +152,14 @@ test("a run with MODEL_ENDPOINT unset or empty stops before sending and its word
     MODEL_NAME: "test-model",
     MODEL_PROTOCOL: "anthropic-messages",
   };
-  await assert.rejects(async () => callModel("test", envUnset), /MODEL_ENDPOINT/);
+  await assert.rejects(async () => callModel("test", { env: envUnset }), /MODEL_ENDPOINT/);
 
   const envEmpty = {
     MODEL_NAME: "test-model",
     MODEL_ENDPOINT: "",
     MODEL_PROTOCOL: "anthropic-messages",
   };
-  await assert.rejects(async () => callModel("test", envEmpty), /MODEL_ENDPOINT/);
+  await assert.rejects(async () => callModel("test", { env: envEmpty }), /MODEL_ENDPOINT/);
 });
 
 test("a run with MODEL_PROTOCOL unset or empty stops before sending and its words name MODEL_PROTOCOL", async () => {
@@ -162,7 +169,7 @@ test("a run with MODEL_PROTOCOL unset or empty stops before sending and its word
       MODEL_NAME: "test-model",
       MODEL_ENDPOINT: standIn.endpoint,
     };
-    await assert.rejects(async () => callModel("test", envUnset), /MODEL_PROTOCOL/);
+    await assert.rejects(async () => callModel("test", { env: envUnset }), /MODEL_PROTOCOL/);
     assert.equal(standIn.requests.length, 0);
 
     const envEmpty = {
@@ -170,7 +177,7 @@ test("a run with MODEL_PROTOCOL unset or empty stops before sending and its word
       MODEL_ENDPOINT: standIn.endpoint,
       MODEL_PROTOCOL: "",
     };
-    await assert.rejects(async () => callModel("test", envEmpty), /MODEL_PROTOCOL/);
+    await assert.rejects(async () => callModel("test", { env: envEmpty }), /MODEL_PROTOCOL/);
     assert.equal(standIn.requests.length, 0);
   } finally {
     await standIn.close();
@@ -180,13 +187,22 @@ test("a run with MODEL_PROTOCOL unset or empty stops before sending and its word
 test("a run with MODEL_PROTOCOL other than anthropic-messages stops before sending and its words name MODEL_PROTOCOL", async () => {
   const standIn = await startStandIn();
   try {
+    assert.deepEqual(DECLARED, ["anthropic-messages"], "the package's model system declares anthropic-messages only");
     const envWrong = {
       MODEL_NAME: "test-model",
       MODEL_ENDPOINT: standIn.endpoint,
       MODEL_PROTOCOL: "openai-chat",
     };
-    await assert.rejects(async () => callModel("test", envWrong), /MODEL_PROTOCOL/);
+    // The caller speaks other formats too; the package's declared protocols are what refuse this one.
+    await assert.rejects(async () => callModel("test", { env: envWrong, protocols: DECLARED }), /MODEL_PROTOCOL/);
     assert.equal(standIn.requests.length, 0);
+
+    // review.mjs passes the declared protocols itself, so the review goes without the model.
+    const { read, texts } = readOf(badPackage());
+    const out = await review({ read, texts, sent: [] }, { env: envWrong });
+    assert.match(out.error, /MODEL_PROTOCOL/);
+    assert.deepEqual(out.calls, []);
+    assert.equal(standIn.requests.length, 0, "the review sent nothing to the stand-in");
   } finally {
     await standIn.close();
   }
@@ -200,11 +216,11 @@ test("the settings are read on every run so different endpoints reach different 
       MODEL_NAME: "test-model",
       MODEL_PROTOCOL: "anthropic-messages",
     };
-    await callModel("ping 1", { ...base, MODEL_ENDPOINT: standIn1.endpoint });
+    await callModel("ping 1", { env: { ...base, MODEL_ENDPOINT: standIn1.endpoint } });
     assert.equal(standIn1.requests.length, 1);
     assert.equal(standIn2.requests.length, 0);
 
-    await callModel("ping 2", { ...base, MODEL_ENDPOINT: standIn2.endpoint });
+    await callModel("ping 2", { env: { ...base, MODEL_ENDPOINT: standIn2.endpoint } });
     assert.equal(standIn1.requests.length, 1);
     assert.equal(standIn2.requests.length, 1);
   } finally {
@@ -230,7 +246,13 @@ test("an answer cut at the token limit with stop_reason max_tokens is rejected a
       MODEL_ENDPOINT: standIn.endpoint,
       MODEL_PROTOCOL: "anthropic-messages",
     };
-    await assert.rejects(async () => callModel("test", env), /max_tokens/i);
+    await assert.rejects(async () => callModel("test", { env: env }), (err) => {
+      assert.equal(err.cutAtLimit, true, "the failure says the answer was cut");
+      assert.match(err.message, /cut at its limit/);
+      assert.match(err.message, /not read/);
+      return true;
+    });
+    assert.equal(standIn.requests.length, 1);
   } finally {
     await standIn.close();
   }
@@ -253,28 +275,43 @@ test("review.mjs reads modelSettings and goes without the model naming the missi
   assert.deepEqual(outMissingName.calls, []);
 });
 
-test("modelSettings returns plain settings when valid and throws naming the missing variable", () => {
-  const valid = modelSettings({
+test("modelSettings returns plain settings when valid and cannotCall names the missing variable", () => {
+  const settings = {
     MODEL_NAME: "claude-sonnet",
     MODEL_ENDPOINT: "http://127.0.0.1:8000",
     MODEL_PROTOCOL: "anthropic-messages",
     MODEL_KEY: "my-key",
-  });
+  };
+  const valid = modelSettings(settings);
   assert.equal(valid.name, "claude-sonnet");
   assert.equal(valid.endpoint, "http://127.0.0.1:8000");
   assert.equal(valid.protocol, "anthropic-messages");
   assert.equal(valid.key, "my-key");
+  assert.equal(cannotCall(settings, { protocols: DECLARED }), "");
 
-  assert.throws(() => modelSettings({}), /MODEL_NAME/);
-  assert.throws(() => modelSettings({ MODEL_NAME: "x" }), /MODEL_ENDPOINT/);
-  assert.throws(() => modelSettings({ MODEL_NAME: "x", MODEL_ENDPOINT: "http://127.0.0.1:8000" }), /MODEL_PROTOCOL/);
+  assert.doesNotThrow(() => modelSettings({}), "modelSettings only reads; it never refuses");
+  assert.equal(modelSettings({}).name, "");
+  assert.match(cannotCall({}), /^MODEL_NAME/);
+  assert.match(cannotCall({ MODEL_NAME: "x" }), /^MODEL_ENDPOINT/);
+  assert.match(cannotCall({ MODEL_NAME: "x", MODEL_ENDPOINT: "http://127.0.0.1:8000" }), /^MODEL_PROTOCOL/);
 });
 
-test("the model caller process exits 2 when required environment settings are missing", () => {
-  const res = spawnSync("node", [join(ROOT, "scripts", "model-caller.mjs")], {
-    env: {},
-    encoding: "utf8",
-  });
-  assert.equal(res.status, 2);
-  assert.match(res.stderr, /MODEL_/);
+test("the model caller process exits 2 without PROMPT_FILE, and 1 naming the setting when one is missing", () => {
+  const caller = join(ROOT, "scripts", "model-caller.mjs");
+  const bare = spawnSync(process.execPath, [caller], { env: {}, encoding: "utf8" });
+  assert.equal(bare.status, 2);
+  assert.match(bare.stderr, /PROMPT_FILE is required/);
+
+  const dir = mkdtempSync(join(tmpdir(), "code-critic-caller-"));
+  try {
+    const prompt = join(dir, "prompt.txt");
+    writeFileSync(prompt, "hello");
+    const res = spawnSync(process.execPath, [caller], { env: { PROMPT_FILE: prompt }, encoding: "utf8" });
+    assert.equal(res.status, 1);
+    const out = JSON.parse(res.stdout);
+    assert.equal(out.ok, false);
+    assert.match(out.error, /MODEL_NAME/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
