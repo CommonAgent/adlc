@@ -45,7 +45,8 @@
 // data address, inline data parts. A string is sent exactly as before. A part
 // that is neither, or a picture with no bytes or another media type, is refused
 // before anything is sent. Options:
-// maxOutputTokens (the answer's budget, OUTPUT_TOKENS when not given), json
+// maxOutputTokens (the answer's budget; when the job names none, the install's
+// MODEL_MAX_OUTPUT_TOKENS, and OUTPUT_TOKENS when that is not set either), json
 // (ask for one JSON value), system (a system prompt), effort (anthropic-messages
 // only: low, medium, high, or off for no thinking), stream (the answer comes as
 // events, so a long answer is never lost to a wait for headers), timeoutMs
@@ -69,7 +70,8 @@
 // its own scripts. model-caller.test.mjs holds every copy to this one.
 //
 //   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY
-//   where the endpoint asks for one
+//   where the endpoint asks for one; MODEL_MAX_OUTPUT_TOKENS where the install
+//   sets the answer budget
 //   MODEL_NAME=<model> MODEL_ENDPOINT=<url> MODEL_PROTOCOL=<protocol> MODEL_KEY=<key> PROMPT_FILE=<text> node model-caller.mjs
 import { readFileSync } from "node:fs";
 
@@ -79,8 +81,20 @@ const trim = (s) => String(s ?? "").trim();
  *  MODEL_PROTOCOL is refused in words. */
 export const PROTOCOLS = ["anthropic-messages", "openai-chat", "gemini"];
 
-/** The answer budget when a job names none. */
-export const OUTPUT_TOKENS = 32000;
+/** The answer budget when neither the job nor the install names one. 64000
+ *  fits every model the three formats reach today (Claude's ceiling is
+ *  128000, Gemini Flash's about 65000); an install changes it with
+ *  MODEL_MAX_OUTPUT_TOKENS, read on every run. */
+export const OUTPUT_TOKENS = 64000;
+
+/** The answer budget the install sets (MODEL_MAX_OUTPUT_TOKENS), or
+ *  OUTPUT_TOKENS when it sets none. A value that is not a whole number above
+ *  zero is refused by cannotCall before anything is sent. */
+export function outputBudget(env = process.env) {
+  const set = trim(env?.MODEL_MAX_OUTPUT_TOKENS);
+  const n = Number(set);
+  return set && Number.isInteger(n) && n > 0 ? n : OUTPUT_TOKENS;
+}
 /** The Messages API version sent with every anthropic-messages call. */
 export const ANTHROPIC_VERSION = "2023-06-01";
 /** What a JSON answer is asked for in words, beside each protocol's own switch
@@ -116,14 +130,15 @@ export function partsOf(prompt) {
 
 const has = (env, name) => Object.prototype.hasOwnProperty.call(env ?? {}, name) && env[name] !== undefined && env[name] !== null;
 
-/** The four settings as this call reads them, and which variable gave the
- *  name and the key: {name, endpoint, key, protocol, from: {name, key}}. */
+/** The four settings as this call reads them, the answer budget, and which
+ *  variable gave the name and the key: {name, endpoint, key, protocol,
+ *  maxOutputTokens, from: {name, key}}. */
 export function modelSettings(env = process.env) {
   const fromName = trim(env?.MODEL_NAME) ? "MODEL_NAME" : trim(env?.TEXT_MODEL) ? "TEXT_MODEL" : null;
   const name = trim(env?.MODEL_NAME) || trim(env?.TEXT_MODEL);
   const fromKey = has(env, "MODEL_KEY") ? "MODEL_KEY" : has(env, "TEXT_API_KEY") ? "TEXT_API_KEY" : null;
   const key = fromKey ? trim(env[fromKey]) : "";
-  return { name, endpoint: trim(env?.MODEL_ENDPOINT), key, protocol: trim(env?.MODEL_PROTOCOL), from: { name: fromName, key: fromKey } };
+  return { name, endpoint: trim(env?.MODEL_ENDPOINT), key, protocol: trim(env?.MODEL_PROTOCOL), maxOutputTokens: outputBudget(env), from: { name: fromName, key: fromKey } };
 }
 
 /** Why no call can be made with these settings, or "" when one can. */
@@ -138,13 +153,16 @@ export function cannotCall(env = process.env, { protocols } = {}) {
   if (!s.protocol) return `MODEL_PROTOCOL is not set, so this caller does not know how to speak to the model: it is one of ${PROTOCOLS.join(", ")}`;
   if (!PROTOCOLS.includes(s.protocol)) return `MODEL_PROTOCOL ${s.protocol} is not one this caller speaks: it is one of ${PROTOCOLS.join(", ")}`;
   if (Array.isArray(protocols) && protocols.length && !protocols.includes(s.protocol)) return `MODEL_PROTOCOL ${s.protocol} is not one this package's model system declares: it speaks ${protocols.join(", ")}`;
+  const budget = trim(env?.MODEL_MAX_OUTPUT_TOKENS);
+  if (budget && !(Number.isInteger(Number(budget)) && Number(budget) > 0)) return `MODEL_MAX_OUTPUT_TOKENS is ${budget}, and the answer budget is a whole number of tokens above zero`;
   return "";
 }
 
 /** How long a call may take, whole, in milliseconds: a minute to start, then
- *  the output it allows at 50 tokens a second, never more than 15 minutes. */
+ *  the output it allows at 50 tokens a second, never more than 30 minutes
+ *  (the job's own time limit still ends it first where that is shorter). */
 export function timeoutFor(maxTokens = OUTPUT_TOKENS) {
-  return Math.min(15 * 60_000, 60_000 + Math.ceil((Number(maxTokens) || 0) / 50) * 1000);
+  return Math.min(30 * 60_000, 60_000 + Math.ceil((Number(maxTokens) || 0) / 50) * 1000);
 }
 
 /** The address a protocol is called at: the endpoint with one trailing slash
@@ -158,10 +176,10 @@ export function urlFor(settings, { stream = false } = {}) {
 
 /** The HTTP call for one prompt, as plain values: {url, headers, body}, the
  *  body an object. Nothing is sent here. */
-export function requestFor(prompt, settings, { maxOutputTokens = OUTPUT_TOKENS, json = false, system = "", effort, stream = false } = {}) {
+export function requestFor(prompt, settings, { maxOutputTokens, json = false, system = "", effort, stream = false } = {}) {
   const parts = partsOf(prompt);
   const text = parts ? "" : String(prompt ?? "");
-  const limit = Math.max(1, Math.ceil(Number(maxOutputTokens) || OUTPUT_TOKENS));
+  const limit = Math.max(1, Math.ceil(Number(maxOutputTokens) || Number(settings?.maxOutputTokens) || OUTPUT_TOKENS));
   const sys = [trim(system), json ? JSON_SYSTEM : ""].filter(Boolean).join("\n\n");
   const headers = { "content-type": "application/json", ...(stream ? { accept: "text/event-stream" } : {}) };
   if (settings.protocol === "anthropic-messages") {
@@ -340,7 +358,7 @@ export async function callModel(prompt, options = {}) {
   if (why) throw new Error(why);
   const settings = modelSettings(env);
   const stream = options.stream === true;
-  const limit = Math.max(1, Math.ceil(Number(options.maxOutputTokens) || OUTPUT_TOKENS));
+  const limit = Math.max(1, Math.ceil(Number(options.maxOutputTokens) || outputBudget(env)));
   const req = requestFor(prompt, settings, { ...options, maxOutputTokens: limit, stream });
   const timeout = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : timeoutFor(limit);
   const where = new URL(req.url).host;

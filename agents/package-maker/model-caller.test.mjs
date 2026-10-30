@@ -51,7 +51,7 @@ const sse = (events) => events.map((e) => `event: ${e.type ?? "message"}\ndata: 
 
 test("the four settings, the older names for one version, and no older name for the endpoint", () => {
   const s = modelSettings({ MODEL_NAME: "m", MODEL_ENDPOINT: "http://h", MODEL_KEY: "k", MODEL_PROTOCOL: "gemini" });
-  assert.deepEqual(s, { name: "m", endpoint: "http://h", key: "k", protocol: "gemini", from: { name: "MODEL_NAME", key: "MODEL_KEY" } });
+  assert.deepEqual(s, { name: "m", endpoint: "http://h", key: "k", protocol: "gemini", maxOutputTokens: 64000, from: { name: "MODEL_NAME", key: "MODEL_KEY" } });
   const old = modelSettings({ TEXT_MODEL: "t", TEXT_API_KEY: "tk" });
   assert.equal(old.name, "t");
   assert.equal(old.key, "tk");
@@ -182,6 +182,24 @@ test("openai-chat: a bearer key, a system turn, JSON asked for, the answer and i
   } finally { await s.close(); }
 });
 
+test("the answer budget: the job's own, else MODEL_MAX_OUTPUT_TOKENS, else OUTPUT_TOKENS; a bad value is refused before sending", async () => {
+  assert.equal(OUTPUT_TOKENS, 64000);
+  const s = await standIn(() => ({ json: { model: "m", choices: [{ message: { role: "assistant", content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } } }));
+  try {
+    const base = { MODEL_NAME: "m", MODEL_ENDPOINT: `${s.origin}/v1`, MODEL_PROTOCOL: "openai-chat" };
+    await callModel("a", { env: { ...base, MODEL_MAX_OUTPUT_TOKENS: "120000" } });
+    assert.equal(s.seen[0].body.max_tokens, 120000);
+    await callModel("b", { env: { ...base, MODEL_MAX_OUTPUT_TOKENS: "120000" }, maxOutputTokens: 300 });
+    assert.equal(s.seen[1].body.max_tokens, 300, "a budget the job names wins");
+    await callModel("c", { env: base });
+    assert.equal(s.seen[2].body.max_tokens, OUTPUT_TOKENS);
+    assert.equal(modelSettings({ ...base, MODEL_MAX_OUTPUT_TOKENS: "9000" }).maxOutputTokens, 9000);
+    assert.match(cannotCall({ ...base, MODEL_MAX_OUTPUT_TOKENS: "lots" }), /MODEL_MAX_OUTPUT_TOKENS is lots/);
+    assert.match(cannotCall({ ...base, MODEL_MAX_OUTPUT_TOKENS: "0" }), /whole number of tokens above zero/);
+    assert.equal(s.seen.length, 3, "nothing is sent for a refused budget");
+  } finally { await s.close(); }
+});
+
 test("openai-chat: a streamed answer, and an answer cut at its length", async () => {
   const chunks = [
     { model: "s", choices: [{ delta: { role: "assistant", content: "" } }] },
@@ -309,7 +327,7 @@ test("a call that runs out of time says how long it waited, and one with nowhere
   await assert.rejects(callModel("hi", { env: { MODEL_NAME: "m", MODEL_ENDPOINT: closed.origin, MODEL_PROTOCOL: "gemini" } }), (e) => e.status === 503 && /could not be reached/.test(e.message));
   assert.equal(timeoutFor(0), 60_000);
   assert.equal(timeoutFor(5000), 160_000);
-  assert.equal(timeoutFor(10_000_000), 15 * 60_000);
+  assert.equal(timeoutFor(10_000_000), 30 * 60_000);
 });
 
 test("the settings are read again on every call", async () => {
