@@ -49,3 +49,10 @@ rules and checks:
   the check.
 - Review: code-critic 0.1.2 reviewed the change; the owner answered its
   findings.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host, deterministically: sha256 36c4b162495d7f49d80a2de2e4a2dfa81cbb4e521d23cbd4b90c14e8e68d5664.
+- Security review, under the owner's spending limit of 10 USD per day, by security-reviewer 0.2.0: refused, for the credential-like sample values in references/a-suite-that-works.test.mjs, which 0.3.1 carries too (technical debt 573); released with that recorded as known (owner, 2026-10-30).
+- Installed by the deployment manager on dev from deploy request dr_k8vLeK7nCu8e9JpXwcYj2hLe, approved by the platform account. Its worker job reads MODEL_PROTOCOL=gemini, MODEL_NAME=gemini-3.8-flash, MODEL_ENDPOINT at the job's own gateway and MODEL_KEY empty: the model it ran before, now through the model system.
+- Proof: Given the spec writer's text-counter files, it wrote 27 tests in 2 files that fail against empty stand-ins: 1 model call to gemini-3.8-flash, $0.09. Two of those tests read the descriptor in the old spec shape and pin a wrong count; the code writer stopped on both as conflicts (technical debt 600).
