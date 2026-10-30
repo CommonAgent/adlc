@@ -45,7 +45,7 @@ test("a platform enforced ceiling is recognized as runtime enforced", () => {
 });
 
 test("platform script process contract exits 2 when required variables or arguments are missing", () => {
-  const res = spawnSync("node", [scriptPath], {
+  const res = spawnSync(process.execPath, [scriptPath], {
     env: {},
     encoding: "utf8",
   });
