@@ -17,7 +17,7 @@ import { createServer } from "node:http";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { callModel, cutAtLimit } from "../scripts/model-caller.mjs";
+import { callModel } from "../scripts/model-caller.mjs";
 
 function standInServer(onMessage) {
   return new Promise((resolve) => {
@@ -75,11 +75,7 @@ test("a request to the stand-in sends post /v1/messages with the anthropic versi
       MODEL_PROTOCOL: "anthropic-messages",
       MODEL_KEY: "secret-key",
     };
-    await callModel({
-      env,
-      messages: [{ role: "user", content: "hi" }],
-      prompt: "hi",
-    });
+    await callModel("hi", { env });
     assert.ok(seen, "stand-in received a request");
     assert.equal(seen.method, "POST");
     assert.equal(seen.url, "/v1/messages");
@@ -106,27 +102,23 @@ test("the api key is passed in the x-api-key header only when model key is non-e
     }));
   });
   try {
-    await callModel({
+    await callModel("1", {
       env: {
         MODEL_NAME: "m",
         MODEL_ENDPOINT: standIn.url,
         MODEL_PROTOCOL: "anthropic-messages",
         MODEL_KEY: "my-key-value",
       },
-      messages: [{ role: "user", content: "1" }],
-      prompt: "1",
     });
     assert.equal(seenHeaders[0]["x-api-key"], "my-key-value");
 
-    await callModel({
+    await callModel("2", {
       env: {
         MODEL_NAME: "m",
         MODEL_ENDPOINT: standIn.url,
         MODEL_PROTOCOL: "anthropic-messages",
         MODEL_KEY: "",
       },
-      messages: [{ role: "user", content: "2" }],
-      prompt: "2",
     });
     assert.equal(seenHeaders[1]["x-api-key"], undefined);
   } finally {
@@ -140,9 +132,8 @@ test("a missing or empty model name stops before sending any request to the stan
   try {
     for (const name of [undefined, ""]) {
       await assert.rejects(
-        () => callModel({
+        () => callModel("x", {
           env: { MODEL_NAME: name, MODEL_ENDPOINT: standIn.url, MODEL_PROTOCOL: "anthropic-messages" },
-          messages: [{ role: "user", content: "x" }],
         }),
         /MODEL_NAME/
       );
@@ -156,9 +147,8 @@ test("a missing or empty model name stops before sending any request to the stan
 test("a missing or empty model endpoint stops before sending any request to the stand-in", async () => {
   for (const ep of [undefined, ""]) {
     await assert.rejects(
-      () => callModel({
+      () => callModel("x", {
         env: { MODEL_NAME: "m", MODEL_ENDPOINT: ep, MODEL_PROTOCOL: "anthropic-messages" },
-        messages: [{ role: "user", content: "x" }],
       }),
       /MODEL_ENDPOINT/
     );
@@ -171,9 +161,8 @@ test("a missing or empty model protocol stops before sending any request to the 
   try {
     for (const proto of [undefined, ""]) {
       await assert.rejects(
-        () => callModel({
+        () => callModel("x", {
           env: { MODEL_NAME: "m", MODEL_ENDPOINT: standIn.url, MODEL_PROTOCOL: proto },
-          messages: [{ role: "user", content: "x" }],
         }),
         /MODEL_PROTOCOL/
       );
@@ -188,12 +177,21 @@ test("an unsupported model protocol stops before sending any request to the stan
   let calls = 0;
   const standIn = await standInServer(() => { calls += 1; });
   try {
+    // A protocol the package's text-reasoning system does not declare: ask.mjs
+    // passes the declared list, and the caller refuses anything outside it.
     await assert.rejects(
-      () => callModel({
+      () => callModel("x", {
         env: { MODEL_NAME: "m", MODEL_ENDPOINT: standIn.url, MODEL_PROTOCOL: "openai-chat" },
-        messages: [{ role: "user", content: "x" }],
+        protocols: ["anthropic-messages"],
       }),
-      /MODEL_PROTOCOL/
+      /MODEL_PROTOCOL openai-chat/
+    );
+    // A protocol outside the caller's closed list is refused with no list passed.
+    await assert.rejects(
+      () => callModel("x", {
+        env: { MODEL_NAME: "m", MODEL_ENDPOINT: standIn.url, MODEL_PROTOCOL: "vertex-raw" },
+      }),
+      /MODEL_PROTOCOL vertex-raw/
     );
     assert.equal(calls, 0);
   } finally {
@@ -216,11 +214,11 @@ test("the endpoint setting is read on every run so different endpoints reach dif
   });
   try {
     const base = { MODEL_NAME: "m", MODEL_PROTOCOL: "anthropic-messages" };
-    await callModel({ env: { ...base, MODEL_ENDPOINT: standInA.url }, messages: [{ role: "user", content: "hi" }] });
+    await callModel("hi", { env: { ...base, MODEL_ENDPOINT: standInA.url } });
     assert.equal(countA, 1);
     assert.equal(countB, 0);
 
-    await callModel({ env: { ...base, MODEL_ENDPOINT: standInB.url }, messages: [{ role: "user", content: "hi" }] });
+    await callModel("hi", { env: { ...base, MODEL_ENDPOINT: standInB.url } });
     assert.equal(countA, 1);
     assert.equal(countB, 1);
   } finally {
@@ -245,12 +243,10 @@ test("an answer cut at its limit fails and indicates it was cut at its limit", a
   try {
     const env = { MODEL_NAME: "m", MODEL_ENDPOINT: standIn.url, MODEL_PROTOCOL: "anthropic-messages" };
     await assert.rejects(
-      () => callModel({ env, messages: [{ role: "user", content: "hi" }] }),
+      () => callModel("hi", { env }),
       (err) => {
-        assert.match(err.message, /limit/i);
-        if (typeof cutAtLimit === "function") {
-          assert.equal(cutAtLimit(err), true);
-        }
+        assert.match(err.message, /cut at its limit/i);
+        assert.equal(err.cutAtLimit, true, "the caller marks a cut answer on the error it throws");
         return true;
       }
     );

@@ -17,9 +17,12 @@ writer does not control.
 ## What it needs
 
 - Node 22 or later. The scripts use only node's own modules.
-- A text model, bound as the `text-reasoning` system: `TEXT_API_KEY`, and
-  `TEXT_MODEL` to pick the model, else the host's `AGENT_MODEL`. The package
-  names no model; with neither set, the job is refused in words.
+- A text model: the system of kind `model` named
+  `text-reasoning`, reached through the shared caller
+  (`scripts/model-caller.mjs`) and the four settings the install places:
+  `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` (empty for a gateway on the
+  host) and `MODEL_PROTOCOL` (`anthropic-messages`), read on every run. The
+  package names no model and no address of its own. With a setting missing the job is refused in words.
 
 ## Running it
 

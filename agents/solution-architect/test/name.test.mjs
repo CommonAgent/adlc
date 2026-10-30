@@ -1,11 +1,12 @@
 // Naming the systems: the one model call, asked at most twice, and what code
-// takes back out of its answer.
+// takes back out of its answer. The call goes through the shared model caller,
+// from the four MODEL_* settings, and only in a protocol the package declares.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { calledFor, nameTheSystems, requestParts, TRIES } from "../scripts/name.mjs";
-import { callerFor, httpRequestFor, modelOf, NO_MODEL, serviceOf } from "../scripts/caller.mjs";
+import { calledFor, declaredProtocols, nameTheSystems, requestParts, TRIES } from "../scripts/name.mjs";
+import { callerFor, modelSettings, requestFor } from "../scripts/model-caller.mjs";
 import { MODEL_NAME_RE } from "../scripts/standard.mjs";
 import { KEY_POINTS, ROOT, fixture, readJson } from "./helpers.mjs";
 
@@ -75,23 +76,23 @@ test("the prompt carries the statement, the reserved systems and the standard, a
 });
 
 test("the caller reads the model from configuration and refuses without one", () => {
-  assert.equal(modelOf({}), "");
-  assert.equal(modelOf({ AGENT_MODEL: "x" }), "x");
-  assert.equal(modelOf({ TEXT_MODEL: "y", AGENT_MODEL: "x" }), "y");
-  assert.throws(() => callerFor({ TEXT_API_KEY: "k" }), new RegExp(NO_MODEL.slice(0, 30)));
-  assert.throws(() => callerFor({ TEXT_MODEL: "some-model" }), /TEXT_API_KEY is not set/);
-  assert.throws(() => callerFor({ TEXT_MODEL: "openai/some-model", TEXT_API_KEY: "k" }), /not one this agent reaches/);
-  assert.equal(serviceOf("google-vertex-anthropic/some-model"), "vertex");
-  assert.equal(serviceOf("some-model"), "google");
-  const v = httpRequestFor({ model: "google-vertex-anthropic/some-model", prompt: "hi", key: "proj/us-east5", token: "t" });
-  assert.match(v.url, /us-east5-aiplatform\.googleapis\.com\/v1\/projects\/proj\/locations\/us-east5\/publishers\/anthropic\/models\/some-model:rawPredict/);
-  const g = httpRequestFor({ model: "some-model", prompt: "hi", key: "k" });
-  assert.equal(g.headers["x-goog-api-key"], "k");
-  assert.ok(!g.body.includes("k\""), "the key is in a header only");
+  const endpoint = "http://127.0.0.1:9";
+  assert.equal(modelSettings({}).name, "");
+  assert.equal(modelSettings({ AGENT_MODEL: "x" }).name, "", "AGENT_MODEL is never read");
+  assert.equal(modelSettings({ MODEL_NAME: "y", AGENT_MODEL: "x" }).name, "y");
+  assert.throws(() => callerFor({ MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: "k" }), /MODEL_NAME is not set/);
+  assert.doesNotThrow(() => callerFor({ MODEL_NAME: "some-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "anthropic-messages" }), "an unset MODEL_KEY is no refusal: the endpoint may need none");
+  assert.deepEqual(declaredProtocols(), ["anthropic-messages"], "name.mjs reads the protocols its text-reasoning system declares");
+  assert.throws(() => callerFor({ MODEL_NAME: "some-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "openai-chat", MODEL_KEY: "k" }, fetch, { protocols: declaredProtocols() }), /MODEL_PROTOCOL openai-chat is not one this package's model system declares/);
+  const r = requestFor("hi", modelSettings({ MODEL_NAME: "some-model", MODEL_ENDPOINT: `${endpoint}/`, MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: "k" }));
+  assert.equal(r.url, `${endpoint}/v1/messages`);
+  assert.equal(r.body.model, "some-model");
+  assert.equal(r.headers["x-api-key"], "k");
+  assert.ok(!JSON.stringify(r.body).includes("\"k\""), "the key is in a header only");
 });
 
 test("no script names a model on a line that is not a comment", () => {
-  for (const f of ["asked.mjs", "name.mjs", "caller.mjs", "standard.mjs", "bind.mjs", "architecture-record.mjs", "check-record.mjs", "reply.mjs", "pieces.mjs"]) {
+  for (const f of ["asked.mjs", "name.mjs", "model-caller.mjs", "standard.mjs", "bind.mjs", "architecture-record.mjs", "check-record.mjs", "reply.mjs", "pieces.mjs"]) {
     const lines = readFileSync(join(ROOT, "scripts", f), "utf8").split("\n").filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l));
     for (const l of lines) assert.equal([...l.matchAll(MODEL_NAME_RE)].length, 0, `${f}: ${l}`);
   }

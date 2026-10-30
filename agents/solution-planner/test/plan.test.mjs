@@ -18,7 +18,10 @@
 // 2 when the required arguments are missing, exit 3 with one JSON object
 // holding a reply when there is nothing to plan.
 // Nothing here touches a network or a model: the whole world is one fetch
-// function the test hands in, which throws on any address it was not told of.
+// function the test hands in, which answers the shared model caller's
+// anthropic-messages request at MODEL_ENDPOINT/v1/messages (0.4.0: the four
+// MODEL_* settings the install places) and throws on any address it was not
+// told of.
 // Run: node --test test/plan.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -31,12 +34,15 @@ import { makePlan } from "../scripts/plan.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(here, "..", "scripts", "plan.mjs");
-const MODEL = "google-vertex-anthropic/claude-sonnet-5-5";
-const METADATA = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-const RAW_PREDICT = "https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/anthropic/models/claude-sonnet-5-5:rawPredict";
-const ENV = { TEXT_API_KEY: "test-project/us", TEXT_MODEL: MODEL };
-// Vertex reports tokens and not money, and the planner states no cost of its
-// own for them: the platform prices the tokens.
+const MODEL = "claude-sonnet-5-5";
+// The stand-in model's address. Nothing listens there: the fetch the test
+// hands in answers it, so nothing leaves this machine.
+const ENDPOINT = "http://127.0.0.1:9/model";
+const MESSAGES = `${ENDPOINT}/v1/messages`;
+const KEY = "test-key";
+const ENV = { MODEL_NAME: MODEL, MODEL_ENDPOINT: ENDPOINT, MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: KEY };
+// An anthropic-messages answer reports tokens and not money, and the planner
+// states no cost of its own for them: the platform prices the tokens.
 const COST = null;
 const RECORDS = ["calls.json", "checks.json", "went-without.json"];
 
@@ -92,14 +98,15 @@ function world({ drafts = [DRAFT] } = {}) {
   const fetchImpl = async (url, init = {}) => {
     const u = String(url);
     seen.urls.push(u);
-    if (u === METADATA) return ok({ access_token: "ya29.not-real" });
-    if (u === RAW_PREDICT) {
+    if (u === MESSAGES) {
       const i = seen.models++;
       seen.bodies.push(JSON.parse(init.body));
+      seen.headers = init.headers;
       const d = drafts[Math.min(i, drafts.length - 1)];
       return ok({
-        model: "claude-sonnet-5-5",
+        type: "message", role: "assistant", model: MODEL,
         content: [{ type: "text", text: typeof d === "string" ? d : JSON.stringify(d) }],
+        stop_reason: "end_turn",
         usage: { input_tokens: 1000, output_tokens: 200 },
       });
     }
@@ -134,14 +141,35 @@ test("an empty description is refused with I cannot, no model is called and no p
 test("with no model configured the job is refused in words, no model is called and no plan is filed", async () => {
   await folders(async (d) => {
     const w = world();
-    const out = await makePlan({ env: { TEXT_API_KEY: ENV.TEXT_API_KEY }, argv: argvFor(d, { files: [requestFile(d, { description: DESCRIPTION })] }), fetchImpl: w.fetchImpl });
+    const out = await makePlan({ env: { MODEL_KEY: KEY }, argv: argvFor(d, { files: [requestFile(d, { description: DESCRIPTION })] }), fetchImpl: w.fetchImpl });
     assert.equal(out.code, 3);
     assert.match(out.reply, /^I cannot plan this now: no model is configured/);
+    assert.match(out.reply, /MODEL_NAME/, "the reply names the setting that is missing");
     assert.equal(w.seen.models, 0);
+    assert.equal(w.seen.urls.length, 0, "nothing was called");
     assert.equal(existsSync(join(d.job, "pieces.json")), false);
     const went = JSON.parse(recordOf(d, "went-without.json"));
     assert.ok(JSON.stringify(went).includes("no model is configured"));
   });
+});
+
+test("with MODEL_ENDPOINT or MODEL_PROTOCOL not set, or a protocol other than anthropic-messages, the job is refused and nothing is called", async () => {
+  const cases = [
+    [{ ...ENV, MODEL_ENDPOINT: "" }, /MODEL_ENDPOINT/],
+    [{ ...ENV, MODEL_PROTOCOL: "" }, /MODEL_PROTOCOL/],
+    [{ ...ENV, MODEL_PROTOCOL: "openai-chat" }, /MODEL_PROTOCOL openai-chat/],
+  ];
+  for (const [env, setting] of cases) {
+    await folders(async (d) => {
+      const w = world();
+      const out = await makePlan({ env, argv: argvFor(d, { files: [requestFile(d, { description: DESCRIPTION })] }), fetchImpl: w.fetchImpl });
+      assert.equal(out.code, 3);
+      assert.match(out.reply, /^I cannot plan this now: no model is configured/);
+      assert.match(out.reply, setting);
+      assert.equal(w.seen.urls.length, 0, "nothing was called");
+      assert.equal(existsSync(join(d.job, "out", "plan.json")), false);
+    });
+  }
 });
 
 test("a description over 2000 characters is refused with I cannot and no plan", async () => {
@@ -251,7 +279,9 @@ test("a job reaches nothing but the model: no catalog and no descriptor is read"
   await folders(async (d) => {
     const { out, w } = await goodRun(d);
     assert.equal(out.code, 0, out.reply);
-    assert.deepEqual([...new Set(w.seen.urls)].sort(), [METADATA, RAW_PREDICT].sort());
+    assert.deepEqual([...new Set(w.seen.urls)], [MESSAGES], "only the model, at MODEL_ENDPOINT, was reached");
+    assert.equal(w.seen.headers["x-api-key"], KEY, "the key goes as MODEL_KEY says, in its header");
+    assert.equal(w.seen.bodies[0].model, MODEL, "the model is the one MODEL_NAME names");
   });
 });
 
@@ -380,10 +410,11 @@ test("a good run leaves the build figures for the platform and computes the rest
   });
 });
 
-test("NEW_AGENT_USD is the price of one new agent the plan carries", async () => {
+test("the price of one new agent the plan carries is 1.50, and NEW_AGENT_USD is not read", async () => {
   await folders(async (d) => {
-    await goodRun(d, { env: { ...ENV, NEW_AGENT_USD: "2" } });
-    assert.equal(planOf(d).estimate.new_agent_usd, 2);
+    const { out } = await goodRun(d, { env: { ...ENV, NEW_AGENT_USD: "2" } });
+    assert.equal(out.code, 0, out.reply);
+    assert.equal(planOf(d).estimate.new_agent_usd, 1.5, "a NEW_AGENT_USD in the environment changes nothing");
   });
 });
 

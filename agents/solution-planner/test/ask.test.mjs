@@ -6,8 +6,8 @@
 // read as json is retried once with the problems appended and never a third
 // time; an answer cut at its limit is not retried with the same budget and
 // reports why it failed; askModel and makePlan take the environment directly;
-// and NEW_AGENT_USD is read from the environment and written into the plan's
-// estimate.
+// and the plan's estimate carries 1.50 as the price of one new agent, with no
+// setting read for it (NEW_AGENT_USD is no longer read).
 // Nothing here touches a real service: all model calls reach a stand-in server
 // on 127.0.0.1.
 // Run: node --test test/ask.test.mjs
@@ -323,7 +323,7 @@ test("the environment is accepted directly rather than passing a model name and 
   }
 });
 
-test("the price of building one new agent is read from the environment and written into the plan estimate", async () => {
+test("the price of building one new agent is the 1.50 the plan estimate carries, and NEW_AGENT_USD is not read", async () => {
   const draft = {
     format: "build-plan-v1",
     title: "Page summary",
@@ -377,7 +377,7 @@ test("the price of building one new agent is read from the environment and writt
       const out = await makePlan({ env, argv });
       assert.equal(out.code, 0, out.reply);
       const plan = JSON.parse(readFileSync(join(d.job, "out", "plan.json"), "utf8"));
-      assert.equal(plan.estimate.new_agent_usd, 2.5);
+      assert.equal(plan.estimate.new_agent_usd, 1.5, "a NEW_AGENT_USD in the environment changes nothing");
       assert.deepEqual(checkDelivered(d.job), []);
     });
   } finally {

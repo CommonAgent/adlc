@@ -18,7 +18,9 @@
 // the suite a released package already has: any attached file that imports
 // node:test. When one came, the writer adds to it and never rewrites it.
 //
-//   needs: node >= 22; TEXT_API_KEY in the environment (placed by the install)
+//   needs: node >= 22; the model settings the writing step reads (MODEL_NAME,
+//   MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY where the endpoint asks for
+//   one), placed in the environment by the install
 //   node job.mjs --job <job folder> --records <records dir> --work <work dir>
 //        --text-file <path> [--file <path>[::<media type>]]...
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

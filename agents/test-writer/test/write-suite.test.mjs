@@ -49,11 +49,11 @@ const answer = (files, extra = "") => files.map((f) => `<<<FILE ${f.path}>>>\n${
 
 test("the model is a setting, and the package names none of its own", () => {
   assert.equal(modelOf({}), "", "the package names no model of its own");
-  assert.equal(modelOf({ TEXT_MODEL: "gemini-3.8-pro" }), "gemini-3.8-pro");
-  assert.equal(modelOf({ AGENT_MODEL: "gemini-3.8-flash" }), "gemini-3.8-flash", "the host's model when the install sets none");
-  assert.equal(modelOf({ TEXT_MODEL: "x", AGENT_MODEL: "y" }), "x", "the text-reasoning setting comes first");
-  assert.equal(modelOf({ TEXT_MODEL: "  " }), "", "a blank setting is not a model");
-  assert.equal(suiteRequest({ env: { TEXT_MODEL: "x" } }).model, "x");
+  assert.equal(modelOf({ MODEL_NAME: "claude-test" }), "claude-test", "the model is the install's MODEL_NAME");
+  assert.equal(modelOf({ AGENT_MODEL: "host-model" }), "", "the host's model is not read: the install places MODEL_NAME");
+  assert.equal(modelOf({ MODEL_NAME: "x", AGENT_MODEL: "y" }), "x", "MODEL_NAME is the setting, whatever else is around");
+  assert.equal(modelOf({ MODEL_NAME: "  " }), "", "a blank setting is not a model");
+  assert.equal(suiteRequest({ env: { MODEL_NAME: "x" } }).model, "x");
   assert.equal(TRIES, 2);
 });
 

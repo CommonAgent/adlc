@@ -15,12 +15,18 @@
 // the answer filled in (a spending limit, a destination beyond the derived
 // set, a system the statement never called for), each as a question.
 //
-//   needs: node >= 22; TEXT_API_KEY and TEXT_MODEL for the text-reasoning system
+// The model is reached through the shared model caller (model-caller.mjs),
+// from the four settings the install places, read on every call, and the
+// request asks for JSON. MODEL_PROTOCOL must be one this package's
+// text-reasoning system declares in agent-runtime-requirements.json.
+//
+//   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY
+//   where the endpoint asks for one, for the text-reasoning system
 //   ASKED=<asked.json> RECORDS=<records folder> [ANSWERS_FROM=<answer files, for a replay>] node name.mjs
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { callerFor, replayCaller } from "./caller.mjs";
+import { callerFor, replayCaller } from "./model-caller.mjs";
 import { carriedFrom, findingsOf, repaired, yesOrNo, KINDS } from "./standard.mjs";
 import { parseRecord } from "./architecture-record.mjs";
 
@@ -161,6 +167,19 @@ export async function nameTheSystems({ ask, asked, standard = "", example = "", 
   return { architecture: arch, questions: [...byKey.values()], notes: fixed.notes, findings: findingsOf(arch, ctx).filter((f) => !/address|credential|names the model/.test(f)), used, calls: used.length };
 }
 
+/** The request formats this package's text-reasoning system declares, read
+ *  from agent-runtime-requirements.json beside the scripts (at the package's
+ *  root from source, or above a skill's scripts/ in a built package). An
+ *  empty list when none is found, and then the caller takes any it speaks. */
+export function declaredProtocols(here = HERE) {
+  const at = [join(here, "..", "agent-runtime-requirements.json"), join(here, "..", "..", "agent-runtime-requirements.json"), join(here, "..", "..", "..", "agent-runtime-requirements.json")].find((p) => existsSync(p));
+  if (!at) return [];
+  try {
+    const system = (JSON.parse(readFileSync(at, "utf8"))?.systems ?? []).find((s) => s?.name === "text-reasoning");
+    return Array.isArray(system?.protocols) ? system.protocols.map(trim).filter(Boolean) : [];
+  } catch { return []; }
+}
+
 export function referenceAt(name, here = HERE) {
   // In a package, a skill's references/; from source, the agent's own
   // references/, or the repository's standards/ for a standard it pins.
@@ -175,14 +194,15 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const read = (p) => (p && existsSync(p) ? readFileSync(p, "utf8") : "");
   try {
     const asked = JSON.parse(readFileSync(ASKED, "utf8"));
-    const caller = trim(env.ANSWERS_FROM) ? replayCaller(env.ANSWERS_FROM) : callerFor(env);
+    // The answer is one JSON object, so every ask says json: true.
+    const caller = trim(env.ANSWERS_FROM) ? replayCaller(env.ANSWERS_FROM) : callerFor(env, fetch, { json: true, protocols: declaredProtocols() });
     const out = await nameTheSystems({
-      ask: (p) => caller.ask(p), asked,
+      ask: (p) => caller.ask(p, { json: true }), asked,
       standard: read(referenceAt("architecture-standard.md")), example: read(referenceAt("a-record-that-works.md")),
     });
     mkdirSync(RECORDS, { recursive: true });
     writeFileSync(join(RECORDS, "calls.json"), JSON.stringify({
-      calls: "v1", model: caller.model, service: caller.service, made: out.used.length,
+      calls: "v1", model: caller.model, protocol: caller.protocol, made: out.used.length,
       answered_by: [...out.used].reverse().find((u) => u.answered_by)?.answered_by ?? null, each: out.used,
     }, null, 2) + "\n");
     writeFileSync(join(RECORDS, "named.json"), JSON.stringify({ named: "v1", ...out }, null, 2) + "\n");

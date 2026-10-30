@@ -3,12 +3,13 @@
 //
 // What is pinned: went-without.json is placed in the records folder; reading
 // an absent file returns an empty list without error; note appends an entry
-// with wanted, did, and why; multiple notes accumulate in order; sentence and
-// paragraph format the entries into words for the reply; and the script exits 2
-// when called without RECORDS.
+// with wanted, did, and why and returns the list as kept; multiple notes
+// accumulate in order; sentence and paragraph format the entries into words
+// for the reply; and the file, the same in every package, has no main: run on
+// its own it stops nothing and writes nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,10 +37,10 @@ test("reading an absent records folder returns an empty list", () => {
 test("note appends an entry recording what was missing, what was done, and why", () => {
   const at = mkdtempSync(join(tmpdir(), "ww-"));
   try {
-    const entry = note(at, { wanted: "reference", did: "proceeded without reference", why: "not attached" });
-    assert.deepEqual(entry, { wanted: "reference", did: "proceeded without reference", why: "not attached" });
+    const kept = note(at, { wanted: "reference", did: "proceeded without reference", why: "not attached" });
+    assert.deepEqual(kept, [{ wanted: "reference", did: "proceeded without reference", why: "not attached" }], "note returns the list as kept");
     const entries = read(at);
-    assert.deepEqual(entries, [entry]);
+    assert.deepEqual(entries, kept);
   } finally {
     rmSync(at, { recursive: true, force: true });
   }
@@ -77,12 +78,19 @@ test("paragraph reads from the records folder and formats the sentence", () => {
   }
 });
 
-test("the script exits 2 when records is missing from the environment", () => {
+test("run on its own without records the shared file stops nothing and writes nothing, because it has no main", () => {
   const scriptPath = join(here, "..", "scripts", "went-without.mjs");
-  const r = spawnSync(process.execPath, [scriptPath], {
-    env: { ...process.env, RECORDS: "" },
-    encoding: "utf8",
-  });
-  assert.equal(r.status, 2);
-  assert.match(r.stderr + r.stdout, /RECORDS/);
+  const at = mkdtempSync(join(tmpdir(), "ww-"));
+  try {
+    const r = spawnSync(process.execPath, [scriptPath], {
+      cwd: at,
+      env: { ...process.env, RECORDS: "" },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, "nothing in this file refuses or stops anything");
+    assert.equal(r.stdout, "");
+    assert.deepEqual(readdirSync(at), [], "no record is written by running the file");
+  } finally {
+    rmSync(at, { recursive: true, force: true });
+  }
 });

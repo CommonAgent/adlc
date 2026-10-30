@@ -8,19 +8,21 @@
 // refuses or fails, writes calls.json, checks.json and went-without.json into
 // the records folder. A plan is written to out/plan.json and listed in
 // pieces.json only when there is one; a plan the model refused is still a
-// plan (refused set, no steps). It reaches only the model service, and writes
+// plan (refused set, no steps). It reaches only the model, through the shared
+// model caller and the four settings the install places (0.4.0), and writes
 // only inside the job, records and work folders it was given. The world is
-// the fetch handed to makePlan.
+// the environment and the fetch handed to makePlan. The price of one new
+// agent the plan carries is check.mjs's default, 1.50; no setting changes it.
 //
 //   needs: node >= 22
-//   TEXT_API_KEY=<key> TEXT_MODEL=<model> (or AGENT_MODEL) [NEW_AGENT_USD=1.50] \
+//   MODEL_NAME=<model> MODEL_ENDPOINT=<address> MODEL_PROTOCOL=anthropic-messages [MODEL_KEY=<key>] \
 //     node plan.mjs --job <job folder> --records <records folder> --work <work folder> \
 //       --text-file <message file> [--file <path>::<media type>]...
 //   exit 0 a plan was written, 2 arguments missing, 3 nothing to plan (the reply says why)
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { readRequest } from "./request.mjs";
-import { NO_MODEL, askModel, buildPrompt, modelOf, modelSummary } from "./ask.mjs";
+import { askModel, buildPrompt, cannotAsk, modelSummary } from "./ask.mjs";
 import { checkPlan, NEW_AGENT_USD_DEFAULT } from "./check.mjs";
 import { plan as piecesPlan, fill } from "./pieces.mjs";
 import { note, sentence } from "./went-without.mjs";
@@ -111,8 +113,8 @@ export async function makePlan({ env = process.env, argv = process.argv.slice(2)
   mkdirSync(args.records, { recursive: true });
 
   const seen = { calls: [], changes: { unnamed: [], kinds: [], dropped: [] }, notes: [] };
-  const newAgentUsd = env.NEW_AGENT_USD !== undefined && String(env.NEW_AGENT_USD).trim() !== "" && Number.isFinite(Number(env.NEW_AGENT_USD)) && Number(env.NEW_AGENT_USD) >= 0
-    ? Number(env.NEW_AGENT_USD) : NEW_AGENT_USD_DEFAULT;
+  // The price of one new agent is the default, 1.50 (owner, 0.4.0): no setting is read for it.
+  const newAgentUsd = NEW_AGENT_USD_DEFAULT;
 
   const json = (name, body) => writeFileSync(join(args.records, name), `${JSON.stringify(body, null, 2)}\n`);
   const writeRecords = () => {
@@ -128,20 +130,17 @@ export async function makePlan({ env = process.env, argv = process.argv.slice(2)
     const request = readRequest({ text: readText(args.textFile), files: filesOf(args.files) });
     if (!request.ok) return stop(3, request.reply);
 
-    // The install's model: TEXT_MODEL, else AGENT_MODEL. There is no default.
-    const model = modelOf(env);
-    if (!model) {
-      seen.notes.push({ wanted: "a model to draft the plan", did: "stopped without a plan", why: NO_MODEL });
-      return stop(3, `I cannot plan this now: ${NO_MODEL}, so no plan was made.`);
-    }
-    const key = String(env.TEXT_API_KEY ?? "").trim();
-    if (!key) {
-      seen.notes.push({ wanted: "a model to draft the plan", did: "stopped without a plan", why: "TEXT_API_KEY is not set" });
-      return stop(3, "I cannot plan this now: the model is not set up (TEXT_API_KEY is empty), so no plan was made.");
+    // The install's model, from the four settings, read now: there is no default,
+    // and with one missing or a protocol the package does not declare nothing is called.
+    const why = cannotAsk(env);
+    if (why) {
+      const said = `no model is configured: ${why}`;
+      seen.notes.push({ wanted: "a model to draft the plan", did: "stopped without a plan", why: said });
+      return stop(3, `I cannot plan this now: ${said}, so no plan was made.`);
     }
 
     const prompt = buildPrompt({ description: request.description, earlier: request.earlier, change: request.change });
-    const asked = await askModel({ prompt, model, key, fetchImpl });
+    const asked = await askModel({ prompt, env, fetchImpl });
     seen.calls = asked.calls;
     asked.tries.forEach((t, i) => {
       const last = asked.failed && i === asked.tries.length - 1;

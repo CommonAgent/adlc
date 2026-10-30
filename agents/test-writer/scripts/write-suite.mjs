@@ -33,36 +33,52 @@
 // checked on its own, because one answer for eight scripts was cut at the
 // output limit and delivered nothing.
 //
-//   needs: node >= 22; TEXT_API_KEY for the text-reasoning service
+//   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY
+//   where the endpoint asks for one, for the text-reasoning model
 //   DECLARED=<declared.json> SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder> WORK=<work folder>
 //   [EXISTING=<folder holding test/>] [ASKED_TEXT=<the message, as a file>]
-//   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] TEXT_MODEL=<model> (or AGENT_MODEL) node write-suite.mjs
+//   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] node write-suite.mjs
 //
-// The model decides the service; the install sets it as TEXT_MODEL or
-// AGENT_MODEL, and the package names none. A google-vertex-anthropic/ name is
-// Claude on Vertex AI; a bare name is Google's.
-// Any other name with a provider in front is refused in words (owner,
-// 2026-10-03: every Claude call goes through Vertex). Both services are sent
-// the same generous output limit, and an answer cut at that limit is refused
-// as cut, because a cut answer otherwise reads as a malformed one.
+// The model is reached through the shared model caller (model-caller.mjs,
+// Common Agent 12.4.1) and nothing else: which model, where it is, the
+// credential and the request format are the four settings the install places,
+// read on every call, and the package names no model and no address of its
+// own. With a setting missing or a protocol the package does not declare, no
+// call is made and the job is refused in words. The service is sent a
+// generous output limit, and an answer cut at that limit is refused as cut,
+// because a cut answer otherwise reads as a malformed one.
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { standInRun, suiteFiles } from "./check-suite.mjs";
 import { note } from "./went-without.mjs";
 import { loadSpec } from "./agent-folder.mjs";
+import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
 
-/** The model, from the install's settings: TEXT_MODEL, the text-reasoning
- *  system's own setting, else AGENT_MODEL, the model the host runs agents on.
- *  The package names no model of its own, because a model named in a package
- *  is a rebuild waiting to happen: models are retired on somebody else's
- *  schedule. With neither set, the job is refused in words (NO_MODEL). */
-export const MODEL_SETTINGS = ["TEXT_MODEL", "AGENT_MODEL"];
-export const modelOf = (env = {}) => MODEL_SETTINGS.map((k) => trim(env[k])).find(Boolean) ?? "";
-export const NO_MODEL = "no model is configured: the install sets TEXT_MODEL (the text-reasoning system's model) or AGENT_MODEL (the model the host runs agents on), and this package names none of its own";
+/** The model, as the shared caller reads it from the install's settings. The
+ *  package names no model of its own, because a model named in a package is a
+ *  rebuild waiting to happen: models are retired on somebody else's schedule.
+ *  With none set, the job is refused in words. */
+export const modelOf = (env = {}) => modelSettings(env).name;
+
+/** The request formats the package's text-reasoning system declares, read
+ *  from agent-runtime-requirements.json beside the package (one level up in
+ *  the source, three in a built package's skills/<slug>/scripts/). Where the
+ *  declaration is not found, none are passed and the caller holds the
+ *  protocol to its own list. */
+export function declaredProtocols(here = HERE) {
+  for (const at of [join(here, "..", "agent-runtime-requirements.json"), join(here, "..", "..", "..", "agent-runtime-requirements.json")]) {
+    if (!existsSync(at)) continue;
+    try {
+      const sys = (JSON.parse(readFileSync(at, "utf8"))?.systems ?? []).find((s) => s?.name === "text-reasoning");
+      if (Array.isArray(sys?.protocols) && sys.protocols.length) return sys.protocols.map(String);
+    } catch { /* an unreadable declaration is no declaration */ }
+  }
+  return null;
+}
 
 /** The most the service may write in one answer. A whole suite for a package
  *  of several scripts runs long, and a cut answer is worthless. */
@@ -109,7 +125,10 @@ holds each piece pieces.json lists to its declared kind: Markdown with the
 headings its "about" sketches, a JSON kind with its sketched shape, and so on.
 
 Never write a test that would pass with the scripts absent. Never touch a
-network or a model from a test. Never write the scripts.
+network or a model from a test. Never write the scripts. A script that calls
+a model is tested against a stand-in model server the test starts on the
+local machine and reaches through MODEL_ENDPOINT, the way the install points
+the script at its model: never a real model service.
 
 Answer with the files and nothing else, in this form, one block per file:
 
@@ -188,6 +207,8 @@ export function requestParts({ spec = null, declared = null, reference = "", wor
   return parts;
 }
 
+/** One ask, as plain values: the model the settings name, and the parts of
+ *  the prompt in order. Nothing is sent here. */
 export function suiteRequest(opts = {}) {
   return {
     model: modelOf(opts.env ?? {}),
@@ -195,97 +216,8 @@ export function suiteRequest(opts = {}) {
   };
 }
 
-/** Which service a model name is reached through. google-vertex-anthropic/ in
- *  front means Claude on Google Vertex AI; a bare name means Google; any other
- *  provider in front, or no name at all (there is no default), is "none",
- *  which no call is made for. */
-export const serviceOf = (model) => {
-  const m = trim(model);
-  if (!m) return "none";
-  if (m.startsWith(`${VERTEX}/`)) return "vertex";
-  return m.includes("/") ? "none" : "google";
-};
-
-/** Claude on Google Vertex AI (2026-09-29). Called with a token from the job's
- *  own service account (the metadata server); the credential is not a key but
- *  where to call, "<project>/<location>". Vertex reports tokens and not money,
- *  so no cost is stated. */
-export const VERTEX = "google-vertex-anthropic";
-export const METADATA_TOKEN_URL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-
-export function vertexUrl(model, key) {
-  const [project, location] = trim(key).split("/");
-  if (!project || !location) throw new Error("the text-reasoning credential for a Vertex model is <project>/<location>");
-  const id = trim(model).slice(VERTEX.length + 1).replace(/@default$/, "");
-  const host = location === "global" ? "aiplatform.googleapis.com"
-    : location === "us" || location === "eu" ? `aiplatform.${location}.rep.googleapis.com` : `${location}-aiplatform.googleapis.com`;
-  return `https://${host}/v1/projects/${project}/locations/${location}/publishers/anthropic/models/${id}:rawPredict`;
-}
-
-/** Vertex reports tokens and not money, and a price table would name models,
- *  so the cost is not stated here: the tokens are recorded, and the money is
- *  the platform's spend report's. */
-export function vertexCost() {
-  return null;
-}
-
-/** A token from the metadata server of the machine the job runs on. */
-export async function metadataToken(fetchImpl = fetch) {
-  const r = await fetchImpl(METADATA_TOKEN_URL, { headers: { "Metadata-Flavor": "Google" } });
-  if (!r.ok) throw new Error(`the metadata server answered ${r.status}, so there is no token for Vertex`);
-  const d = await r.json();
-  if (!trim(d?.access_token)) throw new Error("the metadata server gave no token for Vertex");
-  return d.access_token;
-}
-
-/** The HTTP call for a request, as plain values. The key goes in a header and
- *  nowhere in the body. Nothing is sent here. For a Vertex model `key` is where
- *  to call and `token` pays. */
-export function httpRequestFor(request, key, token = "") {
-  const model = trim(request.model);
-  if (!model) throw new Error(NO_MODEL);
-  if (serviceOf(model) === "vertex") {
-    const content = request.body.contents.flatMap((c) => c.parts.map((p) => p.text)).join("\n\n");
-    return {
-      url: vertexUrl(model, key),
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ anthropic_version: "vertex-2023-10-16", max_tokens: OUTPUT_TOKENS, messages: [{ role: "user", content }] }),
-    };
-  }
-  if (serviceOf(model) === "none") {
-    throw new Error(`the model ${model} is not one this agent reaches: name a ${VERTEX}/<id> model (Claude on Vertex AI) or a bare Gemini name`);
-  }
-  return {
-    url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-    headers: { "content-type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({ ...request.body, generationConfig: { maxOutputTokens: OUTPUT_TOKENS } }),
-  };
-}
-
-const countOf = (n) => (Number.isFinite(n) ? n : null);
-
-/** The text of an answer, the model that gave it and what it used. An answer
- *  cut at the output limit throws, saying so. */
-export function textOf(service, data, model = "") {
-  if (service === "vertex") {
-    if (data?.stop_reason === "max_tokens") throw new Error("the answer was cut at the output limit");
-    const u = data?.usage ?? {};
-    const tin = countOf(u.input_tokens), tout = countOf(u.output_tokens);
-    return {
-      text: (Array.isArray(data?.content) ? data.content : []).filter((c) => c?.type === "text").map((c) => c.text ?? "").join(""),
-      answered_by: trim(data?.model) ? `${VERTEX}/${trim(data.model)}` : null,
-      usage: { tokens_in: tin, tokens_out: tout, cost: vertexCost(model || data?.model, tin, tout) },
-    };
-  }
-  const candidate = data?.candidates?.[0];
-  if (candidate?.finishReason === "MAX_TOKENS") throw new Error("the answer was cut at the output limit");
-  const u = data?.usageMetadata ?? {};
-  return {
-    text: (candidate?.content?.parts ?? []).map((p) => p.text ?? "").join(""),
-    answered_by: trim(data?.modelVersion) || null,
-    usage: { tokens_in: countOf(u.promptTokenCount), tokens_out: countOf(u.candidatesTokenCount), cost: null },
-  };
-}
+/** The one prompt an ask is sent as: its parts, in order, a blank line apart. */
+export const promptOf = (request) => (request?.body?.contents ?? []).flatMap((c) => (c?.parts ?? []).map((p) => String(p?.text ?? ""))).join("\n\n");
 
 /** The files, out of whatever wrapping they arrived in.
  *
@@ -456,7 +388,10 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
   };
 }
 
-const CUT = /cut at the output limit/;
+/** An answer cut at its output limit: the shared caller marks it cutAtLimit
+ *  and says it was cut at its limit. */
+const CUT = /cut at (the output|its) limit/;
+const wasCut = (e) => e?.cutAtLimit === true || CUT.test(String(e?.message));
 
 /** The whole suite, in parts when one answer cannot hold it.
  *
@@ -481,7 +416,7 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
     try {
       got = await askForSuite({ call, run, tries, ...opts, part });
     } catch (e) {
-      if (CUT.test(String(e?.message)) && p.scripts.length > 1) {
+      if (wasCut(e) && p.scripts.length > 1) {
         calls += 1;
         queue.unshift(...p.scripts.map((s, i) => ({ scripts: [s], first: p.first && i === 0 })));
         continue;
@@ -532,18 +467,21 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const env = process.env;
   const { DECLARED, SPEC, RECORDS, WORK } = env;
   if (!DECLARED || !SPEC || !RECORDS || !WORK) { console.error("DECLARED, SPEC, RECORDS and WORK are required"); process.exit(2); }
-  const key = trim(env.TEXT_API_KEY);
-  if (!key) { console.error("TEXT_API_KEY is required: the text-reasoning credential the install placed"); process.exit(2); }
   const read = (p) => (p && existsSync(p) ? readFileSync(p, "utf8") : "");
   try {
     const declared = JSON.parse(readFileSync(DECLARED, "utf8"));
     const spec = loadSpec(SPEC);
-    const model = modelOf(env);
-    if (!model) {
-      console.log(JSON.stringify({ ok: false, code: 1, reply: `The suite was not written: ${NO_MODEL}.` }));
-      console.error(NO_MODEL);
+    // The four model settings are the install's; with one missing, or a
+    // protocol this package does not declare, nothing is sent and the job is
+    // refused in the caller's words.
+    const protocols = declaredProtocols();
+    const why = cannotCall(env, { protocols });
+    if (why) {
+      console.log(JSON.stringify({ ok: false, code: 1, reply: `The suite was not written: ${why}.` }));
+      console.error(why);
       process.exit(1);
     }
+    const model = modelOf(env);
     mkdirSync(RECORDS, { recursive: true });
     // What the writer works from, and what it goes ahead without when a
     // reference file is not where the package put it. Said now, before the
@@ -561,16 +499,13 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       if (!at) note(RECORDS, { wanted: what, did: "asked for the suite without it, from the spec and the instruction alone" });
     }
     // What each call used, kept as the calls are made so the record can say
-    // which model answered and what it cost.
+    // which model answered. The service reports tokens and not money, and a
+    // price table would name models, so no cost is stated.
     const used = [];
     const call = async (request) => {
-      const service = serviceOf(request.model);
-      const token = service === "vertex" ? await metadataToken() : "";
-      const h = httpRequestFor(request, key, token);
-      const r = await fetch(h.url, { method: "POST", headers: h.headers, body: h.body });
-      if (!r.ok) throw new Error(`the text-reasoning service answered ${r.status}`);
-      const got = textOf(service, await r.json(), request.model);
-      used.push({ service, asked: request.model, answered_by: got.answered_by, ...got.usage });
+      // Streamed, so a long suite is never lost to a wait for headers.
+      const got = await callModel(promptOf(request), { env, protocols: protocols ?? undefined, maxOutputTokens: OUTPUT_TOKENS, stream: true });
+      used.push({ service: got.protocol, asked: got.model, answered_by: got.answered_by, tokens_in: got.tokens_in, tokens_out: got.tokens_out, cost: null });
       return got.text;
     };
     // The suite the package already has, when one came with the message: it
@@ -610,7 +545,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       could_not: out.could_not, notes: out.notes, findings: out.findings, stand_ins: out.stand_ins,
     }, null, 2) + "\n");
     writeFileSync(join(RECORDS, "calls.json"), JSON.stringify({
-      calls: "v1", model, service: serviceOf(model), made: out.calls,
+      calls: "v1", model, service: modelSettings(env).protocol, made: out.calls,
       answered_by: [...new Set(used.map((u) => u.answered_by).filter(Boolean))],
       tokens_in: sum(used.map((u) => u.tokens_in)), tokens_out: sum(used.map((u) => u.tokens_out)), cost: sum(used.map((u) => u.cost)),
       each: used,

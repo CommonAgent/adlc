@@ -72,7 +72,8 @@ test("each bound system gets one decision with its reason, and a model system sa
   assert.equal(out.decisions.length, 1);
   assert.match(out.decisions[0].decided, /^Bind text-reasoning to google-gemini/);
   assert.ok(out.decisions[0].why.length > 20);
-  assert.match(out.decisions[0].follows, /TEXT_MODEL/);
+  for (const setting of ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL"]) assert.match(out.decisions[0].follows, new RegExp(setting));
+  assert.doesNotMatch(out.decisions[0].follows, /TEXT_MODEL|AGENT_MODEL/);
 });
 
 test("a stack is read in either shape it travels in", () => {

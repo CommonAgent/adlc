@@ -13,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { FILE, fileIn, note, paragraph, read, sentence } from "../scripts/went-without.mjs";
 
 function withTempRecords(body) {
@@ -27,7 +27,8 @@ function withTempRecords(body) {
 
 test("file and filein point to went-without.json under the records folder", () => {
   assert.equal(FILE, "went-without.json");
-  assert.equal(fileIn("/records/job-1"), "/records/job-1/went-without.json");
+  assert.equal(fileIn("/records/job-1"), join("/records/job-1", "went-without.json"));
+  assert.equal(dirname(fileIn("/records/job-1")), join("/records/job-1"));
 });
 
 test("reading a missing went-without file yields an empty array", () => {
@@ -37,7 +38,7 @@ test("reading a missing went-without file yields an empty array", () => {
   });
 });
 
-test("noting an omitted item records wanted, did, and why and returns the entry", () => {
+test("noting an omitted item records wanted, did, and why and returns the entries kept", () => {
   withTempRecords((records) => {
     const entry = {
       wanted: "the organization's stack",
@@ -45,7 +46,7 @@ test("noting an omitted item records wanted, did, and why and returns the entry"
       why: "no stack was attached to the message",
     };
     const noted = note(records, entry);
-    assert.deepEqual(noted, entry);
+    assert.deepEqual(noted, [entry], "the shared note() returns every entry kept, the new one among them");
     assert.ok(existsSync(fileIn(records)));
 
     const entries = read(records);
