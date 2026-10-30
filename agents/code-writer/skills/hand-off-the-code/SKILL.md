@@ -31,7 +31,7 @@ If no agent's files or no suite arrived, nothing is laid out and no archive is m
 
 ## How to do it
 
-Run `node scripts/handoff.mjs --job <job folder> --records <records folder> --work <work folder> --file <path>::<media type> ...`. It runs the three steps in order and prints one JSON object with a `reply` field. It calls no model and reaches no network: every step is a program. Archives are written and read by archive.mjs in node alone, with no tar binary.
+Run `node scripts/handoff.mjs --job <job folder> --records <records folder> --work <work folder> --file <path>::<media type> ...`. It runs the three steps in order and prints one JSON object with a `reply` field. The agent's files may come loose; they are told apart by what is in them. A suite or a prototype that has folders comes as one gzip tar archive holding its own paths (test/... for the suite, the package's own layout for the prototype), because a loose file's folder is lost on the way; a released package's archive is taken as the prototype as it is. It calls no model and reaches no network: every step is a program. Archives are written and read by archive.mjs in node alone, with no tar binary.
 
 ## Scripts
 
