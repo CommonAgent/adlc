@@ -1147,14 +1147,21 @@ def host_model_defaults():
 
 
 def gateway_setting_defaults():
-    """The host's values for service settings that point at the gateway, as
-    {variable: value}; {} when the environment names none."""
-    try:
-        v = _am_env("model.gateway.settings")
-    except (RuntimeError, TypeError):
-        return {}
-    return {k: str(x) for k, x in v.items() if isinstance(k, str) and isinstance(x, (str, int, float)) and str(x).strip()} \
-        if isinstance(v, dict) else {}
+    """The host's bindings for declared service settings, as {variable: value}:
+    the environment's `setting_bindings` (an address is bound at install and
+    never filed: TTS_ENDPOINT, SPEECH_ENDPOINT, STT_ENDPOINT and the like),
+    over the older `model.gateway.settings`; {} when the environment names
+    neither. Only names shaped like a variable are taken."""
+    out = {}
+    for key in ("model.gateway.settings", "setting_bindings"):
+        try:
+            v = _am_env(key)
+        except (RuntimeError, TypeError):
+            continue
+        if isinstance(v, dict):
+            out.update({k: str(x) for k, x in v.items() if isinstance(k, str) and INSTALL.ENV_RE.match(k)
+                        and isinstance(x, (str, int, float)) and str(x).strip()})
+    return out
 
 
 def with_gateway_settings(args, pkg):

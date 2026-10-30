@@ -166,6 +166,20 @@ class TheSpeechPassthrough(unittest.TestCase):
         self.assertEqual(steps.model_gateway_env(args, pkg), {"BRIDGE_VERTEX_PROJECT": "p-gw", "BRIDGE_VERTEX_REGION": "global", "BRIDGE_PORT": "8788",
                                                               "BRIDGE_GEMINI_REGION": "global", "BRIDGE_SPEECH_PROJECT": "p-gw"})
 
+    def test_an_address_setting_comes_from_the_environments_setting_bindings_and_one_with_none_is_refused(self):
+        os.environ["AGENTMESH_ENV_FILE"] = with_env_file({"vertex": {"project": "p"}, "setting_bindings": {
+            "about": "words", "TTS_ENDPOINT": "https://generativelanguage.googleapis.com/v1beta"}})
+        tts = {"name": "text-to-speech", "kind": "service", "access": "read", "credential": "tts-key", "env": "TTS_KEY", "spends": None,
+               "settings": [{"env": "TTS_ENDPOINT"}, {"env": "TTS_MODEL"}]}
+        pkg = {"systems": [tts], "install": {"ceilings": []}}
+        args = steps.with_model_defaults({"settings": {"text-to-speech": {"TTS_MODEL": "m"}}}, pkg)
+        self.assertEqual(args["settings"]["text-to-speech"]["TTS_ENDPOINT"], "https://generativelanguage.googleapis.com/v1beta")
+        self.assertEqual(install.check_instruction(args, pkg), [])
+        speech = {**tts, "name": "speech", "settings": [{"env": "SPEECH_ENDPOINT"}]}
+        bare = {"systems": [speech], "install": {"ceilings": []}}
+        refused = install.check_instruction(steps.with_model_defaults({}, bare), bare)
+        self.assertTrue(any("must supply SPEECH_ENDPOINT" in r for r in refused), refused)
+
     def test_what_the_instruction_gives_wins_and_a_service_that_declares_neither_is_untouched(self):
         pkg = {"systems": [self.SPEECH], "install": {"ceilings": []}}
         args = steps.with_model_defaults({"settings": {"speech-to-text": {"STT_ENDPOINT": "https://speech.example.com", "STT_MODEL": "x"}}}, pkg)
