@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "code-writer",
-  "version": "0.2.6",
-  "description": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. It is one code writer among any: the package-maker packs scripts from whichever code writer delivered them.",
+  "version": "0.3.2",
+  "description": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. It is one code writer among any: the package-maker packs scripts from whichever code writer delivered them. It also hands the code step out as a build folder to any coding agent or person, and takes the work back through the same checks.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
@@ -13,11 +13,16 @@
     "write-the-scripts",
     "lay-out-the-workspace",
     "check-the-work",
-    "report-the-work"
+    "report-the-work",
+    "hand-off-the-code",
+    "lay-out-the-build-folder",
+    "write-the-house-rules",
+    "pack-the-build-folder"
   ],
   "extensions": {
     "net.agentdoc.package": {
       "build": {
+        "kind": "plugin-on-harness",
         "skills": {
           "write-the-scripts": {
             "scripts": [
@@ -27,7 +32,8 @@
               "scripts/pieces.mjs",
               "scripts/verify.mjs",
               "scripts/went-without.mjs",
-              "scripts/agent-folder.mjs"
+              "scripts/agent-folder.mjs",
+              "scripts/archive.mjs"
             ],
             "references": [
               "references/what-the-house-stack-is.md",
@@ -38,7 +44,8 @@
           "lay-out-the-workspace": {
             "scripts": [
               "scripts/workspace.mjs",
-              "scripts/agent-folder.mjs"
+              "scripts/agent-folder.mjs",
+              "scripts/archive.mjs"
             ]
           },
           "check-the-work": {
@@ -53,6 +60,41 @@
               "scripts/report.mjs",
               "scripts/pieces.mjs",
               "scripts/went-without.mjs"
+            ]
+          },
+          "hand-off-the-code": {
+            "scripts": [
+              "scripts/handoff.mjs",
+              "scripts/archive.mjs",
+              "scripts/workspace.mjs",
+              "scripts/agent-folder.mjs",
+              "scripts/check.mjs"
+            ],
+            "references": [
+              "references/agents-md-template.md"
+            ]
+          },
+          "lay-out-the-build-folder": {
+            "scripts": [
+              "scripts/handoff.mjs",
+              "scripts/workspace.mjs",
+              "scripts/agent-folder.mjs",
+              "scripts/check.mjs",
+              "scripts/archive.mjs"
+            ]
+          },
+          "write-the-house-rules": {
+            "scripts": [
+              "scripts/handoff.mjs"
+            ],
+            "references": [
+              "references/agents-md-template.md"
+            ]
+          },
+          "pack-the-build-folder": {
+            "scripts": [
+              "scripts/archive.mjs",
+              "scripts/handoff.mjs"
             ]
           }
         }

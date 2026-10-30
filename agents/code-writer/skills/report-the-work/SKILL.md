@@ -11,9 +11,17 @@ Part of code-writer. last, whether anything is delivered or not
 
 last, whether anything is delivered or not
 
+## What this needs
+
+- the verdict (application/vnd.agentmesh.code-verdict+json, required)
+
 ## What a good result looks like
 
 A reply that says first whether scripts are delivered and why, then the check's words as written, then the writer's account, then what the job went without; and, when the verdict says done, every script filed as a piece with a sentence on each, the account and the run record beside them.
+
+## What it produces
+
+- the reply (text, per task)
 
 ## When it comes back empty
 

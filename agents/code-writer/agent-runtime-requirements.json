@@ -35,5 +35,28 @@
       "currency": "USD"
     }
   },
+  "run": {
+    "hand-off-the-code": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/hand-off-the-code/scripts/handoff.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--message",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "escalate_when": "json:escalate",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  },
   "verify": "skills/write-the-scripts/scripts/verify.mjs"
 }
