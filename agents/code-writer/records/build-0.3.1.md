@@ -25,3 +25,11 @@ A rollback to 0.2.6 was refused by the deployment manager ("the version must inc
 ## Tests
 
 In the repository: 85 of 86 pass, 1 skipped. Blanked one at a time beside the package, the suite notices every script; the builder takes the package. Replaying the host locally with the text-counter files: a "Hand off the code" message runs the command and the delivery check accepts its archive (whose digest, 502b87f4…, is byte for byte the one dev made), and a "Write the scripts" message carrying only that archive answers escalate and leaves nothing behind.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host, deterministically: sha256 db9cbf3c902140ac4a4df568ad1cf0f1f1035db3bcba60b02f0be7381f779cb8.
+- Security review by security-reviewer 0.2.1, under the owner's limit of 10 USD per day: refused only for the reference example under skills/write-the-scripts/references/a-package-that-works (technical debt 574), as 0.2.6 and 0.3.0 were; released with that recorded as known.
+- Installed by the deployment manager from deploy request dr_YURpAuzZsesfzVzZTI4rW_aw, reloaded in place on the platform node (no node restart; restarts stayed 168). Its harness keeps Claude Sonnet 5.5.
+- Proof, step 1: "Hand off the code for text-counter 0.1.0", with the agent's files loose and the suite as an archive. The command built the folder (14 files, 12 pinned), the host's delivery check accepted it, and it reached the platform account as "the build folder", sha256 502b87f4c32bbb1580c1043ad932c2dc3ddd85ed5a866b7d835ee7a8f642aa32, the same bytes as the local run.
+- Proof, step 2: "Write the scripts for text-counter 0.1.0" with only that archive attached. The command escalated, the coding session laid the folder out as its workspace, wrote scripts/count.mjs in three rounds (25 of 27 tests pass), and stopped on two tests that contradict the agent's files, naming each in its conflict note: one expects 17 words where the stated whitespace rule gives 18, and one reads the older spec.json shape instead of the descriptor (technical debt 600). Nothing was delivered, as its rules say. The reply the sender saw was the delivery check's "no scripts were delivered" rather than the conflict (technical debt 617, as with 0.2.6).
