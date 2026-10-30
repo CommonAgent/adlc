@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "security-reviewer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Reviews an Agent Package before it is installed and before any credential is bound to it, and writes down what the agent may reach, what it may spend and what it must never do, with the reason for each. It flags every permission the package asks for that has no recorded reason, refuses a package whose programs reach a system its declaration does not name or whose owner set no spending limit, lists as a warning every network address written into its scripts, and lists what it lets through knowingly. It grants nothing and changes nothing.",
   "license": "Apache-2.0",
   "author": {
