@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.6",
+  "agent_version": "0.3.0",
   "name": "Code writer",
   "summary": "Writes the scripts a spec names until the test suite passes, and hands back the scripts with an account of how it got there.",
   "will_not": [
@@ -10,7 +10,7 @@
     "It will not install anything or reach a network.",
     "It will not settle a question the spec left open when a test depends on the answer; it stops and asks."
   ],
-  "does": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. It is one code writer among any: the package-maker packs scripts from whichever code writer delivered them.",
+  "does": "Writes the scripts a spec names so that the test-writer's suite passes, in the house stack, the way a coding session works: write, check, read the failures, fix, until the check says done. Reads a prototype in any language as the statement of what was wanted and writes it again in the stack. It is one code writer among any: the package-maker packs scripts from whichever code writer delivered them. It also hands the code step out as a build folder to any coding agent or person, and takes the work back through the same checks.",
   "offerings": [
     {
       "id": "write-the-scripts",
@@ -27,15 +27,17 @@
             "application/vnd.agentmesh.agent-runtime-requirements+json",
             "application/vnd.agentmesh.agent-plugin+json",
             "text/markdown",
-            "application/vnd.agentmesh.agent-spec+json"
+            "application/vnd.agentmesh.agent-spec+json",
+            "application/gzip"
           ],
-          "about": "The agent's own files as the spec writer delivers them: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill; or, for an agent written before them, its spec.json."
+          "about": "The agent's own files as the spec writer delivers them: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill; or, for an agent written before them, its spec.json. It may instead be the build folder, one gzip tar archive from the hand-off-the-code offering, which then carries the agent's files, the suite and the pinned package files."
         },
         {
           "name": "the suite",
           "kind": "text/javascript",
-          "required": true,
-          "given_by": "either"
+          "required": false,
+          "given_by": "either",
+          "about": "The test files, with their helpers and fixtures. Required unless the build folder came as the first input, which carries the suite under test/."
         },
         {
           "name": "a prototype, in any language",
@@ -73,6 +75,34 @@
           "id": "lay-out-the-workspace",
           "name": "Lay out the workspace",
           "does": "Lays out the workspace and records what it holds.",
+          "inputs": [
+            {
+              "name": "the spec",
+              "kind": "document",
+              "required": true,
+              "given_by": "either"
+            },
+            {
+              "name": "the suite",
+              "kind": "text/javascript",
+              "required": true,
+              "given_by": "either"
+            },
+            {
+              "name": "a prototype, in any language",
+              "kind": "document",
+              "required": false,
+              "given_by": "person"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "the workspace record",
+              "kind": "application/vnd.agentmesh.code-workspace+json",
+              "when": "per_task",
+              "about": "`{digests, listing, scripts, prototype, extras, stood_in, rounds_max}`: what the workspace held when it was laid out and the digests the check holds it to."
+            }
+          ],
           "how": {
             "control": "script",
             "intelligence": "none",
@@ -84,6 +114,28 @@
           "id": "check-the-work",
           "name": "Check the work",
           "does": "Runs the suite, the blanking, the builder and the fence, and says whether the writer is done.",
+          "inputs": [
+            {
+              "name": "the workspace record",
+              "kind": "application/vnd.agentmesh.code-workspace+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "the run record",
+              "kind": "application/vnd.agentmesh.code-runs+json",
+              "when": "per_task",
+              "about": "`{runs}`: each round of the check, with what passed and failed, as code reads it."
+            },
+            {
+              "name": "the verdict",
+              "kind": "application/vnd.agentmesh.code-verdict+json",
+              "when": "per_task",
+              "about": "`{done, stop, round, said, blanks, build}`: done or not, and which stop it was when not."
+            }
+          ],
           "how": {
             "control": "script",
             "intelligence": "none",
@@ -95,6 +147,21 @@
           "id": "report-the-work",
           "name": "Report the work",
           "does": "Writes the reply and, on a done verdict, files the pieces.",
+          "inputs": [
+            {
+              "name": "the verdict",
+              "kind": "application/vnd.agentmesh.code-verdict+json",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "the reply",
+              "kind": "text",
+              "when": "per_task"
+            }
+          ],
           "how": {
             "control": "script",
             "intelligence": "none",
@@ -114,6 +181,150 @@
           "currency": "USD"
         }
       },
+      "started_by": [
+        "person",
+        "agent"
+      ]
+    },
+    {
+      "id": "hand-off-the-code",
+      "name": "Hand off the code",
+      "does": "Lays out a build folder for whoever writes the scripts, with the suite, the released scripts, the house rules and the check, and packs it as one archive.",
+      "inputs": [
+        {
+          "name": "the agent's files",
+          "kind": "document",
+          "required": true,
+          "given_by": "either",
+          "accepts": [
+            "application/vnd.agentmesh.agent-descriptor+json",
+            "application/vnd.agentmesh.agent-runtime-requirements+json",
+            "application/vnd.agentmesh.agent-plugin+json",
+            "text/markdown"
+          ],
+          "about": "agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill, kept as they came."
+        },
+        {
+          "name": "the suite",
+          "kind": "document",
+          "required": true,
+          "given_by": "either",
+          "about": "The test files with their helpers and fixtures, each at its path under test/; binary fixtures are kept byte for byte."
+        },
+        {
+          "name": "the released package, as the prototype",
+          "kind": "document",
+          "required": false,
+          "given_by": "either",
+          "about": "A released package whose scripts seed the named scripts and whose other files (sample/, references, assets, data) are laid out read-only at their own paths."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the build folder",
+          "kind": "application/gzip",
+          "when": "per_task",
+          "about": "One gzip tar archive holding the build folder: the agent's files, `test/`, `scripts/`, the released package files, `AGENTS.md`, `CLAUDE.md`, `.adlc/` and `build.lock.json`."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "lay-out-the-build-folder",
+          "name": "Lay out the build folder",
+          "does": "Lays out the agent's files, the suite, the scripts, the released package's other files and the check as a build folder.",
+          "inputs": [
+            {
+              "name": "the agent's files",
+              "kind": "document",
+              "required": true,
+              "given_by": "either"
+            },
+            {
+              "name": "the suite",
+              "kind": "document",
+              "required": true,
+              "given_by": "either"
+            },
+            {
+              "name": "the released package, as the prototype",
+              "kind": "document",
+              "required": false,
+              "given_by": "either"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "the build folder laid out",
+              "kind": "document",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-house-rules",
+          "name": "Write the house rules",
+          "does": "Writes AGENTS.md, CLAUDE.md and the build lock.",
+          "inputs": [
+            {
+              "name": "the build folder laid out",
+              "kind": "document",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "the build folder with its rules",
+              "kind": "document",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "pack-the-build-folder",
+          "name": "Pack the build folder",
+          "does": "Packs the build folder as one gzip tar archive.",
+          "inputs": [
+            {
+              "name": "the build folder with its rules",
+              "kind": "document",
+              "required": true,
+              "given_by": "agent"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "the build folder",
+              "kind": "application/gzip",
+              "when": "per_task"
+            }
+          ],
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ],
       "started_by": [
         "person",
         "agent"
