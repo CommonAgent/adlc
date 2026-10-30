@@ -38,16 +38,16 @@ export const ADLC_FILES = ["check.mjs", "workspace.mjs", "agent-folder.mjs", "ar
 export const TEMPLATE_FILE = "agents-md-template.md";
 export const ARCHIVE_NAME = "build-folder.tar.gz";
 
-/** The command line: --job, --records, --work and any number of --file
- *  <path>::<media type>. */
+/** The command line: --job, --records, --work, --message (the file the host
+ *  wrote the sender's text to) and any number of --file <path>::<media type>. */
 export function fromArgv(argv = []) {
-  const out = { job: "", records: "", work: "", files: [] };
+  const out = { job: "", records: "", work: "", message: "", files: [] };
   for (let i = 0; i < argv.length; i++) {
     let flag = argv[i];
     let value;
     const eq = /^(--[a-z]+)=(.*)$/.exec(flag);
     if (eq) { flag = eq[1]; value = eq[2]; } else value = argv[i + 1];
-    if (!["--job", "--records", "--work", "--file"].includes(flag)) continue;
+    if (!["--job", "--records", "--work", "--message", "--file"].includes(flag)) continue;
     if (!eq) i += 1;
     if (value === undefined) continue;
     if (flag === "--file") {
@@ -214,10 +214,27 @@ function sortArrivals(files, read) {
   return { agent: sorted.agent, suite, prototype };
 }
 
+/** Whether a message asks for the hand-off: its first line begins with
+ *  "Hand off the code", in any case. */
+export const asksForHandoff = (text) => /^\s*hand off the code\b/i.test(String(text ?? "").split(/\r?\n/)[0]);
+
 /** The whole job: sort, lay out, write the rules, pack, file the piece.
- *  `read` and the template are handed in by tests. */
-export function handoff({ jobDir, recordsDir, workDir, files = [], templateText = null, templatePath = null, scriptsDir = here, read = (p) => readFileSync(p) } = {}) {
+ *  `read` and the template are handed in by tests.
+ *
+ *  The host keeps one command for this agent and runs it for every ordinary
+ *  message, so when the host passes the message (`message`, a file path) and
+ *  it does not ask for the hand-off, nothing is laid out or filed and the
+ *  answer is {escalate: true}: the host then wakes the coding session for
+ *  write-the-scripts. A missing or unreadable message file is no request for
+ *  the hand-off. Called with no message at all, it hands off as before. */
+export function handoff({ jobDir, recordsDir, workDir, files = [], message = null, messageFile = null, templateText = null, templatePath = null, scriptsDir = here, read = (p) => readFileSync(p) } = {}) {
   if (!jobDir || !recordsDir || !workDir) throw new Error("--job, --records and --work are required");
+  const said = message ?? messageFile;
+  if (said) {
+    let text = "";
+    try { text = readFileSync(said, "utf8"); } catch { text = ""; }
+    if (!asksForHandoff(text)) return { ok: true, code: 0, escalate: true, reply: "" };
+  }
   if (!files.length) return refuse("Nothing is laid out: no file arrived, so there are no agent's files and no suite. The spec writer's files and the test writer's suite are what the build folder is made of.");
   const got = sortArrivals(files, read);
   if (!got.agent) return refuse("Nothing is laid out: none of the files that arrived is the agent's files (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and each skill's SKILL.md). The spec writer writes them first.");
@@ -280,7 +297,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   if (!a.job || !a.records || !a.work) { console.error("--job, --records and --work are required, with each --file <path>::<media type>"); process.exit(2); }
   if (!existsSync(a.job) || !statSync(a.job).isDirectory()) { console.error(`the job folder does not exist: ${a.job}`); process.exit(2); }
   try {
-    const r = handoff({ jobDir: a.job, recordsDir: a.records, workDir: a.work, files: a.files.map((f) => ({ ...f, path: f.path })) });
+    const r = handoff({ jobDir: a.job, recordsDir: a.records, workDir: a.work, message: a.message || null, files: a.files.map((f) => ({ ...f, path: f.path })) });
     console.log(JSON.stringify(r));
     process.exit(r.ok ? 0 : r.code ?? 1);
   } catch (e) {
