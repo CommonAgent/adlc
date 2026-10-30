@@ -7,8 +7,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DRAFT_SECONDS, JSON_ONLY, NoDraft, answerFrom, askForSpec, draftRequest, draftSecondsOf, httpRequestFor, jsonCandidates,
+  DRAFT_SECONDS, JSON_ONLY, NoDraft, answerFrom, askForSpec, callFor, draftRequest, draftSecondsOf, jsonCandidates,
 } from "../scripts/draft.mjs";
+import { JSON_SYSTEM } from "../scripts/model-caller.mjs";
 
 const ASKED = { asked: "v1", said: "an agent that watches the fleet and says who went quiet", attached: [], missing_files: [] };
 const how = { control: "script", intelligence: "none", cost: "none", contract: "full" };
@@ -119,7 +120,25 @@ test("the budget is DRAFT_SECONDS when it is a positive number", () => {
   assert.ok(DRAFT_SECONDS <= 300, "the draft step leaves the ten-minute job time for the rest");
 });
 
-test("a Gemini call asks for JSON mode", () => {
-  const h = httpRequestFor(draftRequest({ env: { TEXT_MODEL: "gemini-3.8-flash" } }), "k");
-  assert.equal(JSON.parse(h.body).generationConfig.responseMimeType, "application/json");
+// The drafting call goes through the shared caller asking for JSON, so each
+// protocol's own JSON switch is set: the JSON-only system prompt for the
+// declared anthropic-messages, and JSON mode for a Gemini call. A fetchImpl
+// stub answers; nothing is sent anywhere.
+const stubFetch = (sent, reply) => async (url, init) => {
+  sent.push({ url, body: JSON.parse(init.body) });
+  return { ok: true, status: 200, text: async () => JSON.stringify(reply) };
+};
+
+test("the drafting call asks for JSON, and a Gemini call asks for JSON mode", async () => {
+  const request = draftRequest({ asked: ASKED });
+  const sent = [];
+  const env = { MODEL_NAME: "text-model", MODEL_ENDPOINT: "http://127.0.0.1:9", MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: "" };
+  const got = await callFor(env, { fetchImpl: stubFetch(sent, { type: "message", content: [{ type: "text", text: answer() }], stop_reason: "end_turn" }) })(request, { seconds: 60 });
+  assert.equal(answerFrom(got.text).spec.name, "watcher");
+  assert.ok(String(sent[0].body.system).includes(JSON_SYSTEM), "the declared protocol's call asks for one JSON value");
+
+  const gsent = [];
+  const genv = { MODEL_NAME: "text-model", MODEL_ENDPOINT: "http://127.0.0.1:9", MODEL_PROTOCOL: "gemini", MODEL_KEY: "k" };
+  await callFor(genv, { protocols: ["gemini"], fetchImpl: stubFetch(gsent, { candidates: [{ content: { parts: [{ text: answer() }] }, finishReason: "STOP" }] }) })(request, { seconds: 60 });
+  assert.equal(gsent[0].body.generationConfig.responseMimeType, "application/json");
 });

@@ -162,8 +162,10 @@ test("the builder takes the new agent's draft, and refuses it with a bare JSON o
 
 test("the instruction says a model is a bound system and never named", () => {
   assert.match(INSTRUCTION, /reaches it as a bound system with access "trigger":\n"text-reasoning" for text/);
-  assert.match(INSTRUCTION, /AGENT_MODEL or\nTEXT_MODEL through the shared caller/);
-  assert.match(INSTRUCTION, /Never name a model or a version anywhere in the spec/);
+  assert.match(INSTRUCTION, /kind "model" with "protocols"/);
+  assert.match(INSTRUCTION, /through the shared caller and the four settings the install\s+places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL/);
+  assert.doesNotMatch(INSTRUCTION, /AGENT_MODEL|TEXT_MODEL/, "the retired model variables are not named");
+  assert.match(INSTRUCTION, /Never name a model or a version anywhere\s+in the spec/);
 });
 
 test("a draft that names a model anywhere is a finding, and one that names the capability is not", () => {

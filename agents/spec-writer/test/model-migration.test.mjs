@@ -132,5 +132,9 @@ test("the $schema in a written plugin.json matches the reference schema", () => 
 
   const files = agentFilesOf(spec);
   const plugin = JSON.parse(files["plugin.json"]);
-  assert.equal(plugin.$schema, refSchema.$id ?? refSchema.id);
+  // The reference names the value in its own `$schema` member: "The $schema
+  // value every plugin.json this agent writes carries".
+  assert.equal(typeof refSchema.$schema, "string");
+  assert.ok(refSchema.$schema.length > 0, "the reference names a $schema value");
+  assert.equal(plugin.$schema, refSchema.$schema);
 });

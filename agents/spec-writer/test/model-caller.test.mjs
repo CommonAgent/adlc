@@ -3,11 +3,19 @@
 // What is worth pinning: the model is reached via HTTP POST /v1/messages with
 // the anthropic-messages protocol; the model name is in the body, anthropic-version
 // is set as a header, and x-api-key is present only when MODEL_KEY is not empty;
-// missing or empty settings or an unsupported protocol refuse before any request
-// is sent to the stand-in; settings are dynamic and read on every run; an answer
-// cut at its limit (stop_reason max_tokens) is treated as a failure and never
-// read as complete; and draft.mjs sends its prompt as plain text through the
-// shared caller with remaining seconds as its limit and needs no TEXT_API_KEY.
+// missing or empty settings, or a protocol outside the one this package
+// declares (anthropic-messages, in agent-runtime-requirements.json), refuse
+// before any request is sent to the stand-in; settings are dynamic and read on
+// every run; an answer cut at its limit (stop_reason max_tokens) is a failure
+// carrying cutAtLimit and never read as complete; and draft.mjs sends its
+// prompt as plain text through the shared caller with remaining seconds as
+// its limit and needs no TEXT_API_KEY.
+//
+// The caller is the shared one, copied byte for byte, and these tests use its
+// real interface: callModel(prompt, {env, timeoutMs, protocols, ...}) answers
+// {text, model, ...}; cannotCall(env, {protocols}) says why no call can be
+// made, or ""; draft.mjs callFor(env) is the package's own call through it,
+// passing the protocols the package declares.
 //
 // Nothing here touches a real network or real model service: all model calls
 // go to an in-process stand-in server started on 127.0.0.1 with node:http.
@@ -15,8 +23,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { callModel, validateSettings } from "../scripts/model-caller.mjs";
-import { askForSpec } from "../scripts/draft.mjs";
+import { callModel, cannotCall } from "../scripts/model-caller.mjs";
+import { askForSpec, callFor, declaredProtocols } from "../scripts/draft.mjs";
+
+// The caller's refusal for these settings and this package's declared
+// protocols, thrown, so a test can assert the words that name the setting.
+const validateSettings = (env) => {
+  const why = cannotCall(env, { protocols: declaredProtocols() });
+  if (why) throw new Error(why);
+};
 
 function withStandIn(handler, body) {
   return new Promise((resolve, reject) => {
@@ -63,8 +78,8 @@ test("the stand-in receives a POST to /v1/messages with anthropic-version, model
       MODEL_PROTOCOL: "anthropic-messages",
       MODEL_KEY: "secret-key-123",
     };
-    const reply = await callModel({ prompt: "draft an agent", env, seconds: 30 });
-    assert.match(reply, /"name":\s*"demo"/);
+    const reply = await callModel("draft an agent", { env, timeoutMs: 30_000 });
+    assert.match(reply.text, /"name":\s*"demo"/);
     assert.equal(seenRequest.method, "POST");
     assert.equal(seenRequest.url, "/v1/messages");
     assert.ok(seenRequest.headers["anthropic-version"], "anthropic-version header missing");
@@ -94,7 +109,7 @@ test("when MODEL_KEY is unset or empty, no x-api-key header is sent to the stand
       MODEL_PROTOCOL: "anthropic-messages",
       MODEL_KEY: "",
     };
-    await callModel({ prompt: "ping", env, seconds: 10 });
+    await callModel("ping", { env, timeoutMs: 10_000 });
     assert.equal("x-api-key" in headersSeen, false, "x-api-key should not be present when key is empty");
   });
 });
@@ -105,7 +120,7 @@ test("a run with MODEL_NAME unset or empty stops before sending and names MODEL_
     const env = { MODEL_NAME: "", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "anthropic-messages" };
     assert.throws(() => validateSettings(env), /MODEL_NAME/);
     await assert.rejects(
-      () => callModel({ prompt: "draft", env, seconds: 10 }),
+      () => callModel("draft", { env, timeoutMs: 10_000 }),
       (err) => {
         assert.match(err.message, /MODEL_NAME/);
         return true;
@@ -119,7 +134,7 @@ test("a run with MODEL_ENDPOINT unset or empty stops before sending and names MO
   const env = { MODEL_NAME: "model-1", MODEL_ENDPOINT: "", MODEL_PROTOCOL: "anthropic-messages" };
   assert.throws(() => validateSettings(env), /MODEL_ENDPOINT/);
   await assert.rejects(
-    () => callModel({ prompt: "draft", env, seconds: 10 }),
+    () => callModel("draft", { env, timeoutMs: 10_000 }),
     /MODEL_ENDPOINT/,
   );
 });
@@ -128,18 +143,26 @@ test("a run with MODEL_PROTOCOL unset or empty stops before sending and names MO
   const env = { MODEL_NAME: "model-1", MODEL_ENDPOINT: "http://127.0.0.1:9", MODEL_PROTOCOL: "" };
   assert.throws(() => validateSettings(env), /MODEL_PROTOCOL/);
   await assert.rejects(
-    () => callModel({ prompt: "draft", env, seconds: 10 }),
+    () => callModel("draft", { env, timeoutMs: 10_000 }),
     /MODEL_PROTOCOL/,
   );
 });
 
 test("a run with MODEL_PROTOCOL other than anthropic-messages stops before sending and names MODEL_PROTOCOL", async () => {
+  // The package declares anthropic-messages alone, and its own call passes
+  // that to the shared caller, which takes other formats only when no
+  // protocols are passed.
+  assert.deepEqual(declaredProtocols(), ["anthropic-messages"]);
   let requests = 0;
   await withStandIn((req, res) => { requests += 1; res.end(); }, async (endpoint) => {
     const env = { MODEL_NAME: "model-1", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "openai-chat" };
     assert.throws(() => validateSettings(env), /MODEL_PROTOCOL/);
     await assert.rejects(
-      () => callModel({ prompt: "draft", env, seconds: 10 }),
+      () => callModel("draft", { env, timeoutMs: 10_000, protocols: declaredProtocols() }),
+      /MODEL_PROTOCOL/,
+    );
+    await assert.rejects(
+      () => callFor(env)({ body: { contents: [{ parts: [{ text: "draft" }] }] } }, { seconds: 10 }),
       /MODEL_PROTOCOL/,
     );
     assert.equal(requests, 0, "unsupported protocol was refused without contacting server");
@@ -156,11 +179,11 @@ test("settings are read on every run so different MODEL_ENDPOINT values reach di
   await withStandIn((req, res) => { callsA += 1; res.writeHead(200, { "content-type": "application/json" }); res.end(replyJson); }, async (endA) => {
     await withStandIn((req, res) => { callsB += 1; res.writeHead(200, { "content-type": "application/json" }); res.end(replyJson); }, async (endB) => {
       const base = { MODEL_NAME: "m", MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: "" };
-      await callModel({ prompt: "first", env: { ...base, MODEL_ENDPOINT: endA }, seconds: 10 });
+      await callModel("first", { env: { ...base, MODEL_ENDPOINT: endA }, timeoutMs: 10_000 });
       assert.equal(callsA, 1);
       assert.equal(callsB, 0);
 
-      await callModel({ prompt: "second", env: { ...base, MODEL_ENDPOINT: endB }, seconds: 10 });
+      await callModel("second", { env: { ...base, MODEL_ENDPOINT: endB }, timeoutMs: 10_000 });
       assert.equal(callsA, 1);
       assert.equal(callsB, 1);
     });
@@ -182,8 +205,9 @@ test("an answer with stop_reason max_tokens is refused as cut at limit and never
   await withStandIn(handler, async (endpoint) => {
     const env = { MODEL_NAME: "m", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: "" };
     await assert.rejects(
-      () => callModel({ prompt: "draft", env, seconds: 10 }),
+      () => callModel("draft", { env, timeoutMs: 10_000 }),
       (err) => {
+        assert.equal(err.cutAtLimit, true, "the failure says the answer was cut");
         assert.match(err.message, /max_tokens|cut at its limit/);
         return true;
       },
@@ -235,5 +259,15 @@ test("draft.mjs sends prompt as plain text through the shared caller with remain
     assert.equal(typeof promptSeen, "string", "prompt must be sent as plain text");
     assert.match(promptSeen, /Analyze the tone of incoming messages/);
     assert.equal("TEXT_API_KEY" in env, false);
+  });
+
+  // The seconds the step has left are the call's limit: a service slower
+  // than that is a failure at that limit, not a wait past the step's time.
+  await withStandIn((req, res) => { setTimeout(() => { res.writeHead(200); res.end("{}"); }, 1500); }, async (endpoint) => {
+    const env = { MODEL_NAME: "text-model", MODEL_ENDPOINT: endpoint, MODEL_PROTOCOL: "anthropic-messages", MODEL_KEY: "" };
+    await assert.rejects(
+      () => callFor(env)({ body: { contents: [{ parts: [{ text: "draft" }] }] } }, { seconds: 0.3 }),
+      /within 0\.3 seconds/,
+    );
   });
 });

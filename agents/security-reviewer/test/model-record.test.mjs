@@ -20,10 +20,10 @@ import { askJson } from "../scripts/weigh.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-function withTemp(fn) {
+async function withTemp(fn) {
   const dir = mkdtempSync(join(tmpdir(), "model-record-"));
   try {
-    return fn(dir);
+    return await fn(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -64,7 +64,7 @@ test("model record keeps the exchange with service named anthropic-messages", as
         MODEL_PROTOCOL: "anthropic-messages",
       };
 
-      await callModel({ prompt: "weigh these reasons", env, exchange });
+      await callModel("weigh these reasons", { env, exchange });
       saveExchange(dir, exchange);
 
       const saved = loadExchange(dir);
@@ -102,9 +102,9 @@ test("a saved replay made under anthropic-messages answers without a model call"
         MODEL_PROTOCOL: "anthropic-messages",
       };
 
-      const res = await callModel({ prompt: "weigh these reasons", env, exchange });
+      const res = await callModel("weigh these reasons", { env, exchange });
       assert.equal(modelCalled, 0, "the stand-in model was never contacted");
-      assert.match(JSON.stringify(res), /"holds"/);
+      assert.equal(JSON.parse(res.text).judgments[0].holds, "holds", "the answer is the saved one");
     } finally {
       await standIn.close();
     }

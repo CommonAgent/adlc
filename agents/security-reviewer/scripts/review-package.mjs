@@ -111,6 +111,7 @@ export function replyText({ pkg, a, asked, went, weighed }) {
   else L.push(`I reviewed ${who} and it does not pass. What stopped it: ${a.refusals.join("; ")}.`);
   if (a.unreasoned.length) L.push(`${many(a.unreasoned.length, "permission")} ${a.unreasoned.length === 1 ? "has" : "have"} no recorded reason and ${a.unreasoned.length === 1 ? "is" : "are"} flagged in the review.`);
   if (a.accepted.length) L.push(`${many(a.accepted.length, "thing")} it lets through ${a.accepted.length === 1 ? "is" : "are"} listed as accepted knowingly.`);
+  if (a.warnings?.length) L.push(`${many(a.warnings.length, "network address")} written into its scripts ${a.warnings.length === 1 ? "is" : "are"} listed in the review as ${a.warnings.length === 1 ? "a warning" : "warnings"}, each with its file and line.`);
   if (went) L.push(went);
   if (!weighed) L.push("No model weighed the reasons; the review lists them as the package states them.");
   L.push("The review is filed with the job. It grants nothing and changed nothing in the package.");
@@ -158,8 +159,10 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
 
   // ── trace the programs ──
   const arch = readArchitecture(archText);
-  const { traced, tests } = deepScrub(tracePrograms(got.files, declared.programs));
-  const matched = matchReaches({ traced, systems: declared.systems, binaries: declared.binaries, egressHosts: arch.egress.hosts });
+  // The address warnings are found here, by a program, before any model is
+  // asked, and go into the review as they were found.
+  const { traced, tests, warnings } = deepScrub(tracePrograms(got.files, declared.programs, { requirementsFile: declared.requirementsFile }));
+  const matched = { ...matchReaches({ traced, systems: declared.systems, binaries: declared.binaries, egressHosts: arch.egress.hosts }), warnings };
   writeFileSync(join(RECORDS, "traced.json"), JSON.stringify({ traced, tests, ...matched }, null, 2) + "\n");
   if (!arch.given) note(RECORDS, { wanted: "the architecture record", did: "reviewed the package against its own declaration alone, so nothing checks its systems against what the agent was designed to reach" });
 
@@ -178,7 +181,7 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
   const md = reviewMarkdown({ pkg, a, traced: { traced, tests, ...matched }, weighed: w.weighed ?? null, reviewedAt });
   const reviewPath = join(RECORDS, "security-review.md");
   writeFileSync(reviewPath, md);
-  writeFileSync(join(RECORDS, "assessment.json"), JSON.stringify({ verdict: a.verdict, refusals: a.refusals, unreasoned: a.unreasoned, reaches: a.reaches, spends: a.spends, never_does: a.neverDos, accepted: a.accepted, notes: a.notes, weighed: w.weighed ?? null, skipped: w.skipped ?? null, reviewed_at: reviewedAt }, null, 2) + "\n");
+  writeFileSync(join(RECORDS, "assessment.json"), JSON.stringify({ verdict: a.verdict, refusals: a.refusals, warnings: a.warnings, unreasoned: a.unreasoned, reaches: a.reaches, spends: a.spends, never_does: a.neverDos, accepted: a.accepted, notes: a.notes, weighed: w.weighed ?? null, skipped: w.skipped ?? null, reviewed_at: reviewedAt }, null, 2) + "\n");
   appendIndex(args.records, { job: id, package: pkg.name, version: pkg.version, digest: pkg.digest, verdict: a.verdict, reviewed_at: reviewedAt });
   const listed = fill(args.job, piecesPlan({ reviewPath })).map((e) => e.name);
 
@@ -187,7 +190,7 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
     ok: true, code: 0,
     reply: replyText({ pkg, a, asked, went, weighed: w.weighed }),
     verdict: a.verdict, package: pkg, refused_for: a.refusals,
-    reaches: a.reaches.length, spends: a.spends.length, never_does: a.neverDos.length, unreasoned: a.unreasoned.length,
+    reaches: a.reaches.length, spends: a.spends.length, never_does: a.neverDos.length, unreasoned: a.unreasoned.length, warnings: a.warnings.length,
     went_without: wentWithout(RECORDS), listed,
   };
 }

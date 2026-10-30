@@ -12,7 +12,7 @@
 // does not list.
 //
 //   needs: node >= 22
-//   import { PLATFORM } from "./platform.mjs"
+//   import { PLATFORM, boundHeldBy, platformEnforces } from "./platform.mjs"
 
 export const PLATFORM = {
   /** The reserved system names an account can bind (agents/package-maker/system-names.json). */
@@ -44,3 +44,36 @@ export const PLATFORM = {
   /** When nothing else covers a fetch to an address the program is handed. */
   browserNote: "drives a browser and routes none of its requests, so every address the pages pull in (fonts, scripts, analytics) is loaded, not only the pages it was asked for",
 };
+
+/** Whether the platform itself holds a bound counted in this unit: a task or a
+ *  job (the host stops a job that runs past its job_seconds) and a month (the
+ *  account's monthly spending limit). Anything else rests on the package. */
+export function platformEnforces(unit) {
+  return ["task", "job", "month"].includes(String(unit ?? "").trim().toLowerCase());
+}
+
+/** What holds one bound, in the words a review writes beside it. `kind` is
+ *  egress, access, ceiling or one of PLATFORM.enforcement's own names;
+ *  `enforcedBy` is "package" where only the package's code holds it, or
+ *  "runtime" for a ceiling counted against a placed CEILING_ variable. A bound
+ *  this file does not know is said to rest on the package's own programs,
+ *  never claimed for the platform. */
+export function boundHeldBy({ kind = "", egress = "", enforcedBy = "" } = {}) {
+  const e = PLATFORM.enforcement;
+  if (kind === "egress" || egress === "open") return e.egress;
+  if (enforcedBy === "package") return "this package's own programs, and nothing on the platform";
+  if (kind === "ceiling") return enforcedBy === "runtime" ? e.runtimeCeiling : e.ceilings;
+  if (Object.prototype.hasOwnProperty.call(e, kind)) return e[kind];
+  return "this package's own programs, and nothing on the platform";
+}
+
+// By hand: node platform.mjs <kind> prints what holds a bound of that kind.
+const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
+if (thisFile && import.meta.url.endsWith(`/${thisFile}`)) {
+  const kind = String(process.argv[2] ?? "").trim();
+  if (!kind) {
+    console.error("usage: node platform.mjs <kind>, where kind is egress, access, ceiling or one of: " + Object.keys(PLATFORM.enforcement).join(", "));
+    process.exit(2);
+  }
+  console.log(boundHeldBy({ kind }));
+}

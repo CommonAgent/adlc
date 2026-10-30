@@ -88,12 +88,13 @@ delivered. With no package it exits 3 and says what it needs.
 ## What it needs
 
 - Node 22 or later. The scripts use only node's own modules.
-- For the one judgment, the model the install places (`AGENT_MODEL`), and
-  where to call it (`GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` for a
-  model on Vertex AI, or a Gemini key). It is reached through the shared caller,
-  `scripts/caller.mjs`, copied unchanged from AgentMesh's
-  `packages/explainer/shared/caller.mjs` with its `model-record.mjs`; no model
-  is named in this package. Without a model the review is the same review,
+- For the one judgment, the model the install places: the system of kind `model` named
+  `text-reasoning`, reached through the shared caller
+  (`scripts/model-caller.mjs`) and the four settings the install places:
+  `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` (empty for a gateway on the
+  host) and `MODEL_PROTOCOL` (`anthropic-messages`), read on every run. The
+  package names no model and no address of its own. The whole
+  exchange is kept by `scripts/model-record.mjs`. Without a model the review is the same review,
   and says nobody weighed the reasons. A `CEILING_TEXT_REASONING` below 1
   makes no call.
 

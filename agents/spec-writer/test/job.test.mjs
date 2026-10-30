@@ -15,12 +15,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { checkDelivered } from "./delivered-formats.test.mjs";
 import { fill, plan } from "../scripts/pieces.mjs";
 import { blanksOf } from "../scripts/draft.mjs";
 import { fileIn, note, read, sentence } from "../scripts/went-without.mjs";
 import { specOfFolder } from "../scripts/agent-folder.mjs";
-import { readArchitectureRecord } from "../scripts/architecture-record.mjs";
 import { canUseProblems } from "../scripts/can-use.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -127,11 +127,14 @@ test("good case: a completed job fills the job folder and all pieces match their
     writeFileSync(join(agentDir, "plugin.json"), pluginContent);
     writeFileSync(join(agentDir, "skills", "write-a-spec", "SKILL.md"), skillContent);
 
+    // Each file is recorded with the digest of the bytes the builder made,
+    // as builds.json lists them; a file whose bytes differ is not delivered.
+    const digest = (text) => createHash("sha256").update(text).digest("hex");
     const files = [
-      { path: "agent-descriptor.json", sha256: "d1" },
-      { path: "agent-runtime-requirements.json", sha256: "r1" },
-      { path: "plugin.json", sha256: "p1" },
-      { path: "skills/write-a-spec/SKILL.md", sha256: "s1" },
+      { path: "agent-descriptor.json", sha256: digest(descContent) },
+      { path: "agent-runtime-requirements.json", sha256: digest(runtimeContent) },
+      { path: "plugin.json", sha256: digest(pluginContent) },
+      { path: "skills/write-a-spec/SKILL.md", sha256: digest(skillContent) },
     ];
     const blanks = [{ key: "price", question: "What is the price?" }];
 
@@ -191,21 +194,33 @@ test("process contract: each script exits 2 when a required environment variable
 });
 
 test("spec declaration: write-a-spec offering steps are jobs and match their declared how contracts", () => {
-  const offering = DESC.jobs.find((j) => j.slug === "write-a-spec");
-  assert.ok(offering, "write-a-spec job missing from agent-descriptor.json");
-  assert.equal(offering.offered, true);
-  assert.deepEqual(offering.steps, [
+  // agent-descriptor-v1: the offering is an entry of `offerings`, and its
+  // steps are objects, each with its own id and how.
+  assert.equal(DESC.format, "agent-descriptor-v1");
+  const offering = (DESC.offerings ?? []).find((o) => o.id === "write-a-spec");
+  assert.ok(offering, "write-a-spec offering missing from agent-descriptor.json");
+  assert.ok(Array.isArray(offering.started_by) && offering.started_by.length > 0, "somebody can start the offering");
+  assert.deepEqual(offering.steps.map((s) => s.id), [
     "read-what-was-asked",
     "draft-the-spec",
     "check-it-builds",
     "ask-what-is-missing",
   ]);
 
-  const stepJobs = DESC.jobs.filter((j) => j.slug !== "write-a-spec");
-  assert.equal(stepJobs.length, 4);
-  for (const step of stepJobs) {
-    assert.ok(step.how, `step ${step.slug} missing how`);
+  assert.equal(offering.steps.length, 4);
+  for (const step of offering.steps) {
+    assert.ok(step.how, `step ${step.id} missing how`);
     assert.ok(["script", "model"].includes(step.how.control));
     assert.ok(["none", "called", "open"].includes(step.how.intelligence));
+    // Each step is a job of its own: a skill with its SKILL.md.
+    assert.ok(existsSync(join(ROOT, "skills", step.id, "SKILL.md")), `step ${step.id} has no skills/${step.id}/SKILL.md`);
   }
+  // The how is what it claims: drafting is the one step that calls the
+  // text-reasoning service, so it alone is called and metered, and so is the
+  // offering that contains it.
+  const called = offering.steps.filter((s) => s.how.intelligence === "called").map((s) => s.id);
+  assert.deepEqual(called, ["draft-the-spec"]);
+  assert.equal(offering.steps.find((s) => s.id === "draft-the-spec").how.cost, "metered");
+  assert.equal(offering.how.intelligence, "called");
+  assert.equal(offering.how.cost, "metered");
 });

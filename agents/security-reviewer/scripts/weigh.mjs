@@ -11,22 +11,51 @@
 // hardest. A review whose model is unavailable says so and is otherwise the
 // same review.
 //
-// The model is the one the install placed (AGENT_MODEL), reached through the
-// shared caller (caller.mjs), which records the whole exchange in the job's
-// model record. No model is named here. One call, and only when the ceiling
-// the owner set on text-reasoning (CEILING_TEXT_REASONING) allows one.
+// The model is the one the install placed, in the four settings it places
+// (MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, Common Agent
+// 12.4.1), read on every call by the shared model caller (model-caller.mjs);
+// the whole exchange is kept in the job's model record (model-record.mjs). No
+// model and no address is named here. One call, and only when the settings
+// can make one and the ceiling the owner set on text-reasoning
+// (CEILING_TEXT_REASONING) allows one.
 //
-//   needs: node >= 22; AGENT_MODEL, and where to call it (GOOGLE_CLOUD_PROJECT
-//   and GOOGLE_CLOUD_LOCATION, or a Gemini key)
-//   import { weigh } from "./weigh.mjs"
+//   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL, and
+//   MODEL_KEY where the endpoint asks for one
+//   import { weigh, itemsOf, askJson } from "./weigh.mjs"
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { askJson } from "./caller.mjs";
+import { askJson as callerAskJson, cannotCall } from "./model-caller.mjs";
+import { modelExchange } from "./model-record.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
 export const VERDICTS = ["holds", "thin", "does-not-cover"];
+
+/** The protocols this package's own model system declares, read from its
+ *  agent-runtime-requirements.json wherever the package keeps it, so a
+ *  MODEL_PROTOCOL outside them is refused by the caller before anything is
+ *  sent; [] (no further limit) when the file is not found. */
+export function declaredProtocols() {
+  for (const p of [join(HERE, "..", "agent-runtime-requirements.json"), join(HERE, "..", "..", "..", "agent-runtime-requirements.json")]) {
+    if (!existsSync(p)) continue;
+    try {
+      const sys = (JSON.parse(readFileSync(p, "utf8")).systems ?? []).find((s) => s?.kind === "model");
+      return Array.isArray(sys?.protocols) ? sys.protocols : [];
+    } catch { return []; }
+  }
+  return [];
+}
+
+/** One JSON answer from the shared caller: askJson(prompt, options), or
+ *  askJson({ prompt, ...options }). */
+export async function askJson(prompt, options = {}) {
+  if (prompt && typeof prompt === "object" && !Array.isArray(prompt)) {
+    const { prompt: text, ...rest } = prompt;
+    return callerAskJson(text, { ...rest, ...options });
+  }
+  return callerAskJson(prompt, options);
+}
 
 /** The rules the model works under: rules.md, wherever the package keeps it. */
 export function rules() {
@@ -67,17 +96,23 @@ export function prompt({ pkg, items, does }) {
 /**
  * Weigh the reasons, or say why it was not done. Returns
  *  { weighed: { calls, judgments } } or { skipped: "why" }.
- * `ask` is the call, for tests; by default the shared caller's askJson.
+ * `ask` is the call, for tests; by default the shared caller's askJson, which
+ * is asked only when the four settings can make a call, with the protocols
+ * the package declares and the job's model record as its exchange.
  */
 export async function weigh({ a, pkg, does = "", env = process.env, ask = askJson }) {
   const items = itemsOf(a);
   if (!items.length) return { skipped: "there was no recorded reason to weigh" };
-  if (!trim(env.AGENT_MODEL)) return { skipped: "no model is placed for this agent (AGENT_MODEL is not set)" };
-  const ceiling = trim(env.CEILING_TEXT_REASONING);
+  const ceiling = trim(env?.CEILING_TEXT_REASONING);
   if (ceiling && !(Number(ceiling) >= 1)) return { skipped: `the ceiling on text-reasoning (${ceiling}) allows no call` };
+  const protocols = declaredProtocols();
+  if (ask === askJson) {
+    const why = cannotCall(env, { protocols });
+    if (why) return { skipped: why };
+  }
   let answer;
   try {
-    answer = await ask(prompt({ pkg, items, does }), { env, maxOutputTokens: Math.min(16000, 400 + items.length * 200), effort: "low" });
+    answer = await ask(prompt({ pkg, items, does }), { env, protocols, maxOutputTokens: Math.min(16000, 400 + items.length * 200), effort: "low", exchange: modelExchange });
   } catch (e) {
     return { skipped: `the model could not be asked (${trim(e?.message ?? e).slice(0, 300)})`, calls: 1 }; // cut-ok: an error message in the reply; the whole is in the model record
   }

@@ -25,11 +25,36 @@
 // yet; and a lockfile's digest is the digest of the stand-in, the empty file,
 // which the package maker refuses until the lockfile itself is delivered.
 //
+// The $schema plugin.json carries is read from references/
+// plugin-manifest-schema.json beside the scripts and not written here: it is
+// an address, and a script carries none (Common Agent 12.6 rule 2, the address
+// check of 12.10). It names a format and is never fetched.
+//
 //   needs: node >= 22
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const EXT = "net.agentdoc.package";
-export const SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+const HERE = dirname(fileURLToPath(import.meta.url));
+export const SCHEMA_FILE = "plugin-manifest-schema.json";
+
+/** Where the reference holding the $schema value is: references/ beside this
+ *  script's folder, in the source and in a built skill alike. */
+export const schemaFileAt = (here = HERE) => { const p = join(here, "..", "references", SCHEMA_FILE); return existsSync(p) ? p : null; };
+
+/** The $schema value every plugin.json written here carries, from the
+ *  reference, read each time files are written. With the reference missing
+ *  nothing is made up: the files are not written, and the error says which
+ *  file is missing. */
+export function schemaUrlOf(here = HERE) {
+  const at = schemaFileAt(here);
+  if (!at) throw new Error(`references/${SCHEMA_FILE} is not beside the scripts, so plugin.json has no $schema to carry`);
+  const value = JSON.parse(readFileSync(at, "utf8"))?.$schema;
+  if (typeof value !== "string" || !value.trim()) throw new Error(`references/${SCHEMA_FILE} carries no $schema value`);
+  return value.trim();
+}
 export const RUNTIME_FORMAT = "agent-runtime-requirements-v1";
 export const NOT_NAMED = "an agent not named yet";
 const NAME_RE = /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/;
@@ -184,6 +209,9 @@ export function runtimeOf(spec, jobs, systems, lockfiles) {
   const sysEntries = systems.map((s) => {
     const kind = s.kind ?? "directory";
     const e = { name: s.name, kind };
+    // A model system names the request formats its scripts speak (12.4.1),
+    // right after its kind, as build.py writes it.
+    if (s.protocols != null) e.protocols = Array.isArray(s.protocols) ? [...s.protocols] : s.protocols;
     if (s.credential != null) e.credential = s.credential;
     if (s.env != null) e.env = s.env;
     if (s.spends != null) e.spends = { unit: s.spends.unit };
@@ -300,7 +328,7 @@ export function agentFilesOf(spec) {
   build.skills = Object.fromEntries(jobs.map((j) => [j.slug, Object.fromEntries(
     ["scripts", "references", "assets"].filter((k) => Array.isArray(j[k]) && j[k].length).map((k) => [k, [...j[k]]]))]));
   const manifest = {
-    $schema: SCHEMA_URL,
+    $schema: schemaUrlOf(),
     ...(named ? { name: spec.name } : {}),
     version: pyStr(spec.version ?? "1.0.0"),
     description: str(spec.description).trim(),

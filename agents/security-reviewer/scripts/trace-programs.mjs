@@ -27,9 +27,25 @@
 // extension, a test only when no program imports it, and a comment only where
 // it is one (a quote that does not close on its line opens no string).
 //
+// A declared system of kind model (Common Agent 12.4.1) is reached through
+// four settings the install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and
+// MODEL_PROTOCOL: a program that reads them reaches that declared system, and
+// MODEL_KEY is its setting, never a credential nobody declared.
+//
+// Separately, and the same way on every run, every address literal a program
+// carries is listed as a warning with its file, line and address (Common
+// Agent 12.10: a scheme of http, https, ws or wss, then :// and a letter, a
+// digit or [; or an IPv4 address in the 169.254 link-local block; comments included; outside the
+// seven identifier prefixes 12.10 excepts), and so is the metadata server's
+// host name. A warning is found here, by a program, before any model is
+// asked; nothing a package or a message says removes one, and a warning alone
+// refuses nothing. A model service's own address is warned about like any
+// other, declared or not.
+//
 //   needs: node >= 22
-//   import { tracePrograms, matchReaches } from "./trace-programs.mjs"
+//   import { tracePrograms, matchReaches, addressWarnings } from "./trace-programs.mjs"
 import { dirname, join, normalize } from "node:path";
+import { scrub } from "./secrets.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -64,18 +80,48 @@ export const PLATFORM_HOSTS = [
   { system: "(the mesh)", hosts: [/(?:^|\.)agentmesh\.ai$/] },
 ];
 
-/** Variables the host places that are not credentials: where the job is,
- *  which model it runs, its ceilings, its binaries and the platform's address. */
+/** Variables the host places that are not credentials: where the job is, its
+ *  ceilings, its binaries and the platform's address. Only a name that looks
+ *  like a credential is ever looked up here. */
 export const PLACED_VARS = [
-  /^AGENT_(?:MODEL|MODEL_REPLAY|MODEL_REUSE|NAME|DEPS|JOB_SECONDS|BINDING_DIR|DIRECTORY_[A-Z_]+)$/, /^GOOGLE_CLOUD_(?:PROJECT|LOCATION)$/,
-  /^VERTEX_WHERE$/, /^GCE_METADATA_HOST$/, /^CEILING_[A-Z0-9_]+$/, /^BINARY_[A-Z0-9_]+$/, /^AGENTMESH_ENV$/,
+  /^AGENT_(?:MODEL_REPLAY|MODEL_REUSE|NAME|DEPS|JOB_SECONDS|BINDING_DIR|DIRECTORY_[A-Z_]+)$/,
+  /^CEILING_[A-Z0-9_]+$/, /^BINARY_[A-Z0-9_]+$/, /^AGENTMESH_ENV$/,
   /^(?:PATH|HOME|TMPDIR|TEMP|TMP|USER|LANG|TZ|PWD|SHELL|CI|NODE_ENV|NODE_OPTIONS|NODE_PATH|PYTHONPATH|DEBUG)$/,
 ];
 
-/** The keys the deployment manager places beside AGENT_MODEL for the model it
- *  gives the agent (agents/deployment-manager/steps.py, PROVIDERS): reading
- *  one reaches the model the agent is given, which is part of the derived set. */
-export const MODEL_KEY_VARS = ["GOOGLE_GENERATIVE_AI_API_KEY", "ANTHROPIC_API_KEY"];
+/** The four settings a model system is reached through (Common Agent 12.4.1). */
+export const MODEL_SETTINGS = ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL"];
+
+// The names packages written before 12.4.1 read for the model the platform
+// gave them, and the keys placed beside it. They are names this script must
+// recognize in someone else's program, never variables it reads itself, so
+// they are built from parts and no script here carries them whole.
+const OLD_MODEL_NAME = ["AGENT", "MODEL"].join("_");
+const OLD_MODEL_WHERE = [["VERTEX", "WHERE"].join("_"), ["GOOGLE", "CLOUD", "PROJECT"].join("_")];
+
+/** The model keys a program may read for the model it is given: MODEL_KEY,
+ *  and the provider keys placed before 12.4.1. Reading one where the package
+ *  declares no model system reaches the model the agent is given, which is
+ *  part of the derived set, and the review says a caller is not told. */
+export const MODEL_KEY_VARS = ["MODEL_KEY", ["GOOGLE", "GENERATIVE", "AI", "API", "KEY"].join("_"), "ANTHROPIC_API_KEY"];
+
+/** A system the package declares as its model: of kind model, or by the
+ *  reserved name of one. */
+export const MODEL_SYSTEMS = ["text-reasoning", "image-reading"];
+export const isModelSystem = (s) => s?.kind === "model" || MODEL_SYSTEMS.includes(s?.name);
+
+// The metadata server's host name, which 12.10's address check counts on its
+// own. It is data this script must recognize in someone else's file, never an
+// address it calls, so it is built from parts.
+export const METADATA_HOST = ["metadata", "google", "internal"].join(".");
+
+// The seven identifier prefixes 12.10 excepts: a format's name spelled as an
+// address, which no program goes to. Built from parts for the same reason.
+const ID = (scheme, rest) => `${scheme}:/` + `/${rest}`;
+export const IDENTIFIERS = [
+  ID("http", "www.w3.org/"), ID("https", "www.w3.org/"), ID("http", "json-schema.org/"), ID("https", "json-schema.org/"),
+  ID("http", "purl.org/"), ID("http", "schemas.openxmlformats.org/"), ID("http", "schemas.microsoft.com/"),
+];
 
 /** A variable whose name says it holds a credential. */
 export const CREDENTIAL_VAR = /(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|CREDS|AUTH|SEED|JWT)(?:_|$)/;
@@ -164,6 +210,46 @@ export function hostOf(authority) {
   a = a.replace(/\$\{[^}]*\}/g, "").replace(/:\d*$/, "").toLowerCase().replace(/^[.-]+|\.$/g, "");
   return /^[a-z0-9.-]+$/.test(a) && (a.includes(".") || a === "localhost") ? a : "";
 }
+/** The whole address written from where a match starts, to the first space,
+ *  quote or bracket, without the punctuation of the sentence around it. */
+const wholeAddress = (line, at) => (/^[^\s"'`<>\\]*/.exec(line.slice(at))?.[0] ?? "").replace(/[.,;:)]+$/, "");
+
+// The address check of 12.10, as patterns: a scheme and :// then a letter, a
+// digit or [, in any case; and an IPv4 address in the 169.254 link-local block.
+const LITERAL_RE = /\b(?:https?|wss?):\/\/[A-Za-z0-9[]/gi;
+const OCTET = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+const LINK_LOCAL_RE = new RegExp(`(?<![\\w.])169\\.254\\.${OCTET}\\.${OCTET}(?![\\w.])`, "g");
+const METADATA_RE = new RegExp(`\\b${METADATA_HOST.replace(/\./g, "\\.")}\\b`, "gi");
+const isIdentifier = (a) => IDENTIFIERS.some((p) => a.toLowerCase().startsWith(p));
+
+/** Every address literal on one line, in order: each address once, as the
+ *  whole address it is written in, an excepted identifier left out. Any
+ *  credential-shaped part of an address is scrubbed, never repeated. */
+export function addressesOnLine(line) {
+  const out = [];
+  const text = String(line ?? "");
+  let rest = text;
+  for (const m of text.matchAll(LITERAL_RE)) {
+    const a = wholeAddress(text, m.index);
+    if (!isIdentifier(a)) out.push(a);
+    // The address is counted once, as itself: a host inside it is not counted again.
+    rest = rest.slice(0, m.index) + " ".repeat(a.length || m[0].length) + rest.slice(m.index + (a.length || m[0].length));
+  }
+  for (const re of [METADATA_RE, LINK_LOCAL_RE]) for (const m of rest.matchAll(re)) out.push(m[0]);
+  return [...new Set(out.map((a) => scrub(a)))];
+}
+
+/** The address warnings for one file's text: { file, line, address } for
+ *  every address literal, comments included, in the order they are written.
+ *  The same text gives the same warnings every time. */
+export function addressWarnings(file, text) {
+  const out = [];
+  String(text ?? "").split("\n").forEach((raw, at) => {
+    for (const address of addressesOnLine(raw)) out.push({ file, line: at + 1, address });
+  });
+  return out;
+}
+
 /** A program that drives a browser, and one that routes the browser's requests. */
 const BROWSER = /\b(?:playwright|puppeteer|chromium\.launch|page\.goto)\b/;
 const ROUTES = /\b(?:page|context|browserContext)\.route\s*\(|setRequestInterception\s*\(/;
@@ -173,9 +259,10 @@ const CALLS = /\b(?:fetch|fetchImpl|axios|got|urlopen|requests\.\w+|https?\.(?:g
 const DOOR = /^\s*(?:export\s+)?(?:(?:const|let|var)\s+)?[A-Za-z_$]?[\w$]*(?:url|endpoint|base|host|api|door|origin|root|server)[\w$]*\s*=\s*["'`]/i;
 const FETCH_CALL = /\b(?:fetch|fetchImpl|got|axios(?:\.\w+)?|urlopen|requests\.(?:get|post|put|patch|delete)|https?\.(?:get|request)|page\.goto)\s*\(\s*([^)\n]*)/g;
 const SHELL_FETCH = /\b(?:curl|wget)\s+([^\n|;&]*)/g;
+// A read through optional chaining (env?.MODEL_ENDPOINT) is a read like any other.
 const ENV_READ = [
-  /process\.env\.([A-Z][A-Z0-9_]*)/g, /process\.env\[\s*["'`]([A-Z][A-Z0-9_]*)["'`]\s*\]/g,
-  /\benv\.([A-Z][A-Z0-9_]*)\b/g, /\benv\[\s*["'`]([A-Z][A-Z0-9_]*)["'`]\s*\]/g,
+  /process\.env(?:\?\.|\.)([A-Z][A-Z0-9_]*)/g, /process\.env(?:\?\.)?\[\s*["'`]([A-Z][A-Z0-9_]*)["'`]\s*\]/g,
+  /\benv(?:\?\.|\.)([A-Z][A-Z0-9_]*)\b/g, /\benv(?:\?\.)?\[\s*["'`]([A-Z][A-Z0-9_]*)["'`]\s*\]/g,
   /os\.environ(?:\.get)?\s*[[(]\s*["']([A-Z][A-Z0-9_]*)["']/g, /os\.getenv\(\s*["']([A-Z][A-Z0-9_]*)["']/g,
 ];
 const SHELL_VAR = /\$\{?([A-Z][A-Z0-9_]{2,})\}?/g;
@@ -206,7 +293,8 @@ export function traceOne(path, text) {
       const host = hostOf(m[2]);
       if (!host || NOT_REACHED.some((r) => r.test(host))) continue;
       const list = CALLS.test(raw) || DOOR.test(raw) ? hosts : written;
-      if (!list.some((h) => h.host === host)) list.push({ host, line: at + 1, scheme: m[1] });
+      // The whole address is kept beside its host, so a refusal can name it.
+      if (!list.some((h) => h.host === host)) list.push({ host, line: at + 1, scheme: m[1], address: wholeAddress(raw, m.index) });
     }
   });
   lines.forEach((line, at) => {
@@ -247,8 +335,10 @@ export function resolveIn(files, spec) {
 
 /** Every code file the package carries, traced. A test is left out, and
  *  counted, only when nothing traced imports it, followed through every
- *  import, re-export and require, test to test included. */
-export function tracePrograms(files, programs = null) {
+ *  import, re-export and require, test to test included. Every traced file,
+ *  and every run command the runtime requirements name, is read for address
+ *  warnings too: { traced, tests, warnings }. */
+export function tracePrograms(files, programs = null, { requirementsFile = "" } = {}) {
   const NM = /(?:^|\/)node_modules\//;
   const code = [...files.keys()].filter((p) => !NM.test(p) && isCode(p, files.get(p))).sort();
   const list = programs ? [...new Set([...programs, ...code])].filter((p) => files.has(p)).sort() : code;
@@ -263,11 +353,37 @@ export function tracePrograms(files, programs = null) {
   }
   const traced = [];
   const tests = [];
+  const warnings = [];
   for (const p of list) {
     if (!keep.has(p)) { tests.push(p); continue; }
-    traced.push(traceOne(p, files.get(p).toString("utf8")));
+    const text = files.get(p).toString("utf8");
+    warnings.push(...addressWarnings(p, text));
+    traced.push(traceOne(p, text));
   }
-  return { traced, tests };
+  warnings.push(...runCommandWarnings(files, requirementsFile));
+  return { traced, tests, warnings };
+}
+
+/** The address warnings for the run commands the runtime requirements name:
+ *  an address written into a command is one a script is started with. */
+export function runCommandWarnings(files, requirementsFile = "") {
+  if (!requirementsFile || !files.has(requirementsFile)) return [];
+  const raw = files.get(requirementsFile).toString("utf8");
+  let run;
+  try { run = JSON.parse(raw)?.run; } catch { return []; }
+  if (!run || typeof run !== "object") return [];
+  const words = new Set();
+  const walk = (v) => { if (typeof v === "string") words.add(v); else if (v && typeof v === "object") for (const x of Object.values(v)) walk(x); };
+  for (const job of Object.values(run)) walk(job?.command);
+  const lines = raw.split("\n");
+  const out = [];
+  for (const w of words) {
+    for (const address of addressesOnLine(w)) {
+      const at = lines.findIndex((l) => l.includes(JSON.stringify(w).slice(1, -1)));
+      if (!out.some((x) => x.address === address && x.line === at + 1)) out.push({ file: requirementsFile, line: at + 1, address });
+    }
+  }
+  return out.sort((a, b) => a.line - b.line);
 }
 
 /** Domains many unrelated sites share: a reason must name the host itself
@@ -284,22 +400,29 @@ export function domainOf(host) {
 
 /**
  * Match what the programs reach against what the package declares. Returns
- * { reaches: [{ host, files, system, by }], unmatched, written, openFetches,
- *   unmatchedOpen, browsers, credentialVars, modelKeys, meshKeys, undeclaredCommands }.
+ * { reaches: [{ host, files, addresses, system, by }], unmatched, written,
+ *   openFetches, unmatchedOpen, browsers, credentialVars, modelKeys, meshKeys,
+ *   undeclaredCommands, undeclaredModel }.
  * `egressHosts` are the further destinations the architecture record names.
  */
 export function matchReaches({ traced, systems = [], binaries = [], egressHosts = [] }) {
   const declared = new Set(systems.map((s) => s.name));
-  // The model the platform gives the agent (AGENT_MODEL and the key placed
-  // beside it) is part of the derived set even where no model system is
-  // declared; the review says when a caller is not told about it.
-  const modelGiven = traced.some((t) => t.vars.some((v) => ["AGENT_MODEL", "VERTEX_WHERE", "GOOGLE_CLOUD_PROJECT"].includes(v) || MODEL_KEY_VARS.includes(v)));
-  const MODEL_SYSTEMS = ["text-reasoning", "image-reading"];
+  // The package's own model system: one of kind model, or by a model's
+  // reserved name. Its addresses are text-reasoning's, whatever it is called.
+  const modelSystem = systems.find((s) => s.kind === "model") ?? systems.find(isModelSystem) ?? null;
+  // The model the platform gives the agent (its model settings, or the names
+  // read before 12.4.1, and the key placed beside it) is part of the derived
+  // set even where no model system is declared; the review says when a caller
+  // is not told about it.
+  const modelGiven = traced.some((t) => t.vars.some((v) => MODEL_SETTINGS.includes(v) || v === OLD_MODEL_NAME || OLD_MODEL_WHERE.includes(v) || MODEL_KEY_VARS.includes(v)));
   const match = (host) => {
-    const platform = PLATFORM_HOSTS.find((p) => p.hosts.some((re) => re.test(host)) && (p.system === "(the mesh)" || declared.has(p.system)));
-    if (platform) return { system: platform.system, by: platform.system === "(the mesh)" ? "the platform the agent is installed on" : `the platform's own address for ${platform.system}` };
+    const platform = PLATFORM_HOSTS.find((p) => p.hosts.some((re) => re.test(host)) && (p.system === "(the mesh)" || declared.has(p.system) || (p.system === "text-reasoning" && modelSystem)));
+    if (platform) {
+      const system = platform.system === "text-reasoning" && !declared.has("text-reasoning") ? modelSystem.name : platform.system;
+      return { system, by: system === "(the mesh)" ? "the platform the agent is installed on" : `the platform's own address for ${system}` };
+    }
     const model = modelGiven && PLATFORM_HOSTS.find((p) => MODEL_SYSTEMS.includes(p.system) && p.hosts.some((re) => re.test(host)));
-    if (model) return { system: "(the model it is given)", by: "the model the platform gives the agent (AGENT_MODEL)" };
+    if (model) return { system: "(the model it is given)", by: "the model the platform gives the agent" };
     const egress = egressHosts.find((e) => host === e || host.endsWith(`.${e}`));
     if (egress) return { system: "(further destination)", by: "the architecture record's egress names it" };
     // A reason names a host by the host itself or its whole domain, never by
@@ -315,8 +438,9 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
   const collect = (key) => {
     const byHost = new Map();
     for (const t of traced) for (const h of t[key] ?? []) {
-      const got = byHost.get(h.host) ?? { host: h.host, files: [] };
+      const got = byHost.get(h.host) ?? { host: h.host, files: [], addresses: [] };
       got.files.push(`${t.path}:${h.line}`);
+      if (h.address && !got.addresses.includes(h.address)) got.addresses.push(h.address);
       byHost.set(h.host, got);
     }
     return [...byHost.values()];
@@ -342,12 +466,14 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
     else if (!unmatched.some((u) => u.host === r.host)) { written.push(r); unmatched.push({ ...r, written: true }); }
   }
 
-  // A call to an address the program is handed. It is the call of an address
-  // this same program writes down (a model's door built from its host), or of
-  // a declared system whose reason says it fetches what it is handed (pages at
-  // a domain the person names); else it reaches whatever it is handed and
-  // nothing the declaration names covers it. A program that also writes down
-  // an address nothing covers is not excused by its others.
+  // A call to an address the program is handed. It is the call of the
+  // declared model system, when the program reads MODEL_ENDPOINT, the setting
+  // the install places that system's address in; or of an address this same
+  // program writes down (a model's door built from its host); or of a declared
+  // system whose reason says it fetches what it is handed (pages at a domain
+  // the person names); else it reaches whatever it is handed and nothing the
+  // declaration names covers it. A program that also writes down an address
+  // nothing covers is not excused by its others.
   const FETCHING = /\b(?:fetch(?:es|ing)?|download(?:s|ing)?|crawl(?:s|ing)?|brows(?:e|es|ing)|open(?:s|ing)? (?:the |those |each )?pages)\b/i;
   const fetchers = systems.filter((s) => s.kind === "service" && ["read", "trigger"].includes(s.access) && FETCHING.test(s.needs ?? ""));
   const openFetches = [];
@@ -358,6 +484,7 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
     const strays = [...unmatched, ...written].filter(inFile);
     const own = reaches.filter(inFile);
     const by = strays.length ? ""
+      : modelSystem && t.vars.includes("MODEL_ENDPOINT") ? `${modelSystem.name}, the declared model system, reached through its four settings (MODEL_ENDPOINT)`
       : own.length ? `the addresses this program writes down (${[...new Set(own.map((r) => r.host))].join(", ")})`
         : fetchers.length ? `${fetchers.map((s) => s.name).join(", ")}, whose stated reason is fetching what it is handed` : "";
     for (const o of t.open) (by ? openFetches : unmatchedOpen).push({ file: `${t.path}:${o.line}`, what: o.what, by, strays: strays.map((s) => s.host) });
@@ -369,6 +496,9 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
     if (s.env) placedOrDeclared.add(s.env);
     for (const st of s.settings ?? []) if (st.env) placedOrDeclared.add(st.env);
   }
+  // A declared model system's four settings are its own, placed by the
+  // install: MODEL_KEY among them is that system's credential, declared.
+  if (modelSystem) for (const v of MODEL_SETTINGS) placedOrDeclared.add(v);
   const vars = new Map();
   const modelKeys = [];
   const meshKeys = [];
@@ -402,6 +532,6 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
   for (const t of traced) {
     if (t.browser && !bins.some((b) => /chrom|firefox|webkit/.test(b))) undeclaredCommands.push({ file: t.path, what: "a browser" });
   }
-  const undeclaredModel = modelGiven && !systems.some((s) => MODEL_SYSTEMS.includes(s.name));
+  const undeclaredModel = modelGiven && !modelSystem;
   return { reaches, unmatched, written, openFetches, unmatchedOpen, browsers, credentialVars: [...vars.values()], modelKeys, meshKeys, undeclaredCommands, undeclaredModel };
 }

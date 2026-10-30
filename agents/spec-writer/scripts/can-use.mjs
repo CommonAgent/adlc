@@ -103,10 +103,12 @@ export function fitCanUse(spec, architecture = null, table = null) {
   return { spec: next, notes };
 }
 
-/** What is wrong with a draft's can_use, as sentences a model can act on. */
-export function canUseProblems(spec, architecture = null, table = null) {
+/** What is wrong with a draft's can_use, as sentences a model can act on.
+ *  Given the spec or its can_use entries alone; with no table named, the
+ *  list of known kinds is the one this agent pins. */
+export function canUseProblems(spec, architecture = null, table = loadSchemas()) {
   const out = [];
-  const entries = Array.isArray(spec?.can_use) ? spec.can_use : [];
+  const entries = Array.isArray(spec) ? spec : Array.isArray(spec?.can_use) ? spec.can_use : [];
   const known = new Set((table?.schemas ?? []).map((s) => s.schema));
   const decided = Array.isArray(architecture?.standing_assets) ? architecture.standing_assets : null;
   for (const e of entries) {
@@ -121,6 +123,31 @@ export function canUseProblems(spec, architecture = null, table = null) {
     if (!entries.some((e) => trim(e?.schema) === schema)) out.push(`the architecture record decides the standing asset ${schema} and the draft does not declare it in can_use`);
   }
   return out;
+}
+
+/** The schemas of the known kinds of standing asset, from the list this
+ *  agent pins. */
+export function knownSchemas(table = loadSchemas()) {
+  return (table?.schemas ?? []).map((s) => trim(s?.schema)).filter(Boolean);
+}
+
+/** The house rule's entry for one schema, whatever the outputs: what it
+ *  reads, required false, and its does and without; null for a schema the
+ *  house rule does not name. */
+export function houseRuleFor(schema, kinds = [], table = loadSchemas()) {
+  return houseEntry(trim(schema), kinds, table);
+}
+
+/** What the agent does when none of this standing asset is given, as the
+ *  house rule says it; "" for a schema the house rule does not name. */
+export function withoutFor(schema, kinds = [], table = loadSchemas()) {
+  return houseRuleFor(schema, kinds, table)?.without ?? "";
+}
+
+/** can_use entries held to the record, as fitCanUse holds a draft's: the
+ *  entries left, or undefined when none are. */
+export function cleanCanUse(entries = [], architecture = null, table = loadSchemas()) {
+  return fitCanUse({ can_use: Array.isArray(entries) ? entries : [] }, architecture, table).spec.can_use;
 }
 
 /** The sentence the model is given with the record. */
