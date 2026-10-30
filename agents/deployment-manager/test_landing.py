@@ -353,6 +353,7 @@ class APlacementHoldsOnlyTheLockItWasHanded(unittest.TestCase):
         self.assertEqual(json.loads(p.stdout.strip().splitlines()[-1])["step"], "lock")
 
     def test_a_descriptor_that_is_not_the_lock_is_refused(self):
+        os.close(os.open(self.lock, os.O_RDONLY | os.O_CREAT, 0o644))
         fd = os.open(os.path.join(TMP, "something-else"), os.O_RDONLY | os.O_CREAT, 0o644)
         self.addCleanup(os.close, fd)
         with mock.patch.dict(os.environ, {steps.NODE_LOCK_FD_VAR: str(fd)}):
