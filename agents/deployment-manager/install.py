@@ -413,10 +413,17 @@ def read_package(pkg_dir):
         elif isinstance(dep.get("sha256"), str) and sha256_file(lp) != dep["sha256"]:
             problems.append(f"lockfile {dep['lockfile']} does not hash to the digest the install file names")
 
-    # Values nowhere, hidden characters nowhere.
+    # Values nowhere, hidden characters nowhere. A string that names a file the
+    # package itself carries (an offering's example, such as
+    # skills/transcribe/references/example-narration-12s.mp3) is a path, not a
+    # value, however long its run of letters and digits.
+    root = os.path.normpath(pkg_dir)
+    def carried(s):
+        p = os.path.normpath(os.path.join(root, s))
+        return p.startswith(root + os.sep) and os.path.isfile(p)
     for doc, label in ((descriptor, "the descriptor"), (install, "the install file")):
         for s in strings_in(doc or {}):
-            if looks_like_value(s):
+            if looks_like_value(s) and not carried(s):
                 problems.append(f"{label} carries what looks like a credential value; a package names credentials and never carries them")
                 break
     if install is not None and "://" in json.dumps(install):

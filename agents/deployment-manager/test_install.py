@@ -209,6 +209,31 @@ class ReadingThePackage(unittest.TestCase):
         problems = install.read_package(d)["problems"]
         self.assertTrue(any("never a value" in p or "credential value" in p for p in problems), problems)
 
+    def test_a_file_the_package_carries_is_a_path_and_not_a_value(self):
+        # An offering's example names a file inside the package; its long run
+        # of letters and digits is a path, not a token (audio-video-transcriber
+        # 0.9.0 was refused for skills/transcribe/references/example-narration-12s.mp3).
+        d = copy_pkg()
+        name = "skills/check-the-fit/references/example-narration-12s.mp3"
+        os.makedirs(os.path.join(d, os.path.dirname(name)), exist_ok=True)
+        with open(os.path.join(d, name), "wb") as f:
+            f.write(b"ID3")
+        rewrite(d, "descriptor.json", lambda doc: doc.update({"example_file": name}))
+        problems = install.read_package(d)["problems"]
+        self.assertEqual(problems, [])
+
+    def test_a_token_like_string_that_names_no_carried_file_is_still_a_value(self):
+        d = copy_pkg()
+        rewrite(d, "descriptor.json", lambda doc: doc.update({"example_file": "skills/check-the-fit/references/notthere0123456789.mp3"}))
+        problems = install.read_package(d)["problems"]
+        self.assertTrue(any("the descriptor carries what looks like a credential value" in p for p in problems), problems)
+
+    def test_a_token_in_the_descriptor_is_still_a_value(self):
+        d = copy_pkg()
+        rewrite(d, "descriptor.json", lambda doc: doc.update({"note": "Zx9kQ2mV7pL4rT8wY1bN6cJ3hF5dS0aG"}))
+        problems = install.read_package(d)["problems"]
+        self.assertTrue(any("the descriptor carries what looks like a credential value" in p for p in problems), problems)
+
     def test_a_package_from_before_the_format_still_reads(self):
         d = copy_pkg()
         mp = os.path.join(d, "plugin.json")
