@@ -17,6 +17,8 @@ import { readFileSync } from "node:fs";
 import { canUseProblems, loadSchemas } from "./can-use.mjs";
 import { optionProblems } from "./options.mjs";
 import { jobSecondsProblem } from "./job-seconds.mjs";
+import { runReplyProblems } from "./run-reply.mjs";
+export { RUN_REPLY_MEMBER, RUN_REPLY_STDOUT, fitRunReply, runReplyOk, runReplyProblems } from "./run-reply.mjs";
 export { JOB_SECONDS_MAX, JOB_SECONDS_MIN, fitJobSeconds, jobSecondsProblem } from "./job-seconds.mjs";
 
 const trim = (s) => String(s ?? "").trim();
@@ -354,6 +356,9 @@ export function checkSpec(spec) {
   // on 2026-10-03 with 30, and vowel-gauge's on 2026-10-31 (debt 648).
   const timed = jobSecondsProblem(spec);
   if (timed) out.push(timed);
+  // The same for a job's run.reply: the package maker takes 'stdout' or
+  // 'json:<member>' and nothing else (vowel-scale's "text:counts", debt 652).
+  out.push(...runReplyProblems(spec));
   if (!spec.price || typeof spec.price !== "object") out.push("no price; seven of the eight existing packages are flat and one is free, and a spec with neither has not decided");
   return out;
 }

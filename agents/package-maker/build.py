@@ -208,6 +208,20 @@ JOB_SECONDS_MIN = 60
 JOB_SECONDS_MAX = 7200
 
 
+# What a job's run.reply may be: the command's whole output, or one member of
+# the JSON object it prints, as json:<member>. Named once here; the spec
+# writer's run-reply.mjs carries the same two words, and its
+# test/run-reply.test.mjs reads them from this file (technical debt 652).
+RUN_REPLY_STDOUT = "stdout"
+RUN_REPLY_MEMBER = "json:"
+
+
+def run_reply_ok(reply):
+    """Whether run.reply is one the host can read the reply by."""
+    return reply == RUN_REPLY_STDOUT or (
+        isinstance(reply, str) and reply.startswith(RUN_REPLY_MEMBER) and len(reply) > len(RUN_REPLY_MEMBER))
+
+
 RESERVED_SYSTEMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "system-names.json")
 
 
@@ -612,9 +626,9 @@ def run_command(job):
     mf = r.get("message_file")
     if mf is not None and not (isinstance(mf, str) and mf.strip()):
         fail(f"job {slug}: run.message_file is where the sender's text is written before the command runs")
-    reply = r.get("reply", "stdout")
-    if not (reply == "stdout" or (isinstance(reply, str) and reply.startswith("json:") and len(reply) > 5)):
-        fail(f"job {slug}: run.reply is 'stdout' or 'json:<member>'; bad: {reply!r}")
+    reply = r.get("reply", RUN_REPLY_STDOUT)
+    if not run_reply_ok(reply):
+        fail(f"job {slug}: run.reply is '{RUN_REPLY_STDOUT}' or '{RUN_REPLY_MEMBER}<member>'; bad: {reply!r}")
     for where, elements, allowed in (
             ("command", cmd, RUN_PLACEHOLDERS),
             ("message_file", [mf] if mf else [], RUN_PLACEHOLDERS),
