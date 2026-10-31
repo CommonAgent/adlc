@@ -26,6 +26,7 @@ Every script the spec names, under scripts/, in the house stack, passing every t
 - the scripts (text/javascript, per task)
 - the account (text/markdown, per task)
 - the run record (application/vnd.agentmesh.code-runs+json, per task)
+- the conflict (text/markdown, per task)
 
 ## When it comes back empty
 

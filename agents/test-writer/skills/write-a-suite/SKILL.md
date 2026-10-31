@@ -17,6 +17,7 @@ when a spec exists and its scripts do not yet, and somebody wants the tests thos
 - the suite it already has (text/javascript, optional)
 - the files the change depends on (text/javascript, optional)
 - what to add (text, optional)
+- what the code step sent back (text, optional)
 
 ## What a good result looks like
 
