@@ -44,3 +44,12 @@ pass, 1 skipped.
 
 The harness (Claude Code) stood in for the test and code steps, the tests
 first.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc efdb8ce: sha256
+  99eaef5b01a55496c89ca5caa4abfd45c18908659f34f4b6071dc211910d3901.
+- Installed by the deployment manager from deploy request
+  dr_sxf3xaJuZm2pOeRNr0fQXeuG, approved by the platform account, same settings.
+- Not yet proven by a build: platform@agentmesh.ai reached the dev limit of 12
+  new agents for the day before the next build could start.

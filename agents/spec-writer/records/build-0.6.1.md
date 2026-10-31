@@ -44,3 +44,17 @@ pass, 1 skipped.
 
 The harness (Claude Code) stood in for the test and code steps, the tests
 first.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 9fb4b00: sha256
+  0ddfe4283d19dfb17952e10da9e1c73c2091fd2d455fe9ace443b3db420a5360.
+- Installed by the deployment manager from deploy request
+  dr_2PhbXDIkEYQLEydyfU4yAW90, approved by the platform account, with the
+  settings 0.6.0 ran on (MODEL_PROTOCOL gemini, MODEL_NAME gemini-3.8-flash).
+- Proof: build ab_481ac696b24d8cf8fd (vowel-scale 0.1.0) came through Requirements
+  with job_seconds 60 in agent-runtime-requirements.json. It stopped at Code on
+  a test-writer defect (a count pinned as a bare number), fixed in test-writer
+  0.6.3, so Package was not reached in this build.
+- The package maker installed on the fleet host is unchanged: build.py's change
+  names its range and keeps its behaviour and words.
