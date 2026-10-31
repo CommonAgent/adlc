@@ -30,7 +30,7 @@ Run it as often as you like. It runs the suite and prints each failing test by n
 
 ## When you stop
 
-You stop in one of three ways, and each one is said in the reply. The check exits 0: write records/account.md, a few plain sentences saying what you wrote and any decision the spec did not settle, then report and file the pieces. The check exits 4: the rounds are used up; write the account saying where you got to, report, and nothing is delivered. Or you find a test that cannot pass without breaking what the spec says: write records/conflict.md naming the test and the line of the spec it contradicts, report, and nothing is delivered. Which of the two is wrong is a person's call at the review gate, never yours.
+You stop in one of three ways, and each one is said in the reply. The check exits 0: write records/account.md, a few plain sentences saying what you wrote and any decision the spec did not settle, then report and file the pieces. The check exits 4: the rounds are used up; write the account saying where you got to, report, and nothing is delivered. Or you find a test that cannot pass without breaking what the spec says: write records/conflict.md naming the test file, the test by its name, its line and the line of the spec it contradicts, write the account, report, and run pieces.mjs, which files the conflict as the one piece and no script. Which of the two is wrong is a person's call at the review gate, never yours; when it is the test, the build sends the suite back to the test writer and asks you again with the revised suite.
 
 A blanked script the suite did not notice is not yours to fix either, because fixing it means writing a test. It is recorded, it is said in the reply for the critic, and delivery goes ahead.
 

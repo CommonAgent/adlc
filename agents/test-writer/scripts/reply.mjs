@@ -33,6 +33,12 @@ export function wroteLine(declared = null, suite = null, checked = null) {
   }
   const names = files.map((f) => f.path.replace(/^test\//, "")).join(", ");
   const kept = suite?.kept ?? [];
+  const revised = suite?.revised ?? [];
+  if (revised.length) {
+    const each = files.map((f) => `${f.path.replace(/^test\//, "")} (${plural(f.tests ?? 0, "test")})`).join(", ");
+    return `Revised ${plural(revised.length, "test file")} the code step sent back for ${who}: ${each}.`
+      + (kept.length ? ` The other ${plural(kept.length, "file")} ${kept.length === 1 ? "was" : "were"} kept exactly as ${kept.length === 1 ? "it was" : "they were"} and ${kept.length === 1 ? "is" : "are"} not sent back.` : "");
+  }
   if (kept.length) {
     return `Added ${plural(tests, "test")} in ${plural(files.length, "new file")} to the suite ${who} already has: ${names}. The ${plural(kept.length, "file")} it already had ${kept.length === 1 ? "was" : "were"} kept exactly as ${kept.length === 1 ? "it was" : "they were"} and ${kept.length === 1 ? "is" : "are"} not sent back.`;
   }

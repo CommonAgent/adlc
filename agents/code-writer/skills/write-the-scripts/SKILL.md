@@ -26,6 +26,7 @@ Every script the spec names, under scripts/, in the house stack, passing every t
 - the scripts (text/javascript, per task)
 - the account (text/markdown, per task)
 - the run record (application/vnd.agentmesh.code-runs+json, per task)
+- the conflict (text/markdown, per task)
 
 ## When it comes back empty
 
@@ -47,7 +48,7 @@ You may write only under <workspace>/scripts/, and the two files <records folder
 
 3. When the check exits 0, write <records folder>/account.md: a few plain sentences saying what you wrote and any decision the spec did not settle, and anything the job went without. Then RECORDS=<records folder> node ~/code-writer/skills/write-the-scripts/scripts/report.mjs, and JOB_DIR=<job folder> RECORDS=<records folder> node ~/code-writer/skills/write-the-scripts/scripts/pieces.mjs. Read the report from the command's own output; never redirect it to /tmp or anywhere outside the workspace and the records folder, because those are the only places you may write and a file elsewhere cannot be read back. The report's `reply` field is your whole answer; print it and nothing else.
 
-When the check exits 4, write the account saying where you got to and run report.mjs; nothing is delivered and its reply says so. When you find a test that cannot pass without breaking what the spec says, write <records folder>/conflict.md naming the test and the line of the spec it contradicts, run report.mjs, and stop: which of the two is wrong is a person's call, never yours. In both cases do not run pieces.mjs.
+When the check exits 4, write the account saying where you got to and run report.mjs; nothing is delivered and its reply says so. When you find a test that cannot pass without breaking what the spec says, write <records folder>/conflict.md naming the test file, the test by its name, its line and the line of the spec it contradicts, run report.mjs and then pieces.mjs, which files the conflict as the one piece and no script, and stop: which of the two is wrong is a person's call, never yours. When the rounds are used up, do not run pieces.mjs.
 
 Never write a test. Never change a test to make a script pass. Never deliver scripts the suite fails.
 

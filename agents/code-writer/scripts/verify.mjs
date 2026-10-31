@@ -168,6 +168,17 @@ export function verify(jobDir, { spawn } = {}) {
   // A hand-off delivery is the build folder archive and no scripts.
   const archive = join(jobDir, "out", BUILD_ARCHIVE);
   if (existsSync(archive) && !filesUnder(join(jobDir, "out", "scripts")).length) return verifyBuildFolder(archive);
+  // A conflict (debt 636): the writer stopped on a test that cannot pass
+  // without breaking what the spec says, and delivers its words and no
+  // script, so the build that asked can show it to the person. It claims
+  // nothing is done, so there is nothing to run; a delivery is scripts or a
+  // conflict, never both.
+  const conflictAt = join(jobDir, "out", "conflict.md");
+  const conflict = existsSync(conflictAt) ? trim(readFileSync(conflictAt, "utf8")) : "";
+  if (conflict) {
+    if (filesUnder(join(jobDir, "out", "scripts")).length) return { ok: false, said: "the delivery carries scripts and a conflict; a delivery is scripts or a conflict, never both" };
+    return { ok: true, conflict: true, said: "no scripts: the writer stopped on a conflict between a test and the spec, delivered as conflict.md for a person to decide which is wrong" };
+  }
   const { spec, suite, agent, extras = [], buildFolder = false } = whatCameIn(jobDir);
   if (!spec) return { ok: false, said: "nothing under in/ is a spec, so there is nothing the delivery could be checked against" };
   if (!suite.length) return { ok: false, said: "no test file came in with the spec, so there is no suite to hold the delivery to" };
