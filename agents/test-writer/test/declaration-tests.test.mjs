@@ -143,6 +143,34 @@ test("a test touches a script when its body names one, a function imported from 
     "only the declaration test touches no script: the others call countWords, the renamed split, the ww namespace, or spawn through runIt");
 });
 
+test("starting a program, a helper beside the tests that cannot be read, or a test name that only looks like a function is read as it should be", () => {
+  const text = `// x
+import { test } from "node:test";
+import { spawnSync } from "node:child_process";
+import { words } from "../scripts/count.mjs";
+import { host } from "./helpers.mjs";
+const RUN = ["node", "x"];
+function go() { return spawnSync(process.execPath, RUN); }
+test("a command read from the runtime requirements is run", () => { go(); });
+test("a host from the helpers is set up", () => { host(); });
+test("counts count-words in the declaration", () => { JSON.parse("{}"); });
+`;
+  const file = { path: "test/x.test.mjs", text };
+  assert.deepEqual(scriptFreeTests(file, { files: [file], scripts: [] }), [lineOf(text, 'test("counts count-words')],
+    "a program started is a script reached; an unread helper is taken as touching; a test name is not code");
+  assert.deepEqual(scriptFreeTests(file, { files: [file], scripts: [], read: (p) => (p === "test/helpers.mjs" ? "export const host = () => 1;\n" : null) }),
+    [lineOf(text, 'test("a host from'), lineOf(text, 'test("counts count-words')], "a helper that reaches no script does not make a test touch one");
+});
+
+test("a file missing outside the package, or a stand-in that was called, is not the declaration's failure", () => {
+  const files = [{ path: "test/count.test.mjs", text: DEFECTIVE }];
+  const decl = lineOf(DEFECTIVE, 'test("the package declaration');
+  const at = (error) => unpassableFrom([{ file: "/tmp/x/package/test/count.test.mjs", line: decl, name: "d", failureType: "testCodeFailure", error }], { dir: "/tmp/x/package", files, scripts: [] });
+  assert.equal(at("ENOENT: no such file or directory, open '/tmp/x/standards/a.json'").length, 0, "outside the package");
+  assert.equal(at("ENOENT: no such file or directory, open '/tmp/x/package/agent-descriptor.json'").length, 1, "the package's own file missing is the declaration's");
+  assert.equal(at("stand-in: countWords is not written yet").length, 0);
+});
+
 test("the failures that count are the ones in tests that touch no script, and a parent failing for its children is not one", () => {
   const files = [{ path: "test/count.test.mjs", text: DEFECTIVE }];
   const decl = lineOf(DEFECTIVE, 'test("the package declaration');

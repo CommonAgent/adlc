@@ -11,6 +11,19 @@
 // a suite, and it is mechanical: nothing here judges whether a test is good,
 // only whether the suite notices when the thing it is for is gone.
 //
+// Against the agent's own files: a test that touches no script reads only
+// what the spec writer delivered (the descriptor, the manifest, the runtime
+// requirements, a SKILL.md), so no script can change whether it passes. It
+// must pass before any script exists. The suite is run once more beside the
+// agent's own files, with every script stood in by a module that exports the
+// names the suite imports and does nothing, so every file loads; each test
+// that fails there and whose body touches no script is named (technical debt
+// 618: a test asserting the descriptor's `name` and an offering's `offered`,
+// which the Common Agent descriptor does not carry, stopped every build at
+// the code step). Whether a body touches a script is read leniently: naming
+// a script, a function imported from one, or a helper that does is touching,
+// and a failure that cannot be placed in a test is not named.
+//
 // Nothing here edits a test. A failure against the real scripts belongs to
 // whoever owns the scripts, and the verdict says so.
 //
@@ -19,8 +32,9 @@
 //   [AGAINST=<package folder with scripts/>] node check-suite.mjs
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, posix, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, loadSpec } from "./agent-folder.mjs";
 
 const trim = (s) => String(s ?? "").trim();
@@ -147,6 +161,221 @@ export function standInRun({ spec, files, spawn, folder = null } = {}) {
   }
 }
 
+const IDENT = /^[A-Za-z_$][\w$]*$/;
+
+/** Every relative import in a suite file, with the package path it resolves
+ *  to from test/ ("../scripts/a.mjs" is "scripts/a.mjs"), whether that is a
+ *  script, the names it takes ({imported, local}; a default import is
+ *  "default") and the namespace it is bound to, if any. node's own modules
+ *  and bare packages are not the package's and are left out. */
+export function importsOf(text) {
+  const out = [];
+  const re = /\bimport\s+([\w$*{}\s,]+?)\s+from\s+["']([^"']+)["']/g;
+  for (const m of String(text ?? "").matchAll(re)) {
+    const spec = m[2];
+    if (!/^\.\.?\//.test(spec)) continue;
+    const from = posix.normalize(posix.join("test", spec));
+    const entry = { from, script: from.startsWith("scripts/"), names: [], namespace: null };
+    let clause = m[1].trim();
+    const braces = /\{([^}]*)\}/.exec(clause);
+    if (braces) {
+      for (const part of braces[1].split(",").map((s) => s.trim()).filter(Boolean)) {
+        const [imported, local] = part.split(/\s+as\s+/).map((s) => s.trim());
+        if (IDENT.test(imported)) entry.names.push({ imported, local: IDENT.test(local ?? "") ? local : imported });
+      }
+      clause = clause.replace(braces[0], "");
+    }
+    const ns = /\*\s*as\s+([A-Za-z_$][\w$]*)/.exec(clause);
+    if (ns) { entry.namespace = ns[1]; clause = clause.replace(ns[0], ""); }
+    const def = clause.split(",").map((s) => s.trim()).find((s) => IDENT.test(s));
+    if (def) entry.names.unshift({ imported: "default", local: def });
+    out.push(entry);
+  }
+  return out;
+}
+
+/** A stand-in that lets a file importing these names load: each is a
+ *  function that throws, saying it is a stand-in. Run as a program it does
+ *  nothing. A name that is not an identifier is left out. */
+export function declarationStandIn(names = []) {
+  const lines = [
+    "// A stand-in the test writer put here: it exports the names the suite imports and does nothing.",
+    "const standIn = (name) => function standIn() { throw new Error(`stand-in: ${name} is not written yet`); };",
+  ];
+  for (const n of [...new Set(names)]) {
+    if (n === "default") lines.push('export default standIn("default");');
+    else if (IDENT.test(n)) lines.push(`export const ${n} = standIn(${JSON.stringify(n)});`);
+  }
+  return lines.join("\n") + "\n";
+}
+
+/** The lines where a test, suite or case is declared in a file. */
+const testStarts = (text) => String(text ?? "").split("\n")
+  .map((l, i) => (/^\s*(?:test|it|describe|suite)(?:\.\w+)?\s*\(/.test(l) ? i + 1 : 0)).filter(Boolean);
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Code with its quoted strings and line comments blanked, so a test named
+ *  "counts count-words" does not read as calling `words`. Template literals
+ *  are kept, since what is inside `${}` is code. */
+const codeOnly = (text) => String(text).replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, '""').replace(/(^|[^:])\/\/.*$/gm, "$1");
+const mentions = (text, word) => new RegExp(`(?<![\\w$.])${escapeRe(word)}(?![\\w$])`).test(codeOnly(text));
+/** Starting a program: a test that does reaches a script, whether or not it
+ *  names it (a command read from agent-runtime-requirements.json does not). */
+const STARTS = /\b(?:spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\s*\(|process\.execPath/;
+
+/** The tests in a suite file whose body touches no script, by the line each
+ *  is declared on. A body is from its declaration to the next one. It
+ *  touches a script when it names a script (its file name, or a path under
+ *  scripts/), loads a module by import(), or names anything imported from a
+ *  script, a top-level helper in the file that touches one, or a name
+ *  imported from a file beside the tests that mentions the scripts or starts
+ *  a program, or that cannot be read (`read` is handed the package path of a
+ *  file that is not in the suite). Lenient on purpose: a test wrongly read as
+ *  touching is only not named. */
+export function scriptFreeTests(file, { files = [], scripts = [], read = () => null } = {}) {
+  const text = String(file?.text ?? "");
+  const lines = text.split("\n");
+  const scriptNames = [...new Set([...scripts, ...importsOf(text).filter((i) => i.script).map((i) => i.from)])]
+    .map((s) => String(s).split("/").pop()).filter(Boolean);
+  const namesScript = (t) => /scripts\/|["'`]scripts["'`]|\bimport\s*\(/.test(t) || STARTS.test(codeOnly(t)) || scriptNames.some((n) => t.includes(n));
+  const touching = new Set();
+  for (const i of importsOf(text)) {
+    const beside = i.script ? null : (files.find((f) => f.path === i.from)?.text ?? read(i.from));
+    if (i.script || typeof beside !== "string" || namesScript(beside)) {
+      for (const n of i.names) touching.add(n.local);
+      if (i.namespace) touching.add(i.namespace);
+    }
+  }
+  // Top-level helpers, each from its line to the next top-level line.
+  const starts = new Set(testStarts(text));
+  const tops = [];
+  lines.forEach((l, i) => {
+    const m = /^(?:export\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/.exec(l) || /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/.exec(l);
+    if (m) tops.push({ name: m[1], line: i + 1 });
+    else if (/^\S/.test(l) && !/^[}\])]/.test(l)) tops.push({ name: null, line: i + 1 });
+  });
+  const spans = tops.filter((t) => t.name && !starts.has(t.line)).map((t) => {
+    const next = tops.find((u) => u.line > t.line);
+    return { name: t.name, text: lines.slice(t.line - 1, next ? next.line - 1 : lines.length).join("\n") };
+  });
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const s of spans) {
+      if (touching.has(s.name)) continue;
+      if (namesScript(s.text) || [...touching].some((w) => mentions(s.text, w))) { touching.add(s.name); grew = true; }
+    }
+  }
+  const all = testStarts(text);
+  return all.filter((at, k) => {
+    const body = lines.slice(at - 1, k + 1 < all.length ? all[k + 1] - 1 : lines.length).join("\n");
+    return !namesScript(body) && ![...touching].some((w) => mentions(body, w));
+  });
+}
+
+/** The failures that no script can mend: a test's own code failing (not a
+ *  parent failing for its children, a hook, or a file that did not load),
+ *  in a test placed in the suite and touching no script. A file missing
+ *  outside the package is not the declaration's to answer for, and is not
+ *  named either. Pure, apart from `read`. */
+export function unpassableFrom(failures = [], { dir = "", files = [], scripts = [], read = () => null } = {}) {
+  const free = new Map(files.map((f) => [f.path, new Set(scriptFreeTests(f, { files, scripts, read }))]));
+  const out = []; const seen = new Set();
+  for (const f of failures) {
+    if (f?.failureType && f.failureType !== "testCodeFailure") continue;
+    if (!f?.file || !f.line) continue;
+    // A stand-in that was called says so: the test reached a script.
+    if (/stand-in: /.test(String(f.error ?? ""))) continue;
+    const missing = /ENOENT[^']*'([^']+)'/.exec(String(f.error ?? ""));
+    if (missing && dir && !resolve(missing[1]).startsWith(resolve(dir))) continue;
+    const file = String(f.file).startsWith("file:") ? new URL(f.file).pathname : String(f.file);
+    const path = relative(dir || ".", file).replace(/\\/g, "/");
+    const at = free.get(path) ?? free.get(files.find((x) => path.endsWith(x.path))?.path);
+    if (!at || !at.has(f.line)) continue;
+    const key = `${path}:${f.line}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ path: files.find((x) => path.endsWith(x.path))?.path ?? path, line: f.line, name: trim(f.name), error: trim(f.error).slice(0, 300) });
+  }
+  return out;
+}
+
+/** The reporter the declaration run uses: one JSON line per failure. */
+const REPORTER = `export default async function* report(source) {
+  for await (const e of source) {
+    if (e.type === "test:pass" && !e.data?.skip && !e.data?.todo) yield "DECLARATION-PASS\\n";
+    if (e.type !== "test:fail") continue;
+    const d = e.data ?? {};
+    const err = d.details?.error;
+    yield "DECLARATION-FAIL " + JSON.stringify({ name: d.name, file: d.file ?? null, line: d.line ?? null,
+      failureType: err?.failureType ?? null, error: String(err?.cause?.message ?? err?.message ?? "") }) + "\\n";
+  }
+}
+`;
+
+/** The suite beside the agent's own files, every script stood in by a
+ *  module exporting the names the suite imports. Returns the counts and the
+ *  tests that touch no script and still fail. Pure apart from the scratch
+ *  folder, which is made and removed here. */
+export function declarationRun({ spec, files, folder = null, spawn = spawnSync } = {}) {
+  const scratch = mkdtempSync(join(tmpdir(), "test-writer-declaration-"));
+  try {
+    const dir = join(scratch, "package");
+    if (folder) {
+      const skip = new Set(["scripts", "node_modules", ".git"].map((n) => resolve(folder, n)));
+      cpSync(folder, dir, { recursive: true, filter: (src) => ![...skip].some((s) => resolve(src) === s) });
+    } else {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "spec.json"), JSON.stringify(spec, null, 2) + "\n");
+    }
+    const wanted = new Map(scriptsOf(spec).map((s) => [posix.normalize(s.replace(/\\/g, "/")), new Set()]));
+    for (const f of files) {
+      for (const i of importsOf(f.text)) {
+        if (!i.script) continue;
+        if (!wanted.has(i.from)) wanted.set(i.from, new Set());
+        for (const n of i.names) wanted.get(i.from).add(n.imported);
+      }
+    }
+    for (const [s, names] of wanted) {
+      if (!staysInside(s)) throw new Error(`the spec names a script outside the package: ${s}`);
+      const at = join(dir, s);
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, declarationStandIn([...names]));
+    }
+    const paths = placeSuite(files, dir);
+    const reporter = join(scratch, "reporter.mjs");
+    writeFileSync(reporter, REPORTER);
+    const env = { ...process.env };
+    for (const k of Object.keys(env)) if (k.startsWith("NODE_TEST_")) delete env[k];
+    const r = spawn("node", ["--test", `--test-reporter=${pathToFileURL(reporter).href}`, ...paths], {
+      cwd: dir, env, encoding: "utf8", timeout: RUN_SECONDS * 1000,
+    });
+    const out = String(r.stdout ?? "").split("\n");
+    const failures = out.filter((l) => l.startsWith("DECLARATION-FAIL "))
+      .map((l) => { try { return JSON.parse(l.slice("DECLARATION-FAIL ".length)); } catch { return null; } }).filter(Boolean);
+    return {
+      against: "the agent's own files",
+      pass: out.filter((l) => l.trim() === "DECLARATION-PASS").length,
+      failed: failures.length,
+      timed_out: !!r.error && /ETIMEDOUT|timed out/i.test(String(r.error?.code ?? r.error?.message ?? "")),
+      unpassable: unpassableFrom(failures, {
+        dir, files, scripts: [...wanted.keys()],
+        read: (p) => (staysInside(p) && existsSync(join(dir, p)) ? readFileSync(join(dir, p), "utf8") : null),
+      }),
+    };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/** Both runs against nothing: empty stand-ins, where the suite must fail,
+ *  and the agent's own files, where a test that touches no script must
+ *  pass. The stand-in run's numbers, with the tests no script can mend. */
+export function standInChecks({ spec, files, folder = null, spawn } = {}) {
+  const standIns = standInRun({ spec, files, folder, spawn });
+  const declarations = declarationRun({ spec, files, folder, ...(spawn ? { spawn } : {}) });
+  return { ...standIns, unpassable: declarations.unpassable };
+}
+
 /** A copy of a package for the suite to run in: everything but its own
  *  test folder, which is the suite being replaced. */
 export function copyPackage(from, to) {
@@ -199,6 +428,10 @@ export function verdict({ standIns = null, real = null, mutations = [] } = {}) {
     } else {
       lines.push(`Against empty stand-ins for the ${k} script${k === 1 ? "" : "s"} it names, the suite passes (${standIns.pass} of ${standIns.tests}), so it asserts nothing about them. It is not a suite yet.`);
     }
+    const u = standIns.unpassable ?? [];
+    if (u.length) {
+      lines.push(`${u.length === 1 ? "One test touches" : `${u.length} tests touch`} no script and still ${u.length === 1 ? "fails" : "fail"} against the agent's own files, so no script can ever make ${u.length === 1 ? "it" : "them"} pass: ${u.map((x) => `"${x.name}" (${x.path})`).join(", ")}.`);
+    }
   }
   if (real) {
     if (real.timed_out) lines.push(`Against ${real.against}'s own scripts the suite did not finish in ${RUN_SECONDS} seconds.`);
@@ -225,7 +458,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: `There is no suite under ${join(SUITE, "test")} to check: nothing named test/<name>.test.mjs.` }));
       process.exitCode = 3;
     } else {
-      const standIns = standInRun({ spec, files, folder });
+      const standIns = standInChecks({ spec, files, folder });
       let real = null; let mutations = [];
       if (AGAINST) {
         if (!existsSync(join(AGAINST, "scripts"))) throw new Error(`${AGAINST} has no scripts folder to prove the suite against`);
