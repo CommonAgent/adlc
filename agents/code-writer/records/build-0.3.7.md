@@ -55,3 +55,16 @@ The harness (Claude Code), tests first, then the script.
 - Installed by the deployment manager from deploy request
   dr_yriDYjP0VkU5aSjrv_g9D7Yk, approved by the platform account, with the
   instruction 0.3.6 ran on.
+- Proof: build ab_a7f1203b882fa9e0d7 (letter-counter 0.1.0), driven from the
+  ADLC console, handed off to AgentMesh-Dev-Test/handoff-proof#8, which already
+  held word-reverser, palindrome-judge and tally-words at its root. Every file
+  of the hand-off went under agents/letter-counter/. The local check, run from
+  that folder on the stubs, ran only its own 31 tests with the fence whole.
+  Claude Code, run locally and headless as the customer's coding agent, wrote
+  both scripts in one round (e5c954e); the gate said Ready for your OK, the pull
+  request merged beside the root-level agents, and the agent was packed,
+  installed as letter-counter.platform@agentmesh.ai and conforms (5 passed, 0
+  failed).
+- acronym-maker (ab_6494822a9f81a1fb90, #6), stuck since word-reverser's merge,
+  was moved into agents/acronym-maker/ on top of main (74969ab), passed the
+  gate again and merged.

@@ -52,3 +52,5 @@ The harness (Claude Code), tests first, then the script.
   settings 0.6.1 ran on (MODEL_PROTOCOL gemini, MODEL_NAME gemini-3.8-flash).
 - The package maker installed on the fleet host is unchanged: build.py's change
   names its rule and keeps its behaviour and words.
+- Proof: build ab_a7f1203b882fa9e0d7 (letter-counter 0.1.0) came through
+  Requirements with run.reply "json:reply", and Package took it.
