@@ -18,6 +18,21 @@
 // Run from a build folder's .adlc/, with no variables, it checks the folder
 // it sits in against build.lock.json and keeps its records under records/.
 //
+// In a clone of the branch a hand-off pushed, three things are not the
+// coding agent's doing and do not break the fence. Git's own folder, .git, is
+// never walked. A pinned text file whose bytes differ only by CRLF line ends,
+// which git's core.autocrlf writes on checkout, is the same file: when the
+// byte-exact digest fails and the file holds no NUL byte, CRLF is read as LF
+// and compared again; a binary file stays byte for byte. And the
+// repository's own files: a file git held in the parent of the commit that
+// added build.lock.json was on the branch before the hand-off, so it is not
+// judged while it is unchanged against that parent's blob (CRLF read as LF
+// again); changed or removed, it breaks the fence, as at the service's gate.
+// This needs git and the history back to that parent; without either (no
+// git, not a clone, a clone of depth 1, a hand-off in the root commit) no
+// file is the repository's own and every file outside the lock and scripts/
+// is judged as before.
+//
 // Exit codes are the harness's instructions: 0 done, 1 not yet with each
 // failing test named, 3 the fence was broken with what was touched named,
 // 4 the rounds are used up.
@@ -26,6 +41,7 @@
 //   WORKSPACE=<folder> RECORDS=<records folder> [BUILDER=<path to the builder>] node check.mjs
 //   or, in a build folder: node .adlc/check.mjs
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -94,35 +110,94 @@ export function runSuite(dir, paths, { spawn = spawnSync } = {}) {
   };
 }
 
+/** What the fence never walks: the records, and git's own folder. */
+export const UNWALKED = ["records", ".git"];
+
+/** A file's git blob id, which is how git names the repository's own files. */
+export const gitBlobSha = (bytes) => createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+
+/** The bytes with CRLF read as LF, or null for a binary file (one holding a
+ *  NUL byte, which git leaves alone on checkout too). */
+export function asLf(bytes) {
+  const b = Buffer.from(bytes);
+  if (b.includes(0)) return null;
+  return b.includes(0x0d) ? Buffer.from(b.toString("latin1").replace(/\r\n/g, "\n"), "latin1") : null;
+}
+
+/** Whether a file's bytes match a digest, byte for byte or, for a text file,
+ *  with CRLF read as LF. `hash` is the digest function. */
+const matches = (bytes, want, hash) => {
+  if (hash(bytes) === want) return true;
+  const lf = asLf(bytes);
+  return !!lf && hash(lf) === want;
+};
+
+/** The repository's own files: what git held in the parent of the commit
+ *  that added build.lock.json in `dir`, as {path relative to dir: blob id}.
+ *  Empty when there is no git, no such commit, or no parent. `run` is handed
+ *  in by tests. */
+export function repoFilesAt(dir, { run = spawnSync } = {}) {
+  const git = (...args) => {
+    try {
+      const r = run("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+      return r && r.status === 0 ? String(r.stdout ?? "") : null;
+    } catch { return null; }
+  };
+  const added = trim(git("log", "--diff-filter=A", "--format=%H", "-n", "1", "--", LOCK_FILE));
+  if (!/^[0-9a-f]{7,64}$/.test(added)) return {};
+  const parent = trim(git("rev-parse", "--verify", "--quiet", `${added}^`));
+  if (!/^[0-9a-f]{7,64}$/.test(parent)) return {};
+  const prefix = trim(git("rev-parse", "--show-prefix"));
+  const tree = git("ls-tree", "-r", "-z", "--full-tree", parent);
+  if (tree == null) return {};
+  const out = {};
+  for (const entry of tree.split("\0")) {
+    const m = /^\d+ blob ([0-9a-f]+)\t(.+)$/s.exec(entry);
+    if (!m || !m[2].startsWith(prefix)) continue;
+    out[m[2].slice(prefix.length)] = m[1];
+  }
+  return out;
+}
+
 /** The fence: what changed that may not have. Compared against the record
- *  the workspace step wrote, by digest. */
-export function fenceOf(record, dir) {
-  const now = listing(dir, { skip: ["records"] });
+ *  the workspace step wrote, by digest. `repoFiles` is the repository's own
+ *  files, {path: git blob id}, which may stay as they were. */
+export function fenceOf(record, dir, { repoFiles = {} } = {}) {
+  const now = listing(dir, { skip: UNWALKED });
   const was = record?.listing ?? {};
   const pinned = record?.digests ?? {};
   const broken = [];
   const free = (p) => p.startsWith("scripts/");
   const newTest = (p) => p.startsWith("test/") && !(p in was);
+  // A digest that differs is read again from the file, so a text file whose
+  // line ends git changed on checkout is still the same file.
+  const same = (p, want) => now[p] === want || matches(readFileSync(join(dir, p)), want, digestOf);
+  const ownUnchanged = (p) => matches(readFileSync(join(dir, p)), repoFiles[p], gitBlobSha);
   for (const [p, d] of Object.entries(pinned)) {
     if (!(p in now)) broken.push({ path: p, what: "removed" });
-    else if (now[p] !== d) broken.push({ path: p, what: "changed" });
+    else if (!same(p, d)) broken.push({ path: p, what: "changed" });
   }
   for (const p of Object.keys(now)) {
     if (p in pinned || free(p) || newTest(p)) continue;
+    if (p in repoFiles && !(p in was)) { if (!ownUnchanged(p)) broken.push({ path: p, what: "changed" }); continue; }
     if (!(p in was)) broken.push({ path: p, what: "added" });
-    else if (was[p] !== now[p]) broken.push({ path: p, what: "changed" });
+    else if (!same(p, was[p])) broken.push({ path: p, what: "changed" });
   }
   for (const p of Object.keys(was)) {
     if (p in pinned || free(p) || p in now) continue;
     broken.push({ path: p, what: "removed" });
   }
+  for (const p of Object.keys(repoFiles)) {
+    if (p in pinned || p in was || free(p) || p in now || UNWALKED.some((s) => p === s || p.startsWith(s + "/"))) continue;
+    broken.push({ path: p, what: "removed" });
+  }
   return { ok: !broken.length, broken };
 }
 
-/** A copy of the workspace to run in, without its records. */
+/** A copy of the workspace to run in, without its records or git's folder. */
 function copyWorkspace(from, to) {
-  const skip = resolve(from, "records");
-  cpSync(from, to, { recursive: true, filter: (src) => { const r = resolve(src); return r !== skip && !r.startsWith(skip + "\\") && !r.startsWith(skip + "/"); } });
+  const skips = UNWALKED.map((s) => resolve(from, s));
+  cpSync(from, to, { recursive: true, filter: (src) => { const r = resolve(src); return !skips.some((skip) => r === skip || r.startsWith(skip + "\\") || r.startsWith(skip + "/")); } });
 }
 
 /** Each script blanked in turn: does the suite notice? */
@@ -237,7 +312,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       console.log(said);
       process.exit(4);
     }
-    const fence = fenceOf(record, WORKSPACE);
+    // A build folder may sit in a clone of the branch it was pushed to, beside
+    // the repository's own files; git says which those are.
+    const fence = fenceOf(record, WORKSPACE, { repoFiles: record.from_build_folder ? repoFilesAt(WORKSPACE) : {} });
     if (!fence.ok) {
       const said = verdict({ stop: "fence", fence });
       writeVerdict({ done: false, stop: "fence", round: runs.length, broken: fence.broken, said });
