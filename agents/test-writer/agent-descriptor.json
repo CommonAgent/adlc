@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.4.0",
+  "agent_version": "0.4.1",
   "name": "Test writer",
   "summary": "Writes the tests an agent's scripts must pass, before the scripts exist, and proves each test would notice a script being wrong.",
   "will_not": [
@@ -85,7 +85,7 @@
         {
           "id": "write-the-suite",
           "name": "Write the suite",
-          "does": "Calls the text-reasoning service once, twice at most, to write the suite, and runs it against nothing before taking it.",
+          "does": "Calls the text-reasoning service once, twice at most, to write the suite from the spec and the agent's own files as they are, and runs it against nothing before taking it, refusing a test that touches no script and still fails.",
           "how": {
             "control": "script",
             "intelligence": "called",

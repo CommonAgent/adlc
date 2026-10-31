@@ -106,6 +106,14 @@ async call.
    and checks the offering's steps and that each one's `how` is what it
    claims. A package's root holds its agent-descriptor.json, so a suite reads
    it at `../agent-descriptor.json` from test/, and never a spec.json.
+   It asserts only members the file carries, as the agent's own files show
+   them: offerings by `id`, each with `name`, `does`, `inputs`, `outputs`,
+   `how` and `steps`. The descriptor has no `jobs`, `slug` or `offered`
+   (every offering listed is offered), and no package name: that is
+   plugin.json's `name`, and a descriptor `name`, where there is one, is a
+   display name such as "Test writer". A test like this touches no script,
+   so it must pass against the files before any script exists; one that
+   cannot is refused.
 
 ## Every delivered piece is checked against its declared kind
 

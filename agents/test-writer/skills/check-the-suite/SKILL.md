@@ -23,7 +23,7 @@ If there is no test file under the folder named, nothing is run and the reply sa
 
 Nothing in this folder is run on its own; the offering names the one command that does the whole job, and this skill only explains what that command does for this step.
 
-check-suite.mjs stands in an empty file for every script the spec names, places the suite beside them and runs it with node --test; it must fail. Given AGAINST, a package folder with scripts, it copies the package without its own test folder, places the suite, runs it, and then blanks each script in turn and runs again; a script whose absence the suite never notices is named. The record is records/<job>/checked.json and the verdict is written in words for the reply. Nothing here edits a test.
+check-suite.mjs stands in an empty file for every script the spec names, places the suite beside them and runs it with node --test; it must fail. It runs the suite again beside the agent's own files with every script stood in by a module that exports the names the suite imports and does nothing, and names each test that touches no script and still fails there: no script can ever make such a test pass. Given AGAINST, a package folder with scripts, it copies the package without its own test folder, places the suite, runs it, and then blanks each script in turn and runs again; a script whose absence the suite never notices is named. The record is records/<job>/checked.json and the verdict is written in words for the reply. Nothing here edits a test.
 
 ## Scripts
 

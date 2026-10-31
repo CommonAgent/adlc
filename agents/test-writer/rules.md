@@ -18,6 +18,8 @@ It never touches a network, a model or a real host. A test that fails is a decis
 
 It never depends on anything outside node. `node --test test/<file>` is the whole of how it runs.
 
+It never asserts what the agent's own files do not carry. A test that touches no script, one that reads only agent-descriptor.json, plugin.json, agent-runtime-requirements.json or a SKILL.md, has nothing a code writer can change, so it must already pass against those files as they are, before any script exists. The spec the writer is shown is a reading of those files and not their shape: the agent's name is plugin.json's `name`, and agent-descriptor.json carries none (a `name` there, when it is present, is a display name for a person); an offering is found by its `id`, every offering listed is offered, and the descriptor has no `offered`, `slug` or `jobs` member. So the writer is given the files themselves, and the suite is also run against them with every script stood in by a module that exports the names the suite imports and does nothing: a test that touches no script and still fails there is a finding, and the suite goes back once with it.
+
 ## What is pinned, in order
 
 Each refusal the spec lists, as a case that tries the thing and is refused with the reply's wording. The empty case, exit 3 with the reply the job's empty sentence promises, no model called and no pieces filed. Each record the spec declares, written where declared, whether the job succeeded or not. The good sentence, clause by clause, as assertions on the artifact. The process contract once per script, the exit-2 line when a required variable is missing. And the spec itself, that the offering's steps are jobs and each job's how is what it claims.
