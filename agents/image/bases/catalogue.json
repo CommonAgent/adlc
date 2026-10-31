@@ -36,7 +36,7 @@
       "dockerfile": "bases/agentmesh/Dockerfile"
     },
     {
-      "image": "{gcp.registry}/agentmesh-harness-base:0.88.6-3",
+      "image": "{gcp.registry}/agentmesh-harness-base:0.88.6-4",
       "provides": {
         "runtimes": [
           {
@@ -138,7 +138,7 @@
       "dockerfile": "bases/agentmesh-docs/Dockerfile"
     },
     {
-      "image": "{gcp.registry}/agentmesh-chromium-harness-base:0.88.6-3",
+      "image": "{gcp.registry}/agentmesh-chromium-harness-base:0.88.6-4",
       "provides": {
         "runtimes": [
           {
@@ -161,7 +161,7 @@
       "dockerfile": "bases/agentmesh-harness/Dockerfile"
     },
     {
-      "image": "{gcp.registry}/agentmesh-video-harness-base:0.88.6-3",
+      "image": "{gcp.registry}/agentmesh-video-harness-base:0.88.6-4",
       "provides": {
         "runtimes": [
           {
