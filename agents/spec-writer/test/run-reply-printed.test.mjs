@@ -31,7 +31,6 @@ const job = (reply, instructions) => ({
   good: "A total of the consonant letters in the sentence, and how many of each, which a reader can count again by hand.",
   empty: "With no sentence it says there was nothing to count.",
   does: "Counts the consonants in a sentence.",
-  outputs: [{ name: "consonant-count-report.md", kind: "text/markdown", when: "per_task" }],
   ...(instructions ? { instructions } : {}),
   run: { command: ["node", "{home}/{package}/skills/count-consonants/scripts/count-consonants.mjs", "--job", "{job_dir}"], ...(reply === undefined ? {} : { reply }) },
 });

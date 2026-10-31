@@ -221,6 +221,14 @@ entry has no credential, env or settings.
 A refusal is something the agent will NOT do. If a refusal names an act one
 of the jobs performs, it is not a refusal; write the act it declines instead.
 
+A job with a command says in run.reply how the host reads its reply: write
+"json:reply", the reply member of the one JSON object every house script
+prints, or "stdout" for a command whose whole output is the reply. Name
+another member only when the job's instructions say the command prints it,
+and never the name of a file the job writes, which is a piece it files: the
+host reads a member the command does not print as no reply, and tells the
+sender the work was cut short.
+
 When the kind is third-party-framework or mesh-coded, write the container
 spec the reference's last section describes: no job names scripts,
 references, run or instructions, and the container block comes from the scan.

@@ -82,4 +82,5 @@ Run these from this skill's folder; each one says what it needs at the top.
 - references/delivered-formats.test.mjs
 - references/records-per-job.test.mjs
 - references/worked-values.test.mjs
+- references/printed-reply.test.mjs
 - references/rules.md

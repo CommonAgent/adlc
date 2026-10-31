@@ -50,6 +50,15 @@
 // value inside a test, where a stand-in throws before it is reached, and one
 // whose computation is only a literal.
 //
+// A fourth is test/printed-reply.test.mjs, which runs each job's command the
+// way the host does, with an empty message, and reads the reply the way the
+// host does (run.reply: stdout, or json:<member> of the one JSON object
+// printed). A reply that is empty there is a job the host records as stopped
+// and tells the sender was cut short: consonant-ledger's run.reply named a
+// member its script never printed, and nothing before the host ran the
+// command line (technical debt 657). It runs on its own; the model's tests
+// call nothing in it.
+//
 // Two things change the ask. EXISTING names a folder holding the suite the
 // package already has (test/*.test.mjs): it goes to the model whole, the
 // answer may only add new files, and the kept files are never rewritten. And
@@ -237,6 +246,11 @@ or what a stand-in model said), say so in NOTES, on a line that starts
 "No worked values:", with why. worked() is in one file of every suite:
 test/worked-values.test.mjs, which the test writer adds itself. Do not write it and do not answer with it.
 
+Each job's command line is run by one more file the test writer adds
+itself, test/printed-reply.test.mjs: with an empty message, it checks that
+what the command prints gives the reply run.reply names. Do not write it,
+do not answer with it, and do not run the command lines for that yourself.
+
 Read a delivered piece by whole lines. Find a line by a pattern for the
 whole line (assert.match(text, /^- a: 1$/m)), or by the text after its
 heading line, and never by a single letter or a short word searched anywhere
@@ -298,7 +312,7 @@ stand-ins on its own.`;
 }
 
 /** The standard checks the test writer adds itself: never revised by the model. */
-const STANDARD_NAMES = ["delivered-formats.test.mjs", "records-per-job.test.mjs", "worked-values.test.mjs"];
+const STANDARD_NAMES = ["delivered-formats.test.mjs", "records-per-job.test.mjs", "worked-values.test.mjs", "printed-reply.test.mjs"];
 
 /** The files of a suite a revision names, by file name (with or without
  *  test/) or by the name of a test in them. The standard checks are the test
@@ -578,14 +592,25 @@ export function workedTestAt(env = {}, here = HERE) {
   ]);
 }
 
+/** The standard check that each job's command prints the reply its run.reply
+ *  names, read as the host reads it (debt 657), and where its master copy is
+ *  kept, the same way as the others'. */
+export const REPLY_TEST = "test/printed-reply.test.mjs";
+export function replyTestAt(env = {}, here = HERE) {
+  return firstOf(trim(env.REPLY_TEST) ? [trim(env.REPLY_TEST)] : [
+    join(here, "..", "references", "printed-reply.test.mjs"),
+    join(here, "..", "..", "test-writer", "references", "printed-reply.test.mjs"),
+  ]);
+}
+
 /** The files the test writer adds to every suite, by path. */
-export const STANDARD_TESTS = [FORMAT_TEST, RECORDS_TEST, WORKED_TEST];
+export const STANDARD_TESTS = [FORMAT_TEST, RECORDS_TEST, WORKED_TEST, REPLY_TEST];
 
 /** The suite with the standard checks in it: each added unless the suite
  *  has a file at its path already, and none added whose text is empty. */
-export function withStandardTests(files = [], { formatTest = "", recordsTest = "", workedTest = "" } = {}) {
+export function withStandardTests(files = [], { formatTest = "", recordsTest = "", workedTest = "", replyTest = "" } = {}) {
   let out = files;
-  for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest]]) {
+  for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest], [REPLY_TEST, replyTest]]) {
     if (trim(text) && !out.some((f) => f.path === path)) out = [...out, { path, text }];
   }
   return out;
@@ -1058,6 +1083,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // And the worked-values check (debt 646).
     const workedTest = read(workedTestAt(env));
     if (!trim(workedTest)) throw new Error(`the standard worked-values check ${WORKED_TEST} is not among this package's references, so no suite is written without it`);
+    // And the printed-reply check (debt 657).
+    const replyTest = read(replyTestAt(env));
+    if (!trim(replyTest)) throw new Error(`the standard printed-reply check ${REPLY_TEST} is not among this package's references, so no suite is written without it`);
     for (const [what, at] of wanted) {
       if (!at) note(RECORDS, { wanted: what, did: "asked for the suite without it, from the spec and the instruction alone" });
     }
@@ -1091,6 +1119,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       formatTest,
       recordsTest,
       workedTest,
+      replyTest,
       env,
     });
     // The standard checks go in beside what the model wrote. They are the
@@ -1098,7 +1127,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // older copy gets the current one; a copy that is the same bytes is left
     // as it is.
     const generated = [];
-    for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest]]) {
+    for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest], [REPLY_TEST, replyTest]]) {
       const refreshed = refreshStandardTest(existing, path, text);
       existing.splice(0, existing.length, ...refreshed.existing);
       generated.push(...refreshed.generated);
