@@ -11,7 +11,9 @@
 // holds each delivered piece to its kind, by its bytes:
 //   - Markdown (text/markdown) parses as Markdown, not JSON or an HTML page,
 //     and carries the convention its `about` sketches: the header's fields
-//     and each fixed heading written in backticks;
+//     and each fixed heading written in backticks, unless it is a case the
+//     `about` gives a shape of its own ("When there was no sentence, the only
+//     content is `## Nothing to count`"), and then it carries that case's;
 //   - a JSON kind (application/vnd.<name>+json, or any +json) parses, and has
 //     the top-level shape its `about` sketches in backticks, `{a, b}` or `[...]`;
 //   - HTML is HTML, a URL is an address, an image, audio, video, PDF or
@@ -68,10 +70,42 @@ export function declaredOutputs(decl) {
 
 /** What a piece's `about` sketches: the fixed headings (`## ...` in
  *  backticks), the header's fields (`a, b` in backticks after "header" or
- *  "front matter"), and a JSON top-level shape (`{a, b?}` or `[...]`). */
+ *  "front matter"), and a JSON top-level shape (`{a, b?}` or `[...]`).
+ *  A heading the `about` gives only to one case is not fixed: one in a
+ *  sentence that opens on a case ("When there was no sentence, ... only
+ *  `## Nothing to count`"), says it is only for one, or names the case
+ *  straight after the heading (`## None` when nothing was found) is that
+ *  case's, and each such sentence's headings are one of `cases`, a shape a
+ *  piece may take instead (technical debt 647). */
 export function conventionOf(about) {
-  const ticks = [...String(about ?? "").matchAll(/`([^`]+)`/g)].map((m) => m[1].trim());
-  const headings = ticks.filter((t) => /^#{1,6} \S/.test(t));
+  const text = String(about ?? "");
+  const ticks = [...text.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim());
+  const isHeading = (t) => /^#{1,6} \S/.test(t);
+  // Sentences, never ended inside backticks.
+  const sentences = []; let cur = ""; let inTick = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    cur += ch;
+    if (ch === "`") inTick = !inTick;
+    else if (!inTick && /[.!?]/.test(ch) && (i + 1 === text.length || /\s/.test(text[i + 1]))) { sentences.push(cur); cur = ""; }
+  }
+  if (cur.trim()) sentences.push(cur);
+  const OPENS_ON_A_CASE = /^[\s"'(*_-]*(?:when|whenever|if|unless|otherwise|instead|without|where there (?:is|are|was|were) no|with no|for an? (?:empty|failed|refused|missing)|on (?:an? )?(?:empty|failure|refusal|error)|in (?:the|an?) (?:empty|failure|error|refusal) case)\b/i;
+  const ONLY_FOR_ONE = /\bonly (?:when|if|for|in|on)\b|\binstead\b/i;
+  const CASE_AFTER = /^`\s*(?:\([^)]*\)\s*)?(?:only\s+)?(?:when|if|unless|for an? (?:empty|failed|refused)|on (?:an? )?(?:empty|failure|refusal))\b/i;
+  const fixed = []; const cases = [];
+  for (const s of sentences) {
+    const found = [...s.matchAll(/`([^`]+)`/g)].filter((m) => isHeading(m[1].trim()));
+    if (!found.length) continue;
+    if (OPENS_ON_A_CASE.test(s) || ONLY_FOR_ONE.test(s)) { cases.push(found.map((m) => m[1].trim())); continue; }
+    const own = [];
+    for (const m of found) {
+      if (CASE_AFTER.test(s.slice(m.index + m[0].length - 1))) own.push(m[1].trim());
+      else fixed.push(m[1].trim());
+    }
+    if (own.length) cases.push(own);
+  }
+  const headings = [...new Set(fixed)];
   const fm = /(?:header|front matter)[^`]{0,40}`([^`#]+)`/i.exec(String(about ?? ""));
   const header = fm ? fm[1].split(",").map((f) => f.trim().replace(/\?$/, "")).filter((f) => /^[A-Za-z_][\w .-]*$/.test(f)) : [];
   const sketch = ticks.find((t) => /^[{[]/.test(t)) ?? null;
@@ -89,7 +123,7 @@ export function conventionOf(about) {
     const names = keys.map((k) => /^\s*([A-Za-z_$][\w$-]*)(\??)/.exec(k)).filter(Boolean);
     shape = { type: "object", keys: names.filter((m) => !m[2]).map((m) => m[1]) };
   }
-  return { headings, header, shape };
+  return { headings, cases, header, shape };
 }
 
 const SIGNATURES = {
@@ -134,6 +168,9 @@ export function formatProblems(bytes, kind, about = "", what = "the piece") {
     const t = text.trim();
     if (/^[{[]/.test(t) && parsesAsJson(t)) return [`${what} is declared text/markdown and is JSON`];
     if (/^<(!doctype html|html)\b/i.test(t)) return [`${what} is declared text/markdown and is an HTML page`];
+    // A piece carrying every heading of a case the about gives its own shape
+    // is that case, and is held to nothing more (technical debt 647).
+    if ((conv.cases ?? []).some((c) => c.length && c.every((h) => headingPattern(h).test(text)))) return out;
     for (const h of conv.headings) if (!headingPattern(h).test(text)) out.push(`${what} is missing the heading ${h} its convention names`);
     if (conv.header.length) {
       // The header is front matter, or the lines before the first heading of

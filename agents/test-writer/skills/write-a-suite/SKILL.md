@@ -78,4 +78,5 @@ Run these from this skill's folder; each one says what it needs at the top.
 - references/the-spec-it-tests.json
 - references/delivered-formats.test.mjs
 - references/records-per-job.test.mjs
+- references/worked-values.test.mjs
 - references/rules.md

@@ -35,6 +35,21 @@
 // folder and calls its checkRecordsPerJob, and a suite whose declaration keeps
 // a record per job and whose tests never call it goes back with that finding.
 //
+// A third is test/worked-values.test.mjs, the standard check that each
+// expected value a rule in the spec decides is worked twice: once as the
+// literal the model expects, once as a computation in the test over the same
+// input, worked(value, () => computation, what), a constant at the top of the
+// file. A model works values out wrong in its head (a suite pinned 16 vowels
+// where the sentence holds 14, and "HTTP" where one letter per word gives
+// "HTP"), and a suite that pins a wrong value stops the build at the code
+// step, where a script that keeps the spec cannot pass it (technical debt
+// 646). The run beside the agent's own files evaluates every worked value,
+// and each that disagrees with its own computation goes back as a finding
+// naming both. A suite that works no value goes back too, unless its notes
+// say why no expected value in it is decided by a rule; so does a worked
+// value inside a test, where a stand-in throws before it is reached, and one
+// whose computation is only a literal.
+//
 // Two things change the ask. EXISTING names a folder holding the suite the
 // package already has (test/*.test.mjs): it goes to the model whole, the
 // answer may only add new files, and the kept files are never rewritten. And
@@ -181,14 +196,49 @@ every job the same records folder, never a folder per job. The suite that
 works, below, hands its job records/job1 as the records folder, an older
 layout the host does not make: do not copy that part. One file in every
 suite checks the rest: test/records-per-job.test.mjs, which the test writer adds itself. Do not write it and do not answer with it.
-When the spec keeps a record per job, write a test that runs two jobs of the
-same kind, each with its own job folder and both with the same records
-folder, choosing jobs that each leave every per-job record (two jobs that go
-without the same thing each note went-without.json); then
+Every job writes went-without.json, with no entries when it lacked nothing,
+because the conformance check reads it after jobs that may lack nothing; a
+test may find it after a successful job with no entries in it, and never
+asserts that it is absent.
+When the spec keeps a record per job, write a test that runs
+two ordinary jobs of the same kind, jobs that succeed, each with its own job
+folder and both with the same records folder; then
 import { checkRecordsPerJob } from "./records-per-job.test.mjs" and assert
 checkRecordsPerJob(records, [jobDir1, jobDir2]) deep-equals []. A record the
 spec says is written only in some cases, and that neither job writes, is
 named in its third argument: { except: ["<the record's file or name>"] }.
+went-without.json is never excepted, and the check holds every job to it
+whatever except names.
+
+Every expected value that a rule in the spec decides from the input (a
+count, a total, a length, letters taken from words, an order, a sum, which
+items pass a test) is worked twice, because a value worked out in the head
+is often wrong, and a suite that pins a wrong value stops the build: no
+script that keeps the spec can pass it. Write each one as a constant at the
+top of the file, after the imports and before any test, with
+worked(value, () => computation, "what it is"), and use the constant in the
+tests. value is the literal you expect. computation is plain JavaScript in
+the test file itself, over the same input, that applies the spec's rule step
+by step (count the vowels with a loop over the letters; take each word's
+first letter), with any helper it needs declared as a function in the same
+file; never a function from ../scripts/, and never the literal again. Read
+each rule from the spec word for word: a computation that follows the rule
+catches the value you remembered instead (an acronym the world spells one
+way, which the spec's rule spells another). Keep inputs short, so the value
+is easy to check. import { worked } from "./worked-values.test.mjs". The
+test writer runs every computation and sends back each value that disagrees
+with its own computation. Where no expected value in the suite is decided by
+such a rule (every expectation is a reply's wording, a refusal, an exit code
+or what a stand-in model said), say so in NOTES, on a line that starts
+"No worked values:", with why. worked() is in one file of every suite:
+test/worked-values.test.mjs, which the test writer adds itself. Do not write it and do not answer with it.
+
+Read a delivered piece by whole lines. Find a line by a pattern for the
+whole line (assert.match(text, /^- a: 1$/m)), or by the text after its
+heading line, and never by a single letter or a short word searched anywhere
+in the piece: a heading or a word of prose holds letters too ("## Counts"
+holds o and u before any i), and a test that finds them there fails a piece
+that keeps the spec.
 
 Never write a test that would pass with the scripts absent. Never touch a
 network or a model from a test. Never write the scripts. A script that calls
@@ -477,14 +527,24 @@ export function recordsTestAt(env = {}, here = HERE) {
   ]);
 }
 
-/** The files the test writer adds to every suite, by path. */
-export const STANDARD_TESTS = [FORMAT_TEST, RECORDS_TEST];
+/** The standard check that each value a rule decides is worked twice (debt
+ *  646), and where its master copy is kept, the same way as the others'. */
+export const WORKED_TEST = "test/worked-values.test.mjs";
+export function workedTestAt(env = {}, here = HERE) {
+  return firstOf(trim(env.WORKED_TEST) ? [trim(env.WORKED_TEST)] : [
+    join(here, "..", "references", "worked-values.test.mjs"),
+    join(here, "..", "..", "test-writer", "references", "worked-values.test.mjs"),
+  ]);
+}
 
-/** The suite with both standard checks in it: each added unless the suite
+/** The files the test writer adds to every suite, by path. */
+export const STANDARD_TESTS = [FORMAT_TEST, RECORDS_TEST, WORKED_TEST];
+
+/** The suite with the standard checks in it: each added unless the suite
  *  has a file at its path already, and none added whose text is empty. */
-export function withStandardTests(files = [], { formatTest = "", recordsTest = "" } = {}) {
+export function withStandardTests(files = [], { formatTest = "", recordsTest = "", workedTest = "" } = {}) {
   let out = files;
-  for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest]]) {
+  for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest]]) {
     if (trim(text) && !out.some((f) => f.path === path)) out = [...out, { path, text }];
   }
   return out;
@@ -514,6 +574,90 @@ export const callsFormatCheck = (files = []) => files.some((f) => f.path !== FOR
   && /from\s+["']\.\/delivered-formats\.test\.mjs["']/.test(f.text) && /checkDelivered\s*\(/.test(f.text));
 
 export const NO_FORMAT_CHECK = "no test calls checkDelivered(jobDir) from ./delivered-formats.test.mjs on a job folder it filled, so nothing checks that each delivered piece is in its declared format; call it in each test that fills a job folder and assert it returns []";
+
+/** Whether some file of a suite works a value with the worked-values check. */
+export const callsWorked = (files = []) => files.some((f) => f.path !== WORKED_TEST
+  && /from\s+["']\.\/worked-values\.test\.mjs["']/.test(f.text) && /\bworked\s*\(/.test(f.text));
+
+/** Whether the model's notes say no expected value in the suite is decided
+ *  by a rule, on a line of their own that starts "No worked values:". */
+export const saysNoWorkedValues = (notes = "") => /(^|\n)[ \t]*(?:[-*][ \t]*)?no worked values\s*:/i.test(String(notes ?? ""));
+
+export const NO_WORKED_VALUES = "no expected value is worked twice: write each value a rule in the spec decides from the input (a count, a total, letters taken from words, an order) as a constant at the top of the file, worked(value, () => computation, \"what it is\") from ./worked-values.test.mjs, the computation plain code in the test over the same input; or, if no expected value in the suite is decided by such a rule, say so in NOTES on a line that starts \"No worked values:\" with why";
+
+/** Code with its line comments and quoted strings blanked, line for line, so
+ *  a word in a comment or a test's name is not read as a call. */
+const codeLines = (text) => String(text ?? "").split("\n")
+  .map((l) => l.replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\\n]|\\.)*`/g, '""').replace(/(^|[^:])\/\/.*$/, "$1"));
+
+/** A one-letter string literal, '"a"' or "'a'": a letter and nothing else,
+ *  so "\n" or "," is not one. */
+const LETTER = /^\s*(["'`])[A-Za-z\u00C0-\u024F]\1\s*$/;
+const LETTER_LIST = /^\s*\[\s*(?:(["'`])[A-Za-z\u00C0-\u024F]\1\s*,\s*)+(["'`])[A-Za-z\u00C0-\u024F]\2\s*,?\s*\]/;
+
+/** Each search for a single letter in a suite's files, as findings by line:
+ *  indexOf, lastIndexOf, includes or search given a one-letter literal, an
+ *  element of a list of single letters, or a variable that runs over one. A
+ *  heading or a word of prose holds letters too ("## Counts" holds o and u),
+ *  so such a test cannot tell a piece that keeps the spec from one that does
+ *  not, and may fail every piece that does (build ab_6d0a79ba51025b1beb). */
+export function letterSearchFindings(files = []) {
+  const out = [];
+  for (const f of files) {
+    if (STANDARD_TESTS.includes(f.path)) continue;
+    const text = String(f.text ?? "");
+    const lists = new Set();
+    for (const m of text.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:worked\s*\(\s*)?(\[[^\]\n]*\])/g)) {
+      if (LETTER_LIST.test(m[2])) lists.add(m[1]);
+    }
+    const runners = new Set();
+    for (const m of text.matchAll(/for\s*\(\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s+of\s+([A-Za-z_$][\w$]*|\[[^\]\n]*\])/g)) {
+      if (lists.has(m[2]) || LETTER_LIST.test(m[2])) runners.add(m[1]);
+    }
+    for (const m of text.matchAll(/([A-Za-z_$][\w$]*|\[[^\]\n]*\])\s*\.\s*forEach\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)/g)) {
+      if (lists.has(m[1]) || LETTER_LIST.test(m[1])) runners.add(m[2]);
+    }
+    const isLetter = (arg) => LETTER.test(arg)
+      || runners.has(arg.trim())
+      || [...lists].some((n) => new RegExp(`^\\s*${n.replace(/\$/g, "\\$")}\\s*\\[[^\\]]*\\]\\s*$`).test(arg));
+    text.split("\n").forEach((line, i) => {
+      for (const m of line.matchAll(/\.\s*(indexOf|lastIndexOf|includes|search)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)) {
+        const args = m[2].split(",");
+        if (!isLetter(args[0])) continue;
+        out.push(`${f.path}:${i + 1} searches the text for a single letter with ${m[1]}(${args[0].trim()}); a heading or a word of prose holds letters too ("## Counts" holds o and u), so no piece that keeps the spec can be told apart. Find the whole line instead, by a pattern for the line (/^- a: \\d+$/m) or the text after its heading line`);
+      }
+    });
+  }
+  return out;
+}
+
+/** What is wrong with the worked values in a suite's files, as findings by
+ *  line: a worked() inside a test, which a stand-in that throws first keeps
+ *  from ever being checked, and a computation that is only a literal, which
+ *  checks nothing. A test runs from its line at the left margin to the next
+ *  statement there. */
+export function workedFindings(files = []) {
+  const out = [];
+  for (const f of files) {
+    if (STANDARD_TESTS.includes(f.path)) continue;
+    const lines = codeLines(f.text);
+    let inTest = false;
+    lines.forEach((l, i) => {
+      if (/^(?:test|it|describe|suite)(?:\.\w+)?\s*\(/.test(l)) inTest = true;
+      else if (/^\S/.test(l) && !/^[}\])]/.test(l)) inTest = false;
+      if (inTest && /(?<![\w$.])worked\s*\(/.test(l)) {
+        out.push(`${f.path}:${i + 1} calls worked() inside a test; put each worked value in a constant at the top of the file, after the imports and before any test, where it is checked before any script is reached`);
+      }
+    });
+    const raw = String(f.text ?? "").split("\n");
+    raw.forEach((l, i) => {
+      if (/(?<![\w$.])worked\s*\([^,]+,\s*\(\s*\)\s*=>\s*(?:-?\d+(?:\.\d+)?|"[^"]*"|'[^']*'|true|false|null)\s*[,)]/.test(l)) {
+        out.push(`${f.path}:${i + 1} works a value whose computation is only a literal, which checks nothing; compute it from the test's input by the spec's rule`);
+      }
+    });
+  }
+  return out;
+}
 
 /** The names of the tests in a file, as written. */
 export function testNamesOf(text) {
@@ -567,7 +711,7 @@ export function importFindings(files = [], dependencies = []) {
   return out;
 }
 
-export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, dependencies = [] } = {}) {
+export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, notes = "", dependencies = [] } = {}) {
   const out = [];
   if (!files.length) return ["no test file came back"];
   // The format check and the records check are the test writer's own files,
@@ -604,6 +748,8 @@ export function staticFindings(files = [], declared = null, { existing = [], tak
     if (/from\s+["'](?!node:|\.\.?\/)/.test(f.text)) out.push(`${f.path} imports a package that is not node's own; a suite depends on nothing outside node`);
   }
   out.push(...importFindings(files, dependencies));
+  out.push(...workedFindings(files));
+  out.push(...letterSearchFindings(files));
   const all = whole.map((f) => f.text).join("\n");
   for (const s of named) {
     const name = String(s).split("/").pop();
@@ -611,6 +757,7 @@ export function staticFindings(files = [], declared = null, { existing = [], tak
   }
   if (formatCheck && !callsFormatCheck(whole)) out.push(NO_FORMAT_CHECK);
   if (recordsCheck && !callsRecordsCheck(whole)) out.push(NO_RECORDS_CHECK);
+  if (workedCheck && !callsWorked(whole) && !saysNoWorkedValues(notes)) out.push(NO_WORKED_VALUES);
   const k = named.length;
   if (k && total < 2 * k) out.push(`${total} test${total === 1 ? "" : "s"} for ${k} script${k === 1 ? "" : "s"}; the nine existing suites carry about eight per script, and fewer than two each is not a suite`);
   return out;
@@ -622,13 +769,22 @@ export function standInFindings(run) {
   if (run.timed_out) return [`against empty stand-ins the suite did not finish in time; a test must not wait on anything`];
   if (run.tests === 0 && run.status === 0) return ["against empty stand-ins no test ran at all; the files must be test/<name>.test.mjs and use node:test"];
   if (!run.fails) return [`against empty stand-ins for every script the suite passed (${run.pass} of ${run.tests}), so it asserts nothing about them; import the functions and assert what they return`];
+  const out = [];
   const u = run.unpassable ?? [];
   if (u.length) {
-    return [`${u.length === 1 ? "this test touches" : `these ${u.length} tests touch`} no script and still ${u.length === 1 ? "fails" : "fail"} against the agent's own files as they are, so no script can ever make ${u.length === 1 ? "it" : "them"} pass: `
+    out.push(`${u.length === 1 ? "this test touches" : `these ${u.length} tests touch`} no script and still ${u.length === 1 ? "fails" : "fail"} against the agent's own files as they are, so no script can ever make ${u.length === 1 ? "it" : "them"} pass: `
       + u.map((x) => `"${x.name}" in ${x.path}${x.error ? ` (${x.error.replace(/\s+/g, " ")})` : ""}`).join("; ")
-      + `. Assert only what agent-descriptor.json, plugin.json and agent-runtime-requirements.json carry, exactly as THE AGENT'S OWN FILES show them`];
+      + `. Assert only what agent-descriptor.json, plugin.json and agent-runtime-requirements.json carry, exactly as THE AGENT'S OWN FILES show them`);
   }
-  return [];
+  // A worked value its own computation does not give is pinned wrong, or
+  // computed wrong; either way no script that keeps the spec passes it.
+  const w = run.wrong_values ?? [];
+  if (w.length) {
+    out.push(`${w.length === 1 ? "a worked value disagrees with its own computation" : `${w.length} worked values disagree with their own computations`}: `
+      + w.join("; ")
+      + `. Work each again from the spec's own words: read the rule once more, apply it to the input by hand, then fix whichever of the value and the computation is wrong, so that they agree and both say what the spec says`);
+  }
+  return out;
 }
 
 /** Ask, check what came back, and ask once more with the findings. Returns
@@ -650,6 +806,9 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
       // it once all its parts are in (askInParts).
       formatCheck: !opts.part && declaresOutputs(opts.declared),
       recordsCheck: !opts.part && declaresPerJobRecords(opts.declared),
+      // Held whenever the worked-values check goes into the suite.
+      workedCheck: !opts.part && Boolean(trim(opts.workedTest)),
+      notes: last.notes,
       dependencies: dependenciesFor(opts),
     });
     standIns = null;
@@ -715,6 +874,7 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
   }
   if (declaresOutputs(opts.declared) && !callsFormatCheck(files)) findings.push(`the whole suite: ${NO_FORMAT_CHECK}`);
   if (declaresPerJobRecords(opts.declared) && !callsRecordsCheck(files)) findings.push(`the whole suite: ${NO_RECORDS_CHECK}`);
+  if (trim(opts.workedTest) && !callsWorked(files) && !saysNoWorkedValues(notes.join("\n"))) findings.push(`the whole suite: ${NO_WORKED_VALUES}`);
   const standIns = run ? await run(withStandardTests(files, opts)) : null;
   if (standIns) for (const f of standInFindings(standIns)) findings.push(`the whole suite: ${f}`);
   return { files, could_not: couldNot, notes: notes.join("\n"), findings, stand_ins: standIns, calls, tried_again: triedAgain, parts };
@@ -781,6 +941,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // So is the records check, for the same reason.
     const recordsTest = read(recordsTestAt(env));
     if (!trim(recordsTest)) throw new Error(`the standard records check ${RECORDS_TEST} is not among this package's references, so no suite is written without it`);
+    // And the worked-values check (debt 646).
+    const workedTest = read(workedTestAt(env));
+    if (!trim(workedTest)) throw new Error(`the standard worked-values check ${WORKED_TEST} is not among this package's references, so no suite is written without it`);
     for (const [what, at] of wanted) {
       if (!at) note(RECORDS, { wanted: what, did: "asked for the suite without it, from the spec and the instruction alone" });
     }
@@ -805,14 +968,15 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       workedSpec: read(workedSpecAt(env)),
       formatTest,
       recordsTest,
+      workedTest,
       env,
     });
-    // The format check and the records check go in beside what the model
-    // wrote. They are the test writer's own files, so a suite being added to
-    // that carries an older copy gets the current one; a copy that is the
-    // same bytes is left as it is.
+    // The standard checks go in beside what the model wrote. They are the
+    // test writer's own files, so a suite being added to that carries an
+    // older copy gets the current one; a copy that is the same bytes is left
+    // as it is.
     const generated = [];
-    for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest]]) {
+    for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest]]) {
       const refreshed = refreshStandardTest(existing, path, text);
       existing.splice(0, existing.length, ...refreshed.existing);
       generated.push(...refreshed.generated);

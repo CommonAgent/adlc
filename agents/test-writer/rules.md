@@ -38,6 +38,18 @@ The host hands every job of an agent the same records folder, the agent's own, a
 
 So a test hands every job the same records folder, and every suite carries a second file the model does not write: `test/records-per-job.test.mjs`, copied whole from the references. When the spec keeps a record per job, a test runs two jobs of the same kind, each with its own job folder and both with the one records folder, and asserts `checkRecordsPerJob(records, [jobDir1, jobDir2])` returns nothing wrong. A suite for such a spec whose tests never call it goes back with that finding.
 
+Every job writes went-without.json, with no entries when it lacked nothing. The conformance check reads every per-job record after whatever jobs it ran, and those may lack nothing: vowel-meter (build ab_3508d5dec3d4642113) wrote the record only when a job lacked something, its suite left it out of the two-job check with `except`, and it did not conform. So the two jobs are ordinary ones that succeed, and the check holds every job to went-without.json whatever `except` names.
+
+## Every computed expected value is worked twice
+
+A suite is written before the scripts exist, so whoever writes it works out each expected value, and a value worked out in the head is often wrong. A vowel-counter suite pinned 16 vowels in "Education provides curious insights.", which holds 14; an acronym-maker suite pinned "HTTP" for "hypertext transfer protocol", where the spec takes one letter per word and gives "HTP". No script that keeps the spec can pass a test like that, and the build stops at the code step on a conflict that is the suite's (technical debt 646).
+
+So every suite carries a third file the model does not write: `test/worked-values.test.mjs`, copied whole from the references. Each value a rule in the spec decides from the input, a count, a total, letters taken from words, an order, is a constant at the top of its file, `worked(value, () => computation, "what it is")`: the literal expected, and plain code in the test over the same input that applies the rule step by step, never a script's function. The run beside the agent's own files evaluates every one before the suite is delivered, and each value its own computation does not give goes back to the model naming both. A suite that works no value goes back too, unless its notes say on a line of their own, "No worked values:", why no expected value in it is decided by a rule; so does a worked value inside a test, which a stand-in reaches first, and one whose computation is only the literal again. Choose inputs whose answers are short and easy to check by hand.
+
+## A delivered piece is read by whole lines
+
+A test finds a line of a delivered piece by a pattern for the whole line (`- a: 1`), or by the text after its heading line, and never by a single letter or a short word searched anywhere in it. A heading or a word of prose holds letters too: vowel-tally's suite checked the order of its counts with `indexOf("a") < indexOf("e")` in a block that opens with the required heading `## Counts`, which holds o and u before any i, so no piece that keeps the spec could pass it. A search for one letter with indexOf, lastIndexOf, includes or search goes back to the model by line.
+
 ## Adding to a suite that exists
 
 A released package has a suite somebody relies on. When its test files come with the message, they are kept byte for byte and new files are written beside them for what was asked; nothing in a kept file is rewritten, and only the new files are delivered. A suite for a change is judged as it will stand, the kept files and the new ones together, and the new files must still fail against stand-ins on their own.

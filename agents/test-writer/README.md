@@ -47,6 +47,13 @@ goes under a folder named after the job folder, and the model's tests run two
 jobs with one records folder and call its
 `checkRecordsPerJob(records, [jobDir1, jobDir2])` (technical debt 639).
 
+`worked-values.test.mjs` is the third: every expected value a rule in the
+spec decides is a constant at the top of its file,
+`worked(value, () => computation, what)`, the literal and a computation over
+the same input in the test itself. Before the suite is delivered every worked
+value is checked against its own computation, and one that disagrees goes
+back to the model with both values named (technical debt 646).
+
 ## Replacing it
 
 This is a reference implementation. Any agent that holds the test writer role

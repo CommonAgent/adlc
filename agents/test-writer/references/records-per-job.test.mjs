@@ -21,7 +21,10 @@
 // each with its own job folder and both with the same records folder, and
 // then assert checkRecordsPerJob(records, [jobDir1, jobDir2]) returns no
 // problems. A record the declaration says is written only in some cases, and
-// that neither job writes, is named in `except` by its name or its file. This
+// that neither job writes, is named in `except` by its name or its file;
+// went-without.json never is, since every job writes it, with no entries when
+// it lacked nothing, and the conformance check reads it after jobs that may
+// lack nothing (build ab_3508d5dec3d4642113 did not conform for that). This
 // file's own tests check the checker; they run only when this file is run
 // itself, so importing checkRecordsPerJob from it adds none.
 //
@@ -47,6 +50,10 @@ export function readDeclaration(dir = join(HERE, "..")) {
   }
   return null;
 }
+
+/** The per-job record every job writes, whatever it lacked: the one `except`
+ *  never leaves out. */
+export const WENT_WITHOUT = "went-without.json";
 
 /** The records a declaration keeps per job: each with a `file` pattern whose
  *  first part is `*`, the job's folder, and not marked standing. `rest` is
@@ -83,7 +90,11 @@ export function matchesIn(dir, rest) {
  *  folder named after its job folder and none sits straight in the records
  *  folder. */
 export function checkRecordsPerJob(records, jobDirs = [], { declaration = readDeclaration(), except = [] } = {}) {
-  const wanted = perJobRecords(declaration).filter((r) => !except.includes(r.name) && !except.includes(r.file));
+  // went-without.json is never left out: every job writes it, with no
+  // entries when it lacked nothing, because the conformance check reads it
+  // after whatever jobs it ran, and those may lack nothing.
+  const everyJob = (r) => r.rest === WENT_WITHOUT;
+  const wanted = perJobRecords(declaration).filter((r) => everyJob(r) || (!except.includes(r.name) && !except.includes(r.file)));
   if (!wanted.length) return [];
   const names = jobDirs.map((j) => basename(resolve(String(j))));
   if (names.length < 2) return ["hand in at least two job folders that shared one records folder: one job cannot show that the next keeps its record"];
@@ -94,7 +105,10 @@ export function checkRecordsPerJob(records, jobDirs = [], { declaration = readDe
       out.push(`the record "${r.name}" (${r.file}) is written straight into the records folder as ${r.rest}, so each job overwrites the last; write it under a folder named after the job folder, join(RECORDS, basename(JOB_DIR))`);
     }
     for (const n of names) {
-      if (!matchesIn(join(records, n), r.rest).length) out.push(`the job in ${n} left no record "${r.name}" of its own: nothing matches ${n}/${r.rest} under the records folder`);
+      if (!matchesIn(join(records, n), r.rest).length) {
+        out.push(`the job in ${n} left no record "${r.name}" of its own: nothing matches ${n}/${r.rest} under the records folder`
+          + (everyJob(r) ? `; every job writes went-without.json, with no entries when it lacked nothing, since the conformance check reads it after jobs that may lack nothing` : ""));
+      }
     }
   }
   return out;

@@ -157,13 +157,67 @@ same kind and then holds them to it:
     // ... two jobs, each with its own job folder, one records folder ...
     assert.deepEqual(checkRecordsPerJob(records, [jobDir1, jobDir2]), []);
 
-Choose jobs that each leave every per-job record: two jobs that go without
-the same thing each note went-without.json. A record the declaration says is
-written only in some cases, and that neither job writes, goes in
-`{ except: ["<its file or name>"] }`. It was added because three agents built
+Run two ordinary jobs, jobs that succeed. Every job writes went-without.json,
+with no entries when it lacked nothing, because the conformance check reads
+it after jobs that may lack nothing (vowel-meter, build
+ab_3508d5dec3d4642113, wrote it only when a job lacked something and did not
+conform). A record the declaration says is written only in some cases, and
+that neither job writes, goes in `{ except: ["<its file or name>"] }`;
+went-without.json never does, and the check holds every job to it whatever
+`except` names. It was added because three agents built
 on dev wrote went-without.json straight into the records folder, so each job
 overwrote the last, and their suites, which handed each job its own folder as
 the records folder, never noticed (technical debt 639).
+
+## Every computed expected value is worked twice
+
+Since 2026-10-31 every suite also carries `test/worked-values.test.mjs`,
+added by the test writer and never written by the model. Each expected value
+that a rule in the spec decides from the input (a count, a total, a length,
+letters taken from words, an order, which items pass) is written twice: as
+the literal you expect, and as a computation, a few lines of plain code in
+the test file over the same input that apply the spec's rule step by step.
+It is a constant at the top of the file, before any test, and the tests use
+the constant:
+
+    import { worked } from "./worked-values.test.mjs";
+
+    function vowelsIn(s) {
+      let n = 0;
+      for (const ch of s.toLowerCase()) if ("aeiou".includes(ch)) n += 1;
+      return n;
+    }
+    const SENTENCE = "Education provides curious insights.";
+    const TOTAL = worked(14, () => vowelsIn(SENTENCE), "the vowels in SENTENCE");
+
+    test("the vowels of a sentence are counted", () => {
+      assert.equal(countVowels(SENTENCE).total, TOTAL);
+    });
+
+The computation never calls a script, and never repeats the literal. Read
+the rule from the spec word for word: "one letter per word" gives "HTP" for
+"hypertext transfer protocol", whatever the world spells. The test writer
+evaluates every worked value before it delivers the suite and sends back each
+one its own computation does not give. Where no expected value is decided by
+such a rule (every expectation is a reply's wording, a refusal, an exit code
+or what a stand-in model said), the notes say so on a line that starts
+"No worked values:". It was added because suites pinned values worked out
+wrong (16 vowels where the sentence holds 14, "HTTP" where the rule gives
+"HTP"), and the build stopped at the code step on a conflict that was the
+suite's (technical debt 646).
+
+## A delivered piece is read by whole lines
+
+Find a line of a delivered piece by a pattern for the whole line, or by the
+text after its heading line:
+
+    assert.match(text, /^- a: 1$/m);
+
+never by a single letter or a short word searched anywhere in the piece. A
+heading or a word of prose holds letters too: `## Counts` holds o and u
+before any i, so `block.indexOf("i") < block.indexOf("o")` fails a piece that
+keeps the spec. The test writer sends back a search for one letter with
+indexOf, lastIndexOf, includes or search.
 
 ## Where the nine are thin
 

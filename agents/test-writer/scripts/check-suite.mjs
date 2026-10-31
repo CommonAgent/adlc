@@ -24,6 +24,15 @@
 // a script, a function imported from one, or a helper that does is touching,
 // and a failure that cannot be placed in a test is not named.
 //
+// The same run checks every worked value. Each expected value a rule in the
+// spec decides is written as worked(value, () => computation), a constant at
+// the top of its file, and the worked-values check every suite carries
+// (references/worked-values.test.mjs) fails one test naming each value its
+// own computation does not give. Every file loads in this run, so each such
+// value is read out of that failure and named (technical debt 646: a suite
+// pinned 16 vowels where the sentence holds 14, and "HTTP" where the spec's
+// rule gives "HTP", and the build stopped at the code step).
+//
 // Nothing here edits a test. A failure against the real scripts belongs to
 // whoever owns the scripts, and the verdict says so.
 //
@@ -285,6 +294,9 @@ export function unpassableFrom(failures = [], { dir = "", files = [], scripts = 
     if (!f?.file || !f.line) continue;
     // A stand-in that was called says so: the test reached a script.
     if (/stand-in: /.test(String(f.error ?? ""))) continue;
+    // A worked value that disagrees is said as that, not as a test no
+    // script can mend (worked-values.test.mjs adds the test that fails).
+    if (String(f.error ?? "").startsWith(WORKED_WRONG)) continue;
     const missing = /ENOENT[^']*'([^']+)'/.exec(String(f.error ?? ""));
     if (missing && dir && !resolve(missing[1]).startsWith(resolve(dir))) continue;
     const file = String(f.file).startsWith("file:") ? new URL(f.file).pathname : String(f.file);
@@ -295,6 +307,24 @@ export function unpassableFrom(failures = [], { dir = "", files = [], scripts = 
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ path: files.find((x) => path.endsWith(x.path))?.path ?? path, line: f.line, name: trim(f.name), error: trim(f.error).slice(0, 300) });
+  }
+  return out;
+}
+
+/** How the worked-values check (references/worked-values.test.mjs, copied
+ *  into every suite) opens the failure it reports when a worked value is not
+ *  what its own computation gives (technical debt 646). The same words as
+ *  that file's WRONG. */
+export const WORKED_WRONG = "worked values disagree with their own computations:";
+
+/** Each worked value that disagrees, one sentence each, out of the
+ *  failures the declaration run read. Said once each, in the order found. */
+export function wrongValuesFrom(failures = []) {
+  const out = [];
+  for (const f of failures) {
+    const e = String(f?.error ?? "");
+    if (!e.startsWith(WORKED_WRONG)) continue;
+    for (const line of e.slice(WORKED_WRONG.length).split("\n").map(trim).filter(Boolean)) if (!out.includes(line)) out.push(line);
   }
   return out;
 }
@@ -357,6 +387,9 @@ export function declarationRun({ spec, files, folder = null, spawn = spawnSync }
       pass: out.filter((l) => l.trim() === "DECLARATION-PASS").length,
       failed: failures.length,
       timed_out: !!r.error && /ETIMEDOUT|timed out/i.test(String(r.error?.code ?? r.error?.message ?? "")),
+      // Every file loads here, so every worked value at the top of a file is
+      // checked against its computation (technical debt 646).
+      wrong_values: wrongValuesFrom(failures),
       unpassable: unpassableFrom(failures, {
         dir, files, scripts: [...wanted.keys()],
         read: (p) => (staysInside(p) && existsSync(join(dir, p)) ? readFileSync(join(dir, p), "utf8") : null),
@@ -373,7 +406,7 @@ export function declarationRun({ spec, files, folder = null, spawn = spawnSync }
 export function standInChecks({ spec, files, folder = null, spawn } = {}) {
   const standIns = standInRun({ spec, files, folder, spawn });
   const declarations = declarationRun({ spec, files, folder, ...(spawn ? { spawn } : {}) });
-  return { ...standIns, unpassable: declarations.unpassable };
+  return { ...standIns, unpassable: declarations.unpassable, wrong_values: declarations.wrong_values ?? [] };
 }
 
 /** A copy of a package for the suite to run in: everything but its own
@@ -431,6 +464,10 @@ export function verdict({ standIns = null, real = null, mutations = [] } = {}) {
     const u = standIns.unpassable ?? [];
     if (u.length) {
       lines.push(`${u.length === 1 ? "One test touches" : `${u.length} tests touch`} no script and still ${u.length === 1 ? "fails" : "fail"} against the agent's own files, so no script can ever make ${u.length === 1 ? "it" : "them"} pass: ${u.map((x) => `"${x.name}" (${x.path})`).join(", ")}.`);
+    }
+    const w = standIns.wrong_values ?? [];
+    if (w.length) {
+      lines.push(`${w.length === 1 ? "One worked value disagrees with its own computation" : `${w.length} worked values disagree with their own computations`}, so the suite pins ${w.length === 1 ? "a value" : "values"} the spec's rule may not give, and a script that keeps the spec cannot pass ${w.length === 1 ? "it" : "them"}: ${w.join("; ")}.`);
     }
   }
   if (real) {
