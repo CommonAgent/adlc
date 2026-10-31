@@ -152,7 +152,7 @@ export function layOutBuildFolder({ dir, agent = {}, suite = {}, prototype = {},
  *  scripts/ except the lock itself and records/, and the scripts the folder
  *  started with. */
 export function buildLock(dir, { scripts = [] } = {}) {
-  const found = listing(dir, { skip: ["scripts", "records", LOCK_FILE] });
+  const found = listing(dir, { skip: ["scripts", "records", ".git", LOCK_FILE] });
   const digests = Object.fromEntries(Object.entries(found).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
   return { build_lock: "v1", digests, scripts };
 }
