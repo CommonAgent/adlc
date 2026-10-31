@@ -7,7 +7,7 @@
   "basePath": "/v1/lifecycle",
   "operations": [
     { "method": "GET", "path": "/me", "answer": "#/$defs/MeAnswer", "does": "Who is asking, and the service's name." },
-    { "method": "GET", "path": "/builds", "answer": "#/$defs/BuildListAnswer", "does": "The person's builds, each with the stage it is at." },
+    { "method": "GET", "path": "/builds", "answer": "#/$defs/BuildListAnswer", "does": "The person's builds, each with the stage it is at and where it ended, in words. A build the person archived is left out unless the request adds ?archived=1." },
     { "method": "POST", "path": "/builds", "request": "#/$defs/StartRequest", "answer": "#/$defs/BuildAnswer", "does": "Start a build from the person's words." },
     { "method": "GET", "path": "/builds/{id}", "answer": "#/$defs/BuildAnswer", "does": "One build, stage by stage, with its log and the actions it offers now." },
     { "method": "GET", "path": "/builds/{id}/files?path={path}", "answer": "the file's bytes", "does": "A file a stage handed back, at the link the build gives." },
@@ -79,8 +79,13 @@
           "type": "object",
           "required": ["stage", "state"],
           "description": "The stage the build is at, and its state there.",
-          "properties": { "stage": { "$ref": "#/$defs/StageId" }, "state": { "$ref": "#/$defs/State" } }
+          "properties": {
+            "stage": { "$ref": "#/$defs/StageId" },
+            "state": { "$ref": "#/$defs/State" },
+            "summary": { "$ref": "#/$defs/Words", "description": "Where the build ended, or where it is, in the words a person reads first, such as \"Installed · conforms\", \"Installed · paused: failed conformance\", \"Waiting on you at Code\" or \"Stopped at Requirements\". Added in 0.1; a client that finds none says the stage and state." }
+          }
         },
+        "archived": { "type": "boolean", "description": "The person archived it. Archived builds are listed only when the request adds ?archived=1. Added in 0.1." },
         "updated": { "$ref": "#/$defs/Time" }
       }
     },
@@ -119,7 +124,20 @@
           "required": ["pull_request", "installed"],
           "description": "Whether a try may be sent now, against the pull request and against the installed agent.",
           "properties": { "pull_request": { "type": "boolean" }, "installed": { "type": "boolean" } }
-        }
+        },
+        "summary": { "$ref": "#/$defs/Words", "description": "Where the build ended, or where it is, in words: the same words as the list's at.summary. Added in 0.1." },
+        "paused": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["at", "why"],
+              "properties": { "at": { "$ref": "#/$defs/Time" }, "why": { "$ref": "#/$defs/Words" } }
+            }
+          ],
+          "description": "The installed agent is paused, since when and why (for example, a conformance check it failed); null when it is not. Added in 0.1."
+        },
+        "archived": { "type": "boolean", "description": "The person archived it. Added in 0.1." }
       }
     },
     "Stage": {
@@ -200,7 +218,7 @@
       "required": ["stage", "name", "label", "needs"],
       "properties": {
         "stage": { "$ref": "#/$defs/StageId", "description": "The stage it acts at, one the build offers." },
-        "name": { "$ref": "#/$defs/Words", "description": "Posted as /builds/{id}/actions/{name}." },
+        "name": { "$ref": "#/$defs/Words", "description": "Posted as /builds/{id}/actions/{name}. Names a service may offer include approve, changes, accept, resume, back_to_test and stop; archive and unarchive, for a build that ended without an install; and resume_agent, which resumes an installed agent a failed conformance check paused." },
         "label": { "$ref": "#/$defs/Words", "description": "The button's words." },
         "needs": { "type": "array", "items": { "$ref": "#/$defs/Need" } }
       }

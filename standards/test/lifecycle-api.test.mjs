@@ -89,6 +89,32 @@ test("a field the schema does not name is allowed, since the contract grows by a
   assert.deepEqual(checkBuild(b, IDS, "b1"), []);
 });
 
+test("a build's end state, its pause and archive are optional fields of the list and the build, added in 0.1", () => {
+  // Without them, as a service answered before they were added, still passes.
+  assert.deepEqual(checkBuildList(list(), IDS), []);
+  const l = list();
+  l.builds[0].at.summary = "Waiting on you at Code";
+  l.builds.push({ id: "b2", name: "vowel-tally", does: "Counts vowels.", version: "0.1.0", at: { stage: "requirements", state: "stopped", summary: "Stopped at Requirements" }, archived: true, updated: AT });
+  assert.deepEqual(checkBuildList(l, IDS), []);
+  const b = build();
+  Object.assign(b.build, { summary: "Installed · paused: failed conformance", paused: { at: AT, why: "The conformance check failed." }, archived: false });
+  b.build.actions.push({ stage: "conformance", name: "resume_agent", label: "Resume the agent", needs: [] });
+  b.build.stages.find((s) => s.stage === "conformance").state = "refused";
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  b.build.paused = null;
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  // Wrong types are caught.
+  l.builds[1].archived = "yes";
+  l.builds[1].at.summary = 3;
+  const lp = checkBuildList(l, IDS).join("\n");
+  assert.match(lp, /builds\[1\]\.archived: is string, not boolean/);
+  assert.match(lp, /builds\[1\]\.at\.summary: is integer, not string/);
+  b.build.paused = { why: "no time" };
+  assert.match(checkBuild(b, IDS, "b1").join("\n"), /paused: has no at/);
+  // The list's operation says how archived builds are asked for.
+  assert.match(SCHEMA.operations.find((o) => o.method === "GET" && o.path === "/builds").does, /\?archived=1/);
+});
+
 test("the schema catches a wrong shape", () => {
   const b = build();
   b.build.stages[0].state = "finished";
