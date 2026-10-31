@@ -275,6 +275,24 @@ export function verdict({ run = null, blanks = [], build = null, round = 0, roun
   return lines.join(" ");
 }
 
+/** A build folder worked in place: its lock is the record, and the baseline
+ *  is what the lock pins, never the folder as it stands, so a file added
+ *  outside scripts/ before the first run is still reported as added. Only the
+ *  lock itself, which pins nothing of itself, is taken as it is. */
+export function recordFromLock(lock, lockBytes, { folder, roundsMax }) {
+  const baseline = { ...lockedDigests(lock) };
+  baseline[LOCK_FILE] = digestOf(lockBytes);
+  return { workspace: "v1", at: new Date().toISOString(), folder, rounds_max: roundsMax, from_build_folder: true,
+    scripts: Array.isArray(lock.scripts) ? lock.scripts : [], digests: lockedDigests(lock), listing: baseline };
+}
+
+/** Whether a record taken from a build folder's lock is of a lock other than
+ *  the one on disk: the branch moved on (revised tests, debt 636). The fence
+ *  that counts is the gate's, on our side; this keeps the local check in step. */
+export function recordIsStale(record, lockBytes) {
+  return record?.from_build_folder === true && record?.listing?.[LOCK_FILE] !== digestOf(lockBytes);
+}
+
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
 if (thisFile && import.meta.url.endsWith(thisFile)) {
   const env = process.env;
@@ -285,18 +303,14 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   if (!WORKSPACE && !RECORDS && basename(here) === ".adlc") { WORKSPACE = dirname(here); RECORDS = join(WORKSPACE, "records"); }
   if (!WORKSPACE || !RECORDS) { console.error("WORKSPACE and RECORDS are required"); process.exit(2); }
   const recordPath = join(RECORDS, "workspace.json");
-  if (!existsSync(recordPath) && existsSync(join(WORKSPACE, LOCK_FILE))) {
-    // A build folder worked in place has no workspace record yet: its lock is
-    // the record, and the baseline is what the lock pins, never the folder as
-    // it stands, so a file added outside scripts/ before the first run is still
-    // reported as added. Only the lock itself, which pins nothing of itself, is
-    // taken as it is.
-    const lock = JSON.parse(readFileSync(join(WORKSPACE, LOCK_FILE), "utf8"));
-    const baseline = { ...lockedDigests(lock) };
-    baseline[LOCK_FILE] = digestOf(readFileSync(join(WORKSPACE, LOCK_FILE)));
+  const lockAt = join(WORKSPACE, LOCK_FILE);
+  // A record taken from a lock the branch has since moved past (the tests
+  // were revised, debt 636) is taken again from the new lock.
+  const kept = existsSync(recordPath) ? JSON.parse(readFileSync(recordPath, "utf8")) : null;
+  if (existsSync(lockAt) && (!kept || recordIsStale(kept, readFileSync(lockAt)))) {
+    const lockBytes = readFileSync(lockAt);
     mkdirSync(RECORDS, { recursive: true });
-    writeFileSync(recordPath, JSON.stringify({ workspace: "v1", at: new Date().toISOString(), folder: WORKSPACE, rounds_max: roundsMaxOf(env), from_build_folder: true,
-      scripts: Array.isArray(lock.scripts) ? lock.scripts : [], digests: lockedDigests(lock), listing: baseline }, null, 2) + "\n");
+    writeFileSync(recordPath, JSON.stringify(recordFromLock(JSON.parse(lockBytes.toString("utf8")), lockBytes, { folder: WORKSPACE, roundsMax: roundsMaxOf(env) }), null, 2) + "\n");
   }
   if (!existsSync(recordPath)) { console.error(`no workspace record at ${recordPath}: run workspace.mjs first`); process.exit(2); }
   try {
