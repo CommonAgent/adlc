@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/CommonAgent/adlc/main/standards/lifecycle-api.schema.json",
+  "title": "The lifecycle API",
+  "version": "0.1",
+  "description": "What any service implementing the Agent Development Lifecycle answers, so that one client works against more than one service. Every request and answer is JSON, at the path /v1/lifecycle on the service. Times are ISO 8601 with a zone. Auth is Authorization: Bearer <key>, where the key is one the person makes for their own account, as the service says. A build lists the 24 stages of stages.json, one entry each, and a stage the service does not run is reported as not_offered. A client draws one button for each action the build offers, and nothing else. Version 0.1 changes only by adding fields: a client ignores a field it does not know, and a service never removes or retypes one. The operations list names the definition each request and answer must match; lifecycle-api-check.mjs checks a running service against it, together with the rules a schema cannot say.",
+  "basePath": "/v1/lifecycle",
+  "operations": [
+    { "method": "GET", "path": "/me", "answer": "#/$defs/MeAnswer", "does": "Who is asking, and the service's name." },
+    { "method": "GET", "path": "/builds", "answer": "#/$defs/BuildListAnswer", "does": "The person's builds, each with the stage it is at." },
+    { "method": "POST", "path": "/builds", "request": "#/$defs/StartRequest", "answer": "#/$defs/BuildAnswer", "does": "Start a build from the person's words." },
+    { "method": "GET", "path": "/builds/{id}", "answer": "#/$defs/BuildAnswer", "does": "One build, stage by stage, with its log and the actions it offers now." },
+    { "method": "GET", "path": "/builds/{id}/files?path={path}", "answer": "the file's bytes", "does": "A file a stage handed back, at the link the build gives." },
+    { "method": "POST", "path": "/builds/{id}/actions/{name}", "request": "#/$defs/ActionRequest", "answer": "#/$defs/BuildAnswer", "does": "Take one of the actions the build offers, with the inputs it needs." },
+    { "method": "POST", "path": "/builds/{id}/try", "request": "#/$defs/TryRequest", "answer": "#/$defs/TryAnswer", "does": "Send one input to the build's pull request or to the installed agent, and read the answer." },
+    { "method": "GET", "path": "/builds/{id}/tries", "answer": "#/$defs/TriesAnswer", "does": "The tries made on a build, newest first." },
+    { "method": "POST", "path": "/builds/{id}/tries/{tid}/keep", "answer": "#/$defs/TryListAnswer", "does": "Keep a try: it is added to the agent's suite as a new test file." },
+    { "method": "POST", "path": "/builds/{id}/tries/{tid}/wrong", "request": "#/$defs/WrongRequest", "answer": "#/$defs/TryListAnswer", "does": "Say a try came back wrong: it goes back to whoever holds Code, as a comment on the pull request." }
+  ],
+  "errors": "#/$defs/ErrorAnswer",
+  "$defs": {
+    "Words": { "type": "string" },
+    "Time": { "type": "string", "format": "date-time", "description": "ISO 8601, with a zone (Z or an offset)." },
+    "StageId": { "type": "string", "minLength": 1, "description": "An id from stages.json, such as \"code\"." },
+    "State": {
+      "enum": ["not_started", "working", "waiting_on_you", "done", "refused", "stopped", "not_offered"],
+      "description": "waiting_on_you: the person's act is next. not_offered: this service does not run the stage."
+    },
+    "Said": {
+      "type": "object",
+      "required": ["at", "said"],
+      "properties": { "at": { "$ref": "#/$defs/Time" }, "said": { "$ref": "#/$defs/Words" } }
+    },
+    "Log": { "type": "array", "items": { "$ref": "#/$defs/Said" } },
+
+    "ErrorAnswer": {
+      "type": "object",
+      "required": ["error"],
+      "description": "Any 4xx or 5xx answer. A 401 or 403 means the key is missing, wrong or lacks what the call needs.",
+      "properties": {
+        "error": { "$ref": "#/$defs/Words", "description": "What went wrong, in words a person can read." },
+        "build": { "$ref": "#/$defs/Build", "description": "On a refused action, the build as it now stands." },
+        "tries_today": { "type": "integer", "minimum": 0, "description": "On a 429 from try: the tries this build has had today." },
+        "tries_cap": { "type": "integer", "minimum": 0, "description": "On a 429 from try: the most tries a build may have in a day." }
+      }
+    },
+
+    "MeAnswer": {
+      "type": "object",
+      "required": ["account", "service"],
+      "properties": {
+        "account": {
+          "type": "object",
+          "required": ["email", "name"],
+          "properties": { "email": { "$ref": "#/$defs/Words" }, "name": { "$ref": "#/$defs/Words" } }
+        },
+        "service": {
+          "type": "object",
+          "required": ["name"],
+          "properties": { "name": { "$ref": "#/$defs/Words", "description": "The service's name as a person should see it." } }
+        }
+      }
+    },
+
+    "BuildListAnswer": {
+      "type": "object",
+      "required": ["builds"],
+      "properties": { "builds": { "type": "array", "items": { "$ref": "#/$defs/BuildListItem" } } }
+    },
+    "BuildListItem": {
+      "type": "object",
+      "required": ["id", "name", "does", "version", "at", "updated"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Words" },
+        "name": { "$ref": "#/$defs/Words" },
+        "does": { "$ref": "#/$defs/Words" },
+        "version": { "$ref": "#/$defs/Words" },
+        "at": {
+          "type": "object",
+          "required": ["stage", "state"],
+          "description": "The stage the build is at, and its state there.",
+          "properties": { "stage": { "$ref": "#/$defs/StageId" }, "state": { "$ref": "#/$defs/State" } }
+        },
+        "updated": { "$ref": "#/$defs/Time" }
+      }
+    },
+
+    "StartRequest": {
+      "type": "object",
+      "required": ["does"],
+      "properties": {
+        "does": { "type": "string", "minLength": 1, "description": "What the agent does, in the person's words." },
+        "refuses": { "$ref": "#/$defs/Words", "description": "What it must refuse." },
+        "more": { "$ref": "#/$defs/Words", "description": "Anything else the person wants said." },
+        "name": { "$ref": "#/$defs/Words", "description": "A name for the agent, when the person has one." },
+        "prototype": { "$ref": "#/$defs/Words", "description": "A public repository, as owner/name, to read as the agent's prototype." }
+      }
+    },
+
+    "BuildAnswer": {
+      "type": "object",
+      "required": ["build"],
+      "properties": { "build": { "$ref": "#/$defs/Build" } }
+    },
+    "Build": {
+      "type": "object",
+      "required": ["id", "name", "does", "version", "handle", "stages", "actions", "log", "can_try"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Words" },
+        "name": { "$ref": "#/$defs/Words" },
+        "does": { "$ref": "#/$defs/Words" },
+        "version": { "$ref": "#/$defs/Words" },
+        "handle": { "$ref": "#/$defs/Words", "description": "The address the agent answers at once it is installed." },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/Stage" }, "description": "One entry for each of the stages in stages.json." },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/Action" }, "description": "Everything the person may do now. A client draws one button for each, and nothing else." },
+        "log": { "$ref": "#/$defs/Log" },
+        "can_try": {
+          "type": "object",
+          "required": ["pull_request", "installed"],
+          "description": "Whether a try may be sent now, against the pull request and against the installed agent.",
+          "properties": { "pull_request": { "type": "boolean" }, "installed": { "type": "boolean" } }
+        }
+      }
+    },
+    "Stage": {
+      "type": "object",
+      "required": ["stage", "state", "holder", "runs", "rounds", "given", "handed_back", "done_when_met", "log", "where"],
+      "properties": {
+        "stage": { "$ref": "#/$defs/StageId" },
+        "state": { "$ref": "#/$defs/State" },
+        "holder": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/Holder" }], "description": "Who holds the stage; null for a stage that is not offered." },
+        "runs": { "type": "integer", "minimum": 0, "description": "How many times the stage has run." },
+        "rounds": { "type": "array", "items": { "$ref": "#/$defs/Round" }, "description": "Newest first." },
+        "given": { "$ref": "#/$defs/Words" },
+        "handed_back": {
+          "type": "object",
+          "required": ["words", "files"],
+          "properties": {
+            "words": { "type": "array", "items": { "$ref": "#/$defs/Words" } },
+            "files": { "type": "array", "items": { "$ref": "#/$defs/File" } }
+          }
+        },
+        "done_when_met": { "type": ["boolean", "null"], "description": "Whether the stage's \"done when\" was met; null when it is not known yet." },
+        "log": { "$ref": "#/$defs/Log" },
+        "where": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/PullRequest" }], "description": "Where the stage's work is, when it is somewhere the person can open." }
+      }
+    },
+    "Holder": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "enum": ["reference_agent", "your_agent", "person"] },
+        "name": { "$ref": "#/$defs/Words" }
+      }
+    },
+    "Round": {
+      "type": "object",
+      "required": ["n", "at", "label", "verdict", "back", "words"],
+      "properties": {
+        "n": { "type": "integer" },
+        "at": { "$ref": "#/$defs/Time" },
+        "label": { "$ref": "#/$defs/Words" },
+        "verdict": { "$ref": "#/$defs/Words" },
+        "back": { "type": "boolean", "description": "True when this round sent the work back." },
+        "words": { "$ref": "#/$defs/Words" }
+      }
+    },
+    "File": {
+      "type": "object",
+      "required": ["path", "size", "link"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 0, "description": "Bytes." },
+        "link": { "$ref": "#/$defs/Words", "description": "Where its bytes are read, with the same key: an address, or a path on the service such as /v1/lifecycle/builds/{id}/files?path={path}." }
+      }
+    },
+    "PullRequest": {
+      "type": "object",
+      "required": ["kind", "url", "head", "check"],
+      "properties": {
+        "kind": { "const": "pull_request" },
+        "url": { "$ref": "#/$defs/Words" },
+        "head": { "type": ["string", "null"], "description": "The pull request's newest commit, as a short sha." },
+        "check": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/Check" }] }
+      }
+    },
+    "Check": {
+      "type": "object",
+      "required": ["title", "words", "items", "passed"],
+      "description": "The check on the pull request's newest commit.",
+      "properties": {
+        "title": { "$ref": "#/$defs/Words" },
+        "words": { "$ref": "#/$defs/Words" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/Words" } },
+        "passed": { "type": ["boolean", "null"], "description": "null while it runs." }
+      }
+    },
+    "Action": {
+      "type": "object",
+      "required": ["stage", "name", "label", "needs"],
+      "properties": {
+        "stage": { "$ref": "#/$defs/StageId", "description": "The stage it acts at, one the build offers." },
+        "name": { "$ref": "#/$defs/Words", "description": "Posted as /builds/{id}/actions/{name}." },
+        "label": { "$ref": "#/$defs/Words", "description": "The button's words." },
+        "needs": { "type": "array", "items": { "$ref": "#/$defs/Need" } }
+      }
+    },
+    "Need": {
+      "type": "object",
+      "required": ["name", "label", "kind"],
+      "properties": {
+        "name": { "$ref": "#/$defs/Words", "description": "The member it is sent as in the action's request." },
+        "label": { "$ref": "#/$defs/Words" },
+        "kind": { "$ref": "#/$defs/Words", "description": "text (a line), words (a paragraph) or repository (owner/name)." },
+        "optional": { "type": "boolean", "description": "True when the person may leave it empty, and it is then not sent." }
+      }
+    },
+
+    "ActionRequest": {
+      "type": "object",
+      "description": "One member for each need the action names, as words. A need marked optional and left empty is not sent.",
+      "additionalProperties": { "type": "string" }
+    },
+
+    "TryRequest": {
+      "type": "object",
+      "required": ["say", "against"],
+      "properties": {
+        "say": { "type": "string", "minLength": 1, "description": "The input, in words." },
+        "against": { "enum": ["pull_request", "installed"] },
+        "offering": { "$ref": "#/$defs/Words", "description": "Which of the agent's jobs to try; the service picks one when it is not given." }
+      }
+    },
+    "Try": {
+      "type": "object",
+      "required": ["id", "say", "against", "answer", "ms", "at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Words" },
+        "say": { "$ref": "#/$defs/Words" },
+        "against": { "enum": ["pull_request", "installed"] },
+        "answer": { "$ref": "#/$defs/Words", "description": "The agent's answer, or what went wrong, in words." },
+        "ms": { "type": "number", "minimum": 0, "description": "How long it took, in milliseconds." },
+        "at": { "$ref": "#/$defs/Time" }
+      }
+    },
+    "TryListItem": {
+      "type": "object",
+      "required": ["id", "say", "against", "answer", "ms", "at", "kept", "sent_back"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Words" },
+        "say": { "$ref": "#/$defs/Words" },
+        "against": { "enum": ["pull_request", "installed"] },
+        "answer": { "$ref": "#/$defs/Words" },
+        "ms": { "type": "number", "minimum": 0 },
+        "at": { "$ref": "#/$defs/Time" },
+        "kept": { "type": "boolean", "description": "It was kept as a test." },
+        "sent_back": { "type": "boolean", "description": "It was said to be wrong, and sent back." }
+      }
+    },
+    "TryAnswer": {
+      "type": "object",
+      "required": ["try"],
+      "properties": { "try": { "$ref": "#/$defs/Try" } }
+    },
+    "TriesAnswer": {
+      "type": "object",
+      "required": ["tries"],
+      "properties": { "tries": { "type": "array", "items": { "$ref": "#/$defs/TryListItem" } } }
+    },
+    "TryListAnswer": {
+      "type": "object",
+      "required": ["try"],
+      "properties": { "try": { "$ref": "#/$defs/TryListItem" } }
+    },
+    "WrongRequest": {
+      "type": "object",
+      "properties": { "why": { "$ref": "#/$defs/Words", "description": "Why the answer is wrong." } }
+    }
+  }
+}

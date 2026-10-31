@@ -9,6 +9,7 @@ version each Builder pins.
 | [architecture-standard.md](architecture-standard.md) | `https://schemas.agentmesh.ai/architecture-standard/v1` | the solution architect, which applies it; the spec writer, which designs within it |
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [stages.json](stages.json) | the lifecycle's 24 stages, in order, in seven phases (`version` in the file) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
+| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.1: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [standing-asset-schemas.json](standing-asset-schemas.json) | the list of known standing-asset kinds | the package maker, which refuses a `can_use` entry naming any other; the solution architect and the spec writer, which choose from it |
 
 ## What a standing asset is
@@ -119,3 +120,41 @@ its own layer, because a rule may only tighten as it goes down the layers.
 Change the file here, in a pull request. Record the person who approved the
 new version in its header. Re-pin every Builder that reads it (each Builder's
 README says where its pins are), run their tests, and release them.
+
+## The lifecycle API
+
+[lifecycle-api.schema.json](lifecycle-api.schema.json) is what any service
+implementing this lifecycle answers, so that one client can show a person's
+builds from more than one service. It sits beside [stages.json](stages.json):
+a build lists the 24 stages by their ids there, one entry each, and a stage
+the service does not run is listed as `not_offered`. Each build carries the
+actions the person may take now, and a client draws one button for each
+action and nothing else, so every judgment stays with the service. The page
+that explains it is https://agenticdevelopment.ai/api.html.
+
+The schema is version 0.1, served at `/v1/lifecycle` on the service. It
+changes only by adding fields: a client ignores a field it does not know, and
+a service never removes a field or changes its type. Its `operations` list
+names the definition each request and answer must match.
+
+[lifecycle-api-check.mjs](lifecycle-api-check.mjs) checks a running service
+against it (node 22, no dependencies). It only reads: it asks who the key
+belongs to, lists the builds, reads each build and its tries, and opens the
+first file each build handed back. It checks every answer against the schema
+and holds the rules a schema cannot say: every stage of stages.json listed
+once, an action only at a stage the build offers, rounds newest first, a
+build in the list at a known stage, and real ISO 8601 times with a zone.
+
+```
+ADLC_API_KEY=... node standards/lifecycle-api-check.mjs https://example.com/v1/lifecycle/
+node standards/lifecycle-api-check.mjs https://example.com/v1/lifecycle/ --key-file ./key
+```
+
+The key is one the person makes for their own account, as the service says.
+The check reads it from `--key-file` or `ADLC_API_KEY`, refuses it on the
+command line, sends it only to the service's own address, and never prints
+it. It exits 0 when nothing is wrong and 1 on any problem. `--limit <n>` reads
+at most n builds (50 by default), and `--all-files` opens every file instead
+of the first of each build. Its tests are `test/lifecycle-api.test.mjs`.
+
+AgentMesh (https://agentmesh.ai) is the first service that implements it.
