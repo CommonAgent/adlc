@@ -1,5 +1,6 @@
 // The configuration the harness gives opencode for one message: which
-// directories outside the agent's home this container may touch.
+// directories outside the agent's home this container may touch, and the
+// host's model gateway when the model is one (gatewayProvider).
 //
 // WHY THIS EXISTS. opencode treats anything outside its project directory as
 // an external directory and asks before reading or writing it. Nobody is there
@@ -105,7 +106,44 @@ export function configFor(env = process.env) {
     external[`${dir}/*`] = "allow";
     external[`${dir}/**`] = "allow";
   }
-  return { $schema: SCHEMA, permission: { external_directory: external } };
+  const provider = gatewayProvider(env);
+  return { $schema: SCHEMA, ...(provider ? { provider } : {}), permission: { external_directory: external } };
+}
+
+// THE HOST'S MODEL GATEWAY (technical debt 619). Where the owner's instruction
+// names no model, the deployment gives the harness the host's model setting
+// as model-gateway/<model>, with MODEL_ENDPOINT and MODEL_PROTOCOL on the job
+// (steps.py keyless_vars) and the job's own gateway on that loopback port.
+// opencode knows no such provider until its configuration names one. The
+// client opencode loads for each protocol, and the path Common Agent 12.4.1
+// adds that the client does not add itself; the same table as install.py's
+// GATEWAY_CLIENTS, which writes the host's configuration.
+export const GATEWAY_PROVIDER = "model-gateway";
+export const GATEWAY_CLIENTS = {
+  "anthropic-messages": ["@ai-sdk/anthropic", "/v1"],
+  "openai-chat": ["@ai-sdk/openai-compatible", "/v1"],
+  gemini: ["@ai-sdk/google", ""],
+};
+
+/** The provider block naming the host's gateway, or null when the model is
+ *  not one or the job was not told where the gateway is. Each variable is
+ *  read by its exact name. */
+export function gatewayProvider(env = process.env) {
+  const model = String(env.AGENT_MODEL ?? "");
+  if (!model.startsWith(`${GATEWAY_PROVIDER}/`)) return null;
+  const endpoint = String(env.MODEL_ENDPOINT ?? "").trim().replace(/\/+$/, "");
+  const client = GATEWAY_CLIENTS[String(env.MODEL_PROTOCOL ?? "").trim()];
+  if (!endpoint || !client) return null;
+  const name = model.slice(GATEWAY_PROVIDER.length + 1);
+  return {
+    [GATEWAY_PROVIDER]: {
+      npm: client[0],
+      name: "The host's model gateway",
+      // The gateway takes no key; the client insists on one, so it is given a word that is not a key.
+      options: { baseURL: endpoint + client[1], apiKey: "no-key-needed" },
+      models: { [name]: { name } },
+    },
+  };
 }
 
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";

@@ -475,7 +475,10 @@ TOKEN_NAME_RE = re.compile(r"^[a-z0-9-]{1,32}$")
 # google-vertex-anthropic/claude-sonnet-5-5@default (2026-09-29).
 MODEL_RE = re.compile(r"^[a-z0-9/._-]{1,64}(@[a-z0-9._-]{1,32})?$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-DEFAULT_MODEL = "google/gemini-3.8-flash"
+# There is no default model in this file (technical debt 619). Which model a
+# harness wakes is the owner's instruction, and where the instruction names
+# none it is this host's model setting (harness_model): model.harness, else
+# model.name, reached through the host's model gateway.
 
 # The brain: how this host starts a harness, one cold boot per message. The
 # placed environment is sourced first, so the skills' scripts read every
@@ -523,7 +526,15 @@ PROVIDERS = {
     # provider name is opencode's own, so the model string passes to the
     # harness as it is, e.g. google-vertex-anthropic/claude-sonnet-5-5@default.
     "google-vertex-anthropic": (None, None, None),
+    # The host's model gateway (technical debt 619): the model the host's
+    # model setting names, at model.endpoint in model.protocol, with no key.
+    # opencode is told of it in its own configuration (install.GATEWAY_PROVIDER,
+    # gateway_provider below), and a job is told where it is (keyless_vars).
+    "model-gateway": (None, None, None),
 }
+GATEWAY_PROVIDER = "model-gateway"
+NO_MODEL = ("no model: the instruction names none, and this host's environment has neither model.harness nor "
+            "model.name, so there is no model for the harness to wake and none is substituted")
 
 # Where a keyless provider is called, as the variables its client reads. The
 # project is the one Claude is enabled in, and "us" is the owner's choice of
@@ -561,8 +572,68 @@ def provider_of(model):
 
 def keyless_vars(prov):
     """The variables a keyless provider is called with; {} for a provider
-    that is paid for with a key."""
+    that is paid for with a key. The host's model gateway is told by where it
+    is and what it speaks, from this host's model setting."""
+    if prov == GATEWAY_PROVIDER:
+        values, _ = host_model_defaults()
+        return {"MODEL_ENDPOINT": values.get("MODEL_ENDPOINT", "").rstrip("/"),
+                "MODEL_PROTOCOL": values.get("MODEL_PROTOCOL", "")}
     return dict(KEYLESS_VARS.get(prov) or {})
+
+
+def host_harness_model():
+    """This host's model for a harness the instruction gives none: the
+    environment's model.harness, else its model.name; "" when it has neither.
+    Each read by its exact name."""
+    for key, override in (("model.harness", "DM_MODEL_HARNESS"), ("model.name", "DM_MODEL_NAME")):
+        v = _optional_env(key, override)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def harness_model(*instructed, harness="opencode"):
+    """The model a harness wakes (technical debt 619). The first model the
+    instruction names, or the row that recorded an earlier one, wins as it is.
+    With none, this host's model setting (host_harness_model): a value that
+    names a provider passes as it is, and any other is reached through the
+    host's model gateway, as model-gateway/<model> for opencode and by its
+    bare name for codex, whose configuration already names the gateway.
+    "" when nothing names a model: no model is ever substituted. A gateway
+    model is checked against the host's gateway here (gateway_provider)."""
+    model = next((m.strip() for m in instructed if isinstance(m, str) and m.strip()), "")
+    if not model:
+        host = host_harness_model()
+        if not host or provider_of(host) or harness != "opencode":
+            model = host
+        else:
+            model = f"{GATEWAY_PROVIDER}/{host}"
+    if provider_of(model) == GATEWAY_PROVIDER:
+        gateway_provider(model)
+    return model
+
+
+def gateway_provider(model):
+    """{model, endpoint, protocol} for a model spelled model-gateway/<model>:
+    the host's model gateway, from model.endpoint and model.protocol; None for
+    any other model. A host whose model block leaves the endpoint or the
+    protocol out, or names a key for it, is refused: the harness reaches the
+    gateway on the agent's own host, which takes no key."""
+    if provider_of(model) != GATEWAY_PROVIDER:
+        return None
+    values, cred = host_model_defaults()
+    endpoint = values.get("MODEL_ENDPOINT", "").rstrip("/")
+    protocol = values.get("MODEL_PROTOCOL", "")
+    if not endpoint:
+        fail("validate", f"the model {model} is the host's model gateway, and this host's environment has no "
+                         "model.endpoint to reach it at")
+    if protocol not in INSTALL.GATEWAY_CLIENTS:
+        fail("validate", f"the model {model} is the host's model gateway, and this host's model.protocol "
+                         f"{protocol!r} is not one of {', '.join(INSTALL.GATEWAY_CLIENTS)}")
+    if cred:
+        fail("validate", f"the model {model} is the host's model gateway, and this host's model.key names a "
+                         "credential; a harness reaches the gateway on its own host, which takes none")
+    return {"model": model.split("/", 1)[1], "endpoint": endpoint, "protocol": protocol}
 
 
 def provider_var_names():
@@ -577,7 +648,9 @@ def brain_text(harness, model):
         return BRAIN_TEMPLATES[harness]
     prov = provider_of(model) or "google"
     var, keyfile, _ = PROVIDERS[prov]
-    here = keyless_vars(prov)
+    # On a host the gateway is named in opencode's own configuration
+    # (translate_for_harness), so the brain exports nothing for it.
+    here = {} if prov == GATEWAY_PROVIDER else keyless_vars(prov)
     if not var and here and HOST_MODEL_METADATA:
         here.update({"GCE_METADATA_HOST": HOST_MODEL_METADATA, "GCE_METADATA_IP": HOST_MODEL_METADATA})
     key_line = (f'export {var}="$(cat "$HOME/{keyfile}")"' if var else
@@ -1160,6 +1233,10 @@ def fetch_and_verify(name, url, expected_sha):
 # which is this host's configuration and never a package's.
 #
 #   model.name      MODEL_NAME, the model as the endpoint names it
+#   model.harness   the model a harness wakes when the instruction names none
+#                   (optional; model.name otherwise), reached through the
+#                   gateway at model.endpoint in model.protocol unless it
+#                   names a provider itself (harness_model, technical debt 619)
 #   model.endpoint  MODEL_ENDPOINT, the base address: on this host and in our
 #                   worker jobs the model gateway on loopback
 #                   (http://127.0.0.1:8788, host/responses-bridge.mjs)
@@ -1280,18 +1357,21 @@ def with_model_defaults(args, pkg):
 GATEWAY_ENDPOINT_VARS = ("MODEL_ENDPOINT", "STT_ENDPOINT")
 
 
-def model_gateway_env(args, pkg):
+def model_gateway_env(args, pkg, harness_vars=None):
     """The variables a worker job's own gateway reads, when one of the
     package's gateway settings (the model system's MODEL_ENDPOINT, or a
     service's STT_ENDPOINT) is on loopback: the container starts
     responses-bridge.mjs there (image/one-message.mjs) and it sends Claude's
     and Gemini's calls to Vertex, and Speech-to-Text v2 recognize to Google,
     in this project, signed in as the job's own service account. {} when no
-    such setting points at loopback."""
+    such setting points at loopback. `harness_vars` are what the job's harness
+    is told for its model (keyless_vars): a harness whose model is the host's
+    gateway names its MODEL_ENDPOINT there."""
     settings = args.get("settings") if isinstance(args.get("settings"), dict) else {}
     endpoint = ""
-    for s in pkg.get("systems", []):
-        mine = settings.get(s["name"]) if isinstance(settings.get(s["name"]), dict) else {}
+    sources = [settings.get(s["name"]) for s in pkg.get("systems", [])] + [harness_vars]
+    for mine in sources:
+        mine = mine if isinstance(mine, dict) else {}
         for var in GATEWAY_ENDPOINT_VARS:
             v = str(mine.get(var) or "")
             host = re.sub(r"^https?://", "", v).split("/")[0].rsplit(":", 1)[0]
@@ -1404,7 +1484,8 @@ def translate_for_harness(name, home, pkg_dir, pkg_name, pkg, harness, model, bi
     text = TRANSLATE.render(pkg_dir, name, bindings)
     write_text(f"{home}/{table['instructions']}", text, 0o644, name)
     placed.append(table["instructions"])
-    for rel, body in INSTALL.harness_files(harness, name, model, bindings).items():
+    gateway = gateway_provider(model) if harness == "opencode" else None
+    for rel, body in INSTALL.harness_files(harness, name, model, bindings, gateway=gateway).items():
         write_text(f"{home}/{rel}", body, 0o600, name)
         placed.append(rel)
     skills = sorted(d for d in os.listdir(os.path.join(home, pkg_name, "skills"))
@@ -1437,7 +1518,7 @@ def place_model_key(name, home, harness, model=None):
             shutil.copy("/home/opencode/.config/fleet/gemini.key", keyfile)
         elif prov == "google":
             # Said, never a bare FileNotFoundError reported as step "unexpected".
-            fail("bind", f"the model {model or DEFAULT_MODEL} names google, and this host holds neither the "
+            fail("bind", f"the model {model} names google, and this host holds neither the "
                          f"store's {secret} nor /home/opencode/.config/fleet/gemini.key")
         else:
             fail("bind", f"the model names {prov} and the store holds no credential called {secret}")
@@ -1455,6 +1536,37 @@ def place_model_key(name, home, harness, model=None):
 
 def write_brain(name, harness, model=None):
     write_text(f"{BRAINS}/{name}.sh", brain_text(harness, model), 0o755)
+
+
+def place_gateway_config(name, home, harness, model):
+    """opencode's configuration in an installed agent's home, with the host's
+    model gateway named as a provider when the model is one and taken out when
+    it is not, and everything else in it (its MCP servers) kept. For a model
+    change, where the rest of the configuration is not rendered again.
+    Returns True when the file was written."""
+    if harness != "opencode":
+        return False
+    path = f"{home}/.config/opencode/opencode.json"
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except FileNotFoundError:
+        doc = None
+    gateway = gateway_provider(model)
+    if doc is None and not gateway:
+        return False
+    doc = doc if isinstance(doc, dict) else {"$schema": "https://opencode.ai/config.json"}
+    providers = doc.get("provider") if isinstance(doc.get("provider"), dict) else {}
+    if gateway:
+        providers[GATEWAY_PROVIDER] = INSTALL.opencode_gateway_provider(gateway)
+    else:
+        providers.pop(GATEWAY_PROVIDER, None)
+    if providers:
+        doc["provider"] = providers
+    else:
+        doc.pop("provider", None)
+    write_text(path, json.dumps(doc, indent=2) + "\n", 0o600, name)
+    return True
 
 
 ACTS_FOR_VALUES = ("person", "organization", "anyone")
@@ -2688,7 +2800,7 @@ def deploy_prepare(argfile):
     interaction = args.get("interaction", "")
     admit = args.get("admit", [])
     token_name = args.get("boot_token", "")
-    model = args.get("model", DEFAULT_MODEL)
+    model = harness_model(args.get("model"), harness=harness)
     environment = args.get("environment", "")
     expected_sha = args.get("sha256", "")
     stack_bindings = read_stack_bindings(args)
@@ -2714,6 +2826,8 @@ def deploy_prepare(argfile):
         fail("validate", "admit must be a list of handles")
     if not TOKEN_NAME_RE.match(token_name):
         fail("validate", "boot_token must be a token NAME in the secret store, never a value")
+    if not model:
+        fail("validate", NO_MODEL)
     if not MODEL_RE.match(model):
         fail("validate", f"bad model {model!r}")
     # Optional; absent means unstated. A statement of where, never of quality.
@@ -2765,9 +2879,10 @@ def deploy_place(ctx, also_adding=0):
     run(["useradd", "-m", "-s", "/bin/bash", name], "useradd")
     job_seconds = job_seconds_of(pkg)
     # The model is kept on the row, as update() keeps it: an update filed with
-    # no proposal reads it from here, and without it fell back to
-    # DEFAULT_MODEL, which on a host with no Google key stopped the update at
-    # place_model_key (dev, 2026-10-05, quiz-maker 0.5.1).
+    # no proposal reads it from here, and without it fell back to a model
+    # written in code, which on a host with no Google key stopped the update at
+    # place_model_key (dev, 2026-10-05, quiz-maker 0.5.1). There is no such
+    # model now; the host's model setting answers instead (harness_model).
     entry = {"name": name, "package": pkg_name, "version": pkg_version, "sha256": sha256, "url": url,
              "harness": harness, "model": model, "interaction": interaction, "admitted_at_start": admit,
              "exposed_a2a": a2a, "placement": ctx["placement"],
@@ -3432,7 +3547,9 @@ def update_prepare(argfile):
     harness = entry.get("harness") or entry.get("framework") or ""
     if harness not in HARNESS_CHOICES:
         fail("validate", f"{name} runs on {harness}, which this host cannot start")
-    model = args.get("model") or entry.get("model") or DEFAULT_MODEL
+    model = harness_model(args.get("model"), entry.get("model"), harness=harness)
+    if not model:
+        fail("validate", NO_MODEL)
     if not MODEL_RE.match(model):
         fail("validate", f"bad model {model!r}")
     # Refused here, before anything is fetched; applied with the other row
@@ -4358,11 +4475,13 @@ def container_step(args, count_against_ceiling=True, alongside=None):
     environment = args.get("environment", "")
     probe_text = args.get("probe") or "status"
     # Read the same way a host deploy reads it, off the same key of the same
-    # argfile, with the same default when the owner named none. A container
-    # that wakes a model is under the owner's instruction about which model in
-    # exactly the way a host install is; the only difference is where the
-    # answer is written down afterwards.
-    model = args.get("model", DEFAULT_MODEL)
+    # argfile, and from this host's model setting when the owner named none
+    # (harness_model). A container that wakes a model is under the owner's
+    # instruction about which model in exactly the way a host install is; the
+    # only difference is where the answer is written down afterwards. A
+    # container that wakes no model may have none (the check where the model
+    # is placed, below).
+    model = harness_model(args.get("model"))
     # How much machine one message gets. Absent means the platform's own
     # default, which is what every container deployed before this ran on.
     memory = args.get("memory") or ""
@@ -4370,7 +4489,7 @@ def container_step(args, count_against_ceiling=True, alongside=None):
 
     if not NAME_RE.match(name):
         fail("validate", f"bad agent name {name!r}")
-    if not MODEL_RE.match(model):
+    if model and not MODEL_RE.match(model):
         fail("validate", f"bad model {model!r}")
     if memory and not IMAGE.MEMORY_RE.match(memory):
         fail("validate", f"bad memory {memory!r}; it is a size like 2Gi or 512Mi")
@@ -4425,6 +4544,8 @@ def container_step(args, count_against_ceiling=True, alongside=None):
     harness = None
     secret = None
     if IMAGE.needs_model_key(pkg["install"]):
+        if not model:
+            fail("validate", NO_MODEL)
         prov = provider_of(model)
         if not prov:
             fail("bind", f"the model {model} names no provider this host lends a key for, and {pkg_name} wakes a "
@@ -4500,7 +4621,7 @@ def container_step(args, count_against_ceiling=True, alongside=None):
                             binding=binding_name)
         # The model gateway inside the job, when the model system's endpoint
         # is on loopback (model_gateway_env).
-        env.update(model_gateway_env(args, pkg))
+        env.update(model_gateway_env(args, pkg, (harness or {}).get("vars")))
         # A SINGLE-CONTAINER EDITION carries each member's own variables too,
         # under that member's prefix, read off the member's own job, and one
         # time limit for the whole run (image.composite_job_variables).
@@ -4910,7 +5031,7 @@ def alongside(argfile):
     # this is the same agent, and the names it counts do not grow.
     spend_check_and_record([])
     harness = entry.get("harness") or entry.get("framework") or "opencode"
-    model = args.get("model") or row.get("model") or entry.get("model") or DEFAULT_MODEL
+    model = harness_model(args.get("model"), row.get("model"), entry.get("model"), harness=harness)
     filled = container_args_for_update(args, row, entry, harness, model)
     build = image_step(filled, alongside=True)
     started = container_step({**filled, "image": build["pinned"]}, count_against_ceiling=False,
@@ -5545,8 +5666,12 @@ def set_model(name, model, harness=None):
         fail("validate", f"{name} has no home at {home}")
     was = entry.get("model")
 
+    # A gateway model is checked against this host's gateway before anything
+    # changes (gateway_provider refuses a host that cannot reach one).
+    gateway_provider(model)
     secret = place_model_key(name, home, harness, model)
     write_brain(name, harness, model)
+    place_gateway_config(name, home, harness, model)
 
     # The caller-facing record, re-bound so it states the model that runs.
     descriptor = {"absent": "no identity, so nothing to bind"}
@@ -5634,8 +5759,14 @@ def set_container_model(name, model, row):
     # What the old provider put on the job and the new one does not: its key
     # reference, or a keyless provider's location variables.
     removed = PROVIDERS[was_prov][0] if changed else None
-    unset = sorted(set(keyless_vars(was_prov)) - set(keyless_vars(prov))) if changed else []
+    # The gateway's MODEL_ENDPOINT and MODEL_PROTOCOL are never taken off: a
+    # package's own model system may have placed the same two names.
+    unset = sorted(set(keyless_vars(was_prov)) - set(keyless_vars(prov))
+                   - set(keyless_vars(GATEWAY_PROVIDER))) if changed else []
     here = {IMAGE.MODEL_VAR: model, **keyless_vars(prov)}
+    if prov == GATEWAY_PROVIDER:
+        # The job's own gateway, started where MODEL_ENDPOINT is on loopback.
+        here.update(model_gateway_env({}, {"systems": []}, keyless_vars(prov)))
     spec = {"job": row["job"], "region": row["region"], "project": row.get("project") or PROJECT,
             "job_seconds": row.get("job_seconds") or 240}
     gcloud(["run", "jobs", "update", spec["job"], "--region", spec["region"],

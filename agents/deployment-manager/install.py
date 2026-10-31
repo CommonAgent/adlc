@@ -905,8 +905,35 @@ def render_codex_config(model, name, servers):
     return "\n".join(lines) + "\n"
 
 
-def render_opencode_config(servers):
-    """~/.config/opencode/opencode.json: the MCP servers by system name."""
+# The provider opencode names the host's model gateway by (technical debt 619).
+# A harness model spelled GATEWAY_PROVIDER/<model> is reached at the host's
+# model.endpoint in its model.protocol, with no provider key. The client
+# opencode loads for each protocol, and the path 12.4.1 adds that the client
+# does not add itself: anthropic-messages and openai-chat add /v1 and the client
+# adds /messages or /chat/completions; the Gemini client adds
+# /models/<model>:generateContent to the endpoint as it is.
+GATEWAY_PROVIDER = "model-gateway"
+GATEWAY_CLIENTS = {"anthropic-messages": ("@ai-sdk/anthropic", "/v1"),
+                   "openai-chat": ("@ai-sdk/openai-compatible", "/v1"),
+                   "gemini": ("@ai-sdk/google", "")}
+
+
+def opencode_gateway_provider(gateway):
+    """The opencode provider entry for the host's model gateway, from
+    {model, endpoint, protocol}. The gateway on the agent's own host needs no
+    key; the client insists on one, so it is given a word that is not a key."""
+    npm, path = GATEWAY_CLIENTS[gateway["protocol"]]
+    return {"npm": npm, "name": "The host's model gateway",
+            "options": {"baseURL": gateway["endpoint"].rstrip("/") + path, "apiKey": "no-key-needed"},
+            "models": {gateway["model"]: {"name": gateway["model"]}}}
+
+
+def render_opencode_config(servers, gateway=None):
+    """~/.config/opencode/opencode.json: the MCP servers by system name, and
+    the host's model gateway as a provider when the harness model is one."""
+    doc = {"$schema": "https://opencode.ai/config.json"}
+    if gateway:
+        doc["provider"] = {GATEWAY_PROVIDER: opencode_gateway_provider(gateway)}
     mcp = {}
     for s in servers:
         if "url" in s:
@@ -916,7 +943,9 @@ def render_opencode_config(servers):
         else:
             e = {"type": "local", "command": s["command"], "enabled": True}
         mcp[s["name"]] = e
-    return json.dumps({"$schema": "https://opencode.ai/config.json", "mcp": mcp}, indent=2) + "\n"
+    if servers or not gateway:
+        doc["mcp"] = mcp
+    return json.dumps(doc, indent=2) + "\n"
 
 
 def render_claude_config(servers):
@@ -933,15 +962,17 @@ def render_claude_config(servers):
     return json.dumps({"mcpServers": mcp}, indent=2) + "\n"
 
 
-def harness_files(harness, name, model, bindings):
+def harness_files(harness, name, model, bindings, gateway=None):
     """The harness configuration to place, as {relative path: text}. The
     codex file is rendered whole because the deployer owns it; the others
-    are rendered whole because the agent's home is new."""
+    are rendered whole because the agent's home is new. `gateway` is
+    {model, endpoint, protocol} when opencode's model is the host's gateway."""
     servers = mcp_servers(bindings)
     if harness == "codex":
         return {".codex/config.toml": render_codex_config(model, name, servers)}
     if harness == "opencode":
-        return {".config/opencode/opencode.json": render_opencode_config(servers)} if servers else {}
+        return ({".config/opencode/opencode.json": render_opencode_config(servers, gateway)}
+                if servers or gateway else {})
     if harness == "claude":
         return {".claude.json": render_claude_config(servers)} if servers else {}
     return {}
