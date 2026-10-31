@@ -60,6 +60,7 @@ except ImportError:  # not on Linux; the node lock below then holds nothing
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -411,6 +412,11 @@ EGRESS_OPEN = {"policy": "open", "enforced_by": "none"}
 # How long an image build may take before this stops following it. A build that
 # outruns it is left running and named, never reported as finished.
 BUILD_MINUTES = int(os.environ.get("DM_BUILD_MINUTES", "40"))
+# How often a build being followed is asked about (gcloud builds describe).
+# Cloud Build says nothing to a caller that is not streaming its log, so it is
+# asked; each ask is a gcloud process on a two-core host, which is why this is
+# not every second. Fifteen seconds until 2026-10-31.
+BUILD_POLL_SECONDS = max(1, int(os.environ.get("DM_BUILD_POLL_SECONDS") or 10))
 
 # WHERE A PACKAGED AGENT'S WORK RUNS, when the owner's instruction does not say.
 #
@@ -2765,12 +2771,16 @@ def deploy(argfile):
         before = watch_mark(holder)
         processes = start_processes(name)
         smoke = check_served(name, processes)
+        # 10, begun now: the work's placement runs in a process of its own
+        # while the node is watched (start_work), and deploy_finish waits for
+        # it. Any refusal from here on takes it down again first (on_fail).
+        ctx["work"] = start_work_if_wanted(ctx, smoke)
 
         # 9b. The watch. Two minutes of the node holding its connection with this
         # agent on it, and the agent and three neighbours answering, before anything
-        # says deployed; otherwise the agent is taken back out and the node is
-        # confirmed well without it. Before the work is placed, so a rolled-back
-        # install builds no image.
+        # says deployed; otherwise the agent is taken back out, its work if it
+        # was placed meanwhile is taken down, and the node is confirmed well
+        # without it.
         watched = watch_new_install(name, holder, before, restarts_allowed=restarts_allowed_of(processes),
                                     act="deploy", package=ctx["pkg_name"],
                                     version=ctx["pkg_version"], host=HOST, agent_key=ctx["agent_key"],
@@ -3037,9 +3047,13 @@ def deploy_finish(ctx):
     # inventory entry above is still the one fail() marks, so an image that will
     # not build leaves an agent whose state names the step it stopped at and a
     # `remove` that cleans it. Nothing falls back to running the work here.
+    #
+    # Where the placement was begun while the node was watched (start_work),
+    # this waits for its answer instead of placing the work a second time, and
+    # a refusal from it is this act's refusal, exactly as if it had run here.
     work = None
     if placement == "cloud-run":
-        work = place_in_cloud_run(args)
+        work = finish_work(ctx["work"]) if ctx.get("work") else place_in_cloud_run(args)
         runtime = work["runtime"]
     else:
         runtime = record_runtime(entry, {"key": agent_key, "handle": handle, "name": name}, kind="host")
@@ -4364,7 +4378,7 @@ def image_step(args, alongside=False):
         if time.time() > deadline:
             fail("image", f"build {build_id} is still {b.get('status')} after {BUILD_MINUTES} minutes; "
                           f"nothing was recorded", state=f"build {build_id} is still running")
-        time.sleep(15)
+        time.sleep(BUILD_POLL_SECONDS)
     if b.get("status") != "SUCCESS":
         fail("image", f"build {build_id} ended {b.get('status')}: {str(b.get('statusDetail') or '')[:300]}. "
                       f"The build stops naming any runtime or binary the base image does not have, and nothing "
@@ -4864,6 +4878,202 @@ def place_in_cloud_run(args):
             "runtime": started["runtime"], "check": started["smoke"],
             "model_placed": started.get("model_placed"),
             "state": started["state"]}
+
+
+# ── the work placed while the node is watched ─────────────────────────────
+#
+# 2026-10-31: a new agent's install on the dev fleet took about four minutes
+# from the approval to "deployed" (consonant-tally and letter-counter, Build an
+# agent). Two of the four were the watch, and a minute and a half came after
+# it: the image build, the job and the job's first message, one after the
+# other, though none of them touches the node the watch is about and the watch
+# reads nothing they make. So the work's placement (place_in_cloud_run,
+# unchanged) now starts in a process of its own as soon as the smoke check has
+# passed, runs while the node is watched, and the act waits for its answer
+# where it used to run it (deploy_finish).
+#
+# The watch keeps its full length and its meaning: nothing says deployed before
+# it passes, and an agent it takes back out has its work taken down with it
+# (take_down_work, armed as fail()'s on_fail), so a rolled-back install leaves
+# what it always left. A failed placement is the act's refusal, said as it
+# always was, at the step it stopped.
+#
+# A process and not a thread, because every refusal in the placement is a
+# fail() that prints an answer and exits: in a process of its own that answer
+# is the work's, read back here. It is told nothing of the node lock (the
+# lock's descriptor is not passed down), and its end is learnt from a lock it
+# holds for its whole life, not by asking again and again.
+#
+#   DM_WORK_DURING_WATCH   on (the default): as above. off: the work is
+#                          placed after the watch, as before.
+#   DM_WORK_WAIT_SECONDS   the longest the act waits for the placement once
+#                          the watch is over. Default the build's own limit
+#                          (DM_BUILD_MINUTES) and the quarter hour the executor
+#                          allows for the job and its first message.
+#
+# Never for an instruction into a customer's own project (a `cloud` grant):
+# this act's answer lists every call made there from its own record of them
+# (cloud_report), which a second process would not add to.
+WORK_WAIT_SECONDS = int(os.environ.get("DM_WORK_WAIT_SECONDS") or BUILD_MINUTES * 60 + 900)
+
+
+def work_during_watch_on():
+    return (os.environ.get("DM_WORK_DURING_WATCH") or "on").strip().lower() in ("on", "1", "true", "yes")
+
+
+def works_dir():
+    return os.path.join(STATES, "work")
+
+
+def start_work_if_wanted(ctx, smoke, arm=True):
+    """Start placing this deploy's work now, or None when it waits for the
+    watch as before: the placement is not Cloud Run, the switch is off, the
+    instruction is for a customer's own project, the smoke check did not pass,
+    or the process could not be started. `arm` makes any later refusal of this
+    act take the work down first (on_fail); a landing, which acts for several
+    agents, leaves that to each agent's finish."""
+    args = ctx.get("args") or {}
+    if (ctx.get("act", "deploy") != "deploy" or ctx.get("placement") != "cloud-run" or not work_during_watch_on()
+            or args.get("cloud") or not (smoke or {}).get("passed") or fcntl is None):
+        return None
+    try:
+        handle = start_work(ctx["name"], args)
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        print(f"the work's placement could not be started during the watch ({str(e)[:200]}); "
+              f"it is placed after it", file=sys.stderr)
+        return None
+    if arm:
+        CURRENT["on_fail"] = lambda step: take_down_work(ctx["name"], handle)
+    return handle
+
+
+def start_work(name, args):
+    """place_in_cloud_run(args) in a process of its own (the `work` verb),
+    started and not waited for. Its answer goes to <stem>.out; it holds
+    <stem>.lock, locked here before it starts, until it ends."""
+    os.makedirs(works_dir(), mode=0o700, exist_ok=True)
+    stem = os.path.join(works_dir(), f"{name}-{os.getpid()}-{int(time.time() * 1000)}")
+    write_text(f"{stem}.args.json", json.dumps(args), 0o600)
+    lock_fd = os.open(f"{stem}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        with open(f"{stem}.out", "w") as o, open(f"{stem}.err", "w") as e:
+            p = subprocess.Popen([sys.executable or "python3", os.path.abspath(__file__), "work", f"{stem}.args.json"],
+                                 stdin=subprocess.DEVNULL, stdout=o, stderr=e, start_new_session=True,
+                                 close_fds=True, pass_fds=(lock_fd,))
+    finally:
+        os.close(lock_fd)
+    return {"stem": stem, "pid": p.pid, "started_at": now_iso()}
+
+
+def work(path):
+    """The `work` verb: one placement begun by start_work. Its answer is
+    printed like any act's, success or refusal."""
+    real = os.path.realpath(path)
+    if not (real.startswith(os.path.realpath(works_dir()) + os.sep) and real.endswith(".args.json")):
+        fail("validate", f"{path} is not a placement begun by this procedure")
+    with open(real, encoding="utf-8") as f:
+        args = json.load(f)
+    os.remove(real)
+    out({"ok": True, "act": "work", "work": place_in_cloud_run(args)})
+
+
+def lock_released(path, seconds):
+    """True once nobody holds the lock at `path`, False if it is still held
+    after `seconds`. The kernel says when, so nothing is asked twice."""
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except OSError:
+        return True
+    try:
+        def too_long(*_):
+            raise TimeoutError()
+        old = signal.signal(signal.SIGALRM, too_long)
+        signal.alarm(max(1, int(seconds)))
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            return True
+        except TimeoutError:
+            return False
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old)
+    finally:
+        os.close(fd)
+
+
+def wait_work(handle, seconds=None):
+    """The placement's one answer, once its process has ended. One that is
+    still running after `seconds` is stopped, and its answer is a refusal that
+    says so. The placement's files go either way."""
+    seconds = WORK_WAIT_SECONDS if seconds is None else seconds
+    stem = str((handle or {}).get("stem") or "")
+    if not os.path.realpath(stem).startswith(os.path.realpath(works_dir()) + os.sep):
+        return {"ok": False, "step": "work", "error": f"{stem!r} is not a placement begun by this procedure"}
+    ended = lock_released(f"{stem}.lock", seconds)
+    if not ended:
+        try:
+            os.killpg(int(handle["pid"]), signal.SIGTERM)
+        except (OSError, KeyError, TypeError, ValueError):
+            pass
+    answer, err = None, ""
+    try:
+        lines = [ln for ln in open(f"{stem}.out", encoding="utf-8").read().splitlines() if ln.strip().startswith("{")]
+        answer = json.loads(lines[-1]) if lines else None
+    except (OSError, ValueError):
+        answer = None
+    try:
+        err = open(f"{stem}.err", encoding="utf-8", errors="replace").read()[-300:]
+    except OSError:
+        pass
+    for ext in (".out", ".err", ".lock", ".args.json"):
+        try:
+            os.remove(stem + ext)
+        except OSError:
+            pass
+    if not ended:
+        return {"ok": False, "step": "work",
+                "error": f"placing the work in Cloud Run did not finish within {seconds} seconds and was stopped",
+                "state": "an image build or a job it began may exist"}
+    if not isinstance(answer, dict):
+        return {"ok": False, "step": "work", "error": f"placing the work in Cloud Run gave no answer: {err}"}
+    return answer
+
+
+def finish_work(handle):
+    """deploy_finish's half of a placement begun during the watch: what it
+    placed, or this act's refusal with the step, the words and the state the
+    placement gave."""
+    CURRENT["on_fail"] = None
+    done = wait_work(handle)
+    if done.get("ok") and isinstance(done.get("work"), dict):
+        return done["work"]
+    extra = {k: v for k, v in done.items() if k not in ("ok", "step", "error", "state", "act")}
+    state = done.get("state")
+    fail(done.get("step") or "work", done.get("error") or "placing the work in Cloud Run gave no reason",
+         state=None if state == "nothing created" else state, **extra)
+
+
+def take_down_work(name, handle):
+    """A refusal after the placement began: wait for it, then take down what
+    it placed (take_down_container: the job, its binding, its egress rule, its
+    row) and withdraw the runtime record it filed, so the agent taken back out
+    has no work anywhere, as before. Returns the words fail() puts first in
+    the refusal's state."""
+    done = wait_work(handle)
+    if not done.get("ok"):
+        return (f"the work's placement, begun during the watch, stopped at {done.get('step') or 'work'}: "
+                f"{str(done.get('error') or '')[:200]}")
+    row = next((r for r in load_json_list(CONTAINERS) if r.get("name") == name), None)
+    if row is None:
+        return "the work's placement, begun during the watch, finished and left no row, so nothing was taken down"
+    # What take_down_container always names and leaves on purpose (the job
+    # folders and the agent's own directories) is not something left over.
+    left = [ln for ln in take_down_container(name, row)
+            if not ln.startswith("job folders of messages") and " directory at " not in ln]
+    forget_runtime((agent_identity(name) or {}).get("key"))
+    said = f"the job {row.get('job')}, placed while the node was watched, was taken down again"
+    return f"{said}, except: {'; '.join(left)}" if left else said
 
 
 def model_placed_of(work, model, container_row=None):
@@ -6166,6 +6376,13 @@ def land_on_node(group):
             node_started = True
         for p, c in failed:
             write_state(p, c)
+    # The work of each new agent whose smoke check passed is begun now, in a
+    # process of its own, and placed while the node is watched (start_work).
+    # Its finish waits for it, and takes it down if the watch takes the agent
+    # back out.
+    for _, c in group:
+        if c["act"] == "deploy" and not c.get("landing"):
+            c["work"] = start_work_if_wanted(c, smokes[c["name"]], arm=False)
     live = [(p, c) for p, c in group if not c.get("landing")]
     for i, (p, c) in enumerate(live):
         if c.get("landing"):
@@ -6235,6 +6452,10 @@ def finish(path):
     if act == "deploy":
         # The row fail() marks, exactly as when the deploy runs whole.
         CURRENT["entry"] = ctx["entry"]
+        # Work begun during the watch is taken down by any refusal below, and
+        # waited for by deploy_finish (start_work).
+        if ctx.get("work"):
+            CURRENT["on_fail"] = lambda step: take_down_work(name, ctx["work"])
     if not landing:
         why = ctx.get("land_error") or "the landing gave no answer for it"
         if act == "deploy":
@@ -6271,7 +6492,7 @@ def finish(path):
 
 
 AS_ROOT = ("deploy", "update", "alongside", "retire-version", "remove", "model", "status", "runtime", "jobs-at-once",
-           "attest", "prepare", "land", "place", "finish")
+           "attest", "prepare", "land", "place", "finish", "work")
 
 
 def main():
@@ -6322,6 +6543,8 @@ def main():
         place(sys.argv[2])
     elif cmd == "finish" and len(sys.argv) == 3:
         finish(sys.argv[2])
+    elif cmd == "work" and len(sys.argv) == 3:
+        work(sys.argv[2])
     else:
         fail("usage", "deploy <argfile> | update <argfile> | alongside <argfile> | retire-version <argfile> | "
                       "image <argfile> | container <argfile> | "
