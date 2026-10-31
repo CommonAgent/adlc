@@ -42,3 +42,18 @@ test writer carries and adds it. 175 tests, 174 pass, 1 skipped.
 ## Who held the step
 
 The harness (Claude Code), tests first, then the script.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 0d5180a:
+  sha256 a423c2e5a35d2a22e7efb1437e7f0e26609cae57b46ed26ea69c391e18838a10.
+- Installed by the deployment manager from deploy request
+  dr_z88TFglbUAtPUrCEsqOJmDxX, approved for the platform account, with the
+  settings 0.6.4 ran on.
+- Replayed over the packed packages of two earlier builds, with the standard
+  file copied in beside them: consonant-ledger (ab_c2add1d21b685b80aa,
+  run.reply "json:consonant-count-report.md") fails, "the object it printed
+  has no member consonant-count-report.md (it has code, reply), so the host
+  reads no reply: it records the job as stopped and tells the sender the work
+  was cut short"; consonant-tally (ab_883eddfa8a6c76faa9, "json:reply",
+  conforms) passes.

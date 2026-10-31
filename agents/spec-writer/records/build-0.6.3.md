@@ -50,3 +50,11 @@ they are. 215 tests, 214 pass, 1 skipped.
 ## Who held the step
 
 The harness (Claude Code), tests first, then the script.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 0d5180a:
+  sha256 9a07eaea3fa11c1052cbe1bc9f9e421486aad010f5a5447249169e0ecabdb144.
+- Installed by the deployment manager from deploy request
+  dr_f_TLzFfQXy_nvafkJZBd7f4B, approved for the platform account, with the
+  settings 0.6.2 ran on (MODEL_PROTOCOL gemini, MODEL_NAME gemini-3.8-flash).
