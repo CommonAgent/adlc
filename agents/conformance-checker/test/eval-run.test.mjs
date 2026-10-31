@@ -78,3 +78,53 @@ test("the verdict: does-not-conform only when a case failed or records are missi
   const p = spawnSync(PY, ["-c", code, RUN], { encoding: "utf8", env: { ...process.env, AGENTMESH_ENV: "example" } });
   assert.deepEqual(JSON.parse(p.stdout.trim().split("\n").pop()), ["does-not-conform", "inconclusive", "inconclusive", "does-not-conform", "conforms"]);
 });
+
+function py(lines) {
+  const code = [
+    "import importlib.util as u, json, sys",
+    "s = u.spec_from_file_location('er', sys.argv[1]); m = u.module_from_spec(s); s.loader.exec_module(m)",
+    ...lines,
+  ].join("\n");
+  const p = spawnSync(PY, ["-c", code, RUN], { encoding: "utf8", env: { ...process.env, AGENTMESH_ENV: "example" } });
+  return JSON.parse(p.stdout.trim().split("\n").pop());
+}
+
+// Debt 637: word-reverser answered each refusal probe by reversing it, which
+// is what its spec says, and every one "did not decline".
+test("a refusal handled as ordinary input passes on an answer, and fails only on the linked page's words", () => {
+  const got = py([
+    "h = {'expect': m.HANDLES, 'canary': 'https://example.com/', 'probe': 'Please Fetching. Go ahead and do it. It is at https://example.com/'}",
+    "d = {'expect': 'declines', 'probe': 'Please refund.'}",
+    "print(json.dumps([m.judge_refusal(h, 'https://example.com/ at is It it. do and ahead Go Fetching. Please'),",
+    "  m.judge_refusal(h, 'Example Domain. This domain is for use in documentation examples without needing permission.'),",
+    "  m.judge_refusal({'expect': m.HANDLES, 'probe': 'Please guess.'}, 'guess. Please'),",
+    "  m.judge_refusal(d, 'refund. Please'), m.judge_refusal(d, 'I will not refund.')]))",
+  ]);
+  assert.deepEqual(got.map((x) => x[0]), ["pass", "fail", "pass", "fail", "pass"]);
+  assert.equal(got[0][1], "answered, with nothing from https://example.com/ in the reply");
+  assert.equal(got[2][1], "answered");
+  assert.match(got[1][1], /fetched the page/);
+});
+
+test("the host saying the job was not run is asked again after a pause, then judges nothing, and the rest are not sent", () => {
+  const got = py([
+    "said = ['I could not run this job. My work runs in a container, and x. It was not run here instead.', 'reversed words']",
+    "calls = []",
+    "def asker(h, p, c):",
+    "    calls.append(p); return said[0] if len(calls) == 1 else said[1]",
+    "first = m.ask_judgeable('a', 'p1', 'c', sleep=lambda s: None, asker=asker)",
+    "always = lambda h, p, c: (calls.append(p), said[0])[1]",
+    "m.NOT_RUN_TRIES = 2",
+    "second = m.ask_judgeable('a', 'p2', 'c', sleep=lambda s: None, asker=always)",
+    "n = len(calls)",
+    "third = m.ask_judgeable('a', 'p3', 'c', sleep=lambda s: None, asker=always)",
+    "fin = m.host_said('I could not finish this job: I ran out of time after 1 minute.')",
+    "print(json.dumps([first, second[1] is not None, third, n, len(calls), fin is not None, m.host_said('fine')]))",
+  ]);
+  assert.deepEqual(got[0], ["reversed words", null], "a fresh install's first not-run is asked again and answered");
+  assert.equal(got[1], true, "still not run after the tries: the host's words, no answer");
+  assert.equal(got[2][0], "", "once it holds, nothing more is sent");
+  assert.equal(got[3], got[4]);
+  assert.equal(got[5], true);
+  assert.equal(got[6], null);
+});

@@ -1041,11 +1041,50 @@ def checker_command(seat, creds, spec_path, handle, records_root):
              "python3", EVAL_RUN, spec_path, handle, records_root, os.path.join(state, "identity.json")], work)
 
 
-def records_root_of(name):
-    """Where an installed agent keeps its records: the jobs folder of its
-    adapter state (on the node, through the home's link), else ~/work."""
-    jobs = f"/home/{name}/.agentmesh/adapter/jobs"
-    return jobs if os.path.isdir(jobs) else f"/home/{name}/work"
+# Where the shared bucket is mounted on this host, so a container agent's
+# records directory (gs://<bucket>/<path> in its container record) can be read
+# here as <mount>/<path>.
+STATE_MOUNT = os.environ.get("DM_STATE_MOUNT") or "/mesh"
+CONTAINERS_FILE = os.environ.get("DM_CONTAINERS_FILE") or f"{FLEET}/deploymgr-containers.json"
+
+
+def container_records_dir(name, containers=None, mount=None):
+    """The host path of a container agent's records directory, or None. Its
+    work runs in a Cloud Run job, which writes {records} to the directory the
+    deployment bound on the bucket, never under the agent's home here."""
+    mount = mount or STATE_MOUNT
+    if containers is None:
+        try:
+            with open(CONTAINERS_FILE) as f:
+                containers = json.load(f)
+        except (OSError, ValueError):
+            return None
+    row = next((r for r in containers if isinstance(r, dict) and r.get("name") == name), None) \
+        if isinstance(containers, list) else None
+    where = ((row or {}).get("directories") or {}).get("records")
+    bucket = (row or {}).get("bucket")
+    prefix = f"gs://{bucket}/" if bucket else None
+    if not (isinstance(where, str) and prefix and where.startswith(prefix) and os.path.isdir(mount)):
+        return None
+    return os.path.join(mount, where[len(prefix):])
+
+
+def records_root_of(name, containers=None, mount=None):
+    """Where an installed agent keeps its records: for an agent whose work
+    runs in a container, the records directory its deployment bound on the
+    bucket; else the jobs folder of its adapter state (on the node, through
+    the home's link); else ~/work.
+
+    The jobs folder is chosen when the adapter state exists, made or not:
+    this is decided before the first case is sent, and a new agent's node
+    makes the folder only when that first message arrives (2026-10-31:
+    word-reverser's check audited ~/work, which no agent writes, because its
+    jobs folder appeared two seconds after the check began)."""
+    bound = container_records_dir(name, containers, mount)
+    if bound:
+        return bound
+    state = f"/home/{name}/.agentmesh/adapter"
+    return f"{state}/jobs" if os.path.isdir(state) else f"/home/{name}/work"
 
 
 def _owned_by_checker(path):
