@@ -162,7 +162,7 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
   // The address warnings are found here, by a program, before any model is
   // asked, and go into the review as they were found.
   const { traced, tests, warnings } = deepScrub(tracePrograms(got.files, declared.programs, { requirementsFile: declared.requirementsFile }));
-  const matched = { ...matchReaches({ traced, systems: declared.systems, binaries: declared.binaries, egressHosts: arch.egress.hosts, offerings: declared.offerings }), warnings };
+  const matched = { ...matchReaches({ traced, systems: declared.systems, binaries: declared.binaries, egressHosts: arch.egress.hosts, offerings: declared.offerings, canUse: declared.canUse }), warnings };
   writeFileSync(join(RECORDS, "traced.json"), JSON.stringify({ traced, tests, ...matched }, null, 2) + "\n");
   if (!arch.given) note(RECORDS, { wanted: "the architecture record", did: "reviewed the package against its own declaration alone, so nothing checks its systems against what the agent was designed to reach" });
 
