@@ -32,6 +32,12 @@ Every suite carries one file the model does not write: `test/delivered-formats.t
 
 The file is copied whole from the references into every suite, never rewritten and never answered with. Each test that fills a job folder calls its `checkDelivered(jobDir)` and asserts there is nothing wrong. A suite for a spec with outputs whose tests never call it goes back with that finding.
 
+## Every job keeps its own records
+
+The host hands every job of an agent the same records folder, the agent's own, and keeps it from one job to the next. A record the spec keeps per job has a file pattern that starts with the job's folder, such as `*/went-without.json`, read relative to that records folder, so a job writes it under a folder named after its job folder: `<records>/<the job folder's name>/went-without.json`. A suite that hands each job a folder of its own as the records folder tests a layout the host never makes, and three agents built that way wrote their record straight into the shared folder, where each job overwrote the last (technical debt 639).
+
+So a test hands every job the same records folder, and every suite carries a second file the model does not write: `test/records-per-job.test.mjs`, copied whole from the references. When the spec keeps a record per job, a test runs two jobs of the same kind, each with its own job folder and both with the one records folder, and asserts `checkRecordsPerJob(records, [jobDir1, jobDir2])` returns nothing wrong. A suite for such a spec whose tests never call it goes back with that finding.
+
 ## Adding to a suite that exists
 
 A released package has a suite somebody relies on. When its test files come with the message, they are kept byte for byte and new files are written beside them for what was asked; nothing in a kept file is rewritten, and only the new files are delivered. A suite for a change is judged as it will stand, the kept files and the new ones together, and the new files must still fail against stand-ins on their own.
