@@ -44,6 +44,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkDraft, earlierBareJson } from "./check-spec.mjs";
+import { fitJobSeconds } from "./job-seconds.mjs";
 import { CAN_USE_RULE, canUseProblems, fitCanUse, loadSchemas } from "./can-use.mjs";
 import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
@@ -495,6 +496,7 @@ export async function askForSpec({
   let notJson = "";
   let retriesLeft = jsonRetries;
   let stopped = null;
+  let timedNote = "";
   const used = [];
   for (let go = 0; go < tries;) {
     // Never start a call that cannot finish inside the step's time.
@@ -531,7 +533,13 @@ export async function askForSpec({
       break;
     }
     notJson = "";
-    last = answer;
+    // The cap on one job is the package maker's range, not the model's to
+    // get wrong: a value outside it is set to the nearest bound here, and the
+    // reply says so (technical debt 648: 30, kept on the second go, stopped
+    // a build at Package).
+    const timed = fitJobSeconds(answer.spec);
+    last = { ...answer, spec: timed.spec };
+    timedNote = timed.note;
     findings = check(last.spec);
     go += 1;
     if (!findings.length) break;
@@ -550,7 +558,7 @@ export async function askForSpec({
   return {
     spec: withAssets.spec,
     blanks,
-    notes: [last.notes, ...withAssets.notes].filter(Boolean).join(" "),
+    notes: [last.notes, timedNote, ...withAssets.notes].filter(Boolean).join(" "),
     findings: [...kept, ...canUseProblems(withAssets.spec, architecture, table)],
     calls,
     used,

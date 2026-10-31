@@ -200,6 +200,14 @@ WHEN = ("per_task", "standing")
 HIDDEN = set(range(0x200B, 0x2010)) | set(range(0x202A, 0x202F)) | set(range(0x2060, 0x2065)) | {0xFEFF} | set(range(0xE0000, 0xE0080))
 
 
+# The longest one job may take, in whole seconds: what job_seconds may be.
+# Named once here; the spec writer's check-spec.mjs carries the same two
+# numbers, and its test/job-seconds.test.mjs reads them from this file, so the
+# two cannot drift apart unseen (technical debt 648).
+JOB_SECONDS_MIN = 60
+JOB_SECONDS_MAX = 7200
+
+
 RESERVED_SYSTEMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "system-names.json")
 
 
@@ -2246,8 +2254,8 @@ def install_file(spec, jobs, systems, lockfiles):
     # fact for the installer, never a promise to a caller.
     job_seconds = spec.get("job_seconds")
     if job_seconds is not None and not (isinstance(job_seconds, int) and not isinstance(job_seconds, bool)
-                                        and 60 <= job_seconds <= 7200):
-        fail(f"job_seconds is the longest one job may take, a whole number of seconds from 60 to 7200; bad: {job_seconds!r}")
+                                        and JOB_SECONDS_MIN <= job_seconds <= JOB_SECONDS_MAX):
+        fail(f"job_seconds is the longest one job may take, a whole number of seconds from {JOB_SECONDS_MIN} to {JOB_SECONDS_MAX}; bad: {job_seconds!r}")
     # Whether the agent reads replies to work it sent. A worker never does:
     # its attendant acknowledges replies without answering, which is what
     # keeps two unattended agents from replying to each other forever. A
@@ -2945,8 +2953,8 @@ def build(spec, src_base, out_dir, authored):
             scopes_declaration(j)
     # Refused before any file is written, like every other shape check here.
     js = spec.get("job_seconds")
-    if js is not None and not (isinstance(js, int) and not isinstance(js, bool) and 60 <= js <= 7200):
-        fail(f"job_seconds is the longest one job may take, a whole number of seconds from 60 to 7200; bad: {js!r}")
+    if js is not None and not (isinstance(js, int) and not isinstance(js, bool) and JOB_SECONDS_MIN <= js <= JOB_SECONDS_MAX):
+        fail(f"job_seconds is the longest one job may take, a whole number of seconds from {JOB_SECONDS_MIN} to {JOB_SECONDS_MAX}; bad: {js!r}")
     wr = spec.get("wants_replies")
     if wr is not None and not isinstance(wr, bool):
         fail(f"wants_replies is true or false; bad: {wr!r}")

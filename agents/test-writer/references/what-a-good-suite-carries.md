@@ -194,7 +194,10 @@ the constant:
       assert.equal(countVowels(SENTENCE).total, TOTAL);
     });
 
-The computation never calls a script, and never repeats the literal. Read
+Assert against the constant, never a bare number: `assert.equal(result.total, 4)`
+or `/^- a: 1$/m` pins a value nothing checks, and goes back by line (an exit
+status, a count of calls and a length are left alone). The computation never
+calls a script, and never repeats the literal. Read
 the rule from the spec word for word: "one letter per word" gives "HTP" for
 "hypertext transfer protocol", whatever the world spells. The test writer
 evaluates every worked value before it delivers the suite and sends back each

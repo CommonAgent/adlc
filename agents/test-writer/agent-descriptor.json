@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.6.2",
+  "agent_version": "0.6.3",
   "name": "Test writer",
   "summary": "Writes the tests an agent's scripts must pass, before the scripts exist, and proves each test would notice a script being wrong.",
   "will_not": [
