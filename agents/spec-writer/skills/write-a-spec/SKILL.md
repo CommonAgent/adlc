@@ -77,6 +77,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/can-use.mjs
 - scripts/options.mjs
 - scripts/job-seconds.mjs
+- scripts/run-reply.mjs
 
 ## References
 

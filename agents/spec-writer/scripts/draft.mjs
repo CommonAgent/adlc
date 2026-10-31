@@ -45,6 +45,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkDraft, earlierBareJson } from "./check-spec.mjs";
 import { fitJobSeconds } from "./job-seconds.mjs";
+import { fitRunReply } from "./run-reply.mjs";
 import { CAN_USE_RULE, canUseProblems, fitCanUse, loadSchemas } from "./can-use.mjs";
 import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
@@ -538,8 +539,12 @@ export async function askForSpec({
     // reply says so (technical debt 648: 30, kept on the second go, stopped
     // a build at Package).
     const timed = fitJobSeconds(answer.spec);
-    last = { ...answer, spec: timed.spec };
-    timedNote = timed.note;
+    // How the host reads a job's reply is the package maker's rule too: a
+    // run.reply outside it is corrected here and said (technical debt 652:
+    // "text:counts" stopped a build at Package).
+    const replied = fitRunReply(timed.spec);
+    last = { ...answer, spec: replied.spec };
+    timedNote = [timed.note, replied.note].filter(Boolean).join(" ");
     findings = check(last.spec);
     go += 1;
     if (!findings.length) break;

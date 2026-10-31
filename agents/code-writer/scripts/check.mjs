@@ -33,6 +33,14 @@
 // file is the repository's own and every file outside the lock and scripts/
 // is judged as before.
 //
+// A hand-off goes to a folder of its own in the repository, agents/<name>/
+// (technical debt 653), and the services gate refuses any change outside that
+// folder. So when the build folder is not the top of its clone, a file
+// outside it that differs from the hand-off commit (changed, removed or
+// added, committed or not, ignored files aside) breaks the fence by name too.
+// An earlier hand-off elsewhere in the repository is outside the folder: it is
+// neither walked nor run (debt 632).
+//
 // Exit codes are the harness's instructions: 0 done, 1 not yet with each
 // failing test named, 3 the fence was broken with what was touched named,
 // 4 the rounds are used up.
@@ -132,19 +140,62 @@ const matches = (bytes, want, hash) => {
   return !!lf && hash(lf) === want;
 };
 
+/** git run in `dir`: its output, or null when git is missing or refuses. */
+const gitIn = (dir, run) => (...args) => {
+  try {
+    const r = run("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    return r && r.status === 0 ? String(r.stdout ?? "") : null;
+  } catch { return null; }
+};
+
+/** The commit that added this folder's build.lock.json: the hand-off. */
+const handoffCommit = (git) => {
+  const added = trim(git("log", "--diff-filter=A", "--format=%H", "-n", "1", "--", LOCK_FILE));
+  return /^[0-9a-f]{7,64}$/.test(added) ? added : "";
+};
+
+/** What the fence calls a file outside the build folder that moved. */
+const OUTSIDE = { A: "added outside the build folder", D: "removed outside the build folder", M: "changed outside the build folder" };
+
+/** Files outside the build folder that differ from the hand-off commit, as
+ *  fence entries with paths from the top of the repository. A hand-off goes
+ *  to a folder of its own (agents/<name>/, technical debt 653), and the
+ *  services gate refuses any change outside it, so this says the same here:
+ *  changed, removed or added, in the working tree or committed since, and a
+ *  file git does not track yet (one it ignores is left alone). Empty when the
+ *  folder is the top of its repository (everything is inside it), when there
+ *  is no git, and when no commit added this folder's lock. `run` is handed in
+ *  by tests. */
+export function outsideChanges(dir, { run = spawnSync } = {}) {
+  const git = gitIn(dir, run);
+  const prefix = trim(git("rev-parse", "--show-prefix"));
+  if (!prefix) return [];
+  const added = handoffCommit(git);
+  if (!added) return [];
+  const out = new Map();
+  const diff = git("diff", "--name-status", "--no-renames", "-z", added, "--", ":/");
+  if (diff == null) return [];
+  const parts = diff.split("\0");
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const status = parts[i].charAt(0);
+    const path = parts[i + 1];
+    if (!path || path.startsWith(prefix)) continue;
+    out.set(path, OUTSIDE[status] ?? OUTSIDE.M);
+  }
+  for (const path of (git("ls-files", "--others", "--exclude-standard", "--full-name", "-z", "--", ":/") ?? "").split("\0")) {
+    if (path && !path.startsWith(prefix)) out.set(path, OUTSIDE.A);
+  }
+  return [...out].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, what]) => ({ path, what }));
+}
+
 /** The repository's own files: what git held in the parent of the commit
  *  that added build.lock.json in `dir`, as {path relative to dir: blob id}.
  *  Empty when there is no git, no such commit, or no parent. `run` is handed
  *  in by tests. */
 export function repoFilesAt(dir, { run = spawnSync } = {}) {
-  const git = (...args) => {
-    try {
-      const r = run("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-      return r && r.status === 0 ? String(r.stdout ?? "") : null;
-    } catch { return null; }
-  };
-  const added = trim(git("log", "--diff-filter=A", "--format=%H", "-n", "1", "--", LOCK_FILE));
-  if (!/^[0-9a-f]{7,64}$/.test(added)) return {};
+  const git = gitIn(dir, run);
+  const added = handoffCommit(git);
+  if (!added) return {};
   const parent = trim(git("rev-parse", "--verify", "--quiet", `${added}^`));
   if (!/^[0-9a-f]{7,64}$/.test(parent)) return {};
   const prefix = trim(git("rev-parse", "--show-prefix"));
@@ -161,8 +212,10 @@ export function repoFilesAt(dir, { run = spawnSync } = {}) {
 
 /** The fence: what changed that may not have. Compared against the record
  *  the workspace step wrote, by digest. `repoFiles` is the repository's own
- *  files, {path: git blob id}, which may stay as they were. */
-export function fenceOf(record, dir, { repoFiles = {} } = {}) {
+ *  files, {path: git blob id}, which may stay as they were. `outside` is
+ *  what moved outside the build folder (outsideChanges), each of which
+ *  breaks the fence as it stands. */
+export function fenceOf(record, dir, { repoFiles = {}, outside = [] } = {}) {
   const now = listing(dir, { skip: UNWALKED });
   const was = record?.listing ?? {};
   const pinned = record?.digests ?? {};
@@ -191,6 +244,7 @@ export function fenceOf(record, dir, { repoFiles = {} } = {}) {
     if (p in pinned || p in was || free(p) || p in now || UNWALKED.some((s) => p === s || p.startsWith(s + "/"))) continue;
     broken.push({ path: p, what: "removed" });
   }
+  broken.push(...outside);
   return { ok: !broken.length, broken };
 }
 
@@ -256,7 +310,7 @@ export function verdict({ run = null, blanks = [], build = null, round = 0, roun
   if (stop === "fence") {
     const broken = fence?.broken ?? [];
     const said = `The fence was broken: ${broken.map((b) => `${b.path} ${b.what}`).join(", ")}. Put it back; nothing is delivered until the check passes with the fence whole.`;
-    const pinned = broken.filter((b) => b.what !== "added" && (/^test\//.test(b.path) || /^(agent-descriptor|agent-runtime-requirements|plugin)\.json$|^skills\//.test(b.path)));
+    const pinned = broken.filter((b) => (b.what === "changed" || b.what === "removed") && (/^test\//.test(b.path) || /^(agent-descriptor|agent-runtime-requirements|plugin)\.json$|^skills\//.test(b.path)));
     return pinned.length ? `${said} A pinned test or agent file is the spec and test steps' to change, never this job's: if it is wrong, the work goes back to the spec and test steps.` : said;
   }
   const lines = [];
@@ -328,7 +382,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     }
     // A build folder may sit in a clone of the branch it was pushed to, beside
     // the repository's own files; git says which those are.
-    const fence = fenceOf(record, WORKSPACE, { repoFiles: record.from_build_folder ? repoFilesAt(WORKSPACE) : {} });
+    const fence = fenceOf(record, WORKSPACE, record.from_build_folder ? { repoFiles: repoFilesAt(WORKSPACE), outside: outsideChanges(WORKSPACE) } : {});
     if (!fence.ok) {
       const said = verdict({ stop: "fence", fence });
       writeVerdict({ done: false, stop: "fence", round: runs.length, broken: fence.broken, said });

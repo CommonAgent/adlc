@@ -46,6 +46,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, normalize } from "node:path";
 import { NOT_NAMED, agentFilesOf } from "./files.mjs";
 import { jobSecondsProblem } from "./job-seconds.mjs";
+import { runReplyProblems } from "./run-reply.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -197,8 +198,10 @@ export function checkBuilds({ spec, env = {}, io = {}, keep = null } = {}) {
     // and JOB_SECONDS_MAX). Said here, in its words, and no files kept, so a
     // spec that would stop at Package stops before the person approves it
     // (technical debt 648).
-    const timed = jobSecondsProblem(spec);
-    if (timed) return { checked: false, ok: false, problems: [timed], stood_in_for: [], ...(container ? { container: true } : {}) };
+    // And a job's run.reply outside the package maker's rule (build.py's
+    // RUN_REPLY_STDOUT and RUN_REPLY_MEMBER, technical debt 652).
+    const known = [jobSecondsProblem(spec), ...runReplyProblems(spec)].filter(Boolean);
+    if (known.length) return { checked: false, ok: false, problems: known, stood_in_for: [], ...(container ? { container: true } : {}) };
     return {
       checked: false, ok: null, problems: [],
       why: `the builder is not at ${buildPy}, so nothing checked whether this draft builds. Everything else about the draft still stands, and this one thing is unknown rather than passed.`,
