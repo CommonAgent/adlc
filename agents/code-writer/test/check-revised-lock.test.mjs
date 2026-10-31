@@ -25,7 +25,9 @@ const scriptsDir = join(here, "..", "scripts");
 const sha = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const TEST_V1 = 'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../scripts/add.mjs";\ntest("two and two are five", () => { assert.equal(add(2, 2), 5); });\n';
 const TEST_V2 = 'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "../scripts/add.mjs";\ntest("two and two are four", () => { assert.equal(add(2, 2), 4); });\n';
-const lockFor = (testText) => ({ build_lock: "v1", digests: { "test/add.test.mjs": sha(testText), "AGENTS.md": sha("rules\n") }, scripts: [{ path: "scripts/add.mjs", from: "stub" }] });
+// The check ships in .adlc/ and the hand-off pins it, as handoff.mjs buildLock does.
+const ADLC = ["check.mjs", "workspace.mjs", "agent-folder.mjs", "archive.mjs"];
+const lockFor = (testText) => ({ build_lock: "v1", digests: { "test/add.test.mjs": sha(testText), "AGENTS.md": sha("rules\n"), ...Object.fromEntries(ADLC.map((f) => [`.adlc/${f}`, sha(readFileSync(join(scriptsDir, f)))])) }, scripts: [{ path: "scripts/add.mjs", from: "stub" }] });
 
 test("a record taken from a build folder's lock is stale once the lock on disk is a different one, and not before", () => {
   const lockBytes = Buffer.from(JSON.stringify(lockFor(TEST_V1)));
