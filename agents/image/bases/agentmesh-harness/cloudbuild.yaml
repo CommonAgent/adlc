@@ -34,10 +34,10 @@ images:
 substitutions:
   _AGENTMESH_BASE: {gcp.registry}/agentmesh-base:0.88.6
   _AGENTMESH_REQUIRES: agentmesh
-  _HARNESS_IMAGE: {gcp.registry}/agentmesh-harness-base:0.88.6-3
+  _HARNESS_IMAGE: {gcp.registry}/agentmesh-harness-base:0.88.6-4
   _CHROMIUM_BASE: {gcp.registry}/agentmesh-chromium-base:0.88.6-1
   _CHROMIUM_REQUIRES: agentmesh chromium
-  _CHROMIUM_HARNESS_IMAGE: {gcp.registry}/agentmesh-chromium-harness-base:0.88.6-3
+  _CHROMIUM_HARNESS_IMAGE: {gcp.registry}/agentmesh-chromium-harness-base:0.88.6-4
   _VIDEO_BASE: {gcp.registry}/agentmesh-video-base:0.88.6-1
   _VIDEO_REQUIRES: agentmesh ffmpeg ffprobe yt-dlp
-  _VIDEO_HARNESS_IMAGE: {gcp.registry}/agentmesh-video-harness-base:0.88.6-3
+  _VIDEO_HARNESS_IMAGE: {gcp.registry}/agentmesh-video-harness-base:0.88.6-4
