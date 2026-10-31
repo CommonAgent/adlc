@@ -31,6 +31,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/builds.mjs
 - scripts/files.mjs
+- scripts/job-seconds.mjs
 
 ## References
 

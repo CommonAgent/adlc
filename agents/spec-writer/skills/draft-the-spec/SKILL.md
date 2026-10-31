@@ -41,6 +41,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/architecture-record.mjs
 - scripts/can-use.mjs
 - scripts/options.mjs
+- scripts/job-seconds.mjs
 
 ## References
 

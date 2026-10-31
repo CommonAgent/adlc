@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "spec-writer",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
   "license": "Apache-2.0",
   "author": {
@@ -34,7 +34,8 @@
               "scripts/agent-folder.mjs",
               "scripts/architecture-record.mjs",
               "scripts/can-use.mjs",
-              "scripts/options.mjs"
+              "scripts/options.mjs",
+              "scripts/job-seconds.mjs"
             ],
             "references": [
               "references/what-a-good-spec-carries.md",
@@ -60,7 +61,8 @@
               "scripts/agent-folder.mjs",
               "scripts/architecture-record.mjs",
               "scripts/can-use.mjs",
-              "scripts/options.mjs"
+              "scripts/options.mjs",
+              "scripts/job-seconds.mjs"
             ],
             "references": [
               "references/what-a-good-spec-carries.md",
@@ -71,7 +73,8 @@
           "check-it-builds": {
             "scripts": [
               "scripts/builds.mjs",
-              "scripts/files.mjs"
+              "scripts/files.mjs",
+              "scripts/job-seconds.mjs"
             ],
             "references": [
               "references/plugin-manifest-schema.json"

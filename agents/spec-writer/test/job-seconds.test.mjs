@@ -36,7 +36,7 @@ const SPEC = {
   name: "vowel-gauge", version: "0.1.0",
   jobs: [{ slug: "count-vowels", title: "Count vowels", offered: true, how,
     when: "when somebody wants the vowels in a sentence counted",
-    good: "Each of a, e, i, o and u with its count, and the total.",
+    good: "A tally naming each of a, e, i, o and u with how many times it appears in the sentence, and the total of the five, which a reader can count again by hand.",
     empty: "With no sentence it says there was nothing to count.",
     does: "Counts the vowels in a sentence." }],
   refuses: Array.from({ length: 4 }, (_, i) => `refusing act ${i}, because it is not this agent's to do, and it says so instead`),

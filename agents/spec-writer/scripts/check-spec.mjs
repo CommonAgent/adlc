@@ -16,6 +16,8 @@
 import { readFileSync } from "node:fs";
 import { canUseProblems, loadSchemas } from "./can-use.mjs";
 import { optionProblems } from "./options.mjs";
+import { jobSecondsProblem } from "./job-seconds.mjs";
+export { JOB_SECONDS_MAX, JOB_SECONDS_MIN, fitJobSeconds, jobSecondsProblem } from "./job-seconds.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const words = (s) => trim(s).split(/\s+/).filter(Boolean).length;
@@ -349,10 +351,9 @@ export function checkSpec(spec) {
   out.push(...containerProblems(spec));
   // The builder refuses any other value (build.py), so a draft carrying one
   // would pass here and stop at packing, as the ping-pong smoke test's did
-  // on 2026-10-03 with 30.
-  if (spec.job_seconds !== undefined && !(Number.isInteger(spec.job_seconds) && spec.job_seconds >= 60 && spec.job_seconds <= 7200)) {
-    out.push(`job_seconds ${JSON.stringify(spec.job_seconds)} is not a whole number of seconds from 60 to 7200; it is the longest one job may take, and the builder refuses anything else`);
-  }
+  // on 2026-10-03 with 30, and vowel-gauge's on 2026-10-31 (debt 648).
+  const timed = jobSecondsProblem(spec);
+  if (timed) out.push(timed);
   if (!spec.price || typeof spec.price !== "object") out.push("no price; seven of the eight existing packages are flat and one is free, and a spec with neither has not decided");
   return out;
 }

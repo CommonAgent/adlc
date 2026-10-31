@@ -74,6 +74,8 @@ Never leave it out because it was optional, because it is obvious, or because th
 
 The builder is run against empty stand-ins, because the scripts a draft names do not exist yet. So nothing here ever says that a package builds. It says the builder takes the declaration, and it says in the same breath which files were stood in for. When the builder is not on this host it says that nothing checked, and says it as unknown rather than as passed.
 
+One refusal of the builder's is known for certain without it: `job_seconds`, the longest one job may take, must be a whole number of seconds in the range the package maker names once in its build.py (`JOB_SECONDS_MIN` to `JOB_SECONDS_MAX`, 60 to 7200). It is a host fact, not one of the person's questions, so a drafted value outside the range is set to the nearest bound and the reply says what was changed. And where the builder is not here, a spec that still carries one is refused in the builder's own words, with no files kept, so it stops before the person approves it rather than at Package (technical debt 648: a draft's 30, kept on the second go, stopped vowel-gauge at Package on 2026-10-31).
+
 ## Never
 
 Never open or edit a draft or a spec with your own file tools: they cut lines over 2000 characters, and a draft changed after the drafting step wrote it is refused at delivery. Never put an address into a package's systems. Never write a spec from nothing. Never fill a blank the person left. Never build, pack or deploy. Never accept a credential value written into a message, and never put anything that looks like one into a record or a reply. Never ask a model for a spec a third time.
