@@ -67,6 +67,27 @@ A job writes what it did to `records/<job>/`, one JSON file per record the
 spec declares under `records`, with `"<name>": "v1"` as the first key so a
 reader can tell the shape. It writes them whether the job succeeded or not.
 
+The records folder the job is handed (RECORDS, or `--records`) is not the
+job's own. The host hands every job of an agent the same records folder, the
+agent's own, and keeps it from one job to the next. A record's `file` pattern
+in the declaration is read relative to that folder, so a pattern that starts
+with the job's folder, `*/went-without.json`, is one record per job, and a
+plain name, `names.json`, is one standing record the jobs share. The script
+makes the job's own folder from the job folder's name and writes every
+per-job record there, never straight into the records folder:
+
+    const records = join(RECORDS, basename(JOB_DIR));
+    mkdirSync(records, { recursive: true });
+    note(records, { wanted, did });      // records/<job>/went-without.json
+
+A per-job record written straight into the records folder is overwritten by
+the next job, and the conformance check, reading the declared pattern, finds
+none (technical debt 639). The suite holds this: `test/records-per-job.test.mjs`
+runs under two jobs that shared one records folder and names a record that
+landed in the wrong place. The example package under `a-package-that-works`
+was written to be handed a job's own folder and reads `names.json` from the
+folder above it; do not copy that part.
+
 What it delivers goes under the job folder's `out/`, and `pieces.json` at
 the job folder's root lists each delivered piece with `name`, `step` (the
 job that made it), `path`, `media_type`, `about` (one plain sentence saying

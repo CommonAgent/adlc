@@ -14,6 +14,8 @@ The suite was written from the spec by the test-writer, before any script existe
 
 Read the reference. Every script is a `.mjs` module for node 22 or later with no dependency outside node itself, opening with a comment that says what it decides, exporting the functions that decide, handing in anything that reaches the world, and guarding a thin main that reads the variables the job's command line names. There is no Python in a package. Records go under records/<job>/, pieces under out/ with pieces.json, and what a job went without is noted with went-without.mjs, the same file in every package.
 
+The records folder a job is handed is the same records folder, the agent's own, for every job, kept from one to the next. A record the declaration keeps per job (a file pattern such as `*/went-without.json`) goes under a folder named after the job folder, `join(RECORDS, basename(JOB_DIR))`, and never straight into the records folder, where the next job overwrites it. The suite's `test/records-per-job.test.mjs` runs two jobs with one records folder and names a record in the wrong place.
+
 ## A model is read from configuration
 
 A script never names a model. A job that calls one reaches it through the system the spec declares (`text-reasoning`, `image-reading` and the like) and reads which model from `AGENT_MODEL` or `TEXT_MODEL` through the shared caller, so the install chooses it and a run config can change it. No model name or version goes into a script, a default, a table or a SKILL.md: when the variable is empty the script refuses and says the model is not set. Brand reader shipped with `gemini-2.5-flash` written into a script and answered 404 when it was retired. The package maker refuses a new agent whose scripts name a model.
