@@ -168,6 +168,12 @@ export function tenantSettings(e) {
     // windows: how long it stays up after the last thing happened, and the
     // most one wake may last.
     waker: e.DM_TENANT_WAKER || "",
+    // The tenant build pool, which has no internet (technical debt 72): every
+    // tenant build runs there when it is named, from source this host
+    // uploads, and a package's npm dependencies come from the tenant npm
+    // mirror. Empty keeps Cloud Build's shared pool.
+    worker_pool: e.DM_TENANT_WORKER_POOL || "",
+    npm_registry: e.DM_TENANT_NPM_REGISTRY || "",
     // What the tenant network lets a tenant agent reach, as the deployment
     // record's `egress` states it (Common Agent 8.3). See tenantEgress.
     egress: tenantEgress(e.DM_TENANT_EGRESS),
@@ -180,6 +186,21 @@ export function tenantSettings(e) {
       instance_hours: num(e.DM_TENANT_MAX_INSTANCE_HOURS, 48),
     },
   };
+}
+
+const POOL_RE = /^projects\/([a-z][a-z0-9-]{4,28}[a-z0-9])\/locations\/([a-z]+-[a-z]+[0-9])\/workerPools\/[a-z][a-z0-9-]{0,62}$/;
+const NPM_MIRROR_RE = /^https:\/\/[a-z]+-[a-z]+[0-9]-npm\.pkg\.dev\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/[a-z][a-z0-9-]{0,62}\/$/;
+
+/** The tenant build pool's settings, refused in words when they cannot
+ *  work: the pool lives in the tenant project and region (a build runs where
+ *  its pool is), and a pool with no internet installs npm dependencies from
+ *  the tenant mirror, so it needs one. Nothing named is fine. */
+export function tenantPoolProblem(t) {
+  if (!t.worker_pool) return;
+  const m = POOL_RE.exec(t.worker_pool);
+  if (!m) stop("validate", "DM_TENANT_WORKER_POOL must be projects/<project>/locations/<region>/workerPools/<name>");
+  if (m[1] !== t.project || m[2] !== t.region) stop("validate", `DM_TENANT_WORKER_POOL is in ${m[1]}/${m[2]}, and tenant builds run in ${t.project}/${t.region}`);
+  if (!NPM_MIRROR_RE.test(t.npm_registry ?? "")) stop("validate", "the tenant build pool has no internet, so this host must name the tenant npm mirror (DM_TENANT_NPM_REGISTRY, https://<region>-npm.pkg.dev/<project>/<repository>/)");
 }
 
 /** The tag every tenant agent carries: the firewall lets it reach the mesh
@@ -356,6 +377,7 @@ export function readInstruction(args, s = SETTINGS) {
     }
     if (!SA_EMAIL_RE.test(t.deployer) || !SA_EMAIL_RE.test(t.builder)) stop("validate", "DM_TENANT_DEPLOYER and DM_TENANT_BUILDER must be service account addresses");
     if (a.secrets && Object.keys(a.secrets).length) stop("validate", "a tenant's agent reads only its own credential; a model is reached through the mesh's model gateway, and no platform secret is placed in the tenant project");
+    tenantPoolProblem(t);
     a.project = t.project; a.region = t.region; a.registry = t.registry;
   } else if (t.project && String(a.project ?? "") === t.project) {
     stop("validate", "the tenant project takes only tenant workloads; this install names no tenant");
@@ -442,7 +464,7 @@ export function readInstruction(args, s = SETTINGS) {
     tenant,
     always_on: alwaysOn,
     ...(alwaysOn ? {} : { waker, wake_idle_seconds: wakeIdle ?? (tenant !== null ? t.wake_idle_seconds ?? 120 : 120), wake_max_seconds: tenant !== null ? t.wake_max_seconds ?? 3300 : 3300 }),
-    ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null }
+    ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null, worker_pool: t.worker_pool || null }
       : platformBuilder(s, project) ? { builder: platformBuilder(s, project) } : {}),
     name, handle, request_id: a.request_id ? String(a.request_id) : null,
     source: { repository, path, commit, dockerfile },
@@ -552,7 +574,19 @@ export function buildConfig(ins, image, wakeHost = null) {
   };
 }
 
-export function buildSubmitArgv(ins, configPath) {
+export function buildSubmitArgv(ins, configPath, uploaded = null) {
+  // A tenant build on the tenant build pool (technical debt 72): the pool has
+  // no internet and cannot fetch the repository, so this host fetched the
+  // commit's own archive from GitHub and the build takes that folder,
+  // uploaded to the tenant project's build bucket as for a package.
+  if (ins.tenant && ins.worker_pool) {
+    if (!uploaded) throw new Error("a tenant build on the tenant build pool takes the folder this host fetched");
+    return ["builds", "submit", uploaded, "--config", configPath, "--project", ins.project, "--region", ins.region,
+      ...poolArgv(ins),
+      "--service-account", `projects/${ins.project}/serviceAccounts/${ins.builder}`,
+      `--gcs-source-staging-dir=gs://${ins.project}_${ins.region}_cloudbuild/source`,
+      "--async", "--format", "json", "--quiet"];
+  }
   return ["builds", "submit", ins.source.repository,
     "--git-source-revision", ins.source.commit,
     ...(ins.source.path ? ["--git-source-dir", ins.source.path] : []),
@@ -789,6 +823,38 @@ export function artifactRef(ref) {
   return `${loc}-docker.pkg.dev/${m[2]}/${m[1] ? `${m[1]}.gcr.io` : "gcr.io"}/${m[3]}`;
 }
 
+/** The repository folder at the pinned commit, fetched by this host for a
+ *  build on the tenant build pool, which cannot reach GitHub (technical debt
+ *  72). GitHub's archive of the commit is read with the package reader, so
+ *  only regular files under one top folder are written, and nothing that
+ *  climbs out. Returns the folder to upload. */
+export async function fetchSourceFolder(ins, dir, deps) {
+  const url = `${ins.source.repository}/archive/${ins.source.commit}.tar.gz`;
+  let r;
+  try {
+    r = await deps.fetch(url, { signal: AbortSignal.timeout(120_000) });
+  } catch (e) {
+    stop("build", `the repository's archive at ${ins.source.commit} could not be fetched: ${e.message}`);
+  }
+  if (!r.ok) stop("build", `the repository's archive at ${ins.source.commit} could not be fetched: GitHub answered ${r.status}`);
+  const bytes = Buffer.from(await r.arrayBuffer());
+  if (bytes.length > SOURCE_ARCHIVE_MAX) stop("build", `the repository's archive is ${bytes.length} bytes, more than the ${SOURCE_ARCHIVE_MAX} a tenant build takes`);
+  let tar;
+  try { tar = readTarball(bytes); } catch (e) { stop("build", `the repository's archive could not be read: ${e.message.replace(/the package/g, "the repository")}`); }
+  const root = join(dir, "src");
+  for (const f of tar.files) {
+    const p = join(root, f.path);
+    mkdirSync(dirname(p), { recursive: true });
+    deps.writeFile(p, f.bytes);
+  }
+  const folder = ins.source.path ? join(root, tar.top, ...ins.source.path.split("/")) : join(root, tar.top);
+  if (!deps.exists(join(folder, ...ins.source.dockerfile.split("/")))) stop("build", `${ins.source.path || "the repository's top"} has no ${ins.source.dockerfile} at ${ins.source.commit}`);
+  return folder;
+}
+
+/** The most a repository archive may weigh for a tenant build (100 MB). */
+export const SOURCE_ARCHIVE_MAX = 100 * 1024 * 1024;
+
 /** Build the image in Cloud Build and follow it to the end. */
 export async function buildInCloud(ins, deps) {
   const res = resourcesFor(ins);
@@ -801,7 +867,9 @@ export async function buildInCloud(ins, deps) {
       try { wakeHost = deps.readFile(deps.settings.wakeHostFile ?? SETTINGS.wakeHostFile); } catch (e) { stop("build", `the wake host is not on this host (${deps.settings.wakeHostFile ?? SETTINGS.wakeHostFile}): ${e.message}`); }
     }
     deps.writeFile(cfg, JSON.stringify(buildConfig(ins, res.image, wakeHost)));
-    submitted = parse(must(deps, buildSubmitArgv(ins, cfg), "build", { timeout: 300_000 }));
+    const pooled = Boolean(ins.tenant && ins.worker_pool);
+    const uploaded = pooled ? await fetchSourceFolder(ins, dir, deps) : null;
+    submitted = parse(must(deps, buildSubmitArgv(ins, cfg, uploaded), "build", { timeout: 300_000 }));
   } finally {
     deps.rmdir(dir);
   }
@@ -809,14 +877,21 @@ export async function buildInCloud(ins, deps) {
   if (!id) stop("build", "the build was submitted and gcloud named no build id, so nothing can be followed or recorded");
   const deadline = Date.now() + deps.settings.buildMinutes * 60_000;
   const done = new Set(["SUCCESS", "FAILURE", "TIMEOUT", "CANCELLED", "EXPIRED", "INTERNAL_ERROR"]);
+  // A build on a pool is a regional build, read back in its region.
+  const where = ins.tenant && ins.worker_pool ? ["--region", ins.region] : [];
   let b = {};
   for (;;) {
-    b = parse(must(deps, ["builds", "describe", id, "--project", ins.project, "--format", "json"], "build"));
+    b = parse(must(deps, ["builds", "describe", id, "--project", ins.project, ...where, "--format", "json"], "build"));
     if (done.has(b.status)) break;
     if (Date.now() > deadline) stop("build", `build ${id} is still ${b.status} after ${deps.settings.buildMinutes} minutes; nothing was recorded`, `build ${id} is still running`);
     await deps.sleep(15_000);
   }
-  if (b.status !== "SUCCESS") stop("build", `build ${id} ended ${b.status}: ${String(b.statusDetail ?? "").slice(0, 300)}. Its log is ${b.logUrl ?? "in Cloud Build"}.`);
+  if (b.status !== "SUCCESS") {
+    const why = where.length
+      ? ` A tenant build has no internet: its base image must come from a Google-hosted registry (the tenant registry ${ins.registry}, or mirror.gcr.io/library/<image> for a Docker Hub image), and its steps cannot download anything.`
+      : "";
+    stop("build", `build ${id} ended ${b.status}: ${String(b.statusDetail ?? "").slice(0, 300)}. Its log is ${b.logUrl ?? "in Cloud Build"}.${why}`);
+  }
   const digest = b.results?.images?.[0]?.digest;
   if (!DIGEST_RE.test(digest ?? "")) stop("build", `build ${id} reported ${JSON.stringify(digest)}, which is not an image digest`);
   // What Cloud Build attached about how the image was made. Read back rather
@@ -833,7 +908,7 @@ export async function buildInCloud(ins, deps) {
         predicate: stmt.predicateType ?? null, builder: stmt.slsaProvenance?.builder?.id ?? null,
         materials: (stmt.slsaProvenance?.materials ?? []).map((m) => ({ uri: m.uri, digest: m.digest })) }
     : { attached: false, why: pr.code === 0 ? "Cloud Build attached none that could be read back" : `the provenance could not be read: ${(pr.stderr || "").trim().slice(-200)}`, verify_option: "VERIFIED" };
-  return { id, image: res.image, digest, pinned, provenance, log_url: b.logUrl ?? null, source_seen: b.source?.gitSource ?? null };
+  return { id, image: res.image, digest, pinned, provenance, log_url: b.logUrl ?? null, source_seen: b.source?.gitSource ?? b.source?.storageSource ?? null };
 }
 
 /** Make the agent's key and place its bundle, never on this host's disk.
@@ -1265,7 +1340,7 @@ export function rowInstruction(row, s = SETTINGS, over = {}) {
     claims: row.claims ?? [], settings: {}, secrets: {}, ready_line: over.ready_line ?? row.ready_line ?? null,
     always_on: false, waker, wake_idle_seconds: over.wake_idle_seconds ?? row.wake_idle_seconds ?? 120, wake_max_seconds: 3300,
     instructed_by: "the owner", replaces: null,
-    ...(row.tenant ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null }
+    ...(row.tenant ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null, worker_pool: t.worker_pool || null }
       : platformBuilder(s, row.project) ? { builder: platformBuilder(s, row.project) } : {}),
   };
 }
@@ -1480,6 +1555,7 @@ export function readPackageInstruction(args, s = SETTINGS) {
   // A person's agent sleeps between messages and is woken by the platform's
   // waker only; with none named it could never be woken, so nothing is made.
   if (!SA_EMAIL_RE.test(t.waker ?? "")) stop("validate", "a person's agent is woken by the platform when mail waits for it, and this host names no waker (DM_TENANT_WAKER)");
+  tenantPoolProblem(t);
   for (const k of ["credentials", "settings", "addresses", "ceilings", "secrets"]) {
     if (a[k] && typeof a[k] === "object" && Object.keys(a[k]).length) {
       stop("validate", `a person's agent in the tenant sandbox is given no ${k}: it has only its own key, and reaches a model through the mesh's model door`);
@@ -1507,6 +1583,7 @@ export function readPackageInstruction(args, s = SETTINGS) {
     boot_token: boot, interaction, admit,
     project: t.project, region: t.region, registry: t.registry, network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder,
     egress: t.egress ?? null,
+    worker_pool: t.worker_pool || null, npm_registry: t.worker_pool ? t.npm_registry : null,
     waker: t.waker, wake_idle_seconds: t.wake_idle_seconds ?? 120, wake_max_seconds: t.wake_max_seconds ?? 3300,
     cpu: "1", memory: "1Gi", claims: [], settings: {}, secrets: {}, ready_line: TENANT_READY_LINE,
     instructed_by: String(a.instructed_by ?? "the owner").slice(0, 200),
@@ -1645,24 +1722,58 @@ export function packageEnvFor(ins) {
 /** The Cloud Build config for a person's package: the context this host
  *  assembled, uploaded, built as tenant-builder, provenance asked for. */
 export function packageBuildConfig(ins, image, version) {
-  return {
-    steps: [{
-      name: "gcr.io/cloud-builders/docker",
-      args: ["build",
-        "--label", `net.agentmesh.package=${ins.name}@${version}`,
-        "--label", `net.agentmesh.package-sha256=${ins.sha256}`,
-        "--label", `net.agentmesh.handle=${ins.handle}`,
-        "--label", `net.agentmesh.tenant=${ins.tenant}`,
-        "-t", image, "."],
-    }],
+  const labels = [
+    "--label", `net.agentmesh.package=${ins.name}@${version}`,
+    "--label", `net.agentmesh.package-sha256=${ins.sha256}`,
+    "--label", `net.agentmesh.handle=${ins.handle}`,
+    "--label", `net.agentmesh.tenant=${ins.tenant}`,
+  ];
+  const tail = {
     images: [image],
     options: { requestedVerifyOption: "VERIFIED", logging: "CLOUD_LOGGING_ONLY" },
     tags: ["deploymgr", `agent-${ins.name}`, ins.tenant],
   };
+  if (!ins.worker_pool) {
+    return { steps: [{ name: "gcr.io/cloud-builders/docker", args: ["build", ...labels, "-t", image, "."] }], ...tail };
+  }
+  // The tenant build pool has no internet, so npm installs from the tenant
+  // mirror (technical debt 72). The first step writes npm's user config (the
+  // mirror and the build account's own short-lived token, from the build's
+  // metadata server) into a volume outside the build context; the build
+  // mounts it as a secret for the npm install alone (emit-image npmSecret),
+  // so it is in no layer, no file of the context and no log.
+  const mirror = String(ins.npm_registry);
+  if (!NPM_MIRROR_RE.test(mirror)) throw new Error("the tenant build pool needs the tenant npm mirror's address");
+  const auth = mirror.replace(/^https:/, "");
+  const volumes = [{ name: "npm-secret", path: "/npm-secret" }];
+  const script = [
+    "set -eu",
+    "umask 077",
+    "T=$$(curl -sSf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | sed -E 's/.*\"access_token\": *\"([^\"]+)\".*/\\1/')",
+    "[ -n \"$$T\" ] || { echo 'no token for the npm mirror' >&2 ; exit 1 ; }",
+    `printf 'registry=%s\\n%s:_authToken=%s\\n' '${mirror}' '${auth}' "$$T" > /npm-secret/npmrc`,
+    "chmod 0444 /npm-secret/npmrc",
+  ].join("\n");
+  return {
+    steps: [
+      { name: "gcr.io/cloud-builders/docker", entrypoint: "bash", args: ["-c", script], volumes },
+      { name: "gcr.io/cloud-builders/docker", env: ["DOCKER_BUILDKIT=1"], volumes,
+        args: ["build", "--secret", `id=${NPM_SECRET_ID},src=/npm-secret/npmrc`, ...labels, "-t", image, "."] },
+    ],
+    ...tail,
+  };
 }
+
+/** The build secret a tenant package's npm install reads its registry from. */
+export const NPM_SECRET_ID = "npmrc";
+
+/** Where a tenant build runs: the tenant build pool when this host names one
+ *  (technical debt 72), and Cloud Build's shared pool otherwise. */
+const poolArgv = (ins) => (ins.worker_pool ? ["--worker-pool", ins.worker_pool] : []);
 
 export function packageBuildSubmitArgv(ins, ctx, configPath) {
   return ["builds", "submit", ctx, "--config", configPath, "--project", ins.project, "--region", ins.region,
+    ...poolArgv(ins),
     "--service-account", `projects/${ins.project}/serviceAccounts/${ins.builder}`,
     // The source goes to the project's own regional build bucket by name: the
     // deployer may write objects there, and the default-bucket check, which
@@ -1721,7 +1832,8 @@ async function packageContext(ins, bytes, deps) {
   const ctx = join(dir, "ctx");
   let emitted;
   try {
-    emitted = emitter.emit(pkgDir, ctx, { bases: join(imageDir, "bases", "tenant-catalogue.json"), force: true });
+    emitted = emitter.emit(pkgDir, ctx, { bases: join(imageDir, "bases", "tenant-catalogue.json"), force: true,
+      ...(ins.worker_pool ? { npmSecret: NPM_SECRET_ID } : {}) });
   } catch (e) {
     stop("emit", `the package could not be turned into an image for the tenant sandbox: ${e.message}`);
   }

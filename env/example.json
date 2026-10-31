@@ -41,6 +41,8 @@
     "registry": "us-east1-docker.pkg.dev/example-tenants/agents",
     "deployer_sa": "tenant-deployer@example-tenants.iam.gserviceaccount.com",
     "builder_sa": "tenant-builder@example-tenants.iam.gserviceaccount.com",
-    "waker_sa": "tenant-waker@example-tenants.iam.gserviceaccount.com"
+    "waker_sa": "tenant-waker@example-tenants.iam.gserviceaccount.com",
+    "npm_registry": "https://us-east1-npm.pkg.dev/example-tenants/npm-mirror/",
+    "build_pool": "projects/example-tenants/locations/us-east1/workerPools/tenant-builds"
   }
 }
