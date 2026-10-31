@@ -147,7 +147,7 @@
       "required": ["phase", "round", "holder", "kind", "start", "end", "duration_ms", "status"],
       "properties": {
         "phase": { "$ref": "#/$defs/Words", "description": "The step of the run, by the process document's name for it." },
-        "round": { "type": "integer", "minimum": 0, "description": "0 for the first time it ran; one more each time it ran again." },
+        "round": { "type": "integer", "minimum": 0, "description": "1 the first time the step ran, one more each time it ran again." },
         "holder": { "type": ["string", "null"], "description": "Who held it, by handle; null for a person's gate." },
         "kind": { "enum": ["agent", "person", "external"], "description": "agent: an agent working. person: waiting on a person. external: waiting on something outside the run (a pull request, a sandbox, an install, a verdict)." },
         "start": { "$ref": "#/$defs/Time" },
