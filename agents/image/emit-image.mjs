@@ -861,10 +861,11 @@ export function dockerfileText(pkg, opts = {}) {
     `COPY entrypoint.mjs ${AGENT_DIR}/entrypoint.mjs`,
     `COPY check-lockfile.mjs ${AGENT_DIR}/check-lockfile.mjs`);
   if (runSpec) say(`COPY run.json ${AGENT_DIR}/run.json`);
-  if (usesGateway(install)) {
+  if (carriesGateway(install, wakesAModel)) {
     say(`# The model gateway the entrypoint starts on loopback for a package whose`,
-      `# model system's MODEL_ENDPOINT points there (Common Agent 12.4.1): the host's`,
-      `# own facility, holding the job's sign-in, never the package's.`,
+      `# model system's MODEL_ENDPOINT points there (Common Agent 12.4.1), or whose`,
+      `# harness is given the host's model through it: the host's own facility,`,
+      `# holding the job's sign-in, never the package's.`,
       `COPY ${GATEWAY_FILE} ${AGENT_DIR}/${GATEWAY_FILE}`);
   }
   say(``);
@@ -944,6 +945,17 @@ export function usesGateway(install) {
   return hasModelSystem(install) || (install?.systems ?? []).some((s) => (s?.settings ?? []).some((st) => st?.env === "STT_ENDPOINT"));
 }
 
+/** Whether the image carries the gateway: the package may be pointed at it
+ *  (usesGateway), or it wakes a harness, whose model the deployment may give
+ *  as the host's model through the gateway (technical debt 619:
+ *  model-gateway/<model>, with MODEL_ENDPOINT on loopback). Which model is
+ *  the deployment's, decided after the image is built, so a harness image
+ *  carries the gateway either way; it starts only when the job is given the
+ *  gateway's settings (one-message.mjs gatewayPlan). */
+export function carriesGateway(install, wakesAModel) {
+  return usesGateway(install) || Boolean(wakesAModel);
+}
+
 // ── emit ──────────────────────────────────────────────────────────────────
 
 /** Write the build context: the Dockerfile, the files it copies, the package
@@ -987,9 +999,9 @@ export function emit(packageDir, outDir, opts = {}) {
   // for what reads as an account and not for addresses or path segments that
   // the loose credential sweep mistakes for a value. It holds no credential:
   // it asks for a token at run time.
-  if (usesGateway(pkg.install)) {
+  if (carriesGateway(pkg.install, wakesAModel)) {
     const gateway = gatewaySource();
-    if (!gateway) refuse(`${pkg.name} declares a model system or a Speech-to-Text endpoint and the model gateway (responses-bridge.mjs) is not beside this tool; nothing was written`);
+    if (!gateway) refuse(`${pkg.name} declares a model system or a Speech-to-Text endpoint, or wakes a model, and the model gateway (responses-bridge.mjs) is not beside this tool; nothing was written`);
     const bad = forbiddenIn(gateway, GATEWAY_FILE).filter((b) => !/carries an address|reads as a credential value/.test(b));
     if (bad.length) refuse(bad.join("; ") + ". Nothing was written.");
     writeFileSync(join(out, GATEWAY_FILE), gateway);

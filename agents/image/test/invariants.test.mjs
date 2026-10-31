@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { GATEWAY_FILE, gatewaySource, hasModelSystem } from "../emit-image.mjs";
+import { GATEWAY_FILE, carriesGateway, gatewaySource, hasModelSystem, needsHarness } from "../emit-image.mjs";
 import { emit, forbiddenIn, isImageRef, readPackage, Refusal, requiredVariables } from "../emit-image.mjs";
 import { readEnvironment, fillArgv } from "../one-message.mjs";
 import { builtPackage, copyLines, copyOfPackage, messageAndJob, rewriteAuthored, runLines, tmp } from "./helpers.mjs";
@@ -26,9 +26,11 @@ test("no credential value, address, endpoint or account identifier is written in
     const { out, record } = emitTo(name);
     for (const rel of readdirSync(out)) {
       // The model gateway is the host's own program, copied as it is for a
-      // package that declares a model system (12.4.1), and for no other.
+      // package that declares a model system (12.4.1) or wakes a harness
+      // (technical debt 619), and for no other.
       if (rel === GATEWAY_FILE) {
-        assert.ok(hasModelSystem(readPackage(builtPackage(name)).install), `${name} carries the model gateway and declares no model system`);
+        const install = readPackage(builtPackage(name)).install;
+        assert.ok(hasModelSystem(install) || needsHarness(install), `${name} carries the model gateway and neither declares a model system nor wakes a harness`);
         assert.equal(readFileSync(join(out, rel), "utf8"), gatewaySource(), "the gateway is copied as it is");
         continue;
       }
@@ -137,8 +139,10 @@ test("nothing from the package is executed at build time except the install from
     }
     // And what is copied in is the package, the entrypoint, the lockfile
     // check and the command spec, and nothing else at all.
-    // ... and the host's model gateway, for a package that declares a model system.
-    const gateway = hasModelSystem(readPackage(builtPackage(name)).install) ? [GATEWAY_FILE] : [];
+    // ... and the host's model gateway, for a package that declares a model
+    // system or wakes a harness.
+    const install = readPackage(builtPackage(name)).install;
+    const gateway = carriesGateway(install, needsHarness(install)) ? [GATEWAY_FILE] : [];
     for (const [from] of copyLines(df)) {
       assert.ok(["package/", "entrypoint.mjs", "check-lockfile.mjs", "run.json", ...gateway].includes(from), `unexpected copy of ${from}`);
     }
@@ -193,4 +197,20 @@ ENV K=ghp_${"a1b2c3d4e5".repeat(3)}
   // merely by looking like an image.
   assert.ok(forbiddenIn(`FROM ${ref}
 `, "Dockerfile", []).length > 0);
+});
+
+test("a package that wakes a harness carries the model gateway, so the host's model can reach it (technical debt 619)", () => {
+  // The deployment gives a harness with no model in the instruction the host's
+  // model through the gateway, as model-gateway/<model> with MODEL_ENDPOINT on
+  // loopback. Which model is decided after the image is built, so an image whose
+  // package wakes a harness carries the gateway whether or not it declares a
+  // model system; without it the harness would call a loopback port nothing
+  // listens on. The entrypoint starts it only when the job has its settings.
+  const { out } = emitTo("explainer-critic");
+  const install = readPackage(builtPackage("explainer-critic")).install;
+  assert.ok(needsHarness(install), "the fixture no longer wakes a harness, so this proves nothing");
+  assert.ok(!hasModelSystem(install), "the fixture declares a model system, so this proves nothing new");
+  assert.equal(readFileSync(join(out, GATEWAY_FILE), "utf8"), gatewaySource(), "the gateway is copied as it is");
+  const df = readFileSync(join(out, "Dockerfile"), "utf8");
+  assert.ok(copyLines(df).some(([from]) => from === GATEWAY_FILE), "the Dockerfile does not copy the gateway in");
 });
