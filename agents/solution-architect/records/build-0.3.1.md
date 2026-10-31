@@ -24,3 +24,18 @@ test/settled-answers.test.mjs gains one test, written first and failing.
 
 The harness (Claude Code) stood in for the test and code steps, the test
 first.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 15a731c:
+  sha256 18b0af381f87eafe9eaa4078773e85273be52d36c254e4dadf6c42bb2b8045fb.
+- Installed by the deployment manager from deploy request
+  dr_vKwp1dTTwWFNQQy_UbkaOeNe, approved by the platform account, with the
+  same settings; deployed 2026-10-31 10:51 MT, the watch probe answered.
+- Proof, the same Build an agent request as 0.3.0's, as platform@ through
+  the account's try door: answered in about four minutes with the record,
+  `done: yes`, `questions: 0`, `systems: []`, `bindings: none`, the cost limit
+  the build settled with its source, decisions for nothing outside AgentMesh,
+  the model door, the limit and nobody attending, and no provider or model
+  word in the reply, the record or the job manifest. 43 gateway calls (its
+  harness's included), $0.37.
