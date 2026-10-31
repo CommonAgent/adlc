@@ -292,6 +292,27 @@ class EachDeployIsFollowedByAConformanceCheck(unittest.TestCase):
         self.assertFalse(out["ok"])
         self.assertIn("not at", out["why"])
 
+    def test_a_container_agents_records_are_read_where_its_deployment_bound_them_on_the_mount(self):
+        mount = tempfile.mkdtemp(prefix="dm-mount-")
+        self.addCleanup(shutil.rmtree, mount, True)
+        rows = [{"name": "word-reverser", "bucket": "b-state",
+                 "directories": {"records": "gs://b-state/state/word-reverser/records"}}]
+        self.assertEqual(ex.records_root_of("word-reverser", containers=rows, mount=mount),
+                         os.path.join(mount, "state/word-reverser/records"))
+        # Not a container agent, a record naming another bucket, or no mount
+        # on this host: the agent's own folders, as before.
+        other = [{"name": "word-reverser", "bucket": "b-state", "directories": {"records": "gs://elsewhere/r"}}]
+        for args in ({"containers": []}, {"containers": other}, {"containers": rows, "mount": os.path.join(mount, "absent")}):
+            self.assertTrue(ex.records_root_of("word-reverser", **{"mount": mount, **args}).startswith("/home/word-reverser/"))
+
+    def test_the_jobs_folder_is_chosen_before_the_first_message_makes_it(self):
+        real_isdir = os.path.isdir
+        state = "/home/fresh/.agentmesh/adapter"
+        with mock.patch.object(ex.os.path, "isdir", lambda p: p == state or (not p.startswith("/home/") and real_isdir(p))):
+            self.assertEqual(ex.records_root_of("fresh", containers=[]), f"{state}/jobs")
+        with mock.patch.object(ex.os.path, "isdir", lambda p: False if p.startswith("/home/") else real_isdir(p)):
+            self.assertEqual(ex.records_root_of("fresh", containers=[]), "/home/fresh/work")
+
 
 class TheBackfillRedeploysNothing(unittest.TestCase):
 
