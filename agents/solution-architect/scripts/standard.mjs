@@ -14,6 +14,7 @@
 //
 //   needs: node >= 22. Pure: nothing here reads a file or the network.
 import { inputIs, settingMissing } from "./options.mjs";
+import { providersIn, withoutProviders } from "./no-provider.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -233,6 +234,22 @@ export function repaired(arch, ctx = {}) {
   if (JSON.stringify(clean) !== before) notes.push("took a model's name, an address or a credential out of the answer");
   Object.assign(a, clean);
 
+  // A provider's name is taken out of the answer's words too: AgentMesh never
+  // says which provider stands behind the House Stack, and the record goes
+  // back to the person (no-provider.mjs). A system's own name is left for
+  // the rename below, which names the system instead.
+  const names = Array.isArray(a.systems) ? a.systems.map((s) => s?.name) : [];
+  const unnamed = (v) => {
+    if (typeof v === "string") return withoutProviders(v, { vocabulary: vocab });
+    if (Array.isArray(v)) return v.map(unnamed);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unnamed(x)]));
+    return v;
+  };
+  const named = JSON.stringify(a);
+  Object.assign(a, unnamed(a));
+  if (Array.isArray(a.systems)) a.systems.forEach((s, i) => { if (s && typeof s === "object") s.name = names[i]; });
+  if (JSON.stringify(a) !== named) notes.push("took a model provider's name out of the answer");
+
   // A system named by its product is renamed to the system, where the
   // vocabulary says which.
   a.systems = Array.isArray(a.systems) ? a.systems : [];
@@ -241,7 +258,7 @@ export function repaired(arch, ctx = {}) {
     const name = trim(s.name).toLowerCase();
     if (products.has(name)) {
       const to = systemForProduct(name, vocab);
-      if (to) { notes.push(`named the system ${to}, where the answer named it by its product ${name}`); s.product_named = name; s.name = to; }
+      if (to) { notes.push(`named the system ${to}, where the answer named it by ${providersIn(name, { vocabulary: vocab }).length ? "a model provider's name" : `its product ${name}`}`); s.product_named = name; s.name = to; }
     }
     if (MODEL_SYSTEMS.includes(s.name)) {
       if (s.access !== "trigger") s.access = "trigger";

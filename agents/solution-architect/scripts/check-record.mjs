@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { bodyOf, parseRecord, renderRecord } from "./architecture-record.mjs";
 import { ADDRESS_RE, CREDENTIAL_RE, MODEL_NAME_RE, productWords } from "./standard.mjs";
 import { loadSchemas, standardAt, standingAssetsOf, standingProblems } from "./standing.mjs";
+import { customerProducts, providersIn, withoutProviders } from "./no-provider.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -47,10 +48,10 @@ export function recordOf({ asked, named, bound, table = loadSchemas() }) {
   const rec = {
     title: trim(arch.title) || "an agent",
     // The person's words are quoted, minus anything a record never carries.
-    statement: String(asked.statement ?? "")
+    statement: withoutProviders(String(asked.statement ?? "")
       .replace(MODEL_NAME_RE, "(a model's name, left to the binding)")
       .replace(CREDENTIAL_RE, "(a credential, left out)")
-      .replace(ADDRESS_RE, "(an address, supplied at Deploy)"),
+      .replace(ADDRESS_RE, "(an address, supplied at Deploy)"), { vocabulary: asked.defaults?.systems ?? [], allowed: customerProducts(bound.systems), instead: "(a model provider, left to the binding)" }),
     environments: bound.environments,
     systems: bound.systems,
     kind: arch.kind,
@@ -106,14 +107,21 @@ export function standardsCited() {
 }
 
 /** What the record must never carry, read off its own text. Empty when it
- *  carries none of them. A known standing-asset schema is not an address. */
-export function forbiddenIn(text, table = loadSchemas()) {
+ *  carries none of them. A known standing-asset schema is not an address.
+ *  `vocabulary` names the House Stack's products, and `allowed` the products
+ *  the organization bound itself, the only provider words a record may
+ *  carry. The findings never repeat a model's or a provider's name: they are
+ *  handed back in the reply. */
+export function forbiddenIn(text, table = loadSchemas(), { vocabulary = [], allowed = [] } = {}) {
   const out = [];
   // A standing asset's schema is a name with the version in it, never an
   // address the agent reaches: the known kinds are taken out before the
   // address check reads the text.
   for (const k of table?.schemas ?? []) text = String(text).split(k.schema).join("(schema)");
-  for (const m of String(text).matchAll(MODEL_NAME_RE)) out.push(`the record names the model ${m[0]}`);
+  const models = [...String(text).matchAll(MODEL_NAME_RE)].length;
+  if (models) out.push(`the record names a model ${models === 1 ? "once" : `${models} times`}`);
+  const providers = providersIn(text, { vocabulary, allowed }).length;
+  if (providers) out.push(`the record names a model provider ${providers === 1 ? "once" : `${providers} times`}, and AgentMesh never says which provider stands behind the House Stack`);
   for (const m of String(text).matchAll(ADDRESS_RE)) out.push(`the record carries the address ${m[0]}`);
   if ([...String(text).matchAll(CREDENTIAL_RE)].length) out.push("the record carries something that looks like a credential");
   return out;
@@ -172,14 +180,19 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const done = doneOf(rec, asked.defaults?.systems ?? []);
     rec.done = done.done;
     const text = renderRecord(rec);
-    const forbidden = forbiddenIn(text);
+    const open = rec.questions.length ? stillOpenText(rec) : "";
+    // The organization's own products are its choice; any other provider's
+    // name, and the House Stack's above all, never leaves this agent.
+    const vocabulary = asked.defaults?.systems ?? [];
+    const allowed = customerProducts(bound.systems);
+    const forbidden = forbiddenIn(`${text}\n${open}`, undefined, { vocabulary, allowed });
     if (forbidden.length) {
-      console.log(JSON.stringify({ ok: false, code: 1, reply: `The record was not delivered, because ${forbidden.join("; ")}. Nothing a record carries may be a model's name, an address or a credential; this is a fault in this agent, not in what you sent.` }));
+      console.log(JSON.stringify({ ok: false, code: 1, reply: `The record was not delivered, because ${forbidden.join("; ")}. Nothing a record carries may be a model's or a model provider's name, an address or a credential; this is a fault in this agent, not in what you sent.` }));
       process.exit(1);
     }
     mkdirSync(RECORDS, { recursive: true });
     writeFileSync(join(RECORDS, "record.md"), text);
-    if (rec.questions.length) writeFileSync(join(RECORDS, "still-open.md"), stillOpenText(rec));
+    if (open) writeFileSync(join(RECORDS, "still-open.md"), open);
     let changed = null;
     if (asked.revision && asked.earlier?.text) {
       changed = whatChanged(asked.earlier.text, text, rec);
@@ -191,6 +204,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       const mark = (i) => `\u0000schema ${i}\u0000`;
       schemas.forEach((x, i) => { scrubbed = scrubbed.split(x).join(mark(i)); });
       scrubbed = scrubbed.replace(MODEL_NAME_RE, "(a model's name)").replace(CREDENTIAL_RE, "(a credential, left out)").replace(ADDRESS_RE, "(an address)");
+      // An earlier record written before 0.3.0 named the House Stack's
+      // provider in its bindings: what changed quotes its lines, and names none.
+      scrubbed = withoutProviders(scrubbed, { vocabulary, allowed, instead: "(a model provider)" });
       schemas.forEach((x, i) => { scrubbed = scrubbed.split(mark(i)).join(x); });
       writeFileSync(join(RECORDS, "what-changed.md"), scrubbed);
     }

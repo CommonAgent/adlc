@@ -16,6 +16,18 @@ It asks what only a person can commit to (a binding nobody chose, a spending
 limit, a destination beyond the derived set, access the statement never asked
 for) and fills none of it in. It designs nothing.
 
+When the request comes from a build that has already settled some of those
+answers (AgentMesh's Build an agent settles the kind, that a person's agent
+reaches nothing outside AgentMesh and a model only through AgentMesh's model
+door, and the platform's own spending rules), the build attaches them as
+`the build's settled answers`. Each is used as a decision that says where it
+came from, never asked again and never contradicted; where the architect
+would have chosen otherwise, the decision says so as a note, not a binding.
+It asks only what nobody else can answer.
+
+A House Stack model is bound as `platform` with the House Stack's label, and
+nothing it hands back names a model or the provider behind the House Stack.
+
 The rules it applies are written down as the stage's standard, in
 [standards/architecture-standard.md](../../standards/architecture-standard.md),
 which every Builder reads from the repository's shared `standards/` folder:
@@ -44,9 +56,9 @@ systems: [text-reasoning]
 standing_assets: [https://schemas.agentmesh.ai/brand/v1, https://schemas.agentmesh.ai/style-guide/v1]
 bindings:
   text-reasoning:
-    dev: google-gemini (platform)
-    test: google-gemini (platform)
-    production: google-gemini (platform)
+    dev: platform (platform)
+    test: platform (platform)
+    production: platform (platform)
 ---
 ```
 

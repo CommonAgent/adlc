@@ -100,8 +100,15 @@ and bound to a product per environment.
   `image-reading` for pictures, `speech-to-text` and `text-to-speech` for
   speech, each with access `trigger`.
 - The record says the capability the work needs in plain words: text, vision,
-  long context, speech. It names the product bound in each environment (the
-  provider), never a model or a version.
+  long context, speech. It names the product bound in each environment, never
+  a model or a version. A product the organization bound is named as it chose
+  it. Where the House Stack's product fills the binding, the record names it
+  as `platform` with the House Stack's label,
+  and never the provider or the model behind it: the House Stack's models are
+  AgentMesh's choice, they change, and AgentMesh does not say whose they are.
+- Where the build that asked settles how the agent reaches a model (a model
+  door the build provides, say), the record names no model system at all
+  (section 11).
 - No model name goes into code, a skill, an instruction, a setting's default
   or the record. The scripts read which model from configuration,
   `AGENT_MODEL` or `TEXT_MODEL`, through the caller, and refuse in words when
@@ -169,7 +176,8 @@ on the network itself, or a container, is chosen with its reason.
 A spending limit, a product that neither the organization chose nor the
 platform offers, access to a system the statement does not call for, and a
 network destination beyond the derived set are commitments somebody would be
-held to. The architect asks for each and fills none of them in. A step of the
+held to. The architect asks for each and fills none of them in, unless the
+build that asked has already settled it (section 11). A step of the
 design that needs a system the record does not name comes back to the
 architect as a question, and the record is revised before the design goes
 on; the system is never added on the designer's word alone.
@@ -232,3 +240,24 @@ and what it does `without` it.
   from the operator's.
 - **No secrets.** A standing asset is never a credential and never an
   address the agent is told to reach; it is handed to the job.
+
+## 11. Answers a build has already settled
+
+A request can come from a build that already holds some of the answers the
+architect would otherwise ask: defaults it settles for every agent it makes
+(the kind, what the agent may reach, how it reaches a model), the platform's
+own spending rules, the account's limits. The build hands them over with the
+request, each with where it came from.
+
+- **Used, not asked.** Each settled answer is used as given, as a decision
+  that says who settled it and records where it came from, and the question
+  it answers is never put to the person.
+- **Never contradicted.** The record binds nothing a settled answer rules
+  out. Where the architect would have chosen otherwise (a model system where
+  the build settles a model door, a destination where it settles that the
+  agent reaches nothing outside the platform), the settled answer stands and
+  the decision says what the architect would have chosen, as a note under
+  what was weighed, never as a binding or a question.
+- **Only what nobody else can answer is asked.** A question the settled
+  answers do not answer is still asked, and the record says it is not
+  finished until it is answered.

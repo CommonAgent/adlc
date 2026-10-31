@@ -17,7 +17,7 @@ test("the key points agent: text reasoning bound by capability in each environme
   assert.equal(r.steps.check.status, 0, JSON.stringify(r.steps));
   const h = parseRecord(r.record);
   assert.deepEqual(h.systems, ["text-reasoning"]);
-  for (const env of ["dev", "test", "production"]) assert.deepEqual(h.bindings["text-reasoning"][env], { product: "google-gemini", provided_by: "platform" });
+  for (const env of ["dev", "test", "production"]) assert.deepEqual(h.bindings["text-reasoning"][env], { product: "platform", provided_by: "platform" });
   assert.match(r.record, /^- `text-reasoning` \(text reasoning\), trigger, for text/m);
   assert.match(r.record, /hands back the key points as `text\/markdown`/);
   for (const why of r.record.matchAll(/^Why: (.*)$/gm)) assert.ok(why[1].length > 10);

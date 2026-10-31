@@ -19,6 +19,7 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { parseRecord, questionsIn, statementIn } from "./architecture-record.mjs";
 import { stackOf, houseAt } from "./bind.mjs";
 import { note } from "./went-without.mjs";
+import { isSettled, settledOf } from "./settled.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -37,9 +38,9 @@ export function parseFiles(text) {
 const TEXT_EXT = new Set([".md", ".markdown", ".txt", ".json", ".text"]);
 const isText = (path, media) => TEXT_EXT.has(extname(path).toLowerCase()) || /^text\/|json/.test(String(media ?? ""));
 
-/** What one attached file is: "a stack", "the platform's defaults", "an
- *  architecture record", "part of the statement", or "something else", with
- *  its text when it is text. */
+/** What one attached file is: "a stack", "the platform's defaults", "the
+ *  build's settled answers", "an architecture record", "part of the
+ *  statement", or "something else", with its text when it is text. */
 export function kindOf(text) {
   if (text == null) return "something else";
   if (parseRecord(text)) return "an architecture record";
@@ -47,6 +48,7 @@ export function kindOf(text) {
   if (/^[{[]/.test(t)) {
     let doc = null;
     try { doc = JSON.parse(t); } catch { return "something else"; }
+    if (isSettled(doc)) return "the build's settled answers";
     if (stackOf(doc)) return "a stack";
     if (Array.isArray(doc?.systems) && doc.systems.length && doc.systems.every((s) => s && typeof s.name === "string") && doc.systems.some((s) => s.house && typeof s.house === "object")) return "the platform's defaults";
     return "something else";
@@ -156,6 +158,7 @@ export function readingOf({ text = "", files = [], earlierPath = null, defaultsA
   else if (wantsRevision && earlierPath && existsSync(earlierPath)) earlier = { from: earlierPath, text: readFileSync(earlierPath, "utf8") };
   const stackFile = attached.find((a) => a.kind === "a stack");
   const defaultsFile = attached.find((a) => a.kind === "the platform's defaults");
+  const settledFile = attached.find((a) => a.kind === "the build's settled answers");
   const statementParts = attached.filter((a) => a.kind === "part of the statement" && trim(a.text));
   const revision = wantsRevision ? (() => {
     const open = earlier ? questionsIn(earlier.text).map((q) => q.key) : [];
@@ -181,6 +184,10 @@ export function readingOf({ text = "", files = [], earlierPath = null, defaultsA
     stack_from: stackFile?.name ?? null,
     defaults,
     defaults_from,
+    // What the build that sent this already settled (settled.mjs): used, with
+    // where each came from, and never asked again.
+    settled: settledFile ? settledOf(JSON.parse(settledFile.text)) : null,
+    settled_from: settledFile?.name ?? null,
     ...(wantsRevision ? { revision: { earlier_from: earlier?.from ?? null, change: revision.change } } : {}),
     earlier: earlier ? { from: earlier.from, text: earlier.text } : null,
     answers: revision?.answers ?? {},
@@ -230,7 +237,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       for (const w of wentWithoutOf(reading)) note(RECORDS, w);
       console.log(JSON.stringify({
         ok: true, code: 0, asked: join(RECORDS, "asked.json"),
-        said: `${reading.statement.split(/\s+/).filter(Boolean).length} words of statement; ${reading.stack ? `the organization's stack (${reading.stack_from})` : "no stack"}; defaults from ${reading.defaults_from}${reading.revision ? `; a revision of ${reading.earlier.from} with ${Object.keys(reading.answers).length} answers` : ""}`,
+        said: `${reading.statement.split(/\s+/).filter(Boolean).length} words of statement; ${reading.stack ? `the organization's stack (${reading.stack_from})` : "no stack"}; defaults from ${reading.defaults_from}${reading.settled ? `; ${reading.settled.answers.length} answers ${reading.settled.by} settled (${reading.settled_from})` : ""}${reading.revision ? `; a revision of ${reading.earlier.from} with ${Object.keys(reading.answers).length} answers` : ""}`,
       }));
     }
   } catch (e) {

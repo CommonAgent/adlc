@@ -25,9 +25,13 @@ test("a binding carries no credential, address, setting, key store or person", (
   for (const word of ["resend-prod", "https://", "a@example.com", "credential", "address", "key_store"]) assert.ok(!text.includes(word), `${word} is not in ${text}`);
 });
 
-test("a platform default fills a system the organization left open, marked as one", () => {
+test("a platform default fills a system the organization left open, marked as one, and a model is the platform's, never its provider", () => {
   const b = bindOne("text-reasoning", "test", { stack: mailProdOnly, vocabulary });
-  assert.equal(b.product, "google-gemini");
+  assert.equal(b.product, "platform");
+  assert.equal(b.label, "AgentMesh's models");
+  const live = vocabulary.map((s) => (s.name === "text-reasoning" ? { ...s, house: { ...s.house, product: "google-gemini" } } : s));
+  assert.equal(bindOne("text-reasoning", "dev", { vocabulary: live }).product, "platform", "the live vocabulary names the provider, and the binding does not");
+  assert.equal(bindOne("text-reasoning", "dev", { stack: { bindings: [{ system: "text-reasoning", product: "platform", provided_by: "platform", environments: { development: {} } }] }, vocabulary: live }).product, "platform", "an organization row naming the House Stack is the platform's too");
   assert.equal(b.provided_by, "platform");
   assert.equal(b.from, "the House Stack");
 });
@@ -70,7 +74,8 @@ test("a person's answer binds what the stacks left open, and the question goes",
 test("each bound system gets one decision with its reason, and a model system says the model is configuration", () => {
   const out = bindAll({ systems: [{ name: "text-reasoning", access: "trigger" }] }, { vocabulary });
   assert.equal(out.decisions.length, 1);
-  assert.match(out.decisions[0].decided, /^Bind text-reasoning to google-gemini/);
+  assert.match(out.decisions[0].decided, /^Bind text-reasoning to platform \(AgentMesh's models\) in dev, test and production$/);
+  assert.match(out.decisions[0].weighed, /^Another product behind text-reasoning: a model provider of the organization's own, bound on its stack with its own key$/);
   assert.ok(out.decisions[0].why.length > 20);
   for (const setting of ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL"]) assert.match(out.decisions[0].follows, new RegExp(setting));
   assert.doesNotMatch(out.decisions[0].follows, /TEXT_MODEL|AGENT_MODEL/);

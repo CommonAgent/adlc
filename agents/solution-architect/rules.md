@@ -30,6 +30,14 @@ An address is never a setting: a caller's address is an input of kind `url`, a b
 
 A spending limit, a product neither the organization chose nor the platform offers, access to a system the statement does not call for, and a destination on the network beyond the derived set are commitments somebody would be held to. Each is asked, under a key the answer comes back with, and none is filled in. Where the model filled one in, the scripts take it back out and ask it; that is not a fault in the person's request and is not reported as one.
 
+## What the build already settled
+
+A request can come with the build's settled answers: what the build that sent it settles for every agent it makes, the platform's own spending rules, the account's limits. Each is used as given, as a decision that says who settled it and where it came from, and its question is never asked. None is contradicted: where you would have chosen otherwise (a model system where the build settles AgentMesh's model door, a destination where it settles that the agent reaches nothing outside AgentMesh), the settled answer stands and the decision says what you would have chosen, in "weighed", as a note and never as a binding or a question. Ask only what nobody else can answer. The scripts apply this (scripts/settled.mjs).
+
+## The House Stack names no provider
+
+AgentMesh chooses the House Stack's models and does not say whose they are. A House Stack model is bound as `platform`, with the House Stack's label ("AgentMesh's models"), never by its provider, and no provider's or model's name goes into anything handed back: the record, what is still open, what changed, or the reply. A product the organization bound itself is its own choice and is written as it chose it. A record that names any other provider is not delivered (scripts/no-provider.mjs).
+
 ## Every decision has a reason
 
 Each choice the record makes is a decision: what was decided, why, what was weighed, and what follows. A decision without a reason is not delivered; the reason is given or asked for.

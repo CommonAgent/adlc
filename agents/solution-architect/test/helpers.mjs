@@ -56,3 +56,12 @@ export function answerFile(ws, name, doc) {
 
 export const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 export const KEY_POINTS = "an agent that reads a web page and writes the key points for a person to review";
+
+/** The message Build an agent sends the architect: the person's words, quoted, and nothing of ours. */
+export const BUILD_WORDS = [
+  "Write the architecture.",
+  "",
+  "what it should do: \"Count the words in a piece of text someone sends and say how many there are.\"",
+  "",
+  "what it must never do: \"Never change the text it is given.\"",
+].join("\n");

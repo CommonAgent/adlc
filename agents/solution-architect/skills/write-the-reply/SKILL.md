@@ -33,3 +33,4 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/pieces.mjs
 - scripts/architecture-record.mjs
 - scripts/went-without.mjs
+- scripts/no-provider.mjs
