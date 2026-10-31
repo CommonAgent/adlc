@@ -86,6 +86,17 @@ test("nobody attends a job, so a question about a person reviewing the result is
   assert.match(r.record, /^Weighed: Asking "Should a person review the count before it goes back to whoever asked\?", which the build's settled answer answers\.$/m);
 });
 
+test("a spending limit the model filled in gives way to the build's, and the reply never says it was asked", () => {
+  const ws = workspace();
+  const doc = readJson(countWords);
+  doc.limits.cost = { limit: "0.50 USD a day", why: "the model door's allowance" };
+  const r = buildJob(ws, { answers: [answerFile(ws, "costly", doc)] });
+  assert.equal(r.steps.check.status, 0, JSON.stringify(r.steps));
+  assert.deepEqual(questionsIn(r.record), []);
+  assert.doesNotMatch(r.reply, /asked for it/, r.reply);
+  assert.match(r.reply, /took out a spending limit the statement did not state, and used the one AgentMesh Build an agent settled/);
+});
+
 test("a question nobody else can answer is still asked, and it is the only one", () => {
   const ws = workspace();
   const doc = readJson(countWords);
@@ -148,8 +159,8 @@ test("both offerings declare the build's settled answers, given by an agent, as 
     assert.equal(input.given_by, "agent");
     assert.equal(input.required, false);
   }
-  assert.equal(d.agent_version, "0.3.0");
-  assert.equal(readJson(join(ROOT, "plugin.json")).version, "0.3.0");
+  assert.equal(d.agent_version, "0.3.1");
+  assert.equal(readJson(join(ROOT, "plugin.json")).version, "0.3.1");
 });
 
 test("the architecture standard says a settled answer is used with its source, and the House Stack names no provider", () => {
