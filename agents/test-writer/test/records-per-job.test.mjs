@@ -145,8 +145,11 @@ test("the checker names a job that left no record of its own, and leaves out a r
     assert.equal(found.length, 1);
     assert.match(found[0], /job-1/);
     assert.match(found[0], /went-without\.json/);
-    assert.deepEqual(checkRecordsPerJob(records, jobs, { declaration: SPEC, except: ["*/went-without.json"] }), []);
-    assert.deepEqual(checkRecordsPerJob(records, jobs, { declaration: SPEC, except: ["what the job went without, per job"] }), []);
+    // went-without.json is never left out (test-writer 0.6.2); another record is.
+    assert.equal(checkRecordsPerJob(records, jobs, { declaration: SPEC, except: ["*/went-without.json"] }).length, 1);
+    const withImage = { ...SPEC, records: [...SPEC.records, { name: "an image", when: "per_task", file: "*/image.json" }] };
+    assert.equal(checkRecordsPerJob(records, jobs, { declaration: withImage, except: ["an image"] }).length, 1);
+    assert.equal(checkRecordsPerJob(records, jobs, { declaration: withImage, except: ["*/image.json"] }).length, 1);
   });
 });
 
