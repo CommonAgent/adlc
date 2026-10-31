@@ -36,3 +36,23 @@ tests, 105 pass, 1 skipped.
 ## Who held the step
 
 The harness (Claude Code), tests first, then the scripts and the texts.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 5ea1488:
+  sha256 812133ae6cc935acfabd15f1209906469aaef20f951c21e3f65a7319dc0a3616.
+- Installed by the deployment manager from deploy request
+  dr_fP2vixfIHRqyQWM90sMfXXks, approved by the platform account, with the
+  instruction 0.3.4 ran on.
+- Proof of the hand-off half: acronym-maker (ab_6494822a9f81a1fb90,
+  AgentMesh-Dev-Test/handoff-proof#6). Standing in for the customer's coding
+  agent, the harness pushed records/conflict.md as rule 3 now says, from the
+  words Claude Code had stopped with. The gate read it, ran nothing and said
+  "Stopped on a conflict" on the pull request; the person sent it back to Test
+  from the console; the revised tests came back as f9c5eb4 on the same pull
+  request; Claude Code (local, headless) carried on, and after one code-critic
+  finding the gate said Ready for your OK on a3b0891. The OK could not merge:
+  another build had been merged to the same repository root meanwhile (debt
+  653).
+- The reference code writer's conflict piece was not exercised live: the two
+  builds asked of it after the install passed their suites. Its tests cover it.

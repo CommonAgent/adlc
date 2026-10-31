@@ -29,3 +29,12 @@ hand-off's lock does). 108 tests, 107 pass, 1 skipped.
 ## Who held the step
 
 The harness (Claude Code), tests first, then the script.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 9b3944e:
+  sha256 fcab1a1214ec3f95987c790b170cedc9faf7a9062f4f330565fbfe8f4cd91884.
+- Installed by the deployment manager from deploy request
+  dr_oUbm9zs9RVhYZagchNNQLldz, approved by the platform account, with the
+  instruction 0.3.5 ran on. It reaches a coding agent in the .adlc/ of the next
+  build folder it lays out.
