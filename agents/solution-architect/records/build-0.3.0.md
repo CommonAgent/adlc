@@ -72,3 +72,23 @@ tests first, inside each agent's checks: the package maker packs it
 (build.py, no findings), the test writer's check-suite finds the suite fails
 against empty stand-ins for the 14 scripts, and blanking settled.mjs or
 no-provider.mjs fails the suite (8 and 2 tests).
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 989ad29:
+  sha256 b989d146989b062331178137bdab63c2524ef8a501d9d4033cb074ab2b37107f.
+- Installed by the deployment manager from deploy request
+  dr_acRbbVLCJZEzbEr_k4IUnB5v, approved by the platform account, with the
+  settings 0.2.0 ran on; deployed 2026-10-31 10:33 MT, the watch probe
+  answered.
+- Proof, as platform@ through the account's try door: Build an agent's words
+  for a small countable job ("Count the vowels in a sentence someone sends and
+  say how many there are, with the count for each vowel." / "Never change the
+  sentence it is given.") with the build's settled answers attached. The
+  reply came in about four and a half minutes, with one piece, the record:
+  `done: yes`, `questions: 0`, `systems: []`, `bindings: none`, the cost limit
+  the build settled with its source, decisions for the model door, nothing
+  outside AgentMesh and nobody attending, and no provider or model word in the
+  reply, the record or the job manifest. 48 gateway calls (its harness's
+  included), $0.36. The reply also said the model's spending limit was taken
+  out "and asked for it", which it was not: fixed in 0.3.1.

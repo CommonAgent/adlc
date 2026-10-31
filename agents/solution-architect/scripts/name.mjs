@@ -173,7 +173,12 @@ export async function nameTheSystems({ ask, asked, standard = "", example = "", 
   const applied = applySettled(called.arch, [...byKey.values()], asked?.settled ?? null);
   const arch = applied.arch;
   delete arch.questions;
-  return { architecture: arch, questions: applied.questions, notes: fixed.notes, settled: applied.settled, findings: findingsOf(arch, ctx).filter((f) => !/address|credential|names the model/.test(f)), used, calls: used.length };
+  // A limit the model filled in was taken out to be asked; where the build
+  // settled one, it was used instead, and the note says so.
+  const notes = applied.settled?.used?.includes("limit-cost")
+    ? fixed.notes.map((n) => n.replace(/, and asked for it$/, `, and used the one ${applied.settled.by} settled`))
+    : fixed.notes;
+  return { architecture: arch, questions: applied.questions, notes, settled: applied.settled, findings: findingsOf(arch, ctx).filter((f) => !/address|credential|names the model/.test(f)), used, calls: used.length };
 }
 
 /** The request formats this package's text-reasoning system declares, read
