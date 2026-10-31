@@ -4,10 +4,13 @@
 // package-maker's door checks: a script is packed only when a manifest under
 // the code-writer's key lists a piece with exactly its bytes.
 //
-// Nothing is filed unless the verdict says done. A job that stopped at the
-// ceiling, at the fence or on a conflict delivers nothing, and the reply says
-// which; the pieces list does not exist, so nothing downstream can mistake a
-// half-written folder for a delivery.
+// No script is filed unless the verdict says done. A job that stopped at the
+// ceiling or at the fence delivers nothing, and the reply says which; the
+// pieces list does not exist, so nothing downstream can mistake a
+// half-written folder for a delivery. A job that stopped on a conflict files
+// the conflict alone, out/conflict.md, so the build that asked can show it to
+// the person and send the suite back to the test writer (debt 636); it is
+// never a script, and the package maker packs none from it.
 //
 //   needs: node >= 22
 //   [JOB_DIR=<job folder>, else MESH_JOB_DIR] RECORDS=<records folder> node pieces.mjs
@@ -17,7 +20,7 @@ import { basename, dirname, join, relative } from "node:path";
 const trim = (s) => String(s ?? "").trim();
 const copyBytes = (from, to) => writeFileSync(to, readFileSync(from));
 
-export const STEP_OF = { script: "write-the-scripts", account: "write-the-scripts", runs: "check-the-work" };
+export const STEP_OF = { script: "write-the-scripts", account: "write-the-scripts", runs: "check-the-work", conflict: "write-the-scripts" };
 
 /** The sentence a script wrote about itself: its opening comment up to the
  *  first blank comment line, without the needs and command lines. */
@@ -52,8 +55,18 @@ export function scriptsIn(workspace) {
 }
 
 /** What to list and what to copy. Pure; the caller copies. */
-export function plan({ workspace = "", verdict = null, scripts = [], accountPath = "", runsPath = "" } = {}) {
+export function plan({ workspace = "", verdict = null, scripts = [], accountPath = "", runsPath = "", conflictPath = "" } = {}) {
   if (!workspace) throw new Error("there is no workspace to deliver from");
+  if (!verdict?.done && conflictPath) {
+    return {
+      entries: [{
+        name: "the conflict", step: STEP_OF.conflict, path: "out/conflict.md", media_type: "text/markdown",
+        about: "The writer stopped: a test cannot pass without breaking what the spec says. This names the test and the line of the spec it contradicts. Which of the two is wrong is a person's call; when it is the test, the suite goes back to the test writer.",
+        produced_from: ["the spec", "the suite"],
+      }],
+      copies: [{ from: conflictPath, to: "out/conflict.md", what: "the conflict" }],
+    };
+  }
   if (!verdict?.done) throw new Error(`nothing is delivered: ${trim(verdict?.said) || "the check never said done"}`);
   if (!scripts.length) throw new Error("there is no script to deliver");
   const entries = [];
@@ -108,6 +121,13 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const record = readJson("workspace.json");
     const verdict = readJson("verdict.json");
     if (!record?.folder) throw new Error("there is no workspace record: run workspace.mjs first");
+    const conflictPath = join(RECORDS, "conflict.md");
+    const conflict = existsSync(conflictPath) && trim(readFileSync(conflictPath, "utf8")) ? conflictPath : "";
+    if (!verdict?.done && conflict) {
+      const listed = fill(JOB_DIR, plan({ workspace: record.folder, verdict, conflictPath: conflict }));
+      console.log(`${listed.length} piece listed at ${join(JOB_DIR, "pieces.json")}: the conflict, and no script`);
+      process.exit(0);
+    }
     if (!verdict?.done) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: `Nothing is delivered: ${trim(verdict?.said) || "the check never said done"}` }));
       process.exit(3);

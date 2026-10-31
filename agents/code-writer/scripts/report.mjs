@@ -27,7 +27,7 @@ export function replyText({ workspace = null, runs = [], verdict = null, account
   if (trim(conflict)) {
     lines.push(`Stopped without delivering after ${plural(rounds, "round")}: a test cannot pass without breaking what the spec says.`);
     lines.push(trim(conflict).slice(0, 1200));
-    lines.push("Which of the two is wrong is a person's call at the review gate. Send the run back to write-the-spec or write-the-tests once it is settled.");
+    lines.push("conflict.md goes with this reply, and no script does. Which of the two is wrong is a person's call at the review gate: when it is the test, Send back to Test asks the test writer to revise the tests it names; when it is the spec, the spec is changed first.");
   } else if (verdict?.done) {
     lines.push(`Wrote ${plural(scripts.length, "script")} for ${who} in ${plural(rounds, "round")}; the suite passes, ${verdict.tests ?? last?.pass ?? 0} of ${verdict.tests ?? last?.tests ?? 0}.`);
     const said = trim(verdict.said).replace(/^Round \d+: the suite passes, \d+ of \d+\.\s*/, "");

@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.4",
+  "agent_version": "0.3.5",
   "name": "Code writer",
   "summary": "Writes the scripts a spec names until the test suite passes, and hands back the scripts with an account of how it got there.",
   "will_not": [
@@ -62,6 +62,12 @@
           "kind": "application/vnd.agentmesh.code-runs+json",
           "when": "per_task",
           "about": "`{runs}`: each round of the check, with what passed and failed, as code reads it."
+        },
+        {
+          "name": "the conflict",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Only when the writer stopped on a test that cannot pass without breaking what the spec says, and then alone, with no script: the test file, the test by its name, its line and the line of the spec it contradicts. A person decides which is wrong."
         }
       ],
       "how": {
