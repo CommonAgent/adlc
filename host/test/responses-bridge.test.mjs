@@ -110,6 +110,13 @@ test("the pieces: the model id, the request Vertex takes, and where each region 
   const v = vertexMessagesRequest({ model: "claude-x", max_tokens: 5, messages: [] }, { origin: "http://v", project: "p", region: "us-east5" });
   assert.equal(v.url, "http://v/v1/projects/p/locations/us-east5/publishers/anthropic/models/claude-x:rawPredict");
   assert.deepEqual(v.body, { max_tokens: 5, messages: [], anthropic_version: "vertex-2023-10-16" });
+  // Anthropic's client sends thinking.block_binding with adaptive thinking and Vertex
+  // refuses the request over it (debt 619 on dev); the rest of the block passes.
+  const t = vertexMessagesRequest({ model: "claude-x", messages: [], thinking: { type: "adaptive", block_binding: true, effort: "low" } },
+    { origin: "http://v", project: "p", region: "global" });
+  assert.deepEqual(t.body.thinking, { type: "adaptive", effort: "low" });
+  assert.deepEqual(vertexMessagesRequest({ model: "claude-x", messages: [], thinking: { type: "enabled", budget_tokens: 1024 } },
+    { origin: "http://v", project: "p", region: "global" }).body.thinking, { type: "enabled", budget_tokens: 1024 });
   assert.match(vertexOrigin("global"), /\/\/aiplatform\.googleapis\.com$/);
   assert.match(vertexOrigin("us"), /\/\/aiplatform\.us\.rep\.googleapis\.com$/);
   assert.match(vertexOrigin("us-east5"), /\/\/us-east5-aiplatform\.googleapis\.com$/);

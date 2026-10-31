@@ -182,9 +182,18 @@ function toOutput(reply, names) {
 export const vertexModelId = (name) => String(name ?? "").trim().replace(/^google-vertex-anthropic\//, "").replace(/@default$/, "");
 
 /** A Messages API request as Vertex takes it: the model moves from the body into the
- *  address, the version is Vertex's, and a streamed request goes to the streamed door. */
+ *  address, the version is Vertex's, and a streamed request goes to the streamed door.
+ *  thinking.block_binding is left out: Anthropic's own client (@ai-sdk/anthropic, the
+ *  one opencode loads for a harness on the host's gateway, technical debt 619) sends
+ *  it with adaptive thinking, and Vertex refuses the whole request over it with 400
+ *  "thinking.adaptive.block_binding: Extra inputs are not permitted" (dev, 2026-10-30).
+ *  The rest of the thinking block passes as it came. */
 export function vertexMessagesRequest(body, { origin, project, region }) {
   const { model, ...rest } = body ?? {};
+  if (rest.thinking && typeof rest.thinking === "object" && "block_binding" in rest.thinking) {
+    const { block_binding: _left, ...thinking } = rest.thinking;
+    rest.thinking = thinking;
+  }
   const id = vertexModelId(model);
   const door = rest.stream === true ? "streamRawPredict" : "rawPredict";
   return {
