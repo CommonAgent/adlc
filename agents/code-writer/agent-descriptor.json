@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.3",
+  "agent_version": "0.3.4",
   "name": "Code writer",
   "summary": "Writes the scripts a spec names until the test suite passes, and hands back the scripts with an account of how it got there.",
   "will_not": [

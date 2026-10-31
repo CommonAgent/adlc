@@ -40,6 +40,13 @@ headings, a JSON kind with its declared shape, HTML, an address, a signed
 binary), and the model's tests call its `checkDelivered(jobDir)` on every job
 folder they fill.
 
+`records-per-job.test.mjs` is the second standard file copied into every
+suite: every job of an agent shares one records folder, so a record the
+declaration keeps per job (a `file` pattern such as `*/went-without.json`)
+goes under a folder named after the job folder, and the model's tests run two
+jobs with one records folder and call its
+`checkRecordsPerJob(records, [jobDir1, jobDir2])` (technical debt 639).
+
 ## Replacing it
 
 This is a reference implementation. Any agent that holds the test writer role

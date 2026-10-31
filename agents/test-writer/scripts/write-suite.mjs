@@ -26,6 +26,15 @@
 // job folder they fill, and a suite whose declaration has outputs and whose
 // tests never call it goes back with that finding (owner, 2026-10-27).
 //
+// A second file is not the model's either: test/records-per-job.test.mjs, the
+// standard check that each job keeps its per-job records in a folder of its
+// own under the records folder every job shares, named after its job folder.
+// Three agents built on dev wrote their went-without record straight into the
+// records folder, so each job overwrote the last, and no suite ran two jobs
+// (technical debt 639). The model's suite runs two jobs with one records
+// folder and calls its checkRecordsPerJob, and a suite whose declaration keeps
+// a record per job and whose tests never call it goes back with that finding.
+//
 // Two things change the ask. EXISTING names a folder holding the suite the
 // package already has (test/*.test.mjs): it goes to the model whole, the
 // answer may only add new files, and the kept files are never rewritten. And
@@ -161,6 +170,25 @@ import { checkDelivered } from "./delivered-formats.test.mjs" and assert
 checkDelivered(jobDir) deep-equals []. It reads ../agent-descriptor.json and
 holds each piece pieces.json lists to its declared kind: Markdown with the
 headings its "about" sketches, a JSON kind with its sketched shape, and so on.
+
+Every job of an agent is handed the same records folder, the agent's own
+(RECORDS, or --records), and it is kept from one job to the next. A record
+the spec keeps per job has a file pattern that starts with the job's folder,
+such as */went-without.json, read relative to that records folder, so a job
+writes it under a folder named after its job folder:
+<records>/<the job folder's name>/went-without.json. A test therefore hands
+every job the same records folder, never a folder per job. The suite that
+works, below, hands its job records/job1 as the records folder, an older
+layout the host does not make: do not copy that part. One file in every
+suite checks the rest: test/records-per-job.test.mjs, which the test writer adds itself. Do not write it and do not answer with it.
+When the spec keeps a record per job, write a test that runs two jobs of the
+same kind, each with its own job folder and both with the same records
+folder, choosing jobs that each leave every per-job record (two jobs that go
+without the same thing each note went-without.json); then
+import { checkRecordsPerJob } from "./records-per-job.test.mjs" and assert
+checkRecordsPerJob(records, [jobDir1, jobDir2]) deep-equals []. A record the
+spec says is written only in some cases, and that neither job writes, is
+named in its third argument: { except: ["<the record's file or name>"] }.
 
 Never write a test that would pass with the scripts absent. Never touch a
 network or a model from a test. Never write the scripts. A script that calls
@@ -439,6 +467,48 @@ export function refreshFormatTest(existing = [], text = "") {
 /** Whether a declaration has any output for the format check to hold. */
 export const declaresOutputs = (declared) => (declared?.jobs ?? []).some((j) => (j.outputs ?? []).length);
 
+/** The standard check that each job leaves its own records (debt 639), and
+ *  where its master copy is kept, the same way as the format check's. */
+export const RECORDS_TEST = "test/records-per-job.test.mjs";
+export function recordsTestAt(env = {}, here = HERE) {
+  return firstOf(trim(env.RECORDS_TEST) ? [trim(env.RECORDS_TEST)] : [
+    join(here, "..", "references", "records-per-job.test.mjs"),
+    join(here, "..", "..", "test-writer", "references", "records-per-job.test.mjs"),
+  ]);
+}
+
+/** The files the test writer adds to every suite, by path. */
+export const STANDARD_TESTS = [FORMAT_TEST, RECORDS_TEST];
+
+/** The suite with both standard checks in it: each added unless the suite
+ *  has a file at its path already, and none added whose text is empty. */
+export function withStandardTests(files = [], { formatTest = "", recordsTest = "" } = {}) {
+  let out = files;
+  for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest]]) {
+    if (trim(text) && !out.some((f) => f.path === path)) out = [...out, { path, text }];
+  }
+  return out;
+}
+
+/** What a suite being added to keeps, and the standard file at `path` it is
+ *  given: the current copy, unless it already carries those same bytes. */
+export function refreshStandardTest(existing = [], path = FORMAT_TEST, text = "") {
+  const kept = existing.find((f) => f.path === path);
+  if (kept && kept.text === text) return { existing, generated: [] };
+  return { existing: existing.filter((f) => f !== kept), generated: [{ path, text }] };
+}
+
+/** Whether a declaration keeps a record per job: a record whose file pattern
+ *  starts with the job's folder (`*` then `/`) and is not marked standing. */
+export const declaresPerJobRecords = (declared) => (declared?.records ?? [])
+  .some((r) => typeof r?.file === "string" && r.file.replace(/\\/g, "/").startsWith("*/") && r.when !== "standing");
+
+/** Whether some file of a suite calls the records check. */
+export const callsRecordsCheck = (files = []) => files.some((f) => f.path !== RECORDS_TEST
+  && /from\s+["']\.\/records-per-job\.test\.mjs["']/.test(f.text) && /checkRecordsPerJob\s*\(/.test(f.text));
+
+export const NO_RECORDS_CHECK = "no test calls checkRecordsPerJob(records, [jobDir1, jobDir2]) from ./records-per-job.test.mjs, so nothing checks that each job keeps its records in a folder of its own and the next job does not overwrite them; run two jobs of the same kind with their own job folders and one records folder, then call it and assert it returns []";
+
 /** Whether some file of a suite calls the format check on a job folder. */
 export const callsFormatCheck = (files = []) => files.some((f) => f.path !== FORMAT_TEST
   && /from\s+["']\.\/delivered-formats\.test\.mjs["']/.test(f.text) && /checkDelivered\s*\(/.test(f.text));
@@ -497,15 +567,18 @@ export function importFindings(files = [], dependencies = []) {
   return out;
 }
 
-export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false, dependencies = [] } = {}) {
+export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, dependencies = [] } = {}) {
   const out = [];
   if (!files.length) return ["no test file came back"];
-  // The format check is the test writer's own file, added after the answer.
-  if (files.some((f) => f.path === FORMAT_TEST)) {
-    out.push(`${FORMAT_TEST} is written by the test writer itself and added to every suite; do not answer with it`);
-    files = files.filter((f) => f.path !== FORMAT_TEST);
-    if (!files.length) return out;
+  // The format check and the records check are the test writer's own files,
+  // added after the answer.
+  for (const path of STANDARD_TESTS) {
+    if (files.some((f) => f.path === path)) {
+      out.push(`${path} is written by the test writer itself and added to every suite; do not answer with it`);
+      files = files.filter((f) => f.path !== path);
+    }
   }
+  if (!files.length) return out;
   // A file under a name the suite already has is a rewrite, and a rewrite of
   // a released agent's suite is what this guards against.
   const kept = new Set([...existing.map((f) => f.path), ...taken]);
@@ -537,6 +610,7 @@ export function staticFindings(files = [], declared = null, { existing = [], tak
     if (!all.includes(name)) out.push(`nothing reaches ${s}: no file imports it or spawns it`);
   }
   if (formatCheck && !callsFormatCheck(whole)) out.push(NO_FORMAT_CHECK);
+  if (recordsCheck && !callsRecordsCheck(whole)) out.push(NO_RECORDS_CHECK);
   const k = named.length;
   if (k && total < 2 * k) out.push(`${total} test${total === 1 ? "" : "s"} for ${k} script${k === 1 ? "" : "s"}; the nine existing suites carry about eight per script, and fewer than two each is not a suite`);
   return out;
@@ -575,11 +649,12 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
       // Over the whole suite when it is one ask; a suite in parts is held to
       // it once all its parts are in (askInParts).
       formatCheck: !opts.part && declaresOutputs(opts.declared),
+      recordsCheck: !opts.part && declaresPerJobRecords(opts.declared),
       dependencies: dependenciesFor(opts),
     });
     standIns = null;
     if (!findings.length && run) {
-      standIns = await run(withFormatTest(last.files, opts.formatTest));
+      standIns = await run(withStandardTests(last.files, opts));
       findings = standInFindings(standIns);
     }
     if (!findings.length) break;
@@ -639,7 +714,8 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
     findings.push(...got.findings.map((f) => `in the part for ${p.scripts.join(", ")}: ${f}`));
   }
   if (declaresOutputs(opts.declared) && !callsFormatCheck(files)) findings.push(`the whole suite: ${NO_FORMAT_CHECK}`);
-  const standIns = run ? await run(withFormatTest(files, opts.formatTest)) : null;
+  if (declaresPerJobRecords(opts.declared) && !callsRecordsCheck(files)) findings.push(`the whole suite: ${NO_RECORDS_CHECK}`);
+  const standIns = run ? await run(withStandardTests(files, opts)) : null;
   if (standIns) for (const f of standInFindings(standIns)) findings.push(`the whole suite: ${f}`);
   return { files, could_not: couldNot, notes: notes.join("\n"), findings, stand_ins: standIns, calls, tried_again: triedAgain, parts };
 }
@@ -702,6 +778,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // whose master copy is missing writes no suite rather than one without it.
     const formatTest = read(formatTestAt(env));
     if (!trim(formatTest)) throw new Error(`the standard format check ${FORMAT_TEST} is not among this package's references, so no suite is written without it`);
+    // So is the records check, for the same reason.
+    const recordsTest = read(recordsTestAt(env));
+    if (!trim(recordsTest)) throw new Error(`the standard records check ${RECORDS_TEST} is not among this package's references, so no suite is written without it`);
     for (const [what, at] of wanted) {
       if (!at) note(RECORDS, { wanted: what, did: "asked for the suite without it, from the spec and the instruction alone" });
     }
@@ -725,15 +804,20 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       worked: read(workedAt(env)),
       workedSpec: read(workedSpecAt(env)),
       formatTest,
+      recordsTest,
       env,
     });
-    // The format check goes in beside what the model wrote. It is the test
-    // writer's own file, so a suite being added to that carries an older copy
-    // gets the current one; a copy that is the same bytes is left as it is.
-    const refreshed = refreshFormatTest(existing, formatTest);
-    existing.splice(0, existing.length, ...refreshed.existing);
-    const generated = refreshed.generated;
-    out.files = [...out.files.filter((f) => f.path !== FORMAT_TEST), ...generated];
+    // The format check and the records check go in beside what the model
+    // wrote. They are the test writer's own files, so a suite being added to
+    // that carries an older copy gets the current one; a copy that is the
+    // same bytes is left as it is.
+    const generated = [];
+    for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest]]) {
+      const refreshed = refreshStandardTest(existing, path, text);
+      existing.splice(0, existing.length, ...refreshed.existing);
+      generated.push(...refreshed.generated);
+    }
+    out.files = [...out.files.filter((f) => !STANDARD_TESTS.includes(f.path)), ...generated];
     // The kept files go into the work folder beside the new ones, so the
     // check runs the suite as it will stand; only the new ones are delivered.
     for (const f of [...existing, ...out.files]) {

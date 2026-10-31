@@ -137,6 +137,34 @@ pieces script's `fill`, ends with it:
 It was added because an inventory of 73 agents found 59 pieces whose declared
 kind was not what the code sent, and nothing in any suite looked.
 
+## Every job keeps its own records
+
+Since 2026-10-31 every suite also carries `test/records-per-job.test.mjs`,
+added by the test writer like the format check and never written by the
+model. The host hands every job of an agent the same records folder, the
+agent's own, and keeps it across jobs. A record the declaration keeps per job
+has a `file` pattern that starts with the job's folder, `*/went-without.json`,
+read relative to that folder, so the job writes it at
+`<records>/<the job folder's name>/went-without.json` and the script makes the
+folder as `join(RECORDS, basename(JOB_DIR))`. A test hands every job the same
+records folder, never a folder per job, which is the layout the host never
+makes.
+
+When the declaration keeps a record per job, one test runs two jobs of the
+same kind and then holds them to it:
+
+    import { checkRecordsPerJob } from "./records-per-job.test.mjs";
+    // ... two jobs, each with its own job folder, one records folder ...
+    assert.deepEqual(checkRecordsPerJob(records, [jobDir1, jobDir2]), []);
+
+Choose jobs that each leave every per-job record: two jobs that go without
+the same thing each note went-without.json. A record the declaration says is
+written only in some cases, and that neither job writes, goes in
+`{ except: ["<its file or name>"] }`. It was added because three agents built
+on dev wrote went-without.json straight into the records folder, so each job
+overwrote the last, and their suites, which handed each job its own folder as
+the records folder, never noticed (technical debt 639).
+
 ## Where the nine are thin
 
 Two files import nothing from the scripts and pin by process alone. Four
@@ -167,7 +195,9 @@ code-writer's.
 records directory), `note(records, { wanted, did, why })` (appends one
 entry and returns it), `read(records)` (the entries, `[]` when the file is
 absent), `sentence(entries)` (one sentence over a list of entries, `""` for
-none) and `paragraph(records)` (`sentence(read(records))`).
+none) and `paragraph(records)` (`sentence(read(records))`). Each takes the
+folder it writes in as it is: a script hands it the job's own folder,
+`join(RECORDS, basename(JOB_DIR))`, so a test reads the record there.
 
 `scripts/pieces.mjs` exports `STEP_OF` (which step each kind of piece comes
 from), `aboutOf(text, path)` (the one-line description a piece is filed

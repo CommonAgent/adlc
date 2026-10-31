@@ -18,6 +18,7 @@ Each one is already there: the released script where there is one, otherwise a s
 6. Write no address into a script. A system's address is one of its declared settings, read from the environment; an address a caller hands in is used as given.
 7. No credential values anywhere, and nothing that looks like one.
 8. Never reach a network or a real system from a test run: the suite hands in every function that would.
+9. Every job is handed the same records folder, the agent's own (RECORDS, or `--records`), kept from one job to the next. A record agent-descriptor.json keeps per job, one whose `file` pattern starts with the job's folder such as `*/went-without.json`, goes under a folder named after the job folder, `join(RECORDS, basename(JOB_DIR))` (with `--job`, the job folder you are given), and never straight into the records folder, where the next job overwrites it. A plain `file` such as `names.json` is one record the jobs share. test/records-per-job.test.mjs runs two jobs with one records folder and names a record in the wrong place.
 
 ## The check
 
