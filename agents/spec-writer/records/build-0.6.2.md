@@ -42,3 +42,13 @@ pass, 1 skipped.
 ## Who held the step
 
 The harness (Claude Code), tests first, then the script.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 2a97a96:
+  sha256 4b74e592e24d1c41a87f1df2e6d6ac42cdc6d027cb57faec4650c664f62279fb.
+- Installed by the deployment manager from deploy request
+  dr_QG7c6vbowNUAK4KvxAb2g3R8, approved by the platform account, with the
+  settings 0.6.1 ran on (MODEL_PROTOCOL gemini, MODEL_NAME gemini-3.8-flash).
+- The package maker installed on the fleet host is unchanged: build.py's change
+  names its rule and keeps its behaviour and words.

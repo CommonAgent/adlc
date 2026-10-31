@@ -47,3 +47,11 @@ pass, 1 skipped.
 ## Who held the step
 
 The harness (Claude Code), tests first, then the script.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 2a97a96:
+  sha256 7a5f800e3371cb7f24c22d96911dc5331473350c61583984998e0f9eec8b8e7d.
+- Installed by the deployment manager from deploy request
+  dr_yriDYjP0VkU5aSjrv_g9D7Yk, approved by the platform account, with the
+  instruction 0.3.6 ran on.
