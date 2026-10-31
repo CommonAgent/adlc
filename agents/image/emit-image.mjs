@@ -877,10 +877,20 @@ export function dockerfileText(pkg, opts = {}) {
       `# "from a lockfile". Run as the agent, so nothing installed is owned by`,
       `# root and nothing written lands outside the home.`,
       `USER agent`);
+    // A builder with no internet (the tenant build pool, technical debt 72)
+    // installs from the operator's npm mirror. Its address and token arrive as
+    // a build secret mounted for this one command: npm reads it as its user
+    // config, and nothing of it is in a layer or in this file.
+    const secret = opts.npmSecret ? String(opts.npmSecret) : null;
+    if (secret !== null && !/^[a-z][a-z0-9-]{0,30}$/.test(secret)) refuse(`npmSecret ${JSON.stringify(secret)} is not a build secret id`);
+    if (secret !== null) {
+      say(`# The npm registry and its token come from the build secret ${secret}, mounted`,
+        `# for the install alone (a builder with no internet installs from a mirror).`);
+    }
     for (const d of deps) {
-      say(`RUN set -eu ; cd ${shq(d.dir)} ; \\`,
+      say(`RUN ${secret !== null ? `--mount=type=secret,id=${secret},mode=0444 ` : ""}set -eu ; cd ${shq(d.dir)} ; \\`,
         block([`node ${AGENT_DIR}/check-lockfile.mjs ${shq(d.name)} ${d.sha256}`,
-          `npm ci --ignore-scripts --omit=dev --no-audit --no-fund --loglevel=error`]));
+          `npm ci ${secret !== null ? `--userconfig /run/secrets/${secret} ` : ""}--ignore-scripts --omit=dev --no-audit --no-fund --loglevel=error`]));
     }
     say(``);
   }
