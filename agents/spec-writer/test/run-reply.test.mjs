@@ -39,6 +39,8 @@ const job = (reply) => ({
   good: "A tally naming each of a, e, i, o and u with how many times it appears in the sentence, and the total of the five, which a reader can count again by hand.",
   empty: "With no sentence it says there was nothing to count.",
   does: "Counts the vowels in a sentence.",
+  // Since 0.6.3 a json:<member> is kept only when the job prints it (debt 657).
+  instructions: "It prints one JSON object with `reply` and `counts` members.",
   run: { command: ["node", "{home}/{package}/skills/count-vowels/scripts/count.mjs", "--job", "{job_dir}"], ...(reply === undefined ? {} : { reply }) },
 });
 const specWith = (reply) => ({
@@ -75,7 +77,7 @@ test("anything else outside the rule replies with what the command prints; one i
     assert.equal(got.spec.jobs[0].run.reply, "stdout", JSON.stringify(bad));
     assert.match(got.note, /written as "stdout"/);
   }
-  for (const good of ["stdout", "json:reply", "json:counts.total"]) {
+  for (const good of ["stdout", "json:reply", "json:counts"]) {
     const s = specWith(good);
     assert.deepEqual(fitRunReply(s), { spec: s, note: "" });
   }
