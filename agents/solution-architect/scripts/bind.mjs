@@ -33,6 +33,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STACK_WORD } from "./architecture-record.mjs";
+import { HOUSE_PRODUCT, MODEL_SYSTEMS, withoutProviders } from "./no-provider.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -54,7 +55,10 @@ export function stackOf(doc) {
 
 const labelOf = (vocab, system, product) => {
   const v = vocab.find((s) => s.name === system);
-  if (product === "platform" || product === v?.house?.product) return trim(v?.house?.label) || product;
+  if (product === "platform" || product === v?.house?.product) {
+    const label = trim(v?.house?.label) || product;
+    return MODEL_SYSTEMS.includes(system) ? withoutProviders(label) || "AgentMesh's models" : label;
+  }
   return product;
 };
 
@@ -62,7 +66,14 @@ const labelOf = (vocab, system, product) => {
 export function bindOne(system, env, { stack = null, vocabulary = [] } = {}) {
   const word = STACK_WORD[env] ?? env;
   const v = vocabulary.find((s) => s.name === system);
-  const house = v?.house && v.house.covered && trim(v.house.product) && v.house.product !== "none" ? v.house : null;
+  const covered = v?.house && v.house.covered && trim(v.house.product) && v.house.product !== "none" ? v.house : null;
+  // The House Stack's product on a model system is written as the
+  // platform's, with its own label: AgentMesh never says which provider
+  // stands behind it, and the vocabulary it publishes still names one
+  // (no-provider.mjs).
+  const house = covered && MODEL_SYSTEMS.includes(system)
+    ? { ...covered, product: HOUSE_PRODUCT, label: withoutProviders(covered.label) || "AgentMesh's models", why: withoutProviders(covered.why) }
+    : covered;
   const org = stack?.bindings?.find((b) => b.system === system) ?? null;
   const fromOrg = (row, how) => {
     const product = org.product === "platform" && house ? house.product : trim(org.product);
@@ -106,7 +117,10 @@ export function bindOne(system, env, { stack = null, vocabulary = [] } = {}) {
  *  writes them in. */
 export function productsFor(system, vocabulary = []) {
   const v = vocabulary.find((s) => s.name === system);
-  return [...new Set([...(v?.products ?? []), ...(v?.house?.product && v.house.product !== "none" ? [v.house.product] : [])]
+  // The House Stack's product on a model system is the platform's, never a
+  // product a person names (no-provider.mjs).
+  const house = v?.house?.product && v.house.product !== "none" && !MODEL_SYSTEMS.includes(system) ? [v.house.product] : [];
+  return [...new Set([...(v?.products ?? []), ...house]
     .map((p) => String(p).toLowerCase()).filter((p) => p && p !== "platform"))];
 }
 
@@ -172,7 +186,11 @@ export function bindAll(arch, { stack = null, vocabulary = [], answers = {}, tar
       decisions.push({
         decided,
         why,
-        weighed: swaps.length ? `Another product behind ${s.name}: ${list(swaps)}, which the organization can choose on its stack` : "",
+        // A model system's other products are not listed by their providers'
+        // names beside the House Stack's: the record would say whose it is not.
+        weighed: MODEL_SYSTEMS.includes(s.name)
+          ? `Another product behind ${s.name}: a model provider of the organization's own, bound on its stack with its own key`
+          : swaps.length ? `Another product behind ${s.name}: ${list(swaps)}, which the organization can choose on its stack` : "",
         follows: deployNote ? `${follows}. ${deployNote}` : follows,
         from_binding: s.name,
       });

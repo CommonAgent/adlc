@@ -34,6 +34,8 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/standard.mjs
 - scripts/options.mjs
 - scripts/architecture-record.mjs
+- scripts/settled.mjs
+- scripts/no-provider.mjs
 
 ## References
 

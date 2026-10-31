@@ -31,6 +31,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/bind.mjs
 - scripts/architecture-record.mjs
+- scripts/no-provider.mjs
 
 ## References
 

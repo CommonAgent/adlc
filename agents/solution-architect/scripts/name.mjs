@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { callerFor, cannotCall, replayCaller } from "./model-caller.mjs";
 import { carriedFrom, findingsOf, repaired, yesOrNo, KINDS } from "./standard.mjs";
 import { parseRecord } from "./architecture-record.mjs";
+import { applySettled, settledPart } from "./settled.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -81,6 +82,8 @@ export function requestParts({ asked, standard = "", example = "", findings = []
   const parts = [INSTRUCTION];
   parts.push(`--- THE STATEMENT OF THE JOB ---\n${trim(asked?.statement) || "(none)"}`);
   parts.push(`--- THE SYSTEMS THE PLATFORM RESERVES ---\n${vocabularyText(asked?.defaults?.systems ?? [])}`);
+  const settled = settledPart(asked?.settled);
+  if (settled) parts.push(settled);
   if (asked?.revision && asked?.earlier) {
     parts.push(`--- THE RECORD YOU ARE REVISING ---\n${trim(asked.earlier.text)}`);
     const answers = Object.entries(asked.answers ?? {});
@@ -154,7 +157,9 @@ export async function nameTheSystems({ ask, asked, standard = "", example = "", 
   const earlierSystems = asked?.revision && asked?.earlier ? parseRecord(asked.earlier.text)?.systems ?? [] : [];
   const refusedBefore = (carried.refused ?? []).filter((x) => /^[a-z][a-z0-9-]*$/.test(x));
   const called = calledFor(fixed.arch, { statement: asked?.statement, answers: asked?.answers ?? {}, earlierSystems, refusedBefore });
-  const modelQuestions = (Array.isArray(doc.questions) ? doc.questions : [])
+  // The model's own questions as repaired, so nothing a record never carries
+  // comes back through them.
+  const modelQuestions = (Array.isArray(fixed.arch.questions) ? fixed.arch.questions : [])
     .filter((q) => q && /^[a-z][a-z0-9-]*$/.test(trim(q.key)) && trim(q.question) && !(trim(q.key) in (asked?.answers ?? {})))
     // The commitments are code's to ask, each once, under its own key: a
     // model's own question about egress, spending, a binding or access to a
@@ -162,9 +167,13 @@ export async function nameTheSystems({ ask, asked, standard = "", example = "", 
     .filter((q) => !/egress|network|reach|spend|cost|budget|limit|bind|access|grant/i.test(`${q.key} ${q.question}`));
   const byKey = new Map();
   for (const q of [...fixed.questions, ...called.questions, ...modelQuestions]) if (!byKey.has(q.key)) byKey.set(q.key, { key: q.key, question: trim(q.question) });
-  const arch = called.arch;
+  // What the build already settled is used, with where it came from, and the
+  // questions it answers go; where the answer would have been otherwise it
+  // is a note in the decision, never a binding or a question (settled.mjs).
+  const applied = applySettled(called.arch, [...byKey.values()], asked?.settled ?? null);
+  const arch = applied.arch;
   delete arch.questions;
-  return { architecture: arch, questions: [...byKey.values()], notes: fixed.notes, findings: findingsOf(arch, ctx).filter((f) => !/address|credential|names the model/.test(f)), used, calls: used.length };
+  return { architecture: arch, questions: applied.questions, notes: fixed.notes, settled: applied.settled, findings: findingsOf(arch, ctx).filter((f) => !/address|credential|names the model/.test(f)), used, calls: used.length };
 }
 
 /** The request formats this package's text-reasoning system declares, read

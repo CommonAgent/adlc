@@ -17,9 +17,9 @@ bindings:
     test: resend (customer)
     production: resend (customer)
   text-reasoning:
-    dev: google-gemini (platform)
-    test: google-gemini (platform)
-    production: google-gemini (platform)
+    dev: platform (platform)
+    test: platform (platform)
+    production: platform (platform)
 ---
 
 # Architecture record: renewal reminders by email
@@ -42,7 +42,7 @@ This record is finished: every system is named and bound in each environment, an
 |---|---|---|---|
 | database | supabase, the organization's choice | supabase, the organization's choice | supabase, the organization's choice |
 | mail | resend, the organization's choice | resend, the organization's choice | resend, the organization's choice |
-| text-reasoning | google-gemini (AgentMesh's models), platform default | google-gemini (AgentMesh's models), platform default | google-gemini (AgentMesh's models), platform default |
+| text-reasoning | platform (AgentMesh's models), platform default | platform (AgentMesh's models), platform default | platform (AgentMesh's models), platform default |
 
 ## Dependencies
 
@@ -98,13 +98,13 @@ Weighed: Another product behind mail: Resend and Amazon SES, which the organizat
 
 What follows: The install places the credential and address this binding names; the package names neither.
 
-### Decision 3. Bind text-reasoning to google-gemini (AgentMesh's models) in dev, test and production
+### Decision 3. Bind text-reasoning to platform (AgentMesh's models) in dev, test and production
 
 Why: The organization chose no product for text-reasoning, so the House Stack's product fills each as a platform default: AgentMesh chooses the model and keeps it current. Every harness AgentMesh deploys uses it unless its owner names another model, and the key sits on the machine that deploys it.
 
-Weighed: Another product behind text-reasoning: Anthropic and Google, which the organization can choose on its stack.
+Weighed: Another product behind text-reasoning: a model provider of the organization's own, bound on its stack with its own key.
 
-What follows: The install places the model from this binding as TEXT_MODEL (or AGENT_MODEL), and the scripts read it through the caller and name no model, so changing the model is a setting and not a rebuild.
+What follows: The install places the model from this binding in the four settings MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, and the scripts read them on every call through the shared model caller and name no model, so changing the model is a setting and not a rebuild.
 
 ### Decision 4. Report each run as Markdown
 

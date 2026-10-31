@@ -16,6 +16,7 @@ when somebody has a statement of what an agent is for, and the systems it stands
 - the statement of the job (text, required)
 - the organization's stack (application/vnd.agentmesh.stack+json, optional)
 - the platform's defaults (application/vnd.agentmesh.stack-vocabulary+json, optional)
+- the build's settled answers (application/vnd.agentmesh.settled-answers+json, optional)
 
 ## What a good result looks like
 
@@ -50,7 +51,7 @@ Then JOB_DIR=<job folder> RECORDS=<records folder> node ~/solution-architect/ski
 
 Each script prints one JSON object. The last one's `reply` field is your whole answer; print it and nothing else. When any of them exits 3, print its `reply` and stop: there was nothing to write from, or it was not this role's to do, and no record is written. When any of them exits 2 the command was called wrong; fix the variables and run it again. When one exits 1 with a `reply`, that reply is your whole answer.
 
-Attached files arrive as local paths in an `attached: N files, already downloaded to this machine:` block the adapter writes under the message, each with its media type in brackets. Pass every one of them in FILES. The first command tells them apart by what is in them: a stack, the platform's defaults, an earlier record, or more of the statement.
+Attached files arrive as local paths in an `attached: N files, already downloaded to this machine:` block the adapter writes under the message, each with its media type in brackets. Pass every one of them in FILES. The first command tells them apart by what is in them: a stack, the platform's defaults, the build's settled answers, an earlier record, or more of the statement.
 
 A message that answers the record's questions, or says what to change in a record, is a REVISION and never a new request: run the same commands with the same variables, and the first command takes the record from FILES or from this agent's newest earlier record. Never write an answer into a record yourself.
 
@@ -72,6 +73,8 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/reply.mjs
 - scripts/pieces.mjs
 - scripts/went-without.mjs
+- scripts/settled.mjs
+- scripts/no-provider.mjs
 
 ## References
 

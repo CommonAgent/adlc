@@ -1,6 +1,6 @@
 {
   "house_stack": "v1",
-  "about": "The platform's defaults as AgentMesh publishes them: the reserved system names and, for each, the House Stack's product, read from GET /v1/stack/vocabulary on dev and on production on 2026-10-27 (the two answered byte for byte the same). An architecture job uses this copy only when the platform's defaults are not attached, and says so.",
+  "about": "The platform's defaults as AgentMesh publishes them: the reserved system names and, for each, the House Stack's product, read from GET /v1/stack/vocabulary on dev and on production on 2026-10-27 (the two answered byte for byte the same). An architecture job uses this copy only when the platform's defaults are not attached, and says so. One change from what was read: the House Stack's product on each model system (text-reasoning, image-reading, speech-to-text, text-to-speech) is written as platform, because AgentMesh does not say which provider stands behind the House Stack.",
   "read_at": "2026-10-27",
   "targets": {
     "about": "Whether the platform's targets enforce an egress allowlist, per environment. Every deploy the AgentMesh deployment manager makes today records egress open, enforced by none (adlc agents/deployment-manager/steps.py EGRESS_OPEN).",
@@ -169,7 +169,7 @@
       "house": {
         "system": "text-reasoning",
         "system_label": "Text reasoning",
-        "product": "google-gemini",
+        "product": "platform",
         "label": "AgentMesh's models",
         "why": "AgentMesh chooses the model and keeps it current. Every harness AgentMesh deploys uses it unless its owner names another model, and the key sits on the machine that deploys it.",
         "covered": true,
@@ -198,7 +198,7 @@
       "house": {
         "system": "image-reading",
         "system_label": "Image reading",
-        "product": "google-gemini",
+        "product": "platform",
         "label": "AgentMesh's models",
         "why": "The same models read images, so one choice covers text and pictures.",
         "covered": true,
@@ -226,7 +226,7 @@
       "house": {
         "system": "speech-to-text",
         "system_label": "Speech to text",
-        "product": "google-speech-to-text",
+        "product": "platform",
         "label": "AgentMesh's speech recognition",
         "why": "AgentMesh's own agents already use it for transcripts, so there is nothing to set up.",
         "covered": true,
@@ -254,7 +254,7 @@
       "house": {
         "system": "text-to-speech",
         "system_label": "Text to speech",
-        "product": "google-gemini-speech",
+        "product": "platform",
         "label": "AgentMesh's voices",
         "why": "AgentMesh's narration uses the same voices, so recordings sound the same across agents.",
         "covered": true,

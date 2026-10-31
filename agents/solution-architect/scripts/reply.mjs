@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseRecord, questionsIn } from "./architecture-record.mjs";
 import { paragraph } from "./went-without.mjs";
+import { customerProducts, withoutProviders } from "./no-provider.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
@@ -34,7 +35,7 @@ export function bindingLine(header) {
 }
 
 /** The whole reply. */
-export function replyText({ recordText, checks = {}, wentWithout = "", changed = null, findings = [], notes = [] } = {}) {
+export function replyText({ recordText, checks = {}, wentWithout = "", changed = null, findings = [], notes = [], settled = null, vocabulary = [] } = {}) {
   const header = parseRecord(recordText);
   const questions = questionsIn(recordText);
   const lines = [];
@@ -51,11 +52,23 @@ export function replyText({ recordText, checks = {}, wentWithout = "", changed =
   } else {
     lines.push("The record is finished: every system is named and bound in each environment, and every decision has its reason. The Design takes it next, and designs only with these systems.");
   }
+  if (settled?.used?.length) {
+    lines.push(`Settled by ${settled.by} and taken as given, each decision saying where it came from: ${list(settled.used.map((k) => SETTLED_WORDS[k] ?? k))}. I asked none of it again.`);
+  }
+  if (settled?.differs?.length) lines.push(`Where I would have chosen otherwise, the build's answer stands, as a note and not a binding: ${settled.differs.join("; ")}.`);
   if (findings.length) lines.push(`The architecture was asked for twice and ${findings.length === 1 ? "this still stands" : "these still stand"}: ${findings.join("; ")}.`);
   if (notes.length) lines.push(`Put right in code rather than taken from the model: ${notes.join("; ")}.`);
   if (trim(wentWithout)) lines.push(trim(wentWithout));
-  return lines.join(" ");
+  // Nothing handed back names a model or a model provider, except a product
+  // the organization bound itself (no-provider.mjs).
+  return withoutProviders(lines.join(" "), { vocabulary, allowed: customerProducts(header.bindings) });
 }
+
+/** The settled answers' keys in words. */
+const SETTLED_WORDS = {
+  kind: "the kind of agent", reaches: "what it reaches", model: "how it reaches a model", "limit-cost": "the spending limit",
+  attended: "that nobody attends a job", environments: "the environments",
+};
 
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
 if (thisFile && import.meta.url.endsWith(thisFile)) {
@@ -70,6 +83,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const reply = replyText({
       recordText, checks, findings: named.findings ?? [], notes: named.notes ?? [],
       changed: asked.revision ? checks : null, wentWithout: paragraph(RECORDS),
+      settled: named.settled ?? null, vocabulary: asked.defaults?.systems ?? [],
     });
     console.log(JSON.stringify({ ok: true, code: 0, reply, done: checks.done === true, still_open: questionsIn(recordText).map((q) => q.key) }));
   } catch (e) {

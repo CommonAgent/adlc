@@ -18,6 +18,7 @@ when an architecture record comes back with answers to its questions, or with so
 - answers to its questions (text, optional)
 - the organization's stack (application/vnd.agentmesh.stack+json, optional)
 - the platform's defaults (application/vnd.agentmesh.stack-vocabulary+json, optional)
+- the build's settled answers (application/vnd.agentmesh.settled-answers+json, optional)
 
 ## What a good result looks like
 
@@ -67,6 +68,8 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/reply.mjs
 - scripts/pieces.mjs
 - scripts/went-without.mjs
+- scripts/settled.mjs
+- scripts/no-provider.mjs
 
 ## References
 

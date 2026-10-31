@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "solution-architect",
-  "version": "0.2.0",
-  "description": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks what only a person can commit to, and designs nothing.",
+  "version": "0.3.0",
+  "description": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks only what nobody else can answer: what the build that sent it already settled is used, with where it came from. Designs nothing.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
@@ -35,7 +35,9 @@
               "scripts/check-record.mjs",
               "scripts/reply.mjs",
               "scripts/pieces.mjs",
-              "scripts/went-without.mjs"
+              "scripts/went-without.mjs",
+              "scripts/settled.mjs",
+              "scripts/no-provider.mjs"
             ],
             "references": [
               "../../standards/architecture-standard.md",
@@ -58,7 +60,9 @@
               "scripts/check-record.mjs",
               "scripts/reply.mjs",
               "scripts/pieces.mjs",
-              "scripts/went-without.mjs"
+              "scripts/went-without.mjs",
+              "scripts/settled.mjs",
+              "scripts/no-provider.mjs"
             ],
             "references": [
               "../../standards/architecture-standard.md",
@@ -73,7 +77,9 @@
               "scripts/asked.mjs",
               "scripts/architecture-record.mjs",
               "scripts/bind.mjs",
-              "scripts/went-without.mjs"
+              "scripts/went-without.mjs",
+              "scripts/settled.mjs",
+              "scripts/no-provider.mjs"
             ],
             "references": [
               "references/house-stack.json"
@@ -85,7 +91,9 @@
               "scripts/model-caller.mjs",
               "scripts/standard.mjs",
               "scripts/options.mjs",
-              "scripts/architecture-record.mjs"
+              "scripts/architecture-record.mjs",
+              "scripts/settled.mjs",
+              "scripts/no-provider.mjs"
             ],
             "references": [
               "../../standards/architecture-standard.md",
@@ -95,7 +103,8 @@
           "bind-each-environment": {
             "scripts": [
               "scripts/bind.mjs",
-              "scripts/architecture-record.mjs"
+              "scripts/architecture-record.mjs",
+              "scripts/no-provider.mjs"
             ],
             "references": [
               "references/house-stack.json"
@@ -107,7 +116,8 @@
               "scripts/check-record.mjs",
               "scripts/architecture-record.mjs",
               "scripts/standard.mjs",
-              "scripts/options.mjs"
+              "scripts/options.mjs",
+              "scripts/no-provider.mjs"
             ],
             "references": [
               "../../standards/architecture-standard.md",
@@ -119,7 +129,8 @@
               "scripts/reply.mjs",
               "scripts/pieces.mjs",
               "scripts/architecture-record.mjs",
-              "scripts/went-without.mjs"
+              "scripts/went-without.mjs",
+              "scripts/no-provider.mjs"
             ]
           }
         }
