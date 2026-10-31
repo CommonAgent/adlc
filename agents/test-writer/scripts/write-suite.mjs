@@ -60,7 +60,7 @@
 //   needs: node >= 22; MODEL_NAME, MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY
 //   where the endpoint asks for one, for the text-reasoning model
 //   DECLARED=<declared.json> SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder> WORK=<work folder>
-//   [EXISTING=<folder holding test/>] [ASKED_TEXT=<the message, as a file>]
+//   [EXISTING=<folder holding test/>] [ASKED_TEXT=<the message, as a file>] [REVISE=1]
 //   [DEPENDS=<folder holding scripts/ the change depends on>]
 //   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] node write-suite.mjs
 //
@@ -279,6 +279,43 @@ names is refused. Write only NEW test files, for what they asked for above,
 in the same style and against the same interface the existing files import.
 A new file must still fail against empty stand-ins on its own.`;
 
+/** What is said when the code step sent the suite back (technical debt 636):
+ *  a test it could not pass without breaking what the spec says, and a
+ *  person who decided the test is the one that is wrong. Only the files the
+ *  message names are written again; the rest are kept, as when adding. */
+export function reviseInstruction(files = []) {
+  return `This suite came back from the code step, given below whole under THE SUITE IT
+ALREADY HAS. What they asked for above says which test cannot pass without
+breaking what the spec says, and a person has decided the test is the one that
+is wrong. The spec governs: rewrite only these files, each whole under its own
+name, so that every test in them says what the spec says:
+${files.map((f) => `- ${f}`).join("\n")}
+Change only what is wrong in them, and keep every other test in them as it was.
+Every other file of the suite is kept exactly as it is, and a file you answer
+with under one of their names is refused. Work each value a rule decides again
+from the spec's own words. A rewritten file must still fail against empty
+stand-ins on its own.`;
+}
+
+/** The standard checks the test writer adds itself: never revised by the model. */
+const STANDARD_NAMES = ["delivered-formats.test.mjs", "records-per-job.test.mjs", "worked-values.test.mjs"];
+
+/** The files of a suite a revision names, by file name (with or without
+ *  test/) or by the name of a test in them. The standard checks are the test
+ *  writer's own and never named. A word that is part of a name is not one. */
+export function namedForRevision(existing = [], asked = "") {
+  const text = String(asked ?? "");
+  const out = [];
+  for (const f of existing) {
+    const name = String(f.path).split("/").pop();
+    if (STANDARD_NAMES.includes(name)) continue;
+    const byName = new RegExp(`(^|[^A-Za-z0-9._-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9_-])`).test(text);
+    const byTest = testNamesOf(f.text).some((n) => n.length >= 12 && text.includes(n));
+    if (byName || byTest) out.push(f.path);
+  }
+  return out;
+}
+
 /** What is said when the suite is written in parts. One answer cannot hold a
  *  whole suite for a package of many scripts: the planner's eight came back
  *  cut at the output limit with nothing delivered (debt 66). */
@@ -411,7 +448,7 @@ export function agentFilesOf(folder) {
 
 /** The parts of the request, in order, as text. Pure and exported so the
  *  whole prompt can be read in a test rather than inferred from a fixture. */
-export function requestParts({ spec = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], part = null, dependencies = [], agentFiles = [] } = {}) {
+export function requestParts({ spec = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], revise = [], part = null, dependencies = [], agentFiles = [] } = {}) {
   const parts = [INSTRUCTION];
   if (trim(asked)) parts.push(`--- WHAT THEY ASKED FOR ---\n${trim(asked)}`);
   parts.push(`--- THE SPEC ---\n${spec ? JSON.stringify(spec, null, 2) : "(no spec)"}`);
@@ -434,7 +471,7 @@ export function requestParts({ spec = null, declared = null, reference = "", wor
   }
   if (existing.length) {
     parts.push(`--- THE SUITE IT ALREADY HAS ---\n${existing.map((f) => `<<<FILE ${f.path}>>>\n${f.text}<<<END>>>`).join("\n")}`);
-    parts.push(ADD_INSTRUCTION);
+    parts.push(revise.length ? reviseInstruction(revise) : ADD_INSTRUCTION);
   }
   if (part) parts.push(`--- THIS PART ---\n${partInstruction(part)}`);
   if (findings.length) {
@@ -779,7 +816,7 @@ export function importFindings(files = [], dependencies = []) {
   return out;
 }
 
-export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [] } = {}) {
+export function staticFindings(files = [], declared = null, { existing = [], revise = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [] } = {}) {
   const out = [];
   if (!files.length) return ["no test file came back"];
   // The format check and the records check are the test writer's own files,
@@ -793,15 +830,21 @@ export function staticFindings(files = [], declared = null, { existing = [], tak
   if (!files.length) return out;
   // A file under a name the suite already has is a rewrite, and a rewrite of
   // a released agent's suite is what this guards against.
-  const kept = new Set([...existing.map((f) => f.path), ...taken]);
+  // In a revision the files it names may come back under their own names.
+  const revisable = new Set(revise);
+  const kept = new Set([...existing.map((f) => f.path).filter((p) => !revisable.has(p)), ...taken]);
   for (const f of files) {
     if (kept.has(f.path)) out.push(`${f.path} is already in the suite and is kept as it is; put new tests in a new file with a name of its own`);
   }
+  if (revise.length && !files.some((f) => revisable.has(f.path))) {
+    out.push(`the answer rewrites none of the files it was sent back for: ${revise.join(", ")}; answer with each of them whole, under its own name`);
+  }
   // Reach and count are over the suite as it will stand: what it already
   // has, and what came back. In a part they are over that part's scripts.
-  const whole = [...existing, ...files];
+  const answered = new Set(files.map((f) => f.path));
+  const whole = [...existing.filter((f) => !answered.has(f.path)), ...files];
   const named = scripts ?? declared?.scripts ?? [];
-  let total = existing.reduce((n, f) => n + testNamesOf(f.text).length, 0);
+  let total = existing.filter((f) => !answered.has(f.path)).reduce((n, f) => n + testNamesOf(f.text).length, 0);
   for (const f of files) {
     const names = testNamesOf(f.text);
     total += names.length;
@@ -870,7 +913,7 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
     calls += 1;
     last = answerFrom(await call(request));
     findings = staticFindings(last.files, opts.declared, {
-      existing: opts.existing ?? [], taken: opts.part?.taken ?? [], scripts: opts.part?.scripts ?? null,
+      existing: opts.existing ?? [], revise: opts.revise ?? [], taken: opts.part?.taken ?? [], scripts: opts.part?.scripts ?? null,
       // Over the whole suite when it is one ask; a suite in parts is held to
       // it once all its parts are in (askInParts).
       formatCheck: !opts.part && declaresOutputs(opts.declared),
@@ -1029,9 +1072,17 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // The files the change depends on that came with the message; the shared
     // copies the spec names are added from this package's own scripts/.
     const dependencies = trim(env.DEPENDS) ? dependenciesIn(trim(env.DEPENDS)) : [];
+    // A revision (debt 636): only the files the message names are written
+    // again. One that names none is refused before the model is asked.
+    const asked = read(trim(env.ASKED_TEXT));
+    const revise = trim(env.REVISE) === "1" ? namedForRevision(existing, asked) : [];
+    if (trim(env.REVISE) === "1" && !revise.length) {
+      console.log(JSON.stringify({ ok: false, code: 3, reply: `Nothing was revised: the message names no file of the suite and no test in it (the suite has ${existing.filter((f) => !STANDARD_TESTS.includes(f.path)).map((f) => f.path.replace(/^test\//, "")).join(", ") || "no file"}). Name the test file, or the test as it is written, that cannot pass without breaking what the spec says, and ask again.` }));
+      process.exit(0);
+    }
     const out = await askInParts({
-      call, declared, spec, existing, dependencies,
-      asked: read(trim(env.ASKED_TEXT)),
+      call, declared, spec, existing, dependencies, revise,
+      asked,
       run: async (files) => standInChecks({ spec, files, folder: statSync(SPEC).isDirectory() ? SPEC : null }),
       agentFiles: statSync(SPEC).isDirectory() ? agentFilesOf(SPEC) : [],
       reference: read(referenceAt(env)),
@@ -1053,6 +1104,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       generated.push(...refreshed.generated);
     }
     out.files = [...out.files.filter((f) => !STANDARD_TESTS.includes(f.path)), ...generated];
+    // A revised file replaces the one it revises; the rest are kept.
+    const revised = out.files.map((f) => f.path).filter((p) => revise.includes(p));
+    existing.splice(0, existing.length, ...existing.filter((f) => !revised.includes(f.path)));
     // The kept files go into the work folder beside the new ones, so the
     // check runs the suite as it will stand; only the new ones are delivered.
     for (const f of [...existing, ...out.files]) {
@@ -1065,6 +1119,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     writeFileSync(join(RECORDS, "suite.json"), JSON.stringify({
       suite: "v1", at: new Date().toISOString(), work: WORK, files,
       ...(existing.length ? { kept: existing.map((f) => f.path) } : {}),
+      ...(revise.length ? { revised } : {}),
       ...(generated.length ? { generated: generated.map((f) => f.path) } : {}),
       ...(out.parts ? { parts: out.parts } : {}),
       could_not: out.could_not, notes: out.notes, findings: out.findings, stand_ins: out.stand_ins,

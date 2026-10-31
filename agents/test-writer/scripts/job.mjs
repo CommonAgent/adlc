@@ -72,6 +72,10 @@ export function findSpec(files, read = (p) => readFileSync(p, "utf8")) {
   return null;
 }
 
+/** A revision of a suite the code step sent back (debt 636): the message's
+ *  first line begins "Revise the suite". */
+export const isRevision = (text) => /^\s*Revise the suite\b/i.test(String(text ?? "").split(/\r?\n/)[0] ?? "");
+
 /** A test file among the attachments: its content imports node:test. Found
  *  by content for the same reason the spec is. */
 export const looksLikeTestText = (text) => /from\s+["']node:test["']/.test(String(text ?? ""));
@@ -170,6 +174,15 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
   const used = new Set(agent?.used ?? []);
   const suite = findSuite(files.filter((f) => !used.has(f?.path)), SPEC, read);
   const extra = {};
+  // A revision rewrites only the files it names, of the suite that came
+  // with it; without a suite there is nothing to revise.
+  const asked = textFile && existsSync(textFile) ? readFileSync(textFile, "utf8") : "";
+  if (isRevision(asked)) {
+    if (!suite.length) {
+      return { ok: false, code: 3, reply: "Nothing was revised: the message asks to revise the suite, and no suite came with it. Attach the suite as it stands, the agent's files and what the code step sent back, and ask again." };
+    }
+    extra.REVISE = "1";
+  }
   if (suite.length) {
     const EXISTING = `${WORK}.existing`;
     for (const f of suite) {

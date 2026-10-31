@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.6.3",
+  "agent_version": "0.6.4",
   "name": "Test writer",
   "summary": "Writes the tests an agent's scripts must pass, before the scripts exist, and proves each test would notice a script being wrong.",
   "will_not": [
@@ -49,6 +49,13 @@
           "kind": "text",
           "required": false,
           "given_by": "person"
+        },
+        {
+          "name": "what the code step sent back",
+          "kind": "text",
+          "required": false,
+          "given_by": "either",
+          "about": "On a message whose first line begins \"Revise the suite\": the test the code step could not pass without breaking what the spec says, by file or by name, and any words of the person who decided the test is wrong. Only the test files it names are written again; the rest of the suite is kept byte for byte."
         }
       ],
       "outputs": [

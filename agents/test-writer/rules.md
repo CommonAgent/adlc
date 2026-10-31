@@ -54,6 +54,10 @@ A test finds a line of a delivered piece by a pattern for the whole line (`- a: 
 
 A released package has a suite somebody relies on. When its test files come with the message, they are kept byte for byte and new files are written beside them for what was asked; nothing in a kept file is rewritten, and only the new files are delivered. A suite for a change is judged as it will stand, the kept files and the new ones together, and the new files must still fail against stand-ins on their own.
 
+## Revising a suite the code step sent back
+
+The code writer, or a person's own coding agent on a pull request, stops when a test cannot pass without breaking what the spec says, and names the test. Which of the two is wrong is a person's call. When they decide the test is wrong, the build sends the suite back here with a message whose first line begins "Revise the suite": the agent's files, the suite as it stands, what the code step found, and any words of the person's. The spec governs. Only the test files that message names, by file name or by the name of a test in them, are written again, each whole under its own name, changing what is wrong and keeping every other test in them; every other file is kept byte for byte, and the standard checks are this agent's own and are never revised by the model. A revision that names no file of the suite, or comes with no suite, is refused in words and the model is not asked. The rewritten files are held to every check a new suite is held to, worked values first, and only they are delivered; the reply says which were revised and which kept.
+
 ## A suite too big for one answer
 
 When a spec names more scripts than one answer can hold, the suite is written in parts of three scripts, each part checked on its own with the same two goes. A part cut at the output limit is asked for again one script at a time. The whole suite is run against stand-ins once more at the end.
