@@ -225,7 +225,11 @@ file; never a function from ../scripts/, and never the literal again. Read
 each rule from the spec word for word: a computation that follows the rule
 catches the value you remembered instead (an acronym the world spells one
 way, which the spec's rule spells another). Keep inputs short, so the value
-is easy to check. import { worked } from "./worked-values.test.mjs". The
+is easy to check. A count, a total or a length is asserted against its
+worked constant, never as a bare number in an assertion (not
+assert.equal(result.total, 4), and not a number written into a pattern for
+assert.match); an exit status or a count of calls is not such a value.
+import { worked } from "./worked-values.test.mjs". The
 test writer runs every computation and sends back each value that disagrees
 with its own computation. Where no expected value in the suite is decided by
 such a rule (every expectation is a reply's wording, a refusal, an exit code
@@ -631,6 +635,70 @@ export function letterSearchFindings(files = []) {
   return out;
 }
 
+/** What a test got, named by a word no spec rule decides: an exit status, a
+ *  count of calls or attempts, a length. Compared to a bare number, these
+ *  are left alone. */
+const NOT_A_RULE = /(?:status|code|exit|exitCode|calls?|called|invocations?|requests?|attempts?|length|size)\s*$/i;
+/** A number written as one, not inside a name, an escape such as \d, or a
+ *  quantifier such as {2,3}. */
+const NUMBER = /(?<![\w\\{,.$])-?\d+(?:\.\d+)?(?![\w},])/;
+
+/** The first argument of a call whose text starts at `open` (just inside the
+ *  parenthesis), split at commas outside brackets and strings: its arguments
+ *  as written. */
+function argumentsAt(text, open) {
+  const args = []; let cur = ""; let depth = 0; let quote = null;
+  for (let i = open; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quote) { cur += ch; if (ch === "\\") { cur += text[i + 1] ?? ""; i += 1; } else if (ch === quote) quote = null; continue; }
+    if (ch === '"' || ch === "'" || ch === "`") { quote = ch; cur += ch; continue; }
+    if (ch === "/" && depth >= 0 && /^\s*$/.test(cur)) {
+      // A regular expression literal as an argument: kept whole.
+      const m = /^\/(?:[^/\\\n]|\\.)+\/[a-z]*/.exec(text.slice(i));
+      if (m) { cur += m[0]; i += m[0].length - 1; continue; }
+    }
+    if ("([{".includes(ch)) depth += 1;
+    if (")]}".includes(ch)) { if (depth === 0) { args.push(cur); return args; } depth -= 1; }
+    if (ch === "," && depth === 0) { args.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  return args;
+}
+
+/** Each assertion in a suite's files that pins a value as a bare number, as
+ *  one finding per file naming its lines: assert.equal, strictEqual,
+ *  deepEqual or deepStrictEqual whose expected value is a number, or an
+ *  object or list holding one, and assert.match whose pattern has a number
+ *  written in it. What was got is left alone when its name says it is an
+ *  exit status, a count of calls or a length. A value a rule decides belongs
+ *  in a worked constant, where it is checked against its own computation
+ *  (build ab_481ac696b24d8cf8fd pinned a 3, e 1, total 4 for "Café façade
+ *  rôle naïve" in a suite that worked 23 other values). */
+export function bareLiteralFindings(files = []) {
+  const out = [];
+  for (const f of files) {
+    if (STANDARD_TESTS.includes(f.path)) continue;
+    const text = String(f.text ?? "");
+    const lines = [];
+    for (const m of text.matchAll(/\bassert\s*\.\s*(equal|strictEqual|deepEqual|deepStrictEqual|match)\s*\(/g)) {
+      const [got = "", want = ""] = argumentsAt(text, m.index + m[0].length);
+      const line = text.slice(0, m.index).split("\n").length;
+      if (m[1] === "match") {
+        const re = /^\s*\/((?:[^/\\\n]|\\.)+)\/[a-z]*\s*$/.exec(want);
+        if (re && NUMBER.test(re[1])) lines.push(line);
+        continue;
+      }
+      if (NOT_A_RULE.test(got.replace(/\?\./g, "."))) continue;
+      const w = want.trim();
+      if (/^-?\d+(?:\.\d+)?$/.test(w) || (/^[[{]/.test(w) && NUMBER.test(w.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""')))) lines.push(line);
+    }
+    if (lines.length) {
+      out.push(`${f.path} pins ${lines.length === 1 ? "a value" : "values"} a rule may decide as a bare number in an assertion (line${lines.length === 1 ? "" : "s"} ${[...new Set(lines)].join(", ")}); write each as a worked constant at the top of the file, worked(value, () => computation, "what it is"), and assert against the constant, so its own computation checks it`);
+    }
+  }
+  return out;
+}
+
 /** What is wrong with the worked values in a suite's files, as findings by
  *  line: a worked() inside a test, which a stand-in that throws first keeps
  *  from ever being checked, and a computation that is only a literal, which
@@ -711,7 +779,7 @@ export function importFindings(files = [], dependencies = []) {
   return out;
 }
 
-export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, notes = "", dependencies = [] } = {}) {
+export function staticFindings(files = [], declared = null, { existing = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [] } = {}) {
   const out = [];
   if (!files.length) return ["no test file came back"];
   // The format check and the records check are the test writer's own files,
@@ -750,6 +818,7 @@ export function staticFindings(files = [], declared = null, { existing = [], tak
   out.push(...importFindings(files, dependencies));
   out.push(...workedFindings(files));
   out.push(...letterSearchFindings(files));
+  if (workedCheck || literalCheck) out.push(...bareLiteralFindings(files));
   const all = whole.map((f) => f.text).join("\n");
   for (const s of named) {
     const name = String(s).split("/").pop();
@@ -808,6 +877,8 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
       recordsCheck: !opts.part && declaresPerJobRecords(opts.declared),
       // Held whenever the worked-values check goes into the suite.
       workedCheck: !opts.part && Boolean(trim(opts.workedTest)),
+      // Per file, so held in a part too.
+      literalCheck: Boolean(trim(opts.workedTest)),
       notes: last.notes,
       dependencies: dependenciesFor(opts),
     });

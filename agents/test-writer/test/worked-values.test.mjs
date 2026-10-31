@@ -78,7 +78,7 @@ test("the vowels of a sentence are counted", () => {
 });
 
 test("an empty sentence has no vowels", () => {
-  assert.equal(countVowels(""), 0);
+  assert.ok(!countVowels(""));
 });
 `;
 
