@@ -10,6 +10,7 @@
     { "method": "GET", "path": "/builds", "answer": "#/$defs/BuildListAnswer", "does": "The person's builds, each with the stage it is at and where it ended, in words. A build the person archived is left out unless the request adds ?archived=1." },
     { "method": "POST", "path": "/builds", "request": "#/$defs/StartRequest", "answer": "#/$defs/BuildAnswer", "does": "Start a build from the person's words." },
     { "method": "GET", "path": "/builds/{id}", "answer": "#/$defs/BuildAnswer", "does": "One build, stage by stage, with its log and the actions it offers now." },
+    { "method": "GET", "path": "/builds/{id}/timeline", "answer": "#/$defs/TimelineAnswer", "does": "The build's run as one bar per step per round, ordered by start, with how long each took and the totals by kind. Added in 0.1." },
     { "method": "GET", "path": "/builds/{id}/files?path={path}", "answer": "the file's bytes", "does": "A file a stage handed back, at the link the build gives." },
     { "method": "POST", "path": "/builds/{id}/actions/{name}", "request": "#/$defs/ActionRequest", "answer": "#/$defs/BuildAnswer", "does": "Take one of the actions the build offers, with the inputs it needs." },
     { "method": "POST", "path": "/builds/{id}/try", "request": "#/$defs/TryRequest", "answer": "#/$defs/TryAnswer", "does": "Send one input to the build's pull request or to the installed agent, and read the answer." },
@@ -137,7 +138,44 @@
           ],
           "description": "The installed agent is paused, since when and why (for example, a conformance check it failed); null when it is not. Added in 0.1."
         },
-        "archived": { "type": "boolean", "description": "The person archived it. Added in 0.1." }
+        "archived": { "type": "boolean", "description": "The person archived it. Added in 0.1." },
+        "timeline": { "type": "array", "items": { "$ref": "#/$defs/TimelineBar" }, "description": "The build's run as one bar per step per round, ordered by start; empty when the service keeps no run for it. Steps that run at the same time keep their own bars, so overlaps show. Added in 0.1." }
+      }
+    },
+    "TimelineBar": {
+      "type": "object",
+      "required": ["phase", "round", "holder", "kind", "start", "end", "duration_ms", "status"],
+      "properties": {
+        "phase": { "$ref": "#/$defs/Words", "description": "The step of the run, by the process document's name for it." },
+        "round": { "type": "integer", "minimum": 0, "description": "0 for the first time it ran; one more each time it ran again." },
+        "holder": { "type": ["string", "null"], "description": "Who held it, by handle; null for a person's gate." },
+        "kind": { "enum": ["agent", "person", "external"], "description": "agent: an agent working. person: waiting on a person. external: waiting on something outside the run (a pull request, a sandbox, an install, a verdict)." },
+        "start": { "$ref": "#/$defs/Time" },
+        "end": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/Time" }], "description": "Null while it is still open." },
+        "duration_ms": { "type": ["integer", "null"], "minimum": 0, "description": "Milliseconds from start to end; null while it is still open." },
+        "status": { "$ref": "#/$defs/Words", "description": "How it stands or ended, such as closed, working or superseded." }
+      }
+    },
+    "TimelineAnswer": {
+      "type": "object",
+      "required": ["timeline", "totals"],
+      "properties": {
+        "timeline": { "type": "array", "items": { "$ref": "#/$defs/TimelineBar" } },
+        "totals": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["total_ms", "by_kind_ms", "share"],
+              "properties": {
+                "total_ms": { "type": "integer", "minimum": 0, "description": "From the first bar's start to the last bar's end." },
+                "by_kind_ms": { "type": "object", "description": "The bars' own time summed by kind: agent, person, external." },
+                "share": { "type": "object", "description": "Each kind's part of the bars' summed time, 0 to 1." }
+              }
+            }
+          ],
+          "description": "Null when the service keeps no run for the build."
+        }
       }
     },
     "Stage": {

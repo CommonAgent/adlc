@@ -251,3 +251,20 @@ test("the command line refuses a key given on it, and runs without one only to s
   assert.equal(c.code, 2);
   assert.ok(!c.err.includes(KEY));
 });
+
+test("a build may carry its run's timeline, one bar per step per round, and a bar must say its kind and times", () => {
+  const b = build();
+  b.build.timeline = [
+    { phase: "write-the-architecture", round: 0, holder: "solution-architect.platform@agentmesh.ai", kind: "agent", start: AT, end: "2026-10-31T09:19:00Z", duration_ms: 240000, status: "closed" },
+    { phase: "approve-the-spec", round: 0, holder: null, kind: "person", start: "2026-10-31T09:20:00Z", end: null, duration_ms: null, status: "gated" },
+  ];
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  const late = build();
+  late.build.timeline = [...b.build.timeline].reverse();
+  assert.ok(checkBuild(late, IDS, "b1").some((x) => /ordered by start/.test(x)), "bars out of order are refused");
+  const bad = build();
+  bad.build.timeline = [{ phase: "x", round: 0, holder: null, kind: "waiting", start: AT, end: null, duration_ms: null, status: "gated" }];
+  assert.ok(checkBuild(bad, IDS, "b1").length > 0, "a bar of an unknown kind is refused");
+  const answer = { timeline: b.build.timeline, totals: { total_ms: 300000, by_kind_ms: { agent: 240000, person: 60000, external: 0 }, share: { agent: 0.8, person: 0.2, external: 0 } } };
+  assert.deepEqual(validate("TimelineAnswer", answer), []);
+});
