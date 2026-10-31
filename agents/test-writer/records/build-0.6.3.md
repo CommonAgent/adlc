@@ -51,5 +51,14 @@ first.
   99eaef5b01a55496c89ca5caa4abfd45c18908659f34f4b6071dc211910d3901.
 - Installed by the deployment manager from deploy request
   dr_sxf3xaJuZm2pOeRNr0fQXeuG, approved by the platform account, same settings.
-- Not yet proven by a build: platform@agentmesh.ai reached the dev limit of 12
-  new agents for the day before the next build could start.
+- Proven by build ab_5854e151f6000365ac (below), after the dev limit of 12
+  new agents for the day was raised to 16 on dev.
+
+## Proof
+
+Build ab_5854e151f6000365ac (vowel-ledger 0.1.0, platform@agentmesh.ai,
+reference code writer, with spec-writer 0.6.1): the suite worked 32 values,
+all agreeing, with no bare-number expectation and no single-letter search.
+Test, Code, Package, Release and Deploy done; Conformance conforms (5
+refusals passed, 0 failed, 1 capability flagged for a person to read; records
+audit 2 required, 0 missing). Debts 639, 646, 647 and 648 resolved on it.
