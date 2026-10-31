@@ -36,6 +36,17 @@ it writes is always the current names.
 - `build.py` is the builder: `python3 build.py <agent folder> <out folder>`
   (or a `spec.json` in place of the folder). It prints one JSON line with the
   package's name, version, path and digests, and any warnings.
+- What a job's scripts import goes into the package with them. Every file a
+  named script imports by a relative path (`import ... from "./x.mjs"`,
+  `export ... from`, a bare `import`, a `require`) is followed, transitively,
+  and copied into the skill at the path the import names from where the
+  importing script sits, so the shared `went-without.mjs` or a helper the
+  code writer split out ships without the spec naming it. A static import of
+  a file the package would not carry refuses the package, naming the script
+  and the file. An import shown in a comment or a template literal is not
+  read, and a dynamic `import()` is packed when the file is there and not
+  required when it is not. `pack.py` lays a delivered file out the same way
+  when a named script imports it (technical debt 655).
 - `convert.py` writes an agent's own files from its spec:
   `python3 convert.py <spec.json> [<folder>]`.
 - `compare-packages.py` is the gate the move from spec.json was held to: it

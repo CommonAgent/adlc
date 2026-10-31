@@ -139,6 +139,7 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -2540,9 +2541,8 @@ def check_hidden(pkg):
 STANDARDS_REF = re.compile(r"^(?:\.\./)+standards/([^/]+)$")
 
 
-def copy_into(src_base, rel, dest_dir):
-    """Copy a file or directory named in the spec under a skill folder.
-    Returns the names placed, for the SKILL.md to list."""
+def named_source(src_base, rel):
+    """Where a file the spec names is read from."""
     src = os.path.normpath(os.path.join(src_base, rel))
     shared = STANDARDS_REF.match(str(rel).replace(os.sep, "/"))
     if shared and os.path.isfile(os.path.join(src_base, "standards", shared.group(1))):
@@ -2551,6 +2551,13 @@ def copy_into(src_base, rel, dest_dir):
         # standards/<file> beside the agent's own files (pack.py), and the
         # copy that was sent wins over anything two folders up.
         src = os.path.join(src_base, "standards", shared.group(1))
+    return src
+
+
+def copy_into(src_base, rel, dest_dir):
+    """Copy a file or directory named in the spec under a skill folder.
+    Returns the names placed, for the SKILL.md to list."""
+    src = named_source(src_base, rel)
     if not os.path.exists(src):
         fail(f"file named in the spec does not exist: {rel}")
     os.makedirs(dest_dir, exist_ok=True)
@@ -2561,6 +2568,220 @@ def copy_into(src_base, rel, dest_dir):
     else:
         shutil.copy2(src, dest)
     return name
+
+
+# ── what the scripts import ───────────────────────────────────────────────
+#
+# A spec names the scripts a job runs, and those scripts import others: the
+# shared went-without.mjs, a helper the code writer split out. A package that
+# carries the named script and not what it imports installs, and then every
+# job stops on ERR_MODULE_NOT_FOUND (technical debt 655: vowel-roll's
+# count-vowels.mjs imported ./went-without.mjs, which was delivered beside it
+# and left out). So every file a named script imports by a relative path is
+# followed, transitively, and copied into the skill at the path the import
+# names from where the importing script sits in the package. A static import
+# of a file that is not there refuses the package, naming the script and the
+# file, before anything is written.
+#
+# Read from the code, with comments, template literals and regular
+# expressions blanked first: an import or export ... from, a bare import, a
+# require, at the start of a line or after a semicolon. So an import shown in
+# a comment or in a prompt's template literal is not followed (the test
+# writer's prompt shows two). A dynamic import() of a literal path is followed when the file is
+# there and is not required when it is not, because a script that loads a
+# module with import(...).catch(...) runs without it.
+SCRIPT_MODULE = re.compile(r"\.(?:mjs|cjs|js)$")
+_IMPORT_FROM = re.compile(r"(?:^|[;\n])[ \t]*(?:import|export)\b[^;'\"`]*?\bfrom\s*(['\"])(\.\.?/[^'\"\n]+)\1")
+_IMPORT_BARE = re.compile(r"(?:^|[;\n])[ \t]*import\s*(['\"])(\.\.?/[^'\"\n]+)\1")
+_REQUIRE = re.compile(r"(?<![\w$.])require\s*\(\s*(['\"])(\.\.?/[^'\"\n]+)\1\s*\)")
+_IMPORT_DYNAMIC = re.compile(r"(?<![\w$.])import\s*\(\s*(['\"])(\.\.?/[^'\"\n]+)\1\s*\)")
+# What Node tries for a path written without its extension (require does;
+# an ES module import names the file whole, and that is tried first).
+IMPORT_SUFFIXES = ("", ".js", ".mjs", ".cjs", ".json", "/index.js", "/index.mjs")
+
+
+# A word after which a slash starts a regular expression, not a division.
+_REGEX_AFTER = {"return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw",
+                "instanceof", "yield", "await"}
+
+
+def _string_end(text, i):
+    """The index just past the quoted string that opens at i."""
+    q, j, n = text[i], i + 1, len(text)
+    while j < n and text[j] != q and text[j] != "\n":
+        j += 2 if text[j] == "\\" else 1
+    return min(j + 1, n)
+
+
+def _template_end(text, i):
+    """The index just past the template literal that opens at i, ${...} and
+    the strings and templates inside it included."""
+    j, n, depth = i + 1, len(text), 0
+    while j < n:
+        ch = text[j]
+        if ch == "\\":
+            j += 2
+        elif depth == 0 and ch == "`":
+            return j + 1
+        elif depth == 0 and ch == "$" and text[j + 1:j + 2] == "{":
+            depth, j = 1, j + 2
+        elif depth and ch in "'\"":
+            j = _string_end(text, j)
+        elif depth and ch == "`":
+            j = _template_end(text, j)
+        else:
+            depth += (ch == "{") - (ch == "}") if depth else 0
+            j += 1
+    return n
+
+
+def code_only(text):
+    """The script with its comments, template literals and regular
+    expressions blanked (newlines kept), and its quoted strings kept: what an
+    import can be read from. A prompt in a template literal that shows an
+    import line (the test writer's does) is words, not an import."""
+    out, i, n, prev = list(text), 0, len(text), "op"
+
+    def blank(a, b):
+        for k in range(a, b):
+            if out[k] != "\n":
+                out[k] = " "
+    while i < n:
+        c = text[i]
+        nxt = text[i + 1:i + 2]
+        if c == "/" and nxt == "/":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif c == "/" and nxt == "*":
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            blank(i, j)
+            i = j
+        elif c in "'\"":
+            i, prev = _string_end(text, i), "value"
+        elif c == "`":
+            j = _template_end(text, i)
+            blank(i, j)
+            i, prev = j, "value"
+        elif c == "/" and prev == "op":
+            j, in_class = i + 1, False
+            while j < n and text[j] != "\n":
+                ch = text[j]
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == "[":
+                    in_class = True
+                elif ch == "]":
+                    in_class = False
+                elif ch == "/" and not in_class:
+                    break
+                j += 1
+            blank(i, min(j + 1, n))
+            i, prev = min(j + 1, n), "value"
+        elif c.isalnum() or c in "_$":
+            j = i
+            while j < n and (text[j].isalnum() or text[j] in "_$"):
+                j += 1
+            prev = "op" if text[i:j] in _REGEX_AFTER else "value"
+            i = j
+        else:
+            if not c.isspace():
+                prev = "value" if c in ")]" else "op"
+            i += 1
+    return "".join(out)
+
+
+def relative_imports(text):
+    """The relative paths one script imports, in the order written, each with
+    whether the script needs it: [(path, required)]. Packages and node:
+    builtins are not files in the package and are not listed."""
+    code = code_only(text)
+    hits = sorted((m.start(2), m.group(2).split("?")[0].split("#")[0], required)
+                  for rx, required in ((_IMPORT_FROM, True), (_IMPORT_BARE, True), (_REQUIRE, True), (_IMPORT_DYNAMIC, False))
+                  for m in rx.finditer(code))
+    found = {}
+    for _, path, required in hits:
+        found[path] = found.get(path, False) or required
+    return list(found.items())
+
+
+def script_imports(src_base, job, present=()):
+    """What a job's named scripts import and the spec does not name, followed
+    transitively. `present` is what the skill folder already holds (an agent
+    folder's own skill files), as paths inside it. Returns (extra, missing):
+    extra is [(source path, path inside the skill folder)] to copy in, and
+    missing the sentences saying which import is not there."""
+    where = {}   # path inside the skill folder -> the file it is read from
+    for kind in SKILL_FILE_KINDS:
+        for rel in job.get(kind) or []:
+            src = named_source(src_base, rel)
+            name = os.path.basename(src.rstrip("/\\"))
+            if os.path.isdir(src):
+                for d, _, ns in os.walk(src):
+                    for n in ns:
+                        p = os.path.join(d, n)
+                        where[f"{kind}/{name}/{os.path.relpath(p, src).replace(os.sep, '/')}"] = p
+            elif os.path.isfile(src):
+                where[f"{kind}/{name}"] = src
+    for p in present:
+        where.setdefault(p, None)
+    named = {p for p in where if p.startswith("scripts/")}
+    queue = sorted(p for p in named if SCRIPT_MODULE.search(p) and where[p])
+    seen, extra, missing = set(), [], []
+    while queue:
+        at = queue.pop(0)
+        if at in seen:
+            continue
+        seen.add(at)
+        try:
+            text = open(where[at], encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        for spec_path, required in relative_imports(text):
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(at), spec_path))
+            if target == ".." or target.startswith("../"):
+                if required:
+                    missing.append(f"{at} imports {spec_path}, which would sit outside the skill's folder in the package")
+                continue
+            source = os.path.normpath(os.path.join(os.path.dirname(where[at]), *spec_path.split("/")))
+            hit = None
+            for suffix in IMPORT_SUFFIXES:
+                if target + suffix in where:
+                    hit = target + suffix
+                    break
+                if os.path.isfile(source + suffix):
+                    hit = target + suffix
+                    where[hit] = source + suffix
+                    extra.append((source + suffix, hit))
+                    break
+            if hit is None:
+                if required:
+                    missing.append(f"{at} imports {spec_path}, which is not among the files the package is built from")
+                continue
+            if SCRIPT_MODULE.search(hit) and where.get(hit) and hit not in seen:
+                queue.append(hit)
+    return extra, missing
+
+
+def imports_of_jobs(src_base, jobs, authored=None):
+    """Every job's imports, refused before any file is written when one is
+    not there: {slug: [(source path, path inside the skill folder)]}."""
+    out_, said = {}, []
+    for j in jobs:
+        present = []
+        if authored and authored["skills"].get(j["slug"]):
+            sd = authored["skills"][j["slug"]]
+            present = [os.path.relpath(os.path.join(d, n), sd).replace(os.sep, "/") for d, _, ns in os.walk(sd) for n in ns]
+        extra, missing = script_imports(src_base, j, present)
+        out_[j["slug"]] = extra
+        said += [f"job {j['slug']}: {m}" for m in missing]
+    if said:
+        fail("a script imports a file the package would not carry, so every job would stop on it: " + "; ".join(said)
+             + ". Deliver the file with the scripts, or name it under the job's scripts")
+    return out_
 
 
 # ── the agent's folder ────────────────────────────────────────────────────
@@ -3023,6 +3244,10 @@ def build(spec, src_base, out_dir, authored):
         else:
             fail(f"each record is a line or {{name, when?, file?}}; bad: {r}")
 
+    # What the named scripts import, followed and copied in with them, and a
+    # missing one refused, before any file is written (technical debt 655).
+    imported = imports_of_jobs(src_base, jobs, authored)
+
     # The required coder check, optional. When REQUIRED_CODER names a code
     # writer's key (OFFICIAL_CODER is read too, as the older name), every
     # script this package would ship has to be traced to a delivery that key
@@ -3039,7 +3264,9 @@ def build(spec, src_base, out_dir, authored):
         door = next((p for p in (os.path.join(HERE, "agentbuilder-provenance.mjs"), os.path.join(HERE, "provenance.mjs")) if os.path.exists(p)), None)
         if not door:
             fail("REQUIRED_CODER is set and the provenance check is not beside this builder, so no script can be traced; nothing is packed")
-        wanted = sorted({os.path.normpath(os.path.join(src_base, rel)) for j in jobs for rel in (j.get("scripts") or [])})
+        # What the named scripts import ships with them, so it is traced too.
+        wanted = sorted({os.path.normpath(os.path.join(src_base, rel)) for j in jobs for rel in (j.get("scripts") or [])}
+                        | {os.path.normpath(src) for extra in imported.values() for src, _ in extra})
         if not os.path.isfile(manifest):
             fail(f"REQUIRED_CODER is set and there is no delivery manifest at {manifest}: these scripts cannot be traced to the required code writer. "
                  "Send the code to that code writer with the spec, and pack what it delivers.")
@@ -3097,6 +3324,14 @@ def build(spec, src_base, out_dir, authored):
         for kind in ("scripts", "references", "assets"):
             for rel in j.get(kind, []) or []:
                 copied[kind].append(copy_into(src_base, rel, os.path.join(d, kind)))
+        # And what those scripts import, at the path each import names.
+        for src, at in imported.get(j["slug"], []):
+            dest = os.path.join(d, *at.split("/"))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(src, dest)
+            kind, _, rest = at.partition("/")
+            if kind in copied and rest not in copied[kind]:
+                copied[kind].append(rest)
         ins = j.get("instructions")
         if isinstance(ins, dict) and ins.get("file"):
             p = os.path.normpath(os.path.join(src_base, ins["file"]))
