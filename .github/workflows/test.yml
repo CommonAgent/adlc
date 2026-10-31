@@ -43,7 +43,7 @@ jobs:
         run: |
           cd agents/package-maker
           node --test connection.test.mjs request.test.mjs model-caller.test.mjs
-          python3 -m unittest test_folder test_standing test_options test_person test_model_kind
+          python3 -m unittest test_folder test_standing test_options test_person test_model_kind test_imports
 
       - name: No network address in an agent's scripts
         run: |

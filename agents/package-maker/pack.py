@@ -24,7 +24,9 @@ Usage: pack.py <spec.json | agent folder> <identity.json> [--from <file>...] [--
   --from   the files a run handed over with the spec or the agent's files:
            the scripts, references and assets they name, each matched by its
            name after the inbound prefix the adapter puts on an attachment,
-           plus the job-manifest.json the code-writer's delivery travels with.
+           any file one of those scripts imports by a relative path (placed
+           where the import names it, technical debt 655), plus the
+           job-manifest.json the code-writer's delivery travels with.
            They are laid out under the builder's own tmp as the package source
            with the spec or the agent's files beside them, so a package is
            built from what a run delivered and never from a copy that happened
@@ -286,6 +288,65 @@ def sent_name(path):
         name = stripped
 
 
+def _builder_imports():
+    """build.py's reading of what a script imports, so the lay-out and the
+    build follow the same imports. None when it cannot be loaded, and then
+    nothing extra is placed and the build refuses the missing file itself."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("agentbuilder_build", BUILD)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.relative_imports, mod.SCRIPT_MODULE, mod.IMPORT_SUFFIXES
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def place_imports(root, placed, left):
+    """The files a run handed over that no entry names but a placed script
+    imports (technical debt 655: the code writer's went-without.mjs beside
+    the count-vowels.mjs the spec named), placed at the path the import names
+    from the importing script, and followed on from there. `left` maps each
+    left-over sent name to its file; what is placed is taken out of it.
+    Returns the paths placed."""
+    reader = _builder_imports()
+    if not reader:
+        return []
+    relative_imports, script_module, suffixes = reader
+    queue = [p for p in placed if script_module.search(p)]
+    seen, added = set(), []
+    while queue:
+        at = queue.pop(0)
+        if at in seen:
+            continue
+        seen.add(at)
+        try:
+            with open(os.path.join(root, *at.split("/")), encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError:
+            continue
+        for spec_path, _ in relative_imports(text):
+            target = os.path.normpath(os.path.join(os.path.dirname(at), *spec_path.split("/"))).replace(os.sep, "/")
+            if target == ".." or target.startswith("../") or os.path.isabs(target):
+                continue
+            for suffix in suffixes:
+                rel = target + suffix
+                if os.path.isfile(os.path.join(root, *rel.split("/"))):
+                    break
+                src = left.pop(os.path.basename(rel), None) if "/" not in suffix else None
+                if src:
+                    dest = os.path.join(root, *rel.split("/"))
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    shutil.copy(src, dest)
+                    added.append(rel)
+                    break
+            else:
+                continue
+            if script_module.search(rel) and rel not in seen:
+                queue.append(rel)
+    return added
+
+
 def lay_out(spec_path, files):
     """The package source a run handed over, laid out the way the builder
     reads it: the spec as spec.json under the builder's tmp, every file the
@@ -310,7 +371,7 @@ def lay_out(spec_path, files):
                     wanted.setdefault(os.path.basename(rel), "standards/" + os.path.basename(rel))
                 elif isinstance(rel, str) and rel and ".." not in rel.split("/") and not rel.startswith("/"):
                     wanted.setdefault(os.path.basename(rel), rel)
-    placed, left = [], []
+    placed, left = [], {}
     manifest = None
     for path in files:
         sent = sent_name(path)
@@ -320,7 +381,7 @@ def lay_out(spec_path, files):
             continue
         rel = wanted.get(sent)
         if not rel:
-            left.append(sent)
+            left[sent] = path
             continue
         dest = os.path.join(root, rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -331,8 +392,9 @@ def lay_out(spec_path, files):
     with open(new_spec, "w", encoding="utf-8") as f:
         json.dump(spec, f, indent=2)
     missing = sorted(set(wanted.values()) - set(placed))
-    return new_spec, {"placed": sorted(placed), "missing": missing, "left_over": sorted(left),
-                      "manifest": manifest}
+    imported = place_imports(root, placed, left)
+    return new_spec, {"placed": sorted(placed), "imported": sorted(imported), "missing": missing,
+                      "left_over": sorted(left), "manifest": manifest}
 
 
 AGENT_DESCRIPTOR_FORMAT = "agent-descriptor-v1"
@@ -485,7 +547,7 @@ def lay_out_folder(found, files):
                     wanted.setdefault(os.path.basename(rel), "standards/" + os.path.basename(rel))
                 elif isinstance(rel, str) and rel and ".." not in rel.split("/") and not rel.startswith("/"):
                     wanted.setdefault(os.path.basename(rel), rel)
-    placed, left = [], []
+    placed, left = [], {}
     manifest_path = None
     used = {os.path.abspath(u) for u in found["used"]}
     for path in files:
@@ -498,15 +560,16 @@ def lay_out_folder(found, files):
             continue
         rel = wanted.get(sent)
         if not rel:
-            left.append(sent)
+            left[sent] = path
             continue
         dest = os.path.join(root, rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.copy(path, dest)
         placed.append(rel)
     missing = sorted(set(wanted.values()) - set(placed))
-    return root, {"placed": sorted(placed), "missing": missing, "left_over": sorted(left),
-                  "manifest": manifest_path, "skills": sorted(found["skills"])}
+    imported = place_imports(root, placed, left)
+    return root, {"placed": sorted(placed), "imported": sorted(imported), "missing": missing,
+                  "left_over": sorted(left), "manifest": manifest_path, "skills": sorted(found["skills"])}
 
 
 # The day the format rules came in (build.py, FORMAT_CUTOVER).
