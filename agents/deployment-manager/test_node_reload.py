@@ -147,6 +147,9 @@ class Base(unittest.TestCase):
                                           lambda n: (["mesh-node-platform"], True, "fleet-supervisor is online")),
                         mock.patch.object(steps, "node_here", lambda: (True, "")),
                         mock.patch.object(steps, "place_in_cloud_run", self.cloud),
+                        # These pin the work placed after the watch; test_work_during_watch.py
+                        # pins it placed during the watch, the default.
+                        mock.patch.dict(os.environ, {"DM_WORK_DURING_WATCH": "off"}),
                         mock.patch.object(steps, "publish_runtime_for", lambda n: {"recorded": True}),
                         mock.patch.object(steps, "write_ledger", lambda *a, **k: {"files": []}),
                         mock.patch.object(steps, "restore", self.restore),
