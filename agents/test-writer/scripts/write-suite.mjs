@@ -228,6 +228,13 @@ or what a stand-in model said), say so in NOTES, on a line that starts
 "No worked values:", with why. worked() is in one file of every suite:
 test/worked-values.test.mjs, which the test writer adds itself. Do not write it and do not answer with it.
 
+Read a delivered piece by whole lines. Find a line by a pattern for the
+whole line (assert.match(text, /^- a: 1$/m)), or by the text after its
+heading line, and never by a single letter or a short word searched anywhere
+in the piece: a heading or a word of prose holds letters too ("## Counts"
+holds o and u before any i), and a test that finds them there fails a piece
+that keeps the spec.
+
 Never write a test that would pass with the scripts absent. Never touch a
 network or a model from a test. Never write the scripts. A script that calls
 a model is tested against a stand-in model server the test starts on the
@@ -578,6 +585,47 @@ export const NO_WORKED_VALUES = "no expected value is worked twice: write each v
 const codeLines = (text) => String(text ?? "").split("\n")
   .map((l) => l.replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\\n]|\\.)*`/g, '""').replace(/(^|[^:])\/\/.*$/, "$1"));
 
+/** A one-letter string literal, '"a"' or "'a'": a letter and nothing else,
+ *  so "\n" or "," is not one. */
+const LETTER = /^\s*(["'`])[A-Za-z\u00C0-\u024F]\1\s*$/;
+const LETTER_LIST = /^\s*\[\s*(?:(["'`])[A-Za-z\u00C0-\u024F]\1\s*,\s*)+(["'`])[A-Za-z\u00C0-\u024F]\2\s*,?\s*\]/;
+
+/** Each search for a single letter in a suite's files, as findings by line:
+ *  indexOf, lastIndexOf, includes or search given a one-letter literal, an
+ *  element of a list of single letters, or a variable that runs over one. A
+ *  heading or a word of prose holds letters too ("## Counts" holds o and u),
+ *  so such a test cannot tell a piece that keeps the spec from one that does
+ *  not, and may fail every piece that does (build ab_6d0a79ba51025b1beb). */
+export function letterSearchFindings(files = []) {
+  const out = [];
+  for (const f of files) {
+    if (STANDARD_TESTS.includes(f.path)) continue;
+    const text = String(f.text ?? "");
+    const lists = new Set();
+    for (const m of text.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:worked\s*\(\s*)?(\[[^\]\n]*\])/g)) {
+      if (LETTER_LIST.test(m[2])) lists.add(m[1]);
+    }
+    const runners = new Set();
+    for (const m of text.matchAll(/for\s*\(\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s+of\s+([A-Za-z_$][\w$]*|\[[^\]\n]*\])/g)) {
+      if (lists.has(m[2]) || LETTER_LIST.test(m[2])) runners.add(m[1]);
+    }
+    for (const m of text.matchAll(/([A-Za-z_$][\w$]*|\[[^\]\n]*\])\s*\.\s*forEach\s*\(\s*\(?\s*([A-Za-z_$][\w$]*)/g)) {
+      if (lists.has(m[1]) || LETTER_LIST.test(m[1])) runners.add(m[2]);
+    }
+    const isLetter = (arg) => LETTER.test(arg)
+      || runners.has(arg.trim())
+      || [...lists].some((n) => new RegExp(`^\\s*${n.replace(/\$/g, "\\$")}\\s*\\[[^\\]]*\\]\\s*$`).test(arg));
+    text.split("\n").forEach((line, i) => {
+      for (const m of line.matchAll(/\.\s*(indexOf|lastIndexOf|includes|search)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)) {
+        const args = m[2].split(",");
+        if (!isLetter(args[0])) continue;
+        out.push(`${f.path}:${i + 1} searches the text for a single letter with ${m[1]}(${args[0].trim()}); a heading or a word of prose holds letters too ("## Counts" holds o and u), so no piece that keeps the spec can be told apart. Find the whole line instead, by a pattern for the line (/^- a: \\d+$/m) or the text after its heading line`);
+      }
+    });
+  }
+  return out;
+}
+
 /** What is wrong with the worked values in a suite's files, as findings by
  *  line: a worked() inside a test, which a stand-in that throws first keeps
  *  from ever being checked, and a computation that is only a literal, which
@@ -696,6 +744,7 @@ export function staticFindings(files = [], declared = null, { existing = [], tak
   }
   out.push(...importFindings(files, dependencies));
   out.push(...workedFindings(files));
+  out.push(...letterSearchFindings(files));
   const all = whole.map((f) => f.text).join("\n");
   for (const s of named) {
     const name = String(s).split("/").pop();

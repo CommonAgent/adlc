@@ -44,6 +44,10 @@ A suite is written before the scripts exist, so whoever writes it works out each
 
 So every suite carries a third file the model does not write: `test/worked-values.test.mjs`, copied whole from the references. Each value a rule in the spec decides from the input, a count, a total, letters taken from words, an order, is a constant at the top of its file, `worked(value, () => computation, "what it is")`: the literal expected, and plain code in the test over the same input that applies the rule step by step, never a script's function. The run beside the agent's own files evaluates every one before the suite is delivered, and each value its own computation does not give goes back to the model naming both. A suite that works no value goes back too, unless its notes say on a line of their own, "No worked values:", why no expected value in it is decided by a rule; so does a worked value inside a test, which a stand-in reaches first, and one whose computation is only the literal again. Choose inputs whose answers are short and easy to check by hand.
 
+## A delivered piece is read by whole lines
+
+A test finds a line of a delivered piece by a pattern for the whole line (`- a: 1`), or by the text after its heading line, and never by a single letter or a short word searched anywhere in it. A heading or a word of prose holds letters too: vowel-tally's suite checked the order of its counts with `indexOf("a") < indexOf("e")` in a block that opens with the required heading `## Counts`, which holds o and u before any i, so no piece that keeps the spec could pass it. A search for one letter with indexOf, lastIndexOf, includes or search goes back to the model by line.
+
 ## Adding to a suite that exists
 
 A released package has a suite somebody relies on. When its test files come with the message, they are kept byte for byte and new files are written beside them for what was asked; nothing in a kept file is rewritten, and only the new files are delivered. A suite for a change is judged as it will stand, the kept files and the new ones together, and the new files must still fail against stand-ins on their own.

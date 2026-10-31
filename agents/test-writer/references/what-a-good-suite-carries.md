@@ -202,6 +202,19 @@ wrong (16 vowels where the sentence holds 14, "HTTP" where the rule gives
 "HTP"), and the build stopped at the code step on a conflict that was the
 suite's (technical debt 646).
 
+## A delivered piece is read by whole lines
+
+Find a line of a delivered piece by a pattern for the whole line, or by the
+text after its heading line:
+
+    assert.match(text, /^- a: 1$/m);
+
+never by a single letter or a short word searched anywhere in the piece. A
+heading or a word of prose holds letters too: `## Counts` holds o and u
+before any i, so `block.indexOf("i") < block.indexOf("o")` fails a piece that
+keeps the spec. The test writer sends back a search for one letter with
+indexOf, lastIndexOf, includes or search.
+
 ## Where the nine are thin
 
 Two files import nothing from the scripts and pin by process alone. Four
