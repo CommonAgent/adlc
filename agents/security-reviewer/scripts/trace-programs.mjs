@@ -28,11 +28,13 @@
 // it is one (a quote that does not close on its line opens no string).
 //
 // A call to an address the program is handed counts as a declared reach in
-// exactly three cases, and in no other (see matchReaches): the program reads a
+// exactly four cases, and in no other (see matchReaches): the program reads a
 // setting a declared service lists as its address; it imports requestFor or
 // urlFor from ./model-caller.mjs and the package declares a system of kind
-// model; or a skill that carries it belongs to an offering with an input marked
-// external: true. Each is read off the text; nothing is run.
+// model; a skill that carries it belongs to an offering with an input marked
+// external: true; or it names an address member a can_use entry's reads
+// declares, such as a brand profile's logo.mark.href. Each is read off the
+// text; nothing is run.
 //
 // A declared system of kind model (Common Agent 12.4.1) is reached through
 // four settings the install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and
@@ -320,7 +322,28 @@ export function traceOne(path, text) {
     }
   });
   const browser = BROWSER.test(code) && /goto|newPage|launch/.test(code);
-  return { path, hosts, written, open, vars: [...vars].sort(), commands, browser, routes: browser && ROUTES.test(code), caller: callerUse(path, code, vars) };
+  return { path, hosts, written, open, vars: [...vars].sort(), commands, browser, routes: browser && ROUTES.test(code), caller: callerUse(path, code, vars), members: addressMembers(code) };
+}
+
+/** A member of a standing asset that holds an address, by its last name:
+ *  href, url, uri, src, link, address or endpoint, or a name ending _url,
+ *  _href or _uri. */
+export const ADDRESS_MEMBER = /^(?:href|url|uri|src|link|address|endpoint|[\w$]+_(?:url|href|uri))$/i;
+
+/** The dotted paths a program names that end in an address member, off its
+ *  comment-free text: a path written as a string ("logo.mark.href") and a
+ *  property chain (profile?.logo?.mark?.href, read as profile.logo.mark.href).
+ *  A can_use entry's reads is matched against these (see matchReaches). */
+export function addressMembers(code) {
+  const out = new Set();
+  const flat = String(code).replace(/\?\.(?=[A-Za-z_$])/g, ".");
+  for (const m of flat.matchAll(/["'`]([A-Za-z_$][\w$-]*(?:\.[A-Za-z_$][\w$-]*)+)["'`]/g)) {
+    if (ADDRESS_MEMBER.test(m[1].split(".").pop())) out.add(m[1]);
+  }
+  for (const m of flat.matchAll(/(?<![\w$.])[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+/g)) {
+    if (ADDRESS_MEMBER.test(m[0].split(".").pop())) out.add(m[0]);
+  }
+  return [...out].sort();
 }
 
 /** How a program stands to the shared model caller, off its comment-free
@@ -427,7 +450,7 @@ export function domainOf(host) {
  *   undeclaredCommands, undeclaredModel }.
  * `egressHosts` are the further destinations the architecture record names.
  */
-export function matchReaches({ traced, systems = [], binaries = [], egressHosts = [], offerings = [] }) {
+export function matchReaches({ traced, systems = [], binaries = [], egressHosts = [], offerings = [], canUse = [] }) {
   const declared = new Set(systems.map((s) => s.name));
   // The package's own model system: one of kind model, or by a model's
   // reserved name. Its addresses are text-reasoning's, whatever it is called.
@@ -489,7 +512,7 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
   }
 
   // A call to an address the program is handed. It is a declared reach in
-  // exactly three cases, and in no other:
+  // exactly four cases, and in no other:
   //   (a) the program reads a setting a declared service lists under its
   //       settings as its address: a name ending in _ENDPOINT, _URL, _BASE,
   //       _HOST or _ADDRESS, or a purpose that says where the service is or
@@ -501,7 +524,13 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
   //       itself, which defines them and reads MODEL_ENDPOINT, is the same
   //       case);
   //   (c) the program is carried by a skill whose offering declares an input
-  //       marked external: true.
+  //       marked external: true;
+  //   (d) the program names a member that a can_use entry's reads declares
+  //       and that holds an address (its last name is href, url, uri, src,
+  //       link, address or endpoint, or ends _url, _href or _uri), as a
+  //       string path ("logo.mark.href") or a property chain ending in it
+  //       (profile?.logo?.mark?.href). The address in the version a job is
+  //       handed is a handed address (Common Agent 0.40.2, 12.6 rule 2).
   // What stays as it was in 0.2.0: a call in a program that writes down an
   // address this review matched is taken as that address, a call built from a
   // written host being no handed one; and a program that also writes down an
@@ -527,6 +556,13 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
     if (!slug) return null;
     return offerings.find((o) => (o.id === slug || (o.steps ?? []).some((st) => st.id === slug)) && (o.inputs ?? []).some((i) => i.external === true)) ?? null;
   };
+  const assetAddresses = [];
+  for (const u of Array.isArray(canUse) ? canUse : []) {
+    for (const path of Array.isArray(u?.reads) ? u.reads : []) {
+      if (typeof path === "string" && ADDRESS_MEMBER.test(path.split(".").pop())) assetAddresses.push({ path, schema: String(u.schema ?? "") });
+    }
+  }
+  const assetAddress = (t) => assetAddresses.find((a) => (t.members ?? []).some((m) => m === a.path || m.endsWith(`.${a.path}`))) ?? null;
   const openFetches = [];
   const unmatchedOpen = [];
   for (const t of traced) {
@@ -536,10 +572,12 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
     const own = reaches.filter(inFile);
     const setting = t.vars.find((v) => addressSettings.has(v));
     const external = externalOffering(t.path);
+    const asset = assetAddress(t);
     const by = strays.length ? ""
       : setting ? `${addressSettings.get(setting)}, the declared service whose address setting ${setting} the program reads`
       : modelSystemKind && (t.caller?.imports || t.caller?.is) ? `${modelSystemKind.name}, the declared model system, reached through the shared caller's requestFor or urlFor and its settings`
       : external ? `${external.id}, an offering with an input marked external: true, whose address the caller grants`
+      : asset ? `the can_use entry for ${asset.schema}, whose reads names ${asset.path}, an address the approved version the job is handed carries`
       : own.length ? `the addresses this program writes down (${[...new Set(own.map((r) => r.host))].join(", ")})`
         : fetchers.length ? `${fetchers.map((s) => s.name).join(", ")}, whose stated reason is fetching what it is handed` : "";
     for (const o of t.open) (by ? openFetches : unmatchedOpen).push({ file: `${t.path}:${o.line}`, what: o.what, by, strays: strays.map((s) => s.host) });

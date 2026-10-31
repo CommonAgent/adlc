@@ -3419,3 +3419,124 @@ class WorkerJobsRunInTheNetworkTheHostNames(unittest.TestCase):
         with mock.patch.object(steps, "WORKER_NETWORK", "mesh"), mock.patch.object(steps, "WORKER_SUBNET", "s"),              mock.patch.object(steps, "WORKER_EGRESS", "enforce"),              mock.patch.object(steps, "gcloud_quiet", return_value=(R(0), None)),              mock.patch.object(steps, "gcloud", side_effect=lambda argv, *a, **k: calls.append(argv) or ""):
             self.assertEqual(steps.place_observe_rule("x-agent", "p1"), "removed")
         self.assertEqual(calls[0][:3], ["compute", "firewall-rules", "delete"])
+
+
+class TheHarnessModel(unittest.TestCase):
+    """Technical debt 619: the harness's model comes from the host's model
+    setting, with the instruction's own model as the override, and the harness
+    reaches it through the host's model gateway. No model is written in code.
+
+    What is worth pinning: the first model the instruction (or the row it
+    recorded) names wins as it is; with none, the host's model.harness, else
+    its model.name, is reached through the gateway as model-gateway/<name> for
+    opencode and by its bare name for codex, whose config already names the
+    gateway; a host value that already names a provider passes as it is;
+    nothing at all resolves to no model, never a default; the gateway is
+    configured from model.endpoint and model.protocol, and a keyed endpoint is
+    refused; a job with a gateway model carries the endpoint, the protocol and
+    its own gateway's settings; and the old DEFAULT_MODEL is gone."""
+
+    HOST = {"name": "claude-sonnet-5-5", "endpoint": "http://127.0.0.1:8788/", "key": "",
+            "protocol": "anthropic-messages", "gateway": {"vertex_project": "p-gw", "vertex_region": "global"}}
+
+    def use_env(self, model):
+        path = os.path.join(TMP, f"env-harness-{len(os.listdir(TMP))}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"name": "t", "vertex": {"project": "p-vertex"}, **({"model": model} if model is not None else {})}, f)
+        patcher = mock.patch.dict(os.environ, {"AGENTMESH_ENV_FILE": path})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for k in ("DM_MODEL_HARNESS", "DM_MODEL_NAME", "DM_MODEL_ENDPOINT", "DM_MODEL_PROTOCOL", "DM_MODEL_KEY_CREDENTIAL"):
+            p = mock.patch.dict(os.environ)
+            p.start()
+            self.addCleanup(p.stop)
+            os.environ.pop(k, None)
+
+    def test_the_instruction_wins_as_it_is(self):
+        self.use_env(self.HOST)
+        m = "google-vertex-anthropic/claude-sonnet-5-5@default"
+        self.assertEqual(steps.harness_model(m, harness="opencode"), m)
+        self.assertEqual(steps.harness_model("", None, m, harness="opencode"), m)
+
+    def test_with_no_instruction_the_host_model_goes_through_the_gateway(self):
+        self.use_env(self.HOST)
+        self.assertEqual(steps.harness_model(None, "", harness="opencode"), "model-gateway/claude-sonnet-5-5")
+        self.assertEqual(steps.harness_model(harness="codex"), "claude-sonnet-5-5")
+        self.assertTrue(steps.MODEL_RE.match(steps.harness_model(harness="opencode")))
+
+    def test_model_harness_is_read_before_model_name(self):
+        self.use_env({**self.HOST, "harness": "claude-haiku-5-5"})
+        self.assertEqual(steps.harness_model(harness="opencode"), "model-gateway/claude-haiku-5-5")
+        self.use_env({**self.HOST, "harness": "google-vertex-anthropic/claude-haiku-5-5@default"})
+        self.assertEqual(steps.harness_model(harness="opencode"), "google-vertex-anthropic/claude-haiku-5-5@default")
+
+    def test_no_instruction_and_no_host_setting_is_no_model_and_never_a_default(self):
+        self.use_env(None)
+        self.assertEqual(steps.harness_model(harness="opencode"), "")
+        self.assertFalse(hasattr(steps, "DEFAULT_MODEL"))
+        with open(steps.__file__, encoding="utf-8") as f:
+            self.assertIsNone(re.search(r'(?m)^[A-Z_]*MODEL[A-Z_]*\s*=\s*"[a-z0-9-]+/', f.read()),
+                              "a model name written into steps.py as a constant")
+
+    def test_the_gateway_is_configured_from_the_host_endpoint_and_protocol(self):
+        self.use_env(self.HOST)
+        gw = steps.gateway_provider("model-gateway/claude-sonnet-5-5")
+        self.assertEqual(gw, {"model": "claude-sonnet-5-5", "endpoint": "http://127.0.0.1:8788",
+                              "protocol": "anthropic-messages"})
+        self.assertIsNone(steps.gateway_provider("google-vertex-anthropic/claude-sonnet-5-5@default"))
+        files = steps.INSTALL.harness_files("opencode", "alpha", "model-gateway/claude-sonnet-5-5", [], gateway=gw)
+        doc = json.loads(files[".config/opencode/opencode.json"])
+        p = doc["provider"]["model-gateway"]
+        self.assertEqual(p["npm"], "@ai-sdk/anthropic")
+        self.assertEqual(p["options"]["baseURL"], "http://127.0.0.1:8788/v1")
+        self.assertIn("claude-sonnet-5-5", p["models"])
+        self.assertNotIn("mcp", doc)
+        for protocol, npm, base in (("gemini", "@ai-sdk/google", "http://127.0.0.1:8788"),
+                                    ("openai-chat", "@ai-sdk/openai-compatible", "http://127.0.0.1:8788/v1")):
+            p = steps.INSTALL.opencode_gateway_provider({**gw, "protocol": protocol})
+            self.assertEqual((p["npm"], p["options"]["baseURL"]), (npm, base))
+        # No gateway, no MCP servers: nothing to place, as before.
+        self.assertEqual(steps.INSTALL.harness_files("opencode", "alpha", "google-vertex-anthropic/x@default", []), {})
+
+    def test_a_gateway_with_a_key_or_without_an_endpoint_is_refused(self):
+        self.use_env({**self.HOST, "key": "model-key"})
+        r = emitted(self, steps.gateway_provider, "model-gateway/claude-sonnet-5-5")
+        self.assertIn("model.key", r["error"])
+        self.use_env({"name": "claude-sonnet-5-5"})
+        r = emitted(self, steps.gateway_provider, "model-gateway/claude-sonnet-5-5")
+        self.assertIn("model.endpoint", r["error"])
+
+    def test_the_host_brain_names_the_gateway_model_and_carries_no_key(self):
+        self.use_env(self.HOST)
+        brain = steps.brain_text("opencode", "model-gateway/claude-sonnet-5-5")
+        self.assertIn("--model model-gateway/claude-sonnet-5-5", brain)
+        self.assertNotIn(".key", brain)
+        self.assertNotIn("GCE_METADATA_HOST", brain)
+
+    def test_a_job_with_a_gateway_model_carries_the_endpoint_and_its_own_gateway(self):
+        self.use_env(self.HOST)
+        here = steps.keyless_vars("model-gateway")
+        self.assertEqual(here, {"MODEL_ENDPOINT": "http://127.0.0.1:8788", "MODEL_PROTOCOL": "anthropic-messages"})
+        bare = {"systems": [], "install": {"ceilings": []}}
+        self.assertEqual(steps.model_gateway_env({}, bare), {})
+        self.assertEqual(steps.model_gateway_env({}, bare, here),
+                         {"BRIDGE_VERTEX_PROJECT": "p-gw", "BRIDGE_VERTEX_REGION": "global", "BRIDGE_PORT": "8788"})
+
+    def test_a_model_change_names_the_gateway_in_opencode_and_keeps_its_mcp_servers(self):
+        self.use_env(self.HOST)
+        home = tempfile.mkdtemp(dir=TMP)
+        path = os.path.join(home, ".config", "opencode", "opencode.json")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"$schema": "https://opencode.ai/config.json", "mcp": {"docs": {"type": "remote"}}}, f)
+        with mock.patch.object(steps, "run"):
+            self.assertTrue(steps.place_gateway_config("alpha", home, "opencode", "model-gateway/claude-sonnet-5-5"))
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f)
+            self.assertEqual(doc["mcp"], {"docs": {"type": "remote"}})
+            self.assertIn("claude-sonnet-5-5", doc["provider"]["model-gateway"]["models"])
+            self.assertTrue(steps.place_gateway_config("alpha", home, "opencode", "google-vertex-anthropic/x@default"))
+            with open(path, encoding="utf-8") as f:
+                self.assertNotIn("provider", json.load(f))
+            self.assertFalse(steps.place_gateway_config("alpha", home, "codex", "claude-sonnet-5-5"))
+            self.assertFalse(steps.place_gateway_config("alpha", tempfile.mkdtemp(dir=TMP), "opencode", "google-vertex-anthropic/x@default"))

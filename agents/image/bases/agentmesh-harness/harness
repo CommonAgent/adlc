@@ -38,6 +38,23 @@ if [ -z "$MODEL" ]; then
   exit 3
 fi
 
+# Which directories outside the home this message may touch. opencode asks
+# before it reads or writes an external directory, nobody is here to answer, so
+# it refuses itself: the critic's first run on Cloud Run could not open the
+# file attached to its own message. The job folder and every declared directory
+# are on a mount, which is outside the home by construction (12.7.1). The
+# script beside this one turns the variables the deployment set into the grant,
+# naming those directories and not the mount they sit on: one bucket serves the
+# whole fleet, and a blanket allow would hand every other agent's records to
+# whoever was reading. It also names the host's model gateway as a provider
+# when the model is one (technical debt 619), so the configuration is made
+# before opencode is asked whether it lists the model.
+OPENCODE_CONFIG_CONTENT="$(node "$(dirname "$0")/opencode-config.mjs")" || {
+  echo "harness: the directories this container was given could not be turned into a configuration, so opencode would have refused to read its own job folder. Nothing was woken." >&2
+  exit 3
+}
+export OPENCODE_CONFIG_CONTENT
+
 # ASK THE TOOL, DO NOT KEEP A TABLE. `opencode models` lists a provider's
 # models only when that provider's key is in the environment, so the one
 # question answers both halves at once: whether this is a model opencode knows,
@@ -70,21 +87,6 @@ cd "${AGENT_HOME:-$HOME}" || {
   echo "harness: ${AGENT_HOME:-$HOME} is not a directory this container can enter, and it is where the agent's package and its instructions file are." >&2
   exit 3
 }
-
-# Which directories outside the home this message may touch. opencode asks
-# before it reads or writes an external directory, nobody is here to answer, so
-# it refuses itself: the critic's first run on Cloud Run could not open the
-# file attached to its own message. The job folder and every declared directory
-# are on a mount, which is outside the home by construction (12.7.1). The
-# script beside this one turns the variables the deployment set into the grant,
-# naming those directories and not the mount they sit on: one bucket serves the
-# whole fleet, and a blanket allow would hand every other agent's records to
-# whoever was reading.
-OPENCODE_CONFIG_CONTENT="$(node "$(dirname "$0")/opencode-config.mjs")" || {
-  echo "harness: the directories this container was given could not be turned into a configuration, so opencode would have refused to read its own job folder. Nothing was woken." >&2
-  exit 3
-}
-export OPENCODE_CONFIG_CONTENT
 
 # The answer is collected rather than piped, so opencode's own exit status
 # survives. Piped straight into sed the status is sed's, which is 0 whatever

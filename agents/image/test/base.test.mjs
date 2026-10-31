@@ -388,3 +388,29 @@ test("the harness is granted the directories the deployment bound, and not the m
   assert.deepEqual(Object.entries(configFor({}).permission.external_directory),
     [["*", "deny"], ["/tmp", "allow"], ["/tmp/*", "allow"], ["/tmp/**", "allow"]]);
 });
+
+test("a harness whose model is the host's model gateway is told where the gateway is, and no other is", async () => {
+  // Technical debt 619: with no model in the instruction the deployment
+  // gives the harness the host's model setting through the gateway, as
+  // model-gateway/<model>, with MODEL_ENDPOINT and MODEL_PROTOCOL on the job
+  // (steps.keyless_vars). opencode knows no such provider until its
+  // configuration names one, so the configuration names it from those two
+  // variables, read by their exact names, and the harness reads it before
+  // asking opencode whether the model is listed.
+  const { configFor } = await import("../bases/agentmesh-harness/opencode-config.mjs");
+  const gw = { AGENT_MODEL: "model-gateway/claude-sonnet-5-5", MODEL_ENDPOINT: "http://127.0.0.1:8788/", MODEL_PROTOCOL: "anthropic-messages" };
+  const p = configFor(gw).provider["model-gateway"];
+  assert.equal(p.npm, "@ai-sdk/anthropic");
+  assert.equal(p.options.baseURL, "http://127.0.0.1:8788/v1");
+  assert.ok(p.models["claude-sonnet-5-5"], "the gateway's model is not listed, so opencode would not find it");
+  assert.equal(configFor({ ...gw, MODEL_PROTOCOL: "gemini" }).provider["model-gateway"].options.baseURL, "http://127.0.0.1:8788");
+  assert.equal(configFor({ ...gw, MODEL_PROTOCOL: "openai-chat" }).provider["model-gateway"].npm, "@ai-sdk/openai-compatible");
+  // Any other model, or a gateway the job was not told the place of, names none.
+  assert.equal(configFor({ ...gw, AGENT_MODEL: "google-vertex-anthropic/claude-sonnet-5-5@default" }).provider, undefined);
+  assert.equal(configFor({ ...gw, MODEL_ENDPOINT: "" }).provider, undefined);
+  assert.equal(configFor({ ...gw, MODEL_PROTOCOL: "bedrock" }).provider, undefined);
+  // The harness builds its configuration before it asks opencode about the model.
+  const script = readFileSync(new URL("../bases/agentmesh-harness/harness", import.meta.url), "utf8");
+  assert.ok(script.indexOf("export OPENCODE_CONFIG_CONTENT") < script.indexOf("opencode models"),
+    "the harness asks opencode for the model before opencode can know the gateway");
+});

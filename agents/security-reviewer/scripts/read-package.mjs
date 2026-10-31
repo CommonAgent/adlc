@@ -171,6 +171,7 @@ export function fromFiles(files) {
     does: trim(d.does),
     systems: [...byName.values()],
     offerings,
+    canUse: list(d.can_use).filter((u) => u && typeof u === "object").map((u) => ({ schema: trim(u.schema), reads: list(u.reads).filter((x) => typeof x === "string").map(trim) })),
     refusals,
     escalates: list(d.escalates).map(trim).filter(Boolean),
     ceilings: list(r.ceilings).filter((c) => c && typeof c === "object"),
