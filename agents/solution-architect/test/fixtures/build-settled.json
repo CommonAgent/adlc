@@ -1,0 +1,11 @@
+{
+  "settled_answers": "v1",
+  "by": "AgentMesh Build an agent",
+  "answers": [
+    { "key": "kind", "answer": "plugin-on-harness", "from": "the build's settled defaults", "why": "Every agent Build an agent makes is a package a host runs, with one program per job" },
+    { "key": "reaches", "answer": "nothing-outside-agentmesh", "from": "the build's settled defaults", "why": "It runs for one person in AgentMesh's tenant sandbox, which reaches only AgentMesh itself" },
+    { "key": "model", "answer": "model-door", "from": "the build's settled defaults", "why": "A job that needs a model asks AgentMesh's model door at an address the sandbox sets; it needs no key and names no model, because AgentMesh chooses the model and pays for it" },
+    { "key": "limit-cost", "answer": "the account's daily model allowance on AgentMesh's model door, 0.50 USD a day, which AgentMesh pays", "from": "the platform's spending rules", "why": "The model door counts every call against the account's day and refuses the rest until midnight UTC" },
+    { "key": "attended", "answer": "no", "from": "the build's settled defaults", "why": "It answers the requests sent to it with nobody attending" }
+  ]
+}
