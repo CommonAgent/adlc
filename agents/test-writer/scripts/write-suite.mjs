@@ -60,9 +60,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
-import { standInRun, suiteFiles } from "./check-suite.mjs";
+import { standInChecks, suiteFiles } from "./check-suite.mjs";
 import { note } from "./went-without.mjs";
-import { loadSpec } from "./agent-folder.mjs";
+import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, loadSpec } from "./agent-folder.mjs";
 import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -303,12 +303,40 @@ calls them as they are written: import from each only the names it exports,
 listed beside it, and call them with the arguments they really take. Do not
 test these files themselves.`;
 
+/** What is said with the agent's own files. The spec above them is this
+ *  agent's reading of them, in the older spec.json shape, and a declaration
+ *  test written from that shape asserted members the files do not carry
+ *  (technical debt 618). */
+export const AGENT_FILES_INSTRUCTION = `These are the agent's own files as they stand in the package root, beside
+test/. A test on the declaration reads them from there (../agent-descriptor.json,
+../plugin.json, ../agent-runtime-requirements.json) and asserts only what they
+carry, exactly as shown here. The spec above is a reading of these files and
+not their shape: the agent's name is plugin.json's \`name\`, and
+agent-descriptor.json carries no package name (a \`name\` there, when it is
+present, is a display name for a person); an offering is found by its \`id\`,
+every offering listed is offered, and the descriptor has no \`offered\`,
+\`slug\` or \`jobs\` member. A test that touches no script must already pass
+against these files before any script exists, and the suite goes back if one
+does not.`;
+
+/** The agent's own files a declaration test reads, as {path, text}: the
+ *  ones its folder has, and none made up. */
+export function agentFilesOf(folder) {
+  return [DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE]
+    .filter((rel) => folder && existsSync(join(folder, rel)))
+    .map((rel) => ({ path: rel, text: readFileSync(join(folder, rel), "utf8") }));
+}
+
 /** The parts of the request, in order, as text. Pure and exported so the
  *  whole prompt can be read in a test rather than inferred from a fixture. */
-export function requestParts({ spec = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], part = null, dependencies = [] } = {}) {
+export function requestParts({ spec = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], part = null, dependencies = [], agentFiles = [] } = {}) {
   const parts = [INSTRUCTION];
   if (trim(asked)) parts.push(`--- WHAT THEY ASKED FOR ---\n${trim(asked)}`);
   parts.push(`--- THE SPEC ---\n${spec ? JSON.stringify(spec, null, 2) : "(no spec)"}`);
+  if (agentFiles.length) {
+    parts.push(`--- THE AGENT'S OWN FILES ---\n${AGENT_FILES_INSTRUCTION}\n\n${agentFiles.map((f) =>
+      `=== ${f.path} ===\n${f.text}${String(f.text).endsWith("\n") ? "" : "\n"}=== end of ${f.path} ===`).join("\n\n")}`);
+  }
   const commands = (declared?.jobs ?? []).flatMap((j) => (j.commands ?? []).map((c) => ({ job: j.slug, ...c })));
   if (commands.length) {
     parts.push(`--- THE COMMANDS THE HARNESS RUNS ---\n${commands.map((c) =>
@@ -520,6 +548,12 @@ export function standInFindings(run) {
   if (run.timed_out) return [`against empty stand-ins the suite did not finish in time; a test must not wait on anything`];
   if (run.tests === 0 && run.status === 0) return ["against empty stand-ins no test ran at all; the files must be test/<name>.test.mjs and use node:test"];
   if (!run.fails) return [`against empty stand-ins for every script the suite passed (${run.pass} of ${run.tests}), so it asserts nothing about them; import the functions and assert what they return`];
+  const u = run.unpassable ?? [];
+  if (u.length) {
+    return [`${u.length === 1 ? "this test touches" : `these ${u.length} tests touch`} no script and still ${u.length === 1 ? "fails" : "fail"} against the agent's own files as they are, so no script can ever make ${u.length === 1 ? "it" : "them"} pass: `
+      + u.map((x) => `"${x.name}" in ${x.path}${x.error ? ` (${x.error.replace(/\s+/g, " ")})` : ""}`).join("; ")
+      + `. Assert only what agent-descriptor.json, plugin.json and agent-runtime-requirements.json carry, exactly as THE AGENT'S OWN FILES show them`];
+  }
   return [];
 }
 
@@ -685,7 +719,8 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const out = await askInParts({
       call, declared, spec, existing, dependencies,
       asked: read(trim(env.ASKED_TEXT)),
-      run: async (files) => standInRun({ spec, files, folder: statSync(SPEC).isDirectory() ? SPEC : null }),
+      run: async (files) => standInChecks({ spec, files, folder: statSync(SPEC).isDirectory() ? SPEC : null }),
+      agentFiles: statSync(SPEC).isDirectory() ? agentFilesOf(SPEC) : [],
       reference: read(referenceAt(env)),
       worked: read(workedAt(env)),
       workedSpec: read(workedSpecAt(env)),
