@@ -72,3 +72,13 @@ first and failing; test/formats.test.mjs's conventionOf assertion gains
 
 The harness (Claude Code) stood in for the test and code steps, the tests
 first and the code inside them, as for 0.4.1 and 0.5.0.
+
+## Proof
+
+Build an agent on dev, build ab_6d0a79ba51025b1beb (vowel-tally 0.1.0,
+platform@agentmesh.ai, reference code writer). The suite came back as
+test/count.test.mjs with 22 worked values (for example "The quiet bear.":
+a 1, e 3, i 1, o 0, u 1, total 6), every one agreeing, beside the three
+standard files. The reference code writer passed 25 of 26 tests and stopped
+on a different defect in the suite, a search for single letters in a block
+that opens with "## Counts", which 0.6.1 fixes.

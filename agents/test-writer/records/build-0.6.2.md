@@ -41,3 +41,16 @@ test/records-per-job.test.mjs's `except` assertions change to the new rule.
 
 The harness (Claude Code) stood in for the test and code steps, the tests
 first.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 13fadf2: sha256
+  b73346991d7d7ec39ce255840d9ccb0b628cc14762c9d975a9e53008e887d72a.
+- Installed by the deployment manager from deploy request
+  dr_xkWOKRPDWwcE6oEJNW03GGNK, approved by the platform account, same settings.
+- Proof: build ab_33e1e3fe53252ceed3 (vowel-gauge). 26 worked values, all
+  agreeing; the suite calls checkRecordsPerJob with no except, and the
+  reference code writer's script writes `{ went_without: "v1", entries: [] }`
+  for a job that lacked nothing. Test and Code done; Package refused on the
+  spec writer's `job_seconds: 30` (the builder takes 60 to 7200), technical
+  debt 648, so Conformance was not reached.

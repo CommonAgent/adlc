@@ -38,3 +38,15 @@ pass, 1 skipped.
 
 The harness (Claude Code) stood in for the test and code steps, the tests
 first.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc b76fa02: sha256
+  dbf8d7b79f3a3535347e32a1ab19ed161b150a63267a01b703fff24e76d40c14.
+- Installed by the deployment manager from deploy request
+  dr_5s34T0UDbrh3XjK4rieFHJa2, approved by the platform account, same settings.
+- Proof: build ab_3508d5dec3d4642113 (vowel-meter 0.1.0). 28 worked values,
+  all agreeing; Test, Code, Package, Release and Deploy done, installed.
+  Conformance: does-not-conform, 5 refusals passed, 0 failed, one record
+  missing (went-without.json, on jobs that lacked nothing), which 0.6.2 fixes.
+  Every job wrote counted.json under `<records>/<job>/` (seven jobs).
