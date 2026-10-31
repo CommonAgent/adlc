@@ -176,7 +176,7 @@ test("the checker reads pieces.json, the media type it lists, and the convention
     list("application/json");
     assert.deepEqual(checkDelivered(jobDir, { declaration: decl }), ['the piece "key points" is listed as application/json and declared text/markdown']);
   });
-  assert.deepEqual(conventionOf(ABOUT), { headings: ["## Key points"], header: ["source"], shape: null });
+  assert.deepEqual(conventionOf(ABOUT), { headings: ["## Key points"], cases: [], header: ["source"], shape: null });
   assert.deepEqual(formatProblems('{"a":1}', "application/vnd.agentmesh.x+json", "`{a, b?}`"), []);
 });
 

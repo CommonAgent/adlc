@@ -165,6 +165,43 @@ on dev wrote went-without.json straight into the records folder, so each job
 overwrote the last, and their suites, which handed each job its own folder as
 the records folder, never noticed (technical debt 639).
 
+## Every computed expected value is worked twice
+
+Since 2026-10-31 every suite also carries `test/worked-values.test.mjs`,
+added by the test writer and never written by the model. Each expected value
+that a rule in the spec decides from the input (a count, a total, a length,
+letters taken from words, an order, which items pass) is written twice: as
+the literal you expect, and as a computation, a few lines of plain code in
+the test file over the same input that apply the spec's rule step by step.
+It is a constant at the top of the file, before any test, and the tests use
+the constant:
+
+    import { worked } from "./worked-values.test.mjs";
+
+    function vowelsIn(s) {
+      let n = 0;
+      for (const ch of s.toLowerCase()) if ("aeiou".includes(ch)) n += 1;
+      return n;
+    }
+    const SENTENCE = "Education provides curious insights.";
+    const TOTAL = worked(14, () => vowelsIn(SENTENCE), "the vowels in SENTENCE");
+
+    test("the vowels of a sentence are counted", () => {
+      assert.equal(countVowels(SENTENCE).total, TOTAL);
+    });
+
+The computation never calls a script, and never repeats the literal. Read
+the rule from the spec word for word: "one letter per word" gives "HTP" for
+"hypertext transfer protocol", whatever the world spells. The test writer
+evaluates every worked value before it delivers the suite and sends back each
+one its own computation does not give. Where no expected value is decided by
+such a rule (every expectation is a reply's wording, a refusal, an exit code
+or what a stand-in model said), the notes say so on a line that starts
+"No worked values:". It was added because suites pinned values worked out
+wrong (16 vowels where the sentence holds 14, "HTTP" where the rule gives
+"HTP"), and the build stopped at the code step on a conflict that was the
+suite's (technical debt 646).
+
 ## Where the nine are thin
 
 Two files import nothing from the scripts and pin by process alone. Four

@@ -104,8 +104,12 @@ test("the worked-values check ships among the references, for both skills that w
   assert.ok(STANDARD_TESTS.includes(WORKED_TEST));
 });
 
+// A worked value, as a suite writes one: a constant at the top of the file.
+// It adds "every worked value agrees with its own computation" to this file.
+const THREE = worked(3, () => 1 + 2, "three");
+
 test("a worked value is given back as it is, and a disagreement names the value pinned and the value computed", () => {
-  assert.equal(worked(3, () => 1 + 2, "three"), 3);
+  assert.equal(THREE, 3);
   assert.equal(disagreement(14, () => 14, "the vowels"), "");
   assert.deepEqual(disagreement({ a: 1 }, () => ({ a: 1 }), "a tally"), "");
   const wrong = disagreement(16, () => 14, "the vowels");

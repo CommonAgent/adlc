@@ -58,7 +58,7 @@ test("conditions are read whichever word opens them, or straight after the headi
 });
 
 test("a sentence's end is not read inside backticks", () => {
-  const c = conventionOf("Markdown: a header `v1.2, at`, then `## Counts`. When empty, `## Nothing`.");
+  const c = conventionOf("Markdown: a header `see. at`, then `## Counts`. When empty, `## Nothing`.");
   assert.deepEqual(c.headings, ["## Counts"]);
   assert.deepEqual(c.cases, [["## Nothing"]]);
 });
