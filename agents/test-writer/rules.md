@@ -38,6 +38,8 @@ The host hands every job of an agent the same records folder, the agent's own, a
 
 So a test hands every job the same records folder, and every suite carries a second file the model does not write: `test/records-per-job.test.mjs`, copied whole from the references. When the spec keeps a record per job, a test runs two jobs of the same kind, each with its own job folder and both with the one records folder, and asserts `checkRecordsPerJob(records, [jobDir1, jobDir2])` returns nothing wrong. A suite for such a spec whose tests never call it goes back with that finding.
 
+Every job writes went-without.json, with no entries when it lacked nothing. The conformance check reads every per-job record after whatever jobs it ran, and those may lack nothing: vowel-meter (build ab_3508d5dec3d4642113) wrote the record only when a job lacked something, its suite left it out of the two-job check with `except`, and it did not conform. So the two jobs are ordinary ones that succeed, and the check holds every job to went-without.json whatever `except` names.
+
 ## Every computed expected value is worked twice
 
 A suite is written before the scripts exist, so whoever writes it works out each expected value, and a value worked out in the head is often wrong. A vowel-counter suite pinned 16 vowels in "Education provides curious insights.", which holds 14; an acronym-maker suite pinned "HTTP" for "hypertext transfer protocol", where the spec takes one letter per word and gives "HTP". No script that keeps the spec can pass a test like that, and the build stops at the code step on a conflict that is the suite's (technical debt 646).

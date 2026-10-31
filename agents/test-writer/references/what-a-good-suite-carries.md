@@ -157,10 +157,14 @@ same kind and then holds them to it:
     // ... two jobs, each with its own job folder, one records folder ...
     assert.deepEqual(checkRecordsPerJob(records, [jobDir1, jobDir2]), []);
 
-Choose jobs that each leave every per-job record: two jobs that go without
-the same thing each note went-without.json. A record the declaration says is
-written only in some cases, and that neither job writes, goes in
-`{ except: ["<its file or name>"] }`. It was added because three agents built
+Run two ordinary jobs, jobs that succeed. Every job writes went-without.json,
+with no entries when it lacked nothing, because the conformance check reads
+it after jobs that may lack nothing (vowel-meter, build
+ab_3508d5dec3d4642113, wrote it only when a job lacked something and did not
+conform). A record the declaration says is written only in some cases, and
+that neither job writes, goes in `{ except: ["<its file or name>"] }`;
+went-without.json never does, and the check holds every job to it whatever
+`except` names. It was added because three agents built
 on dev wrote went-without.json straight into the records folder, so each job
 overwrote the last, and their suites, which handed each job its own folder as
 the records folder, never noticed (technical debt 639).

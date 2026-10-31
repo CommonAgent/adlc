@@ -196,14 +196,19 @@ every job the same records folder, never a folder per job. The suite that
 works, below, hands its job records/job1 as the records folder, an older
 layout the host does not make: do not copy that part. One file in every
 suite checks the rest: test/records-per-job.test.mjs, which the test writer adds itself. Do not write it and do not answer with it.
-When the spec keeps a record per job, write a test that runs two jobs of the
-same kind, each with its own job folder and both with the same records
-folder, choosing jobs that each leave every per-job record (two jobs that go
-without the same thing each note went-without.json); then
+Every job writes went-without.json, with no entries when it lacked nothing,
+because the conformance check reads it after jobs that may lack nothing; a
+test may find it after a successful job with no entries in it, and never
+asserts that it is absent.
+When the spec keeps a record per job, write a test that runs
+two ordinary jobs of the same kind, jobs that succeed, each with its own job
+folder and both with the same records folder; then
 import { checkRecordsPerJob } from "./records-per-job.test.mjs" and assert
 checkRecordsPerJob(records, [jobDir1, jobDir2]) deep-equals []. A record the
 spec says is written only in some cases, and that neither job writes, is
 named in its third argument: { except: ["<the record's file or name>"] }.
+went-without.json is never excepted, and the check holds every job to it
+whatever except names.
 
 Every expected value that a rule in the spec decides from the input (a
 count, a total, a length, letters taken from words, an order, a sum, which
