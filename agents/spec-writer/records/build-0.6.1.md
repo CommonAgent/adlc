@@ -58,3 +58,5 @@ first.
   0.6.3, so Package was not reached in this build.
 - The package maker installed on the fleet host is unchanged: build.py's change
   names its range and keeps its behaviour and words.
+- Proof: build ab_5854e151f6000365ac (vowel-ledger 0.1.0) carried job_seconds
+  60, Package took it, and Conformance said conforms. Debt 648 resolved on it.
