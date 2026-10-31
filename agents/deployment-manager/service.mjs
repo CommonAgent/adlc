@@ -888,7 +888,7 @@ export async function buildInCloud(ins, deps) {
   }
   if (b.status !== "SUCCESS") {
     const why = where.length
-      ? ` A tenant build has no internet: its base image must come from a Google-hosted registry (the tenant registry ${ins.registry}, or mirror.gcr.io/library/<image> for a Docker Hub image), and its steps cannot download anything.`
+      ? ` A tenant build has no internet: its base image comes from the tenant registry (${ins.registry}), another Google-hosted registry, or Docker Hub as far as Google's mirror (mirror.gcr.io) holds it, and its steps cannot download anything.`
       : "";
     stop("build", `build ${id} ended ${b.status}: ${String(b.statusDetail ?? "").slice(0, 300)}. Its log is ${b.logUrl ?? "in Cloud Build"}.${why}`);
   }
