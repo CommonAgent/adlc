@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "code-critic",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reviews a change to an agent package, its scripts, tests and declarations alike, and hands back findings for a person to answer, each naming a place, a claim and a consequence. It checks the house architecture rules with a program, lists every network address written into a script as a warning the same way on every run, calls a model once for the rest, and changes nothing.",
   "license": "Apache-2.0",
   "author": {
@@ -15,7 +15,10 @@
     "check-the-house-rules",
     "review-the-code",
     "check-the-findings",
-    "write-the-findings"
+    "write-the-findings",
+    "review-a-process",
+    "read-the-process",
+    "check-the-process-rules"
   ],
   "extensions": {
     "net.agentdoc.package": {
@@ -33,7 +36,10 @@
               "scripts/write-findings.mjs",
               "scripts/pieces.mjs",
               "scripts/went-without.mjs",
-              "scripts/agent-folder.mjs"
+              "scripts/agent-folder.mjs",
+              "scripts/process-review.mjs",
+              "scripts/process-rules.mjs",
+              "scripts/process-check.mjs"
             ],
             "references": [
               "references/the-house-rules.md",
@@ -86,6 +92,26 @@
             ],
             "references": [
               "references/a-review-that-works.md"
+            ]
+          },
+          "review-a-process": {
+            "scripts": [
+              "scripts/process-review.mjs",
+              "scripts/process-rules.mjs",
+              "scripts/process-check.mjs"
+            ]
+          },
+          "read-the-process": {
+            "scripts": [
+              "scripts/process-review.mjs",
+              "scripts/process-check.mjs"
+            ]
+          },
+          "check-the-process-rules": {
+            "scripts": [
+              "scripts/process-review.mjs",
+              "scripts/process-rules.mjs",
+              "scripts/process-check.mjs"
             ]
           }
         }

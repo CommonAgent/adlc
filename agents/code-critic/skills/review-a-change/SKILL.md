@@ -63,6 +63,9 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/pieces.mjs
 - scripts/went-without.mjs
 - scripts/agent-folder.mjs
+- scripts/process-review.mjs
+- scripts/process-rules.mjs
+- scripts/process-check.mjs
 
 ## References
 

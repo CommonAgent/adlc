@@ -33,6 +33,7 @@ import { answerAgainst, earlierFindings, findingsDocument, replyText } from "./w
 import { fill } from "./pieces.mjs";
 import { note, paragraph } from "./went-without.mjs";
 import { declineFor, declineReply } from "./declines.mjs";
+import { processAmong, reviewProcessJob } from "./process-review.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -81,6 +82,11 @@ export async function runJob({ job, records, work, files = [], textFile = "", en
   const asked = readIf(textFile);
   const declined = declineFor(asked);
   if (declined) return { ok: true, code: 0, declined: declined.id, reply: declineReply(declined) };
+
+  // A process document is reviewed against the process rules, with no model
+  // (review-a-process, scripts/process-review.mjs).
+  const found = processAmong(files, asked);
+  if (found) return reviewProcessJob({ job, records: RECORDS, found, files, version: ownVersion(), now: now() });
 
   // 1. Read the change.
   const r = readChange(files, { asked });
