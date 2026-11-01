@@ -80,6 +80,10 @@ When the scripts exist, the suite is run over them and must pass, and then each 
 
 A job that went ahead without something it takes says so in the reply, near the top. The record is `records/<job>/went-without.json`, written as the job goes, and the reply reads it before it is written. Say what was missing and say what was done instead. A reason goes in only when it is known.
 
+## Test cases for a process
+
+When what came is a process document, the job is §21 test cases, not a suite. The rule they are held to: every phase a person signs is answered approve, changes and reject somewhere in the suite, and every way back is taken, by a changes: answer at the phase it leaves with its key in square brackets. A case carries every item the trigger requires and stands in for every phase that sends, publishes, pays or signs outside the organization. Its id and digest are the document's, written by code. A suite short of the rule goes back once; still short, it is delivered with the shortfall said first, and nothing here writes the missing case by hand.
+
 ## Never
 
 Never write the scripts. Never write a test that passes against nothing. Never change a test to make a script pass. Never call a suite proven when a blanked script went unnoticed. Never reach a network or a model from inside a test. Never accept a credential value written into a message, and never put anything that looks like one into a record or a reply. Never ask a model for a suite a third time.

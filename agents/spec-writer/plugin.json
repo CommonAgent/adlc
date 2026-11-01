@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "spec-writer",
-  "version": "0.6.3",
-  "description": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
+  "version": "0.7.1",
+  "description": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), or work that passes between several agents and people into an Agent Processes 0.9.0 document, checked against the specification, and says plainly what it could not settle without them.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
@@ -14,7 +14,10 @@
     "read-what-was-asked",
     "draft-the-spec",
     "check-it-builds",
-    "ask-what-is-missing"
+    "ask-what-is-missing",
+    "write-a-process",
+    "draft-the-process",
+    "check-the-process"
   ],
   "extensions": {
     "net.agentdoc.package": {
@@ -89,6 +92,33 @@
               "scripts/asked.mjs",
               "scripts/went-without.mjs",
               "scripts/agent-folder.mjs"
+            ]
+          },
+          "write-a-process": {
+            "scripts": [
+              "scripts/process.mjs",
+              "scripts/process-draft.mjs",
+              "scripts/process-check.mjs",
+              "scripts/model-caller.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "references/what-a-good-process-carries.md",
+              "rules.md"
+            ]
+          },
+          "draft-the-process": {
+            "scripts": [
+              "scripts/process-draft.mjs",
+              "scripts/model-caller.mjs"
+            ],
+            "references": [
+              "references/what-a-good-process-carries.md"
+            ]
+          },
+          "check-the-process": {
+            "scripts": [
+              "scripts/process-check.mjs"
             ]
           }
         }

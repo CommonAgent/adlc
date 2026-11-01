@@ -36,7 +36,8 @@
     "sku": "default",
     "covers": {
       "offerings": [
-        "write-a-spec"
+        "write-a-spec",
+        "write-a-process"
       ]
     },
     "price": {

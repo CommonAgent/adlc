@@ -1,0 +1,32 @@
+{
+  "refused": null,
+  "name": "morning competitor summary",
+  "slug": "morning-competitor-summary",
+  "trigger": "the clock reaches seven in the morning on a working day",
+  "carries": [
+    { "name": "blogs", "what": "the addresses of the three competitor blogs to read", "required": true },
+    { "name": "team", "what": "who the approved summary goes to", "required": true }
+  ],
+  "concurrency": "one run a day; a run still open when the next morning comes is closed as abandoned before the next starts",
+  "goal": "a one-page summary of what the three competitor blogs published since the last run, each point with its source, approved by the person who asked and sent to the team",
+  "phases": [
+    { "name": "read-the-blogs", "form": "harness", "does": "every post the three blogs published since the last run, each with its address and date", "holder": { "role": "blog-reader", "kind": "agent" }, "after": ["trigger"], "automation": "autonomous", "reaches_outside": null },
+    { "name": "write-the-summary", "form": "harness", "does": "a one-page summary of the posts, each point with its source", "holder": { "role": "summary-writer", "kind": "agent" }, "after": ["read-the-blogs"], "automation": "autonomous", "reaches_outside": null },
+    { "name": "approve-the-summary", "form": "human", "does": "the person who asked reads the summary and approves it, asks for changes, or rejects it", "holder": { "role": "whoever starts the run", "kind": "person" }, "after": ["write-the-summary"], "automation": "never", "reaches_outside": null },
+    { "name": "send-to-the-team", "form": "system", "does": "the approved summary sent to the team", "holder": { "role": "team-mailer", "kind": "agent" }, "after": ["approve-the-summary"], "automation": "autonomous", "reaches_outside": "sends the summary to the team by email" }
+  ],
+  "handoffs": [
+    { "from": ["read-the-blogs"], "to": ["write-the-summary"], "key": "posts", "what": "every post read, with its address and date" },
+    { "from": ["write-the-summary"], "to": ["approve-the-summary"], "key": "summary", "what": "the one-page summary, each point with its source" },
+    { "from": ["approve-the-summary"], "to": ["send-to-the-team"], "key": "approved-summary", "what": "the summary as approved, with who approved it and when" },
+    { "from": ["send-to-the-team"], "to": ["the team's inboxes"], "key": "sent", "what": "the summary as sent, with the time it went" }
+  ],
+  "deviations": [
+    { "from": "approve-the-summary", "to": "write-the-summary", "key": "changes", "what": "the person names what is wrong, and the summary is written again from the same posts" }
+  ],
+  "systems": [ { "name": "the team's email", "access": "trigger" }, { "name": "the three blogs", "access": "read" } ],
+  "data": ["the three blogs' addresses as handed"],
+  "policy": ["nothing goes to the team before the person who asked approves it", "every point in the summary names its source"],
+  "measures": { "cycle time": "from seven in the morning to the summary in the team's inboxes", "quality gate": "every summary sent was approved first, and every point in it names its source" },
+  "questions": [ { "key": "blogs", "question": "Which three blogs? Give their addresses." } ]
+}

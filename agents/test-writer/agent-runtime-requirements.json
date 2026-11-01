@@ -37,7 +37,8 @@
     "covers": {
       "offerings": [
         "write-a-suite",
-        "prove-a-suite"
+        "prove-a-suite",
+        "write-test-cases"
       ]
     },
     "price": {

@@ -167,6 +167,19 @@ function step(script, env, { spawn = spawnSync } = {}) {
   return { ...doc, code: doc.code ?? r.status ?? 0 };
 }
 
+/** A process document among the files, found by content: text whose first
+ *  lines open with PROCESS: (an Agent Processes document), under whatever
+ *  name the process runner's hops gave it. Its path, or null. */
+export function processAmong(files = [], read = (p) => readFileSync(p, "utf8")) {
+  for (const f of files) {
+    if (!f?.path || /job-manifest\.json$/.test(f.path)) continue;
+    let text;
+    try { text = read(f.path); } catch { continue; }
+    if (/^\s*PROCESS:/m.test(String(text ?? "").split(/\r?\n/).slice(0, 5).join("\n"))) return f.path;
+  }
+  return null;
+}
+
 /** The job. Returns {reply, ...}; the reply is the whole answer. */
 export function runJob({ job, records, work, files = [], textFile = "", spawn = spawnSync, read } = {}) {
   if (!job || !records || !work) return { ok: false, reply: "The job command needs --job, --records and --work." };
@@ -175,6 +188,19 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
   const WORK = join(work, id);
   mkdirSync(RECORDS, { recursive: true });
   mkdirSync(WORK, { recursive: true });
+  // A process document, and no agent's files or spec, is the write-test-cases
+  // offering: §21 test cases for the process, not a suite for scripts. One
+  // pasted into the message is kept as a file and read the same way.
+  let proc = processAmong(files, read);
+  const asked = textFile && existsSync(textFile) ? readFileSync(textFile, "utf8") : "";
+  if (!proc && /^PROCESS:/m.test(asked)) {
+    proc = join(RECORDS, "process.txt");
+    writeFileSync(proc, asked.slice(asked.search(/^PROCESS:/m))); // cut-ok: the document starts at its PROCESS: line; the words above it are the message's
+  }
+  if (proc && !agentFilesAmong(files, read) && !findSpec(files, read)) {
+    const out = step("test-cases.mjs", { PROCESS: proc, RECORDS, WORK, JOB_DIR: job }, { spawn });
+    return { ok: out.ok !== false, code: out.code ?? 0, reply: out.reply ?? "The test cases could not be written." };
+  }
   // The agent's own files are what the spec writer delivers, and they are
   // preferred: found by content, laid out as the agent's folder under this
   // job's records, and the folder is the spec every step reads. A spec.json
@@ -195,7 +221,7 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
   const extra = {};
   // A revision rewrites only the files it names, of the suite that came
   // with it; without a suite there is nothing to revise.
-  const asked = textFile && existsSync(textFile) ? readFileSync(textFile, "utf8") : "";
+  // asked: the message, read above.
   if (isRevision(asked)) {
     if (!suite.length) {
       return { ok: false, code: 3, reply: "Nothing was revised: the message asks to revise the suite, and no suite came with it. Attach the suite as it stands, the agent's files and what the code step sent back, and ask again." };

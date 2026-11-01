@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "test-writer",
-  "version": "0.6.6",
-  "description": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something.",
+  "version": "0.7.0",
+  "description": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something; and writes Agent Processes 0.9.0 test cases for a process document that answer every approval each way and take every way back.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
@@ -15,7 +15,10 @@
     "read-the-spec",
     "write-the-suite",
     "check-the-suite",
-    "say-what-was-written"
+    "say-what-was-written",
+    "write-test-cases",
+    "write-the-cases",
+    "check-the-cases"
   ],
   "extensions": {
     "net.agentdoc.package": {
@@ -31,7 +34,10 @@
               "scripts/reply.mjs",
               "scripts/went-without.mjs",
               "scripts/pieces.mjs",
-              "scripts/agent-folder.mjs"
+              "scripts/agent-folder.mjs",
+              "scripts/test-cases.mjs",
+              "scripts/check-cases.mjs",
+              "scripts/process-check.mjs"
             ],
             "references": [
               "references/what-a-good-suite-carries.md",
@@ -91,6 +97,34 @@
             "scripts": [
               "scripts/reply.mjs",
               "scripts/went-without.mjs"
+            ]
+          },
+          "write-test-cases": {
+            "scripts": [
+              "scripts/job.mjs",
+              "scripts/agent-folder.mjs",
+              "scripts/test-cases.mjs",
+              "scripts/check-cases.mjs",
+              "scripts/process-check.mjs",
+              "scripts/model-caller.mjs",
+              "scripts/went-without.mjs"
+            ],
+            "references": [
+              "rules.md"
+            ]
+          },
+          "write-the-cases": {
+            "scripts": [
+              "scripts/test-cases.mjs",
+              "scripts/model-caller.mjs",
+              "scripts/process-check.mjs",
+              "scripts/check-cases.mjs"
+            ]
+          },
+          "check-the-cases": {
+            "scripts": [
+              "scripts/check-cases.mjs",
+              "scripts/process-check.mjs"
             ]
           }
         }
