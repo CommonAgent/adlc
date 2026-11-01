@@ -14,6 +14,24 @@ Writing the suite first, by something that will not write the code, is what
 turns the Code stage into a stage with an input, an output and a check the code
 writer does not control.
 
+## Test cases for a process
+
+Its third offering, `write-test-cases`, is for a build whose artifact is a
+process. Given an Agent Processes 0.9.0 document (https://agentprocesses.ai/spec.html),
+it writes the test cases section 21 describes, one file each
+(`<name>.test.txt`: `TEST:`, `carried:`, `answer:`, `stand-in:`, `expect:`),
+named and pinned to the document's digest, which the code writes so the
+model never gets it wrong. Its rule: every phase a person signs (`never` or
+`supervised`) is answered approve, changes and reject at least once across
+the suite, and every way back is taken at least once, by a `changes:` answer
+naming the way's key in square brackets. `scripts/check-cases.mjs` refuses a
+suite that misses one, by name, and is run over every suite before it goes
+(`node scripts/check-cases.mjs --process <document> <folder>`). The job
+command (`scripts/job.mjs`) sends a message here when what came with it is a
+process document, found by content, and no agent's files.
+`scripts/process-check.mjs` is [standards/process-check.mjs](../../standards/process-check.mjs)
+byte for byte.
+
 ## What it needs
 
 - Node 22 or later. The scripts use only node's own modules.
@@ -28,7 +46,7 @@ writer does not control.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 72 tests
+node --test test/*.test.mjs                                   # 205 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

@@ -1,16 +1,17 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.6.6",
+  "agent_version": "0.7.0",
   "name": "Test writer",
-  "summary": "Writes the tests an agent's scripts must pass, before the scripts exist, and proves each test would notice a script being wrong.",
+  "summary": "Writes the tests an agent's scripts must pass, before the scripts exist, and proves each test would notice a script being wrong; and writes a process's test cases, every approval and every way back exercised.",
   "will_not": [
     "It will not hand over a suite that passes against nothing as if it were a suite.",
     "It will not write the scripts the tests are for.",
     "It will not change a test to make a script pass.",
     "It will not overwrite tests the package already has.",
-    "It will not repeat a credential written into your message."
+    "It will not repeat a credential written into your message.",
+    "It will not hand over test cases for a process that leave an approval or a way back untested as if they covered it."
   ],
-  "does": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something.",
+  "does": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something; and writes Agent Processes 0.9.0 test cases for a process document that answer every approval each way and take every way back.",
   "offerings": [
     {
       "id": "write-a-suite",
@@ -215,9 +216,82 @@
         "person",
         "agent"
       ]
+    },
+    {
+      "id": "write-test-cases",
+      "name": "Write test cases",
+      "does": "Writes Agent Processes 0.9.0 test cases for a process document, each named and pinned to the document's digest, in which every phase a person signs is answered approve, changes and reject at least once and every way back is taken at least once, and checks that before handing them back.",
+      "inputs": [
+        {
+          "name": "the process document",
+          "kind": "text/vnd.agentprocesses.process",
+          "required": true,
+          "given_by": "either",
+          "about": "The Agent Processes document to test, attached or pasted; found by its content, a first line that opens with PROCESS:."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the test cases",
+          "kind": "text/vnd.agentprocesses.test-case",
+          "when": "per_task",
+          "about": "One file per case, <name>.test.txt, in the form Agent Processes 0.9.0 section 21 gives: TEST: with the case's name, for: with the document's id and digest: with its digest, then carried:, answer:, stand-in: and expect: lines."
+        },
+        {
+          "name": "what the test cases cover",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: `# What the test cases cover`, then `## Approvals` with which case gives each answer at each phase a person signs, `## Ways back` with which case takes each, and `## Not covered`."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "write-the-cases",
+          "name": "Write the cases",
+          "does": "Asks the model for the cases as JSON, and writes each one in code, named and pinned to the document's id and digest.",
+          "how": {
+            "control": "script",
+            "intelligence": "called",
+            "cost": "metered",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-cases",
+          "name": "Check the cases",
+          "does": "Refuses a suite in which a phase a person signs is not answered every way, or a way back is never taken, naming what is missing.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 500000,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
     }
   ],
-  "refusals": "Delivering a suite that passes against nothing. Every suite is run against empty stand-ins for every script the spec names before it is taken, and one that passes there has asserted nothing; it goes back to the writer with that finding, and if it comes back the same it is delivered with the finding said first, never as a suite.\nWriting the scripts the tests are for. This package writes the tests and the interface those tests call, and the scripts that meet them are the code writer's, checked by these tests because it did not write them.\nChanging a test to make a script pass. When a suite is proved against a package and fails, the failure is reported to whoever owns the scripts; nothing here edits a test so that a run goes green.\nCalling a suite proven when it did not notice a broken script. Each script the spec names is blanked in turn and the suite run again; a script whose absence went unnoticed is named in the reply, and the verdict says the suite is thin there rather than that it passed.\nReaching a network or a model from inside a test. Every suite written here hands in the functions that would reach the world, so a test that fails is a decision that failed and not a host that was down.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every record and every line of the reply.\nRewriting a suite the package already has. When the message carries one, it is kept byte for byte, the writer adds new files beside it, and a file answered under a kept name is sent back as a finding rather than written over a test somebody relied on.\nAsking for a whole suite in one answer when the spec names more scripts than one answer holds. The suite is asked for in parts of three scripts, each checked on its own, because an answer cut at the output limit delivers nothing.\nAsking a third time. The suite is written, checked and written once more with the findings, and then it stands. A model told twice that its suite passes against nothing will not fix it on the third ask, and the person is owed the suite plus the truth about it rather than another wait.",
+  "refusals": "Delivering a suite that passes against nothing. Every suite is run against empty stand-ins for every script the spec names before it is taken, and one that passes there has asserted nothing; it goes back to the writer with that finding, and if it comes back the same it is delivered with the finding said first, never as a suite.\nWriting the scripts the tests are for. This package writes the tests and the interface those tests call, and the scripts that meet them are the code writer's, checked by these tests because it did not write them.\nChanging a test to make a script pass. When a suite is proved against a package and fails, the failure is reported to whoever owns the scripts; nothing here edits a test so that a run goes green.\nCalling a suite proven when it did not notice a broken script. Each script the spec names is blanked in turn and the suite run again; a script whose absence went unnoticed is named in the reply, and the verdict says the suite is thin there rather than that it passed.\nReaching a network or a model from inside a test. Every suite written here hands in the functions that would reach the world, so a test that fails is a decision that failed and not a host that was down.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every record and every line of the reply.\nRewriting a suite the package already has. When the message carries one, it is kept byte for byte, the writer adds new files beside it, and a file answered under a kept name is sent back as a finding rather than written over a test somebody relied on.\nAsking for a whole suite in one answer when the spec names more scripts than one answer holds. The suite is asked for in parts of three scripts, each checked on its own, because an answer cut at the output limit delivers nothing.\nAsking a third time. The suite is written, checked and written once more with the findings, and then it stands. A model told twice that its suite passes against nothing will not fix it on the third ask, and the person is owed the suite plus the truth about it rather than another wait.\nHanding over a process's test cases that leave an approval or a way back untested as if they covered it. Every phase a person signs must be answered approve, changes and reject somewhere in the cases, and every way back taken; a suite short of that goes back to the writer once, and if it comes back short it is delivered with the shortfall said first.\nPinning a test case to anything but the document's own digest. The id and the digest are written by code from the document, never by the model, because a runtime refuses a case written for another digest.",
   "escalates": [
     "A suite that still fails its own check after two goes. It is delivered with the finding said first, and what to do about it is the person's decision.",
     "A script the suite did not notice going missing, when a package was proved. Nothing here writes the missing test; the person or the writer does."
@@ -247,6 +321,16 @@
       "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
       "when": "per_task",
       "file": "*/went-without.json"
+    },
+    {
+      "name": "the test cases a process request got: each answer the model gave and the cases read from it, per job",
+      "when": "per_task",
+      "file": "*/cases.json"
+    },
+    {
+      "name": "what the coverage check said of a process's test cases: which case gives each answer and takes each way back, and what is missing, per job",
+      "when": "per_task",
+      "file": "*/cases-checked.json"
     },
     {
       "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
