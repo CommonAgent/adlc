@@ -39,6 +39,7 @@ import { weigh } from "./weigh.mjs";
 import { reviewMarkdown } from "./write-review.mjs";
 import { note, read as wentWithout, sentence } from "./went-without.mjs";
 import { fill, plan as piecesPlan } from "./pieces.mjs";
+import { processAmong, reviewProcessJob } from "./review-process.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -127,6 +128,17 @@ export async function runJob(argv = [], env = process.env, { ask } = {}) {
   const RECORDS = join(args.records, id);
   mkdirSync(RECORDS, { recursive: true });
   rmSync(join(RECORDS, "went-without.json"), { force: true });
+
+  // A process document is reviewed against the process rules, with no model
+  // (review-a-process, scripts/review-process.mjs).
+  const proc = processAmong(args.files, message);
+  if (proc) {
+    const asked = ASKED_TO_ACT.test(message);
+    const { a, reviewPath, reply } = reviewProcessJob({ job: args.job, records: RECORDS, found: proc });
+    appendIndex(args.records, { job: id, package: a.document.id, version: a.document.version, digest: a.digest, verdict: a.verdict, reviewed_at: new Date().toISOString() });
+    const listed = fill(args.job, piecesPlan({ reviewPath })).map((e) => e.name);
+    return { ok: true, code: 0, reply: `${asked ? `${DECLINE} ` : ""}${reply}`, verdict: a.verdict, package: { name: a.document.id, version: a.document.version, digest: a.digest }, refused_for: a.refusals, unreasoned: a.unreasoned.length, listed };
+  }
 
   // ── read the package ──
   const sorted = sortGiven(args.files);
