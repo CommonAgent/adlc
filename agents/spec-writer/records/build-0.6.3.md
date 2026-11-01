@@ -58,3 +58,11 @@ The harness (Claude Code), tests first, then the script.
 - Installed by the deployment manager from deploy request
   dr_f_TLzFfQXy_nvafkJZBd7f4B, approved for the platform account, with the
   settings 0.6.2 ran on (MODEL_PROTOCOL gemini, MODEL_NAME gemini-3.8-flash).
+
+## Proof
+
+digit-ledger (ab_1662734741e995c8df, dev, 2026-11-01): a job that files a
+Markdown report and replies with one sentence. The spec came back with
+run.reply "json:reply". The build stopped at Code for a reason outside this
+change (test-writer 0.6.5's record says which), so it has no Conformance
+verdict yet.

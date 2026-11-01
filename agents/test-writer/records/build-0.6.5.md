@@ -57,3 +57,22 @@ The harness (Claude Code), tests first, then the script.
   reads no reply: it records the job as stopped and tells the sender the work
   was cut short"; consonant-tally (ab_883eddfa8a6c76faa9, "json:reply",
   conforms) passes.
+
+## Proof build: stopped at Code by the sandbox's size limit
+
+digit-ledger (ab_1662734741e995c8df, dev, 2026-11-01). The spec writer drafted
+run.reply "json:reply"; the test writer's suite came back with five files,
+test/printed-reply.test.mjs among them; the code writer's scripts passed the
+whole suite on its host, the printed-reply check included (with an empty
+message the script prints {"code":3,"reply":"There was nothing to count, so
+no digit report was filed."}). Then the sandbox trial refused it: "Its npm
+lockfile is too large to hand to the sandbox." There is no lockfile. Build an
+agent hands the trial every file inline in one environment variable, which
+services/src/conversions/trial.ts caps at 30 KiB gzipped and base64
+(SPEC_MAX). This build's files come to about 30.6 KiB with the fourth standard
+file and 26.1 KiB without it, before the code writer's own records, so the
+11.6 KB file is what tipped it over a limit typical builds already sat near.
+Filed as its own technical debt; the build waits at Code, where Resume can
+finish it once the trial carries large suites by reference (the inputs
+bucket the hand-off gate already uses). The deployment manager refuses a lower
+version, so 0.6.4 could not be put back on dev.
