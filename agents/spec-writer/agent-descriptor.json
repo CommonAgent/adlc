@@ -1,16 +1,18 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.6.3",
+  "agent_version": "0.7.0",
   "name": "Spec writer",
-  "summary": "Turns what you want an agent to do into the agent's own files a builder takes, and says plainly what it could not settle without you.",
+  "summary": "Turns what you want an agent to do into the agent's own files a builder takes, or the work you describe into a process document, and says plainly what it could not settle without you.",
   "will_not": [
     "It will not choose the agent's name or its price; it asks you.",
     "It will not give the agent access to a system you did not ask for.",
     "It will not write the scripts the spec names, or build, pack or deploy anything.",
     "It will not say a spec builds when the files it names do not exist yet.",
-    "It will not repeat a credential written into your message."
+    "It will not repeat a credential written into your message.",
+    "It will not write an agent's name into a process; each step is held by a role the catalog answers next.",
+    "It will not write a process that sends messages to people who did not ask, signs in to somebody else's account, or spends money."
   ],
-  "does": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), and says plainly what it could not settle without them.",
+  "does": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), or work that passes between several agents and people into an Agent Processes 0.9.0 document, checked against the specification, and says plainly what it could not settle without them.",
   "offerings": [
     {
       "id": "write-a-spec",
@@ -147,9 +149,89 @@
         "person",
         "agent"
       ]
+    },
+    {
+      "id": "write-a-process",
+      "name": "Write a process",
+      "does": "Writes an Agent Processes 0.9.0 document from what somebody says the work is: the steps, who holds each by role, what passes between them, where a person signs and the ways back. It checks the document against the specification before handing it back, and names what only the person can settle.",
+      "inputs": [
+        {
+          "name": "what the process is for",
+          "kind": "text",
+          "required": true,
+          "given_by": "person",
+          "about": "The work, in your own words: what starts it, who or what does each part, where you want to sign, and where it goes when it is done."
+        },
+        {
+          "name": "an earlier process document",
+          "kind": "text/vnd.agentprocesses.process",
+          "required": false,
+          "given_by": "either",
+          "about": "A process document this writer delivered before, to revise rather than write again; found by its content, a first line that opens with PROCESS:."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the process document",
+          "kind": "text/vnd.agentprocesses.process",
+          "when": "per_task",
+          "about": "The process as an Agent Processes 0.9.0 document (https://agentprocesses.ai/spec.html): its header, trigger and what a run is handed, concurrency, goal, the phases with who holds each by role and at what automation level, the handoffs, the ways back, the bindings, policy and measures. Checked against the specification's conformance items before it is handed on."
+        },
+        {
+          "name": "what is still open",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: `# What is still open`, then one bullet per question, `` `key`: question ``: always the name, the owner, who signs and what may reach outside, then anything else the words left open."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "draft-the-process",
+          "name": "Draft the process",
+          "does": "Asks the model for the parts of the process as JSON, and writes the document from them in code, holders by role and never an agent's name.",
+          "how": {
+            "control": "script",
+            "intelligence": "called",
+            "cost": "metered",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-process",
+          "name": "Check the process",
+          "does": "Runs the process check over the document, sends what it finds back to the model once, and asks what only the person can settle.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 500000,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
     }
   ],
-  "refusals": "Naming an agent. A name becomes a handle on the mesh that cannot be changed without a redeploy, so it is asked for and never chosen here, and a draft that quietly carries one has that name taken back out and put to the person as a question.\nPricing an agent. What a job costs is somebody's money, and a number invented here would be a number they never agreed. It is asked, and the draft is delivered with the price still open.\nGranting an agent access to anything. A system, a credential or a directory the request never mentioned is authority nobody gave, so it is asked for by name and by whether it reads or writes. An empty list is an answer this agent will take; an invented entry is not.\nWriting the scripts a spec names. This package writes the declaration and nothing else, and the files it names are stood in for as empty when the builder is run, which is said out loud every time rather than left for somebody to discover.\nBuilding, packing or deploying anything. The draft is a file in a job folder. What becomes of it is somebody else's act, and this agent has no part in it.\nReporting that a spec builds when the files it names do not exist. The builder was run against empty stand-ins, so what was checked is the declaration, and the reply says which files were stood in for every time it says anything at all about building.\nAsking a third time. The draft is written, checked and written once more with the findings, and then it stands. A model told twice that it wrote no refusals will not write them on the third ask, and the person is owed the draft plus the truth about it rather than another wait.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every record and every line of the reply.\nDelivering a draft that was changed after the drafting step wrote it. The drafting step records the draft's digest, and a draft edited by hand, or cut by a tool that reads long lines short, is refused with a reply saying so rather than delivered as the agent's work.\nPutting an address into a package's systems. The builder refuses a package whose install file carries one, so a keyless public read is declared as a system with no credential and its address stays in the script, and a finding says so on the second go.\nDeclaring a system the architecture record does not name. The record is the Architecture stage's and comes before the Design; a system the design needs and the record lacks is taken out of the draft and goes back to the architect as a question, and the record is revised first.",
+  "refusals": "Naming an agent. A name becomes a handle on the mesh that cannot be changed without a redeploy, so it is asked for and never chosen here, and a draft that quietly carries one has that name taken back out and put to the person as a question.\nPricing an agent. What a job costs is somebody's money, and a number invented here would be a number they never agreed. It is asked, and the draft is delivered with the price still open.\nGranting an agent access to anything. A system, a credential or a directory the request never mentioned is authority nobody gave, so it is asked for by name and by whether it reads or writes. An empty list is an answer this agent will take; an invented entry is not.\nWriting the scripts a spec names. This package writes the declaration and nothing else, and the files it names are stood in for as empty when the builder is run, which is said out loud every time rather than left for somebody to discover.\nBuilding, packing or deploying anything. The draft is a file in a job folder. What becomes of it is somebody else's act, and this agent has no part in it.\nReporting that a spec builds when the files it names do not exist. The builder was run against empty stand-ins, so what was checked is the declaration, and the reply says which files were stood in for every time it says anything at all about building.\nAsking a third time. The draft is written, checked and written once more with the findings, and then it stands. A model told twice that it wrote no refusals will not write them on the third ask, and the person is owed the draft plus the truth about it rather than another wait.\nAccepting a credential value written into a message. A credential is named, never carried, and anything that looks like one is left out of every record and every line of the reply.\nDelivering a draft that was changed after the drafting step wrote it. The drafting step records the draft's digest, and a draft edited by hand, or cut by a tool that reads long lines short, is refused with a reply saying so rather than delivered as the agent's work.\nPutting an address into a package's systems. The builder refuses a package whose install file carries one, so a keyless public read is declared as a system with no credential and its address stays in the script, and a finding says so on the second go.\nDeclaring a system the architecture record does not name. The record is the Architecture stage's and comes before the Design; a system the design needs and the record lacks is taken out of the draft and goes back to the architect as a question, and the record is revised first.\nNaming an agent in a process. Each step of a process is held by a role, or by the kind of agent it needs, and the catalog answers each role at the next stage with an agent, a process, or a new agent to build; an agent's name or handle the person did not give is taken out of the draft and the step is held by a role instead.\nWriting a process that sends messages to many people who did not ask for them, deceives or harasses someone, acts on an account the person does not own, signs in to somebody else's account, or spends money. The request is answered with one sentence saying why, and no document is written.\nHanding back a process document the process check has not read. Every document is checked against Agent Processes 0.9.0 before it goes; what the check finds goes back to the model once, and what is still wrong after that is said in the reply and asked as an open question, never passed on as if it conformed.\nDeciding who owns a process, who signs it, or what it may reach outside. Each is drafted, said, and asked as a question until the person answers.",
   "escalates": [
     "A name, a price, or access to a system. None of the three can be inferred from what somebody wants an agent to do, and each one is a commitment they would be held to.",
     "A draft that still carries findings after two goes. It is delivered with the findings named, and what to do about it is the person's decision."
@@ -189,6 +271,21 @@
       "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
       "when": "per_task",
       "file": "*/went-without.json"
+    },
+    {
+      "name": "what a process request asked: the words, the files that came with it, and the earlier document by its digest, per job",
+      "when": "per_task",
+      "file": "*/process-asked.json"
+    },
+    {
+      "name": "each answer the model gave to a process request, with the draft read from it and what was wrong with it, per job",
+      "when": "per_task",
+      "file": "*/process-draft.json"
+    },
+    {
+      "name": "the process check's last reading of the document: whether it conforms, its findings and its digest, per job",
+      "when": "per_task",
+      "file": "*/process-check.json"
     },
     {
       "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",

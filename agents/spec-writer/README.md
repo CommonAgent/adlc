@@ -21,6 +21,32 @@ It holds the Design part of the Architecture and Design stage, after the
 the draft declares exactly the systems the record names; a step that needs
 another goes back to the architect as a question instead of into the draft.
 
+## Writing a process
+
+Its second offering, `write-a-process`, takes work somebody describes that
+passes between several agents or people, or waits for a person to approve it,
+and writes it as an Agent Processes 0.9.0 document
+(https://agentprocesses.ai/spec.html): the trigger and what a run is handed,
+whether runs overlap, the goal, every step with who holds it by role or by the
+kind of agent it needs, its automation level, the handoffs, the ways back,
+the bindings, policy and measures. It replaced the
+[solution planner](../solution-planner) (owner, 2026-11-01): a build whose
+artifact is a process carries that one document from Requirements on, and
+every later stage reads it.
+
+One command does the job (`scripts/process.mjs`). The model drafts the parts
+as JSON; code writes the document from them (`scripts/process-draft.mjs`), so
+a key is on every handoff and no step names an agent. The process check
+(`scripts/process-check.mjs`, [standards/process-check.mjs](../../standards/process-check.mjs)
+byte for byte) runs over every document before it goes; what it finds goes
+back to the model once, and what is still wrong after that is said and asked
+rather than passed on. The name, the owner, who signs and what may reach
+outside are always asked. The planner's refusals carry over: no messages to
+many people who did not ask, no deception or harassment, no action on or
+signing in to an account the person does not own, no spending money.
+[references/what-a-good-process-carries.md](references/what-a-good-process-carries.md)
+says what goes in a document and why.
+
 ## Standing assets
 
 Given an architecture record, the draft declares exactly the standing assets
@@ -60,7 +86,7 @@ instructions are in `skills/<slug>/SKILL.md`, the scripts are in `scripts/`, and
 works under are in `rules.md` and `references/`.
 
 ```sh
-node --test test/*.test.mjs                                   # 139 tests
+node --test test/*.test.mjs                                   # 237 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Checks a process document against Agent Processes 0.9.0
-// (https://agentprocesses.ai/spec.html; the source is CommonAgent/common-agent-standards
+// (agentprocesses.ai/spec.html; the source is CommonAgent/common-agent-standards
 // processes/SPEC.md). It reads the document and says two things:
 //
 //   failures  each §17.1 conformance item the document fails, by the section
