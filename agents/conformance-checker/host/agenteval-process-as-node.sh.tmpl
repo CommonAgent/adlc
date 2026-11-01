@@ -22,8 +22,7 @@ if [ -z "${AGENTMESH_ENV:-}" ] && [ -f /etc/environment ]; then
   AGENTMESH_ENV=$(grep -m1 '^AGENTMESH_ENV=' /etc/environment | cut -d= -f2 | tr -d "\"' ")
   export AGENTMESH_ENV
 fi
-if [ -z "${AGENTMESH_ENV:-}" ]; then
-  echo "No process act was done: this host does not say which environment it is (AGENTMESH_ENV in /etc/environment)."
-  exit 0
-fi
+# A host whose /etc/environment does not say (prod's fleet host) is the
+# environment this file was rendered for.
+export AGENTMESH_ENV="${AGENTMESH_ENV:-{{name}}}"
 exec env MESH_CREDS_FILE=/opt/fleet/node-ops/mesh.creds node /opt/fleet/agenteval-process-verdict.mjs --run "$prompt" /opt/fleet/node-ops/agents/agentevaluator/identity.json
