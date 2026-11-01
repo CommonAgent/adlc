@@ -1,0 +1,48 @@
+PROCESS: plan a page    id: example/plan-a-page v1
+owner: owner@example.com   effective: 2026-11-01
+trigger: a person hands over the address of a page to plan from
+         carries: url - the page's address, required
+         carries: angle - what the person wants to think about, optional
+concurrency: runs may overlap - one run per page
+goal: a plan of lenses for the page, its central claim named and each lens
+      tied to the page's own words, approved by the owner
+
+phases:
+  read-the-page       - runs read-site: the page and the same-site pages it
+                        links to, each page's words in order
+                        owner: site-reader
+                        after: trigger    automation: autonomous
+  plan-the-lenses     - runs plan-lenses: the page's central claim, the
+                        facts it states in its own words, and the lenses
+                        that suit the angle
+                        owner: ponder-planner
+                        after: read-the-page    automation: autonomous
+  approve-the-plan    - human: the owner reads the plan and says yes, asks
+                        for changes, or turns it down
+                        owner: owner@example.com
+                        after: plan-the-lenses    automation: never
+
+handoffs:
+  read-the-page -> plan-the-lenses [site-read]: the page's words, in order
+  plan-the-lenses -> approve-the-plan [plan]: the central claim and the
+    lenses, each with the facts it rests on
+
+deviations:
+  approve-the-plan -> plan-the-lenses [changes]: the owner names what is
+    wrong with the plan; the lenses are planned again
+
+bindings:
+  roster: site-reader and ponder-planner are agents, named in the roster
+      the owner sends with the run; the owner signs the plan
+  systems: none of the phases reaches a system of its own; each agent
+      brings what its package declares
+  data: the page's address and the angle
+
+policy:
+  a lens rests only on facts in the page's own words; nothing is
+      published or sent outside the run
+
+measures:
+  cycle time: from the address to the approved plan
+  quality gate: every approved plan names the page's central claim and
+      each of its lenses cites the page's own words
