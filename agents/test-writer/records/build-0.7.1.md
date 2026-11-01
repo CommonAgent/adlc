@@ -36,3 +36,7 @@ inside the package's own tests, for the reason 0.7.0 recorded: the test
 writer takes no change to a package that already carries a suite, and the
 code writer's check refuses a change to a few of a package's scripts unless
 every script the package names is delivered.
+
+## On dev
+
+- Installed on dev (dr_6Shpxh2mAld4-xkRTF30xlH7), package d344031194d2f1e0....

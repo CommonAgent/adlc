@@ -30,3 +30,7 @@ inside the package's own tests, for the reason 0.7.0 recorded: the test
 writer takes no change to a package that already carries a suite, and the
 code writer's check refuses a change to a few of a package's scripts unless
 every script the package names is delivered.
+
+## On dev
+
+- Installed on dev (dr_Q9sK_oEXdTeGgNnia83jQvWr), package ac7b0b727935a98a...; it drafted the document in both test runs of the wired solution sol_10dacdfd4828bee780 (AgentMesh lane STAGES proof).
