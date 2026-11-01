@@ -10,7 +10,8 @@
 //   node --test test/process-review.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AGENT, frontMatter, host, run } from "./helpers.mjs";
 import { processAmong, processAssessment, processReviewMarkdown } from "../scripts/review-process.mjs";
@@ -60,6 +61,11 @@ const files = (doc) => [{ name: "competitor-blog-digest.process.txt", bytes: Buf
 test("a process document is found by its content, attached or in the message", () => {
   assert.equal(processAmong([], PLANTED).name, "the message");
   assert.equal(processAmong([], "Please review this package.\nspending limit: 3 USD per day\n"), null);
+  // The name the host puts on an attached file (a hop number and an id) is not the document's name.
+  const dir = mkdtempSync(join(tmpdir(), "sr-process-"));
+  const hopped = join(dir, "0-k8oY7cpg-competitor-blog-digest.process.txt");
+  writeFileSync(hopped, PLANTED);
+  assert.equal(processAmong([{ path: hopped }], "").name, "competitor-blog-digest.process.txt");
 });
 
 test("the planted problem refuses the process: a step that posts publicly with no person's yes before it", () => {

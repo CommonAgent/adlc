@@ -78,6 +78,9 @@ test("a process document attached is found by its content, and nothing else is",
   assert.equal(found.name, "competitor-blog-digest.process.txt");
   assert.match(found.text, /^PROCESS: competitor blog digest/);
   assert.equal(processAmong([], "please review"), null);
+  // The name the host puts on an attached file (a hop number and an id) is not the document's name.
+  const hopped = setUp(PLANTED, "0-A23KdF0A-competitor-blog-digest.process.txt");
+  assert.equal(processAmong([{ path: hopped.file, media_type: "text/vnd.agentprocesses.process" }], "").name, "competitor-blog-digest.process.txt");
   assert.equal(processAmong([], PLANTED).name, "the message");
 });
 
