@@ -13,7 +13,7 @@ when a review was given a process document and it has to be found among the atta
 
 ## How to do it
 
-${REVIEW} finds the process document by its content (a PROCESS: line and a phases: part), attached or in the message, and scripts/process-check.mjs reads it the way the process runner does. Nothing is judged here.
+scripts/review-process.mjs finds the process document by its content (a PROCESS: line and a phases: part), attached or in the message, and scripts/process-check.mjs reads it the way the process runner does. Nothing is judged here.
 
 ## Scripts
 
