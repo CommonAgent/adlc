@@ -330,6 +330,19 @@ export function namedForRevision(existing = [], asked = "") {
   return out;
 }
 
+/** What a revision delivers (AgentMesh debt 665): the files it was sent back
+ *  for and the test writer's standard checks. A file the answer wrote under
+ *  any other name is dropped and named, never delivered: a revision changes
+ *  the named tests in place. */
+export function revisionDelivery(files = [], revise = []) {
+  const keep = (p) => revise.includes(p) || STANDARD_NAMES.includes(String(p).split("/").pop());
+  return {
+    files: files.filter((f) => keep(f.path)),
+    dropped: files.filter((f) => !keep(f.path)).map((f) => f.path),
+    revised: files.map((f) => f.path).filter((p) => revise.includes(p)),
+  };
+}
+
 /** What is said when the suite is written in parts. One answer cannot hold a
  *  whole suite for a package of many scripts: the planner's eight came back
  *  cut at the output limit with nothing delivered (debt 66). */
@@ -864,6 +877,14 @@ export function staticFindings(files = [], declared = null, { existing = [], rev
   if (revise.length && !files.some((f) => revisable.has(f.path))) {
     out.push(`the answer rewrites none of the files it was sent back for: ${revise.join(", ")}; answer with each of them whole, under its own name`);
   }
+  // A revision changes the named tests in place (AgentMesh debt 665): on dev
+  // the test writer wrote test/reply.test.mjs and left the named test as it
+  // was, so the code step met the same wrong test again.
+  if (revise.length) {
+    for (const f of files) {
+      if (!revisable.has(f.path) && !kept.has(f.path)) out.push(`${f.path} is a new file, and a revision changes only the files it was sent back for, in place: make the change inside ${revise.join(", ")}`);
+    }
+  }
   // Reach and count are over the suite as it will stand: what it already
   // has, and what came back. In a part they are over that part's scripts.
   const answered = new Set(files.map((f) => f.path));
@@ -1133,6 +1154,17 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       generated.push(...refreshed.generated);
     }
     out.files = [...out.files.filter((f) => !STANDARD_TESTS.includes(f.path)), ...generated];
+    // A revision delivers the named files changed in place and nothing under
+    // a new name; one that changed none of them is refused (AgentMesh debt 665).
+    if (revise.length) {
+      const got = revisionDelivery(out.files, revise);
+      if (!got.revised.length) {
+        console.log(JSON.stringify({ ok: false, code: 3, reply: `Nothing was revised: the answer did not change ${revise.map((p) => p.replace(/^test\//, "")).join(", ")}, the test file${revise.length === 1 ? "" : "s"} the code step sent back${got.dropped.length ? `, and wrote ${got.dropped.map((p) => p.replace(/^test\//, "")).join(", ")} instead, which a revision never delivers` : ""}. Ask again.` }));
+        process.exit(0);
+      }
+      if (got.dropped.length) out.findings = [...(out.findings ?? []), `not delivered, because a revision changes only the files it was sent back for: ${got.dropped.join(", ")}`];
+      out.files = got.files;
+    }
     // A revised file replaces the one it revises; the rest are kept.
     const revised = out.files.map((f) => f.path).filter((p) => revise.includes(p));
     existing.splice(0, existing.length, ...existing.filter((f) => !revised.includes(f.path)));
