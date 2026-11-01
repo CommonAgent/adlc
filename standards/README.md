@@ -10,6 +10,7 @@ version each Builder pins.
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [stages.json](stages.json) | the lifecycle's 24 stages, in order, in seven phases (`version` in the file) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
 | [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.1: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
+| [process-check.mjs](process-check.mjs) | the check of a process document against Agent Processes 0.9.0: its §17.1 conformance items and the four tests of §20.1 (see [The process check](#the-process-check)) | the spec writer, which runs it over every process document before handing it back; the test writer, which reads a document's phases, deviations and digest through it; review and conformance |
 | [standing-asset-schemas.json](standing-asset-schemas.json) | the list of known standing-asset kinds | the package maker, which refuses a `can_use` entry naming any other; the solution architect and the spec writer, which choose from it |
 
 ## What a standing asset is
@@ -158,3 +159,48 @@ at most n builds (50 by default), and `--all-files` opens every file instead
 of the first of each build. Its tests are `test/lifecycle-api.test.mjs`.
 
 AgentMesh (https://agentmesh.ai) is the first service that implements it.
+
+## The process check
+
+When a build's artifact is a process, it is an Agent Processes 0.9.0
+document (https://agentprocesses.ai/spec.html) from Requirements on, and
+every later stage reads that one document. [process-check.mjs](process-check.mjs)
+reads one and says two things (node 22, no dependencies):
+
+- **failures**: each conformance item of the specification's §17.1 the
+  document fails, by the section that states it. The parts a document must
+  carry, a version beside an id of the form `<team>/<slug>`, an owner and
+  `concurrency:`; phase names in lowercase kebab, once each, each resolving to
+  one of the five forms, with `owner:`, `after:` naming declared phases or
+  the trigger, and an automation level from the list; a harness phase naming
+  its output; a phase that runs a process citing it by id and version, not
+  at `never`, with no chain of `runs process` lines back to itself; no cycle
+  in `after:`; handoffs and deviations naming phases that exist (or a role
+  the roster names, or a destination in prose), saying what crosses, `+`
+  only on the sending side and `/` only on the receiving side; the trigger's
+  items unique, each saying required or optional; keys unique across
+  handoffs, deviations, records and run-scoped lines; run-scoped lines with
+  `from:` and `until:`; `roster:`, `systems:` and `data:` with an access word
+  on every system; a quality gate; an `extensions:` block last, each
+  extension with a version. Whether a goal is a state and a trigger an
+  event are a reader's judgment and are not reported.
+- **findings**: what the four tests of §20.1 would send somewhere else, where
+  a program can see it: a line the specification does not define outside the
+  `extensions:` block (`undefined-line`, §20.3), two items the trigger
+  carries under one name (`carries-not-unique`), a handoff naming a phase
+  that does not exist (`handoff-unknown-phase`), and a gate
+  (`automation: never`) that names nobody to sign it (`gate-without-holder`).
+
+```
+node standards/process-check.mjs docs/processes/new-process.process.txt
+node standards/process-check.mjs outer.process.txt --inner inner.process.txt --json
+```
+
+It exits 0 when the document conforms and has no findings, and 1 otherwise.
+It reads the grammar the AgentMesh process runner reads, and imports nothing
+from it. A document in a Markdown page is read from its fenced block. Its
+`--json` result carries the document's `digest`, the sha256 of its text with
+line endings written as `\n`, which a test case is pinned to (§21.1). The
+spec writer and the test writer carry it byte for byte as
+`scripts/process-check.mjs`, and their tests hold each copy to this file. Its
+tests are `test/process-check.test.mjs`.
