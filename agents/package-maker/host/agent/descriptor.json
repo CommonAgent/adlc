@@ -109,6 +109,64 @@
           "currency": "USD"
         }
       }
+    },
+    {
+      "id": "pack-a-process",
+      "name": "Sign a process",
+      "does": "Checks a process document against Agent Processes, pins its shape and text digests, bundles its test cases and signs a build record naming both digests and who held each stage. Nothing is run.",
+      "inputs": [
+        {
+          "name": "the process document",
+          "kind": "text/plain",
+          "required": true,
+          "given_by": "agent"
+        },
+        {
+          "name": "the test cases",
+          "kind": "text/plain",
+          "required": true,
+          "given_by": "agent"
+        },
+        {
+          "name": "who held each stage",
+          "kind": "application/vnd.agentmesh.process-holders+json",
+          "required": false,
+          "given_by": "agent"
+        },
+        {
+          "name": "the suite's results",
+          "kind": "application/vnd.agentmesh.suite-results+json",
+          "required": false,
+          "given_by": "agent"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "process bundle",
+          "kind": "application/vnd.agentmesh.process-bundle+json",
+          "when": "per_task"
+        },
+        {
+          "name": "build record",
+          "kind": "application/vnd.agentmesh.process-build-record+json",
+          "when": "per_task"
+        }
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     }
   ],
   "interaction": "service",

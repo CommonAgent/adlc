@@ -15,6 +15,19 @@
 VERTEX=(-c 'model="claude-sonnet-5-5"' -c 'model_provider="vertex"'
   -c 'model_providers.vertex={ name = "Claude on Vertex AI (fleet bridge)", base_url = "http://127.0.0.1:8788/v1", wire_api = "responses" }')
 cd "$HOME" || exit 1
+# A process first (deploymgr-process-install.mjs, the process kind): a signed
+# process build record attached, or the words install-a-process or
+# retire-a-process, is installed or retired by that procedure, run as the ops
+# node's user, which alone can read this agent's job folders (one sudoers rule,
+# as the package maker's pack). Exit 3 is "not process work", and Codex takes
+# the turn as before; so does any other failure of it.
+if [ -f /opt/fleet/deploymgr-process-as-node.sh ]; then
+  prompt=$(mktemp)
+  printf '%s' "$1" > "$prompt"
+  chmod 0644 "$prompt"
+  if sudo -n -H -u mesh-node /opt/fleet/deploymgr-process-as-node.sh "$prompt"; then rm -f "$prompt"; exit 0; fi
+  rm -f "$prompt"
+fi
 out=$(mktemp)
 /usr/bin/codex exec "${VERTEX[@]}" --skip-git-repo-check --sandbox danger-full-access \
   --output-last-message "$out" "$1" >/dev/null 2>&1 </dev/null

@@ -13,4 +13,12 @@ if [ ! -f "$prompt" ] || [ -L "$prompt" ]; then echo "no prompt file at $prompt"
 # No REQUIRED_CODER: the builder packs any code writer's scripts. Setting it
 # here would require one writer's signed delivery manifest for every script.
 cd /home/mesh-node || exit 1
+# A process first (agentbuilder-process-pack.mjs, the process kind): when the
+# attached files carry a process document it is checked, bundled with its
+# test cases and signed, and that is the answer. Exit 3 is "no process
+# document here", and the agent's pack below takes the turn as before; so does
+# any other failure of the process kind, so it can never stop an agent's pack.
+if [ -f /opt/fleet/agentbuilder-process-pack.mjs ]; then
+  node /opt/fleet/agentbuilder-process-pack.mjs --run "$prompt" /opt/fleet/node-ops/agents/agentbuilder/identity.json && exit 0
+fi
 exec python3 /opt/fleet/agentbuilder-pack.py --run "$prompt" /opt/fleet/node-ops/agents/agentbuilder/identity.json

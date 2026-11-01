@@ -59,6 +59,16 @@ it writes is always the current names.
   run's work: it lays the delivered files out where the spec names them,
   builds, and files the tarball and a signed build record as the job's output.
 - `request.py` files a built package with the operator's deploy queue.
+- `process-pack.mjs` is the process kind (`pack-a-process`, and a run's
+  `build` whose attachments carry a process document): the process check
+  (`standards/process-check.mjs`) must pass, the document's text and §21.1
+  shape digests are pinned, its test cases are bundled (each for this process
+  and pinned to its shape), and an agent-build-record-v1 with `kind:
+  "process"` is signed, naming both digests, the bundle, the suite's results
+  when they came and who held each stage. A process is not an Agent Package,
+  and nothing is run. `shared/process-records.mjs` is what the three process
+  kinds share: the digests, the records' signing, the framed prompt and the
+  pieces.
 - `provenance.mjs` is the optional required coder check. Set `REQUIRED_CODER` to
   a code writer's public key (one or several, comma separated) and the builder
   packs only scripts that writer delivered, traced through the signed delivery

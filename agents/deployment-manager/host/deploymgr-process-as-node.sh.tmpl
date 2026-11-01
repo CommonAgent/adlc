@@ -1,0 +1,30 @@
+#!/bin/bash
+# The deployment manager's process kind (process-install.mjs: install or
+# retire a signed process), run as the ops node's user (mesh-node), which alone
+# can read this agent's folder on the node: the job folders, the files a run
+# handed over, and its key. Called by /opt/fleet/brains/deploymgr.sh through
+# one sudoers rule, with the framed prompt in a file, and nothing else, the
+# way the package maker's pack is (agentbuilder-pack-as-node.sh). Exit 3 means
+# the message is not process work, and the brain goes on as before.
+#
+# It writes nothing on this host but the job folder's pieces: what a process
+# install changes is in the platform, through the process-install doors, each
+# call signed with this agent's own key, and only for an install the owner
+# approved there.
+set -u
+prompt="${1:-}"
+case "$prompt" in /tmp/tmp.*) ;; *) echo "the process install takes a prompt file the deployment manager's brain made" >&2; exit 2;; esac
+if [ ! -f "$prompt" ] || [ -L "$prompt" ]; then echo "no prompt file at $prompt" >&2; exit 2; fi
+cd /home/mesh-node || exit 1
+# Which environment this host is (/etc/environment, which sudo does not pass on):
+# the platform it calls and the naming service it asks are that environment's,
+# never prod by default.
+if [ -z "${AGENTMESH_ENV:-}" ] && [ -f /etc/environment ]; then
+  AGENTMESH_ENV=$(grep -m1 '^AGENTMESH_ENV=' /etc/environment | cut -d= -f2 | tr -d "\"' ")
+  export AGENTMESH_ENV
+fi
+if [ -z "${AGENTMESH_ENV:-}" ]; then
+  echo "No process act was done: this host does not say which environment it is (AGENTMESH_ENV in /etc/environment)."
+  exit 0
+fi
+exec node /opt/fleet/deploymgr-process-install.mjs --run "$prompt" /opt/fleet/node-ops/agents/deploymgr/identity.json

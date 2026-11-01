@@ -40,6 +40,13 @@ runs the conformance check published with the role the agent claims.
 - `input-cases.mjs`, `input-check.mjs`, `trial-cases.mjs` and `trial-check.mjs`
   derive and send the input and trial cases.
 - `sign.mjs` and `submit-record.mjs` sign the verdict and file it.
+- `process-verdict.mjs` is the process kind (`check-a-process`): an installed
+  process's document checked against Agent Processes (§17.1) and every test
+  case of the suite the package maker signed read back as the platform's test
+  runs, into one agent-eval-record-v1 with `kind: "process"`, filed with the
+  registry under `process.<team>.<slug>`. The cases are the process's own,
+  never the checker's. The brain hands it the message first, as the ops node's
+  user (`host/agenteval-process-as-node.sh.tmpl`), and no model is woken.
 - `AGENTS.md` is the instructions the agent's harness reads.
 - `host/` holds the agent's descriptor, listing and brain.
 

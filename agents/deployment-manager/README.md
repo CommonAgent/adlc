@@ -45,6 +45,16 @@ its name.
   starts.
 - `deploy-executor.py`: the loop that collects deploy requests the owner has
   approved and hands each one to the procedures.
+- `process-install.mjs`: the process kind (`install-a-process`, `retire-a-process`).
+  A process installs into the platform, not onto a host: it checks that the
+  package maker's signed build record names the bundle exactly, then asks the
+  platform, through its process-install doors and only for an install the
+  owner approved there, to file the document with the organization's
+  processes, publish it as a solution and bind its trigger or schedule (or,
+  retiring, to undo all three), and signs an agent-deployment-record-v1 with
+  `kind: "process"`. The brain hands it the message first, as the ops node's
+  user (`host/deploymgr-process-as-node.sh.tmpl`, one sudoers rule), and no
+  model is woken for it.
 - `host/`: the agent's descriptor and listing, its brain, and the placement
   templates for a platform project and a tenant project.
 
