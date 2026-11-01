@@ -20,6 +20,18 @@ cd "$HOME" || exit 1
 case "$1" in
   *derive-test*|*"derive the test"*|*"Show the test"*) exec python3 /opt/fleet/agenteval-derive-test.py --prompt "$1" ;;
 esac
+# A process first (agenteval-process-verdict.mjs, the process kind): a signed
+# process deployment record attached is judged by that procedure, run as the
+# ops node's user, which alone can read this agent's job folders (one sudoers
+# rule, as the package maker's pack). Exit 3 is "not process work", and Codex
+# takes the turn as before; so does any other failure of it.
+if [ -f /opt/fleet/agenteval-process-as-node.sh ]; then
+  prompt=$(mktemp)
+  printf '%s' "$1" > "$prompt"
+  chmod 0644 "$prompt"
+  if sudo -n -H -u mesh-node /opt/fleet/agenteval-process-as-node.sh "$prompt"; then rm -f "$prompt"; exit 0; fi
+  rm -f "$prompt"
+fi
 out=$(mktemp)
 /usr/bin/codex exec "${VERTEX[@]}" --skip-git-repo-check --sandbox workspace-write -c sandbox_workspace_write.network_access=true \
   --output-last-message "$out" "$1" >/dev/null 2>&1 </dev/null

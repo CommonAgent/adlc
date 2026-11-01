@@ -87,6 +87,47 @@
           "currency": "USD"
         }
       }
+    },
+    {
+      "id": "check-a-process",
+      "name": "Check a process",
+      "does": "Says whether an installed process conforms: its document checked against Agent Processes 0.9 (17.1) and every test case of its signed suite read back as a test run, in one signed verdict filed with the registry.",
+      "inputs": [
+        {
+          "name": "deployment record",
+          "kind": "application/vnd.agentmesh.process-deployment-record+json",
+          "required": true,
+          "given_by": "agent"
+        },
+        {
+          "name": "process bundle",
+          "kind": "application/vnd.agentmesh.process-bundle+json",
+          "required": true,
+          "given_by": "agent"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "the signed verdict",
+          "kind": "application/vnd.agentmesh.conformance-verdict+json",
+          "when": "per_task"
+        }
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     }
   ],
   "interaction": "service",

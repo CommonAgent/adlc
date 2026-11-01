@@ -52,6 +52,10 @@ echo "  codex: $(/usr/bin/codex --version 2>/dev/null || echo missing)"
 place "$STAGE/responses-bridge.mjs" $FLEET/responses-bridge.mjs 0644
 place "$STAGE/follow-names.mjs" $FLEET/follow-names.mjs 0644
 place "$STAGE/agentbuilder-pack-as-node.sh" $FLEET/agentbuilder-pack-as-node.sh 0755
+# The process kinds' wrappers (each brain runs its procedure as the ops node's user).
+for f in deploymgr-process-as-node.sh agenteval-process-as-node.sh; do
+  [ -f "$STAGE/$f" ] && place "$STAGE/$f" $FLEET/$f 0755
+done
 for n in $NAMES; do place "$STAGE/brains/$n.sh" $FLEET/brains/$n.sh 0755; done
 if [ ! -f $FLEET/ecosystem.config.js ]; then
   place "$STAGE/ecosystem.config.js" $FLEET/ecosystem.config.js 0644

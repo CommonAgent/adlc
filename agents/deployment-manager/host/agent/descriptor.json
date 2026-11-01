@@ -109,6 +109,93 @@
           "currency": "USD"
         }
       }
+    },
+    {
+      "id": "install-a-process",
+      "name": "Install a process",
+      "does": "Installs a signed process the owner approved: checks the package maker's record against the bundle, has the platform file the document with the organization's processes, publish it as a solution and bind its trigger or schedule, and signs a deployment record.",
+      "inputs": [
+        {
+          "name": "process bundle",
+          "kind": "application/vnd.agentmesh.process-bundle+json",
+          "required": true,
+          "given_by": "agent"
+        },
+        {
+          "name": "build record",
+          "kind": "application/vnd.agentmesh.process-build-record+json",
+          "required": true,
+          "given_by": "agent"
+        },
+        {
+          "name": "the install request",
+          "kind": "identifier",
+          "required": true,
+          "given_by": "agent"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "deployment record",
+          "kind": "application/vnd.agentmesh.process-deployment-record+json",
+          "when": "per_task"
+        },
+        {
+          "name": "process bundle",
+          "kind": "application/vnd.agentmesh.process-bundle+json",
+          "when": "per_task"
+        }
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
+    },
+    {
+      "id": "retire-a-process",
+      "name": "Retire a process",
+      "does": "Retires an installed process the owner said to retire: its schedule unbound, the solution it was published as removed, the document taken out of the organization's processes, and a signed deployment record.",
+      "inputs": [
+        {
+          "name": "the install request",
+          "kind": "identifier",
+          "required": true,
+          "given_by": "agent"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "deployment record",
+          "kind": "application/vnd.agentmesh.process-deployment-record+json",
+          "when": "per_task"
+        }
+      ],
+      "started_by": [
+        "person",
+        "agent"
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      }
     }
   ],
   "interaction": "service",

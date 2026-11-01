@@ -1,0 +1,18 @@
+#!/bin/bash
+# The conformance checker's process kind (process-verdict.mjs: a signed
+# verdict on an installed process), run as the ops node's user (mesh-node),
+# which alone can read this agent's folder on the node: the job folders, the
+# files a run handed over, and its key. Called by
+# /opt/fleet/brains/agentevaluator.sh through one sudoers rule, with the framed
+# prompt in a file, and nothing else, the way the package maker's pack is
+# (agentbuilder-pack-as-node.sh). Exit 3 means the message is not process
+# work, and the brain goes on as before.
+#
+# The verdict is filed with the registry as this agent, over the ops node's
+# own connection (/opt/fleet/node-ops/mesh.creds), which serves this agent.
+set -u
+prompt="${1:-}"
+case "$prompt" in /tmp/tmp.*) ;; *) echo "the process check takes a prompt file the conformance checker's brain made" >&2; exit 2;; esac
+if [ ! -f "$prompt" ] || [ -L "$prompt" ]; then echo "no prompt file at $prompt" >&2; exit 2; fi
+cd /home/mesh-node || exit 1
+exec env MESH_CREDS_FILE=/opt/fleet/node-ops/mesh.creds node /opt/fleet/agenteval-process-verdict.mjs --run "$prompt" /opt/fleet/node-ops/agents/agentevaluator/identity.json

@@ -24,7 +24,7 @@ needs and wire them to your own host.
 | `ecosystem.config.js.tmpl` | `/opt/fleet/ecosystem.config.js`, only on a host that has none |
 | `responses-bridge.mjs` | `/opt/fleet/responses-bridge.mjs`: lets the Codex brains reach Claude on Vertex AI as the machine's own service account, on loopback, with no key; and is the model gateway agents reach through `MODEL_ENDPOINT` (see [The model settings](#the-model-settings)) |
 | `follow-names.mjs` | `/opt/fleet/follow-names.mjs`: binds each agent's descriptor to its key and name and signs it |
-| `sudoers.d/` | `/etc/sudoers.d/`: the one rule each for the package maker's pack and the deployment manager's procedures |
+| `sudoers.d/` | `/etc/sudoers.d/`: the one rule each for the package maker's pack and the deployment manager's procedures, and one each that lets the deployment manager's and the conformance checker's brains run their process kind as the ops node's user |
 
 Each agent's own host files are in its folder under `agents/<role>/host/`: the
 brain template, the descriptor, the listing and the public line.
@@ -50,7 +50,13 @@ brain template, the descriptor, the listing and the public line.
    `agents/package-maker`; `deploymgr-steps.py`, `deploymgr-install.py` and the
    rest from `agents/deployment-manager` (its `DESIGN.md` lists each one);
    `agenteval-gen.py`, `agenteval-run.py` and the rest from
-   `agents/conformance-checker`.
+   `agents/conformance-checker`. The process kinds go the same way:
+   `agentbuilder-process-pack.mjs`, `deploymgr-process-install.mjs` and
+   `agenteval-process-verdict.mjs`, each agent's `host/*-process-as-node.sh`
+   (and the package maker's `agentbuilder-pack-as-node.sh`, which tries the
+   process kind first), with `process-records.mjs` (from
+   `agents/package-maker/shared`) and `process-check.mjs` (from `standards/`)
+   beside them, unprefixed.
 4. Copy the staged folder to the host, unpack it in `/tmp/ops-agents`, and run
    `sudo bash /tmp/ops-agents/install-on-host.sh /tmp/ops-agents`. It removes
    `tokens.json` when it is done; remove the folder after.

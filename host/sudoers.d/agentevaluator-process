@@ -1,0 +1,1 @@
+agentevaluator ALL=(mesh-node) NOPASSWD: /opt/fleet/agenteval-process-as-node.sh

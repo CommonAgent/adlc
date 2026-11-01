@@ -1,0 +1,1 @@
+deploymgr ALL=(mesh-node) NOPASSWD: /opt/fleet/deploymgr-process-as-node.sh
