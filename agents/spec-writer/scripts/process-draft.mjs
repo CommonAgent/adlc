@@ -224,6 +224,10 @@ function wrap(text, first, rest, width = WIDTH, head = "") {
 }
 
 const ownerOf = (p) => (p.holder.role === STARTER ? STARTER : p.holder.kind === "person" ? `${p.holder.role} (person)` : p.holder.role);
+/** Who signs a step: its holder when a person holds it; for a supervised step
+ *  an agent holds, the person who approves what it hands on, drafted as
+ *  whoever starts the run (§7.3: an agent does the work, a person approves). */
+const signerOf = (p) => (p.holder.kind === "person" ? ownerOf(p) : STARTER);
 
 /** The document, from a draft: an Agent Processes 0.9.0 process at version 1,
  *  owned by whoever starts the run until the person names an owner, in force
@@ -265,7 +269,7 @@ export function renderProcess(draft, { today = new Date().toISOString().slice(0,
   const roster = [
     agents.length ? `${listOf(agents)} ${agents.length === 1 ? "is an agent" : "are agents"} the catalog finds or the lifecycle builds, named in the roster sent with the run` : "",
     people.length ? `${listOf(people)} ${people.length === 1 ? "is a person" : "are people"}` : "",
-    signs.length ? `${listOf(signs.map((p) => `${ownerOf(p)} signs ${p.name}`))}` : "",
+    signs.length ? `${listOf(signs.map((p) => (p.holder.kind === "person" ? `${signerOf(p)} signs ${p.name}` : `${signerOf(p)} approves what ${p.name} hands on`)))}` : "",
   ].filter(Boolean).join("; ");
   out.push(...wrap(prose(roster) || "nobody holds a role yet", "  roster:  ", "           "));
   out.push(...wrap(draft.systems.length ? draft.systems.map((s) => `${prose(s.name)} (${["read", "write", "trigger", "revoke"].includes(s.access) ? s.access : "read"})`).join(", ") : "none", "  systems: ", "           "));
@@ -293,7 +297,7 @@ export function openQuestions(draft, check = null) {
   q.push({ key: "owner", question: `Who owns this process and decides what its next version says? It is drafted as ${STARTER}, so each run's approvals go to the person who started it.` });
   const gates = draft.phases.filter((p) => p.automation === "never" || p.automation === "supervised");
   q.push({ key: "signs", question: gates.length
-    ? `Who signs ${listOf(gates.map((p) => `${p.name} (drafted as ${ownerOf(p)})`))}?`
+    ? `Who signs ${listOf(gates.map((p) => `${p.name} (drafted as ${signerOf(p)})`))}?`
     : "Nothing in this process waits for a person to sign. Should anything?" });
   const reach = draft.phases.filter((p) => p.reaches_outside).map((p) => `${p.name} ${p.reaches_outside}`);
   const grants = draft.systems.filter((s) => ["write", "trigger", "revoke"].includes(s.access)).map((s) => `${s.name} (${s.access})`);

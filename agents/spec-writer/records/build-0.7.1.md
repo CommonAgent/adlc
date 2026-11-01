@@ -1,0 +1,18 @@
+# spec-writer 0.7.1: a supervised step is signed by a person
+
+Date: 2026-11-01.
+
+The proof of 0.7.0 on dev ("each morning, read three competitor blogs and
+send me a one-page summary for approval before it goes to the team") came
+back conforming and clean, with one step, draft-summary, at supervised and
+held by the agent summary-writer. The roster then read "summary-writer signs
+draft-summary" and the signs question named the agent, which is wrong: at
+supervised an agent does the work and a person approves it (§7.3).
+
+Now the signer of a supervised step an agent holds is drafted as whoever
+starts the run, the roster says "whoever starts the run approves what
+draft-summary hands on", and the signs question names that person.
+
+test/process-draft.test.mjs gains one test, committed before the fix. 238
+tests, 237 pass, 1 skipped. The harness (Claude Code) stood in for the test
+and code steps, as for 0.7.0.
