@@ -1,0 +1,11 @@
+TEST: revise-the-cards              for: research/explore-a-topic
+                                    digest: sha256:b1b27c994265e452dcb83a6efdbb9b32270aeb2f69db38505327b184fa64b113
+carried: topic = the market for heat pumps in Norway
+carried: reader = the board
+answer: plan-the-angles = approve
+answer: approve-the-cards = changes: the third card has no source
+answer: approve-the-cards = approve
+stand-in: publish-the-cards = a receipt naming the page
+expect: goal reached
+expect: ran plan-the-angles, write-the-cards, approve-the-cards,
+        write-the-cards, approve-the-cards, publish-the-cards

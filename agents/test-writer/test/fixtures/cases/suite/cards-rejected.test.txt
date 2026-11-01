@@ -1,0 +1,7 @@
+TEST: cards-rejected                for: research/explore-a-topic
+                                    digest: sha256:b1b27c994265e452dcb83a6efdbb9b32270aeb2f69db38505327b184fa64b113
+carried: topic = heat pumps
+answer: plan-the-angles = approve
+answer: approve-the-cards = reject: the topic is off the team's brief
+expect: goal not reached
+expect: ran plan-the-angles, write-the-cards, approve-the-cards

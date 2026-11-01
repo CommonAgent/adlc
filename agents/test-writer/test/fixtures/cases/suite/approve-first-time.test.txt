@@ -1,0 +1,11 @@
+TEST: approve-first-time            for: research/explore-a-topic
+                                    digest: sha256:b1b27c994265e452dcb83a6efdbb9b32270aeb2f69db38505327b184fa64b113
+carried: topic = the market for heat pumps in Norway
+answer: plan-the-angles = approve
+answer: approve-the-cards = approve
+stand-in: publish-the-cards = a receipt naming the page it would have
+          published to
+expect: goal reached
+expect: ran plan-the-angles, write-the-cards, approve-the-cards,
+        publish-the-cards
+expect: write-the-cards hands on five cards, each with a source

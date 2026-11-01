@@ -1,0 +1,213 @@
+{
+  "cases": [
+    {
+      "name": "approve-first-time",
+      "why": "every approval given the first time",
+      "carried": {
+        "topic": "the market for heat pumps in Norway"
+      },
+      "answers": [
+        {
+          "phase": "plan-the-angles",
+          "answer": "approve"
+        },
+        {
+          "phase": "approve-the-cards",
+          "answer": "approve"
+        }
+      ],
+      "stand_ins": [
+        {
+          "phase": "publish-the-cards",
+          "returns": "a receipt naming the page it would have published to"
+        }
+      ],
+      "expect": {
+        "goal": true,
+        "ran": [
+          "plan-the-angles",
+          "write-the-cards",
+          "approve-the-cards",
+          "publish-the-cards"
+        ],
+        "checks": [
+          "write-the-cards hands on five cards, each with a source"
+        ]
+      }
+    },
+    {
+      "name": "revise-the-cards",
+      "why": "the editor sends the cards back once",
+      "carried": {
+        "topic": "heat pumps",
+        "reader": "the board"
+      },
+      "answers": [
+        {
+          "phase": "plan-the-angles",
+          "answer": "approve"
+        },
+        {
+          "phase": "approve-the-cards",
+          "answer": "changes",
+          "deviation": "changes",
+          "words": "the third card has no source"
+        },
+        {
+          "phase": "approve-the-cards",
+          "answer": "approve"
+        }
+      ],
+      "stand_ins": [
+        {
+          "phase": "publish-the-cards",
+          "returns": "a receipt naming the page"
+        }
+      ],
+      "expect": {
+        "goal": true,
+        "ran": [
+          "plan-the-angles",
+          "write-the-cards",
+          "approve-the-cards",
+          "write-the-cards",
+          "approve-the-cards",
+          "publish-the-cards"
+        ],
+        "checks": []
+      }
+    },
+    {
+      "name": "wrong-angles",
+      "why": "the editor sends the work back to the angles",
+      "carried": {
+        "topic": "heat pumps"
+      },
+      "answers": [
+        {
+          "phase": "plan-the-angles",
+          "answer": "approve"
+        },
+        {
+          "phase": "approve-the-cards",
+          "answer": "changes",
+          "deviation": "wrong-angles",
+          "words": "the angles miss installation costs"
+        },
+        {
+          "phase": "plan-the-angles",
+          "answer": "approve"
+        },
+        {
+          "phase": "approve-the-cards",
+          "answer": "approve"
+        }
+      ],
+      "stand_ins": [
+        {
+          "phase": "publish-the-cards",
+          "returns": "a receipt naming the page"
+        }
+      ],
+      "expect": {
+        "goal": true,
+        "ran": [],
+        "checks": []
+      }
+    },
+    {
+      "name": "no-sources",
+      "why": "the card writer finds no source and the angles are planned again, with changes",
+      "carried": {
+        "topic": "heat pumps"
+      },
+      "answers": [
+        {
+          "phase": "plan-the-angles",
+          "answer": "approve"
+        },
+        {
+          "phase": "write-the-cards",
+          "answer": "changes",
+          "deviation": "no-sources",
+          "words": "the fifth angle has nothing published on it"
+        },
+        {
+          "phase": "plan-the-angles",
+          "answer": "changes",
+          "words": "two angles overlap"
+        },
+        {
+          "phase": "plan-the-angles",
+          "answer": "approve"
+        },
+        {
+          "phase": "approve-the-cards",
+          "answer": "approve"
+        }
+      ],
+      "stand_ins": [
+        {
+          "phase": "publish-the-cards",
+          "returns": "a receipt naming the page"
+        }
+      ],
+      "expect": {
+        "goal": true,
+        "ran": [],
+        "checks": []
+      }
+    },
+    {
+      "name": "cards-rejected",
+      "why": "the editor rejects the cards",
+      "carried": {
+        "topic": "heat pumps"
+      },
+      "answers": [
+        {
+          "phase": "plan-the-angles",
+          "answer": "approve"
+        },
+        {
+          "phase": "approve-the-cards",
+          "answer": "reject",
+          "words": "the topic is off the brief"
+        }
+      ],
+      "stand_ins": [],
+      "expect": {
+        "goal": false,
+        "ran": [
+          "plan-the-angles",
+          "write-the-cards",
+          "approve-the-cards"
+        ],
+        "checks": []
+      }
+    },
+    {
+      "name": "angles-rejected",
+      "why": "the angles are rejected",
+      "carried": {
+        "topic": "everything"
+      },
+      "answers": [
+        {
+          "phase": "plan-the-angles",
+          "answer": "reject",
+          "words": "the topic is too broad to plan"
+        }
+      ],
+      "stand_ins": [],
+      "expect": {
+        "goal": false,
+        "ran": [
+          "plan-the-angles"
+        ],
+        "checks": []
+      }
+    }
+  ],
+  "could_not": []
+}

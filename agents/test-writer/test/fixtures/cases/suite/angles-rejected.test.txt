@@ -1,0 +1,6 @@
+TEST: angles-rejected               for: research/explore-a-topic
+                                    digest: sha256:b1b27c994265e452dcb83a6efdbb9b32270aeb2f69db38505327b184fa64b113
+carried: topic = everything
+answer: plan-the-angles = reject: the topic is too broad to plan
+expect: goal not reached
+expect: ran plan-the-angles
