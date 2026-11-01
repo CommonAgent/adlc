@@ -48,3 +48,24 @@ inside the package's own tests, for the reason adlc #109 recorded: the test
 writer writes a whole suite from a spec and takes no change to a package that
 already carries one, and the code writer's check refuses a change to a few of
 a package's scripts unless every script the package names is delivered.
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 73bee86:
+  sha256 65f15c01f1515ec90c79413e4b7028f056f597ec9b91fdbbadc3dd171668aaf2.
+- Installed by the deployment manager from deploy request
+  dr_EY6qXzx05KuREMP-Xrm-MEH6, approved for the platform account, with the
+  settings 0.6.3 ran on (MODEL_PROTOCOL gemini, MODEL_NAME gemini-3.8-flash).
+- Proof, one request as platform@agentmesh.ai, 2026-11-01 07:41 Mountain:
+  "each morning, read three competitor blogs and send me a one-page summary
+  for approval before it goes to the team". It wrote
+  "competitor blog digest" (<team>/competitor-blog-digest v1): four steps
+  (read-competitor-blogs, draft-summary at supervised, approve-summary at
+  never, send-to-team), holders by role (blog-researcher, summary-writer,
+  digest-distributor) and whoever starts the run at the gate, a way back
+  keyed changes, a quality gate. The process check, run here over the
+  delivered file, says it conforms to Agent Processes 0.9.0 and has no
+  findings (sha256:a048e4dfc11c672f85fa218cf92114091ef2cf8b54a389956e83c649a3f0368b).
+  Open: name, owner, signs, outside, the three blogs' addresses, the
+  channel. It found one defect, fixed in 0.7.1: the roster named the agent
+  as the signer of the supervised step.

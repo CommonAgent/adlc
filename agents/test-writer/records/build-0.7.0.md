@@ -43,3 +43,19 @@ inside the package's own tests: the test writer writes a whole suite from a
 spec and takes no change to a package that already carries one, and the code
 writer's check refuses a change to a few of a package's scripts unless every
 script the package names is delivered (as adlc #109 recorded).
+
+## On dev
+
+- Packed by the package maker on the dev fleet host from adlc 73bee86:
+  sha256 e0dd9ca834623b346783fc8edf559279281b7789de989d724dede774f3e82b18.
+- Installed by the deployment manager from deploy request
+  dr_wfceeiGg7zkisVZ1OPs6xIUF, with the settings 0.6.6 ran on.
+- Proof, 2026-11-01 07:47 Mountain: the spec writer's document from its own
+  proof (competitor-blog-digest, digest sha256:a048e4df...) sent as
+  platform@agentmesh.ai. The job command routed it to
+  write-test-cases with no harness woken. Four cases:
+  draft-summary-changes-then-approve, approve-summary-changes-then-approve,
+  draft-summary-reject, approve-summary-reject, each pinned to the digest.
+  The coverage check, run here over the delivered files: "The suite of 4
+  test cases covers the rule: 2 phases a person signs, each answered
+  approve, changes and reject, and 1 way back, each taken."
