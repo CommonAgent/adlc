@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { parseCase, checkCases, needsOf } from "../scripts/check-cases.mjs";
-import { parseDocument } from "../scripts/process-check.mjs";
+import { parseDocument, digestOf as digestOfText } from "../scripts/process-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "scripts", "check-cases.mjs");
@@ -95,6 +95,14 @@ test("a phase, an item or a way back the document does not have is refused", () 
   assert.ok(checkCases(DOC, edit("approve-first-time", "carried: topic =", "carried: subject =")).problems.some((p) => /subject/.test(p)));
   assert.ok(checkCases(DOC, edit("wrong-angles", "[wrong-angles]", "[wrong-way]")).problems.some((p) => /wrong-way/.test(p)));
   assert.ok(checkCases(DOC, edit("approve-first-time", "expect: ran plan-the-angles", "expect: ran plan-the-angle")).problems.some((p) => /plan-the-angle\b/.test(p)));
+});
+
+test("a document that names no items takes a case's carried lines as the material its trigger sentence names", () => {
+  const bare = DOC.replace(/         carries: topic[\s\S]*?carries: reader - who the result is for, optional\n/, "");
+  const cases = suite().map((c) => ({ ...c, text: c.text.replace(/sha256:[0-9a-f]{64}/, digestOfText(bare)) }));
+  const r = checkCases(bare, cases);
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.ok, true);
 });
 
 test("a case that leaves out an item the trigger requires is refused", () => {
