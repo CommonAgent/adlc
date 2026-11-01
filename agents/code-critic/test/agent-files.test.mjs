@@ -49,11 +49,12 @@ test("every how is a program calling a model at named points, and only the revie
       assert.equal(p.how.contract, "full", p.id);
       assert.ok(["none", "called"].includes(p.how.intelligence), p.id);
     }
-    assert.deepEqual(o.steps.filter((s) => s.how.intelligence === "called").map((s) => s.id), ["review-the-code"]);
+    // A process is reviewed by the rules alone: no step of review-a-process calls a model.
+    assert.deepEqual(o.steps.filter((s) => s.how.intelligence === "called").map((s) => s.id), o.id === "review-a-process" ? [] : ["review-the-code"]);
   }
   for (const [id, s] of Object.entries(skills)) {
     const callsModel = (s.scripts ?? []).includes("scripts/model-caller.mjs");
-    const step = descriptor.offerings[0].steps.find((x) => x.id === id);
+    const step = descriptor.offerings.flatMap((o) => o.steps).find((x) => x.id === id);
     if (step) assert.equal(callsModel, step.how.intelligence === "called", `${id} carries the caller ${callsModel ? "and declares no model" : "nowhere"}`);
   }
 });

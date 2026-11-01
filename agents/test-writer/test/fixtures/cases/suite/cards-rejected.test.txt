@@ -1,5 +1,5 @@
 TEST: cards-rejected                for: research/explore-a-topic
-                                    digest: sha256:b1b27c994265e452dcb83a6efdbb9b32270aeb2f69db38505327b184fa64b113
+                                    digest: sha256:b46d3bce8736de4f24eabfc9711158b2a0f65d584ca4f6ede07925c51c66ebc1
 carried: topic = heat pumps
 answer: plan-the-angles = approve
 answer: approve-the-cards = reject: the topic is off the team's brief

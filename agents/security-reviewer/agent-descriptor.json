@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.2",
+  "agent_version": "0.3.1",
   "name": "Security reviewer",
   "summary": "Reviews an agent package before it is installed and writes down what it may reach, what it may spend and what it must never do, with a reason for each.",
   "will_not": [
@@ -92,6 +92,73 @@
           "id": "write-the-review",
           "name": "Write the review",
           "does": "Applies the role's rules to what was read and traced, decides the verdict, and writes the review with its structured header.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 0,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
+    },
+    {
+      "id": "review-a-process",
+      "name": "Review a process",
+      "does": "Reviews an Agent Processes document against the process rules, with no model: the four tests of section 20.1, which phases a person signs and whether the document says why, which phases act in the world and whether a person signs before each, and no line outside the extensions block. It writes one security review in this agent's format, security-review-v1: front matter with the process, its shape digest, the verdict, what it reaches, what it must never do, what has no recorded reason and what refused it, then the same headings as a package's review, and it refuses a process in which a step acts in the world with no person's yes before it.",
+      "inputs": [
+        {
+          "name": "the process document",
+          "kind": "text/vnd.agentprocesses.process",
+          "required": true,
+          "given_by": "either",
+          "about": "The Agent Processes document to review, attached or pasted; found by its content, a PROCESS: line and a phases: part."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "security review",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: a header (YAML front matter) `review, package, version, digest, verdict, reviewed_at, architecture_record, spending_limit, reaches, spends, never_does, no_reason_recorded, refused_for`, then `## Verdict`, `## Reaches`, `## Spends`, `## Never does`, `## No reason recorded`, `## Programs`, `## Parts`, `## Accepted knowingly`, `## Reasons weighed` and `## Not reviewed`."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-process",
+          "name": "Read the process",
+          "does": "Finds the process document among what was given, by its content, and reads it the way the process runner does.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-process-rules",
+          "name": "Check the process rules",
+          "does": "Holds the document to the process rules and writes each finding at its line, with the phases a person signs and the phases that act in the world.",
           "how": {
             "control": "script",
             "intelligence": "none",

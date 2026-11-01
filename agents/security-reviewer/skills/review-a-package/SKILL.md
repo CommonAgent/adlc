@@ -51,6 +51,9 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/write-review.mjs
 - scripts/went-without.mjs
 - scripts/pieces.mjs
+- scripts/review-process.mjs
+- scripts/process-rules.mjs
+- scripts/process-check.mjs
 
 ## References
 

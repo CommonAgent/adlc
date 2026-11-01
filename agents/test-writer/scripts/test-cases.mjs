@@ -36,7 +36,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { callModel, cannotCall, readJson } from "./model-caller.mjs";
-import { parseDocument, digestOf } from "./process-check.mjs";
+import { parseDocument, shapeDigestOf } from "./process-check.mjs";
 import { checkCases, needsOf } from "./check-cases.mjs";
 import { note } from "./went-without.mjs";
 
@@ -211,7 +211,8 @@ export async function writeCases({ processText = "", records, work, jobDir, ask,
     return finish({ ok: false, code: 3, reply: "There is no process document to write test cases for: attach the Agent Processes document (it opens with PROCESS: and lists its phases) and ask again." });
   }
   const id = doc.id;
-  const digest = digestOf(processText);
+  // The shape digest (Agent Processes 0.9.2 §21.1): the text with the bindings: block left out.
+  const digest = shapeDigestOf(processText);
   let asking = ask;
   if (!asking) {
     const read = declaredProtocols();

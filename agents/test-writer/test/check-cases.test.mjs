@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { parseCase, checkCases, needsOf } from "../scripts/check-cases.mjs";
-import { parseDocument, digestOf as digestOfText } from "../scripts/process-check.mjs";
+import { parseDocument, digestOf as digestOfText, shapeDigestOf } from "../scripts/process-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "scripts", "check-cases.mjs");
@@ -89,6 +89,17 @@ test("a case written for another digest, or another document, is refused", () =>
   assert.ok(s.problems.some((p) => /research\/another/.test(p)));
 });
 
+test("a case is pinned to the document's shape (0.9.2 §21.1): the text's own digest is refused, and a new roster changes nothing", () => {
+  const r = checkCases(DOC, suite());
+  assert.equal(r.digest, shapeDigestOf(DOC));
+  const byText = checkCases(DOC, suite().map((c) => ({ ...c, text: c.text.replace(/sha256:[0-9a-f]{64}/, digestOfText(DOC)) })));
+  assert.equal(byText.ok, false);
+  assert.ok(byText.problems.some((p) => /shape/.test(p)), JSON.stringify(byText.problems));
+  const swapped = DOC.replace(/^( +roster:\s+)(.*)$/m, "$1page-publisher.acme@example.com and the rest, as before");
+  assert.notEqual(swapped, DOC);
+  assert.equal(checkCases(swapped, suite()).ok, true);
+});
+
 test("a phase, an item or a way back the document does not have is refused", () => {
   assert.ok(checkCases(DOC, edit("approve-first-time", "answer: approve-the-cards = approve", "answer: approve-the-card = approve")).problems.some((p) => /approve-the-card\b/.test(p)));
   assert.ok(checkCases(DOC, edit("approve-first-time", "stand-in: publish-the-cards", "stand-in: publish-cards")).problems.some((p) => /publish-cards/.test(p)));
@@ -99,7 +110,7 @@ test("a phase, an item or a way back the document does not have is refused", () 
 
 test("a document that names no items takes a case's carried lines as the material its trigger sentence names", () => {
   const bare = DOC.replace(/         carries: topic[\s\S]*?carries: reader - who the result is for, optional\n/, "");
-  const cases = suite().map((c) => ({ ...c, text: c.text.replace(/sha256:[0-9a-f]{64}/, digestOfText(bare)) }));
+  const cases = suite().map((c) => ({ ...c, text: c.text.replace(/sha256:[0-9a-f]{64}/, shapeDigestOf(bare)) }));
   const r = checkCases(bare, cases);
   assert.deepEqual(r.problems, []);
   assert.equal(r.ok, true);

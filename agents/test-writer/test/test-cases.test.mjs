@@ -21,7 +21,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeCases, renderCase, readCases, promptFor, REPLY_MAX, CASE_KIND } from "../scripts/test-cases.mjs";
 import { parseCase, checkCases } from "../scripts/check-cases.mjs";
-import { digestOf } from "../scripts/process-check.mjs";
+import { digestOf, shapeDigestOf } from "../scripts/process-check.mjs";
 import { runJob, processAmong } from "../scripts/job.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -51,14 +51,14 @@ function model(...answers) {
 
 test("a case is written in §21's form, named and pinned to the document's digest, and reads back as itself", () => {
   const { cases } = readCases(clone(ANSWER));
-  const text = renderCase(cases[2], { id: "research/explore-a-topic", digest: digestOf(DOC) });
+  const text = renderCase(cases[2], { id: "research/explore-a-topic", digest: shapeDigestOf(DOC) });
   assert.match(text, /^TEST: wrong-angles +for: research\/explore-a-topic\n +digest: sha256:[0-9a-f]{64}\n/);
   assert.match(text, /^answer: approve-the-cards = changes: \[wrong-angles\] the angles miss/m);
   assert.match(text, /^stand-in: publish-the-cards = /m);
   assert.match(text, /^expect: goal reached$/m);
   const back = parseCase(text);
   assert.deepEqual(back.problems, []);
-  assert.equal(back.digest, digestOf(DOC));
+  assert.equal(back.digest, shapeDigestOf(DOC));
   assert.equal(back.answers[1].deviation, "wrong-angles");
 });
 
@@ -82,7 +82,7 @@ test("good cases are written, checked, and filed as pieces, with what they cover
   assert.equal(cases.length, 6);
   for (const p of cases) {
     const text = readFileSync(join(d.job, p.path), "utf8");
-    assert.equal(parseCase(text).digest, digestOf(DOC));
+    assert.equal(parseCase(text).digest, shapeDigestOf(DOC));
     assert.match(p.path, /^out\/cases\/[a-z0-9-]+\.test\.txt$/);
   }
   const all = cases.map((p) => ({ file: basename(p.path), text: readFileSync(join(d.job, p.path), "utf8") }));

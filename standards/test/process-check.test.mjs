@@ -1,4 +1,4 @@
-// The process checker (process-check.mjs): an Agent Processes 0.9.0 document
+// The process checker (process-check.mjs): an Agent Processes 0.9.2 document
 // read for the §17.1 conformance items a program can see, and for the four
 // tests of §20.1 where a program can see them. A document that conforms and
 // shows none of the findings passes; each rule the check holds is shown here
@@ -11,62 +11,13 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkProcess, parseDocument, digestOf } from "../process-check.mjs";
+import { checkProcess, parseDocument, digestOf, shapeDigestOf, shapeOf, SPEC_VERSION } from "../process-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "process-check.mjs");
 
-/** A small document that conforms and has no findings. */
-export const GOOD = `PROCESS: explore a topic         id: research/explore-a-topic   v3
-owner: head of research          effective: 2026-11-01
-trigger: a person asks for a topic to be explored
-         carries: topic - the words, a link or a document to explore,
-                  required
-         carries: reader - who the result is for, optional
-concurrency: runs may overlap - each run reads its own topic and shares
-             nothing with another
-goal: five cards on the topic, each with a source, approved by the
-      editor and published to the team's page
-phases:
-  plan-the-angles   - harness: the five angles worth a card, each with
-                      the question it answers
-                      owner: angle-planner
-                      after: trigger        automation: autonomous
-  write-the-cards   - harness: five cards, one per angle, each with a
-                      source
-                      owner: card-writer
-                      after: plan-the-angles   automation: autonomous
-  approve-the-cards - human: the editor reads the cards and approves
-                      them, asks for changes, or rejects them
-                      owner: editor (person)
-                      after: write-the-cards   automation: never
-  publish-the-cards - system: the approved cards published to the team's
-                      page
-                      owner: page-publisher
-                      after: approve-the-cards   automation: autonomous
-handoffs:
-  plan-the-angles -> write-the-cards [angles]: the five angles, each
-    with its question
-  write-the-cards -> approve-the-cards [cards]: the five cards, each
-    with its source
-  approve-the-cards -> publish-the-cards [approved-cards]: the cards as
-    the editor approved them, with who approved them and when
-  publish-the-cards -> the team's page: the published cards
-deviations:
-  approve-the-cards -> write-the-cards [changes]: the editor names what
-    is wrong, and the cards are written again
-bindings:
-  roster:  angle-planner, card-writer and page-publisher are agents named
-           in the roster; editor (person) is the head of research
-  systems: the team's page (write)
-  data:    the topic as handed
-policy:
-  no card goes out without a source
-measures:
-  cycle time: from the request to the published cards
-  quality gate: every published card carries a source and the editor's
-                approval
-`;
+import { GOOD } from "./fixtures.mjs";
+
 
 const check = (text, opts) => checkProcess(text, opts);
 const sections = (r) => r.failures.map((f) => f.section);
@@ -115,6 +66,58 @@ test("the digest is the sha256 of the text, the same whatever the line ends", ()
   assert.match(digestOf(GOOD), /^sha256:[0-9a-f]{64}$/);
   assert.equal(digestOf(GOOD.replace(/\n/g, "\r\n")), digestOf(GOOD));
   assert.notEqual(digestOf(GOOD + "x"), digestOf(GOOD));
+});
+
+test("it checks against Agent Processes 0.9.2", () => {
+  assert.equal(SPEC_VERSION, "0.9.2");
+});
+
+test("§21.1: the shape digest is the sha256 of the text with the bindings: block left out", () => {
+  const shape = shapeOf(GOOD);
+  assert.doesNotMatch(shape, /^bindings:/m);
+  assert.doesNotMatch(shape, /roster:|systems:|data:/);
+  assert.match(shape, /^policy:/m);
+  assert.match(shape, /^deviations:/m);
+  // Only the bindings block's lines go: every other line stays, in order.
+  const shapeLines = shape.split("\n");
+  const gone = GOOD.split("\n").filter((l) => !shapeLines.includes(l));
+  assert.deepEqual(gone.map((l) => l.trim().split(/\s+/)[0]), ["bindings:", "roster:", "in", "systems:", "data:"]);
+  assert.equal(shapeDigestOf(GOOD), digestOf(shape));
+  assert.equal(shapeDigestOf(GOOD.replace(/\n/g, "\r\n")), shapeDigestOf(GOOD));
+  // Who holds a role and which systems it uses are not the shape.
+  assert.equal(shapeDigestOf(swap("roster:  angle-planner, card-writer", "roster:  angle-planner.acme@example.com, card-writer")), shapeDigestOf(GOOD));
+  assert.equal(shapeDigestOf(swap("systems: the team's page (write)", "systems: the team's wiki (write)")), shapeDigestOf(GOOD));
+  // Everything else is.
+  assert.notEqual(shapeDigestOf(swap("after: write-the-cards   automation: never", "after: write-the-cards   automation: supervised")), shapeDigestOf(GOOD));
+  assert.notEqual(shapeDigestOf(swap("[changes]", "[redo]")), shapeDigestOf(GOOD));
+  assert.notEqual(shapeDigestOf(swap("carries: reader - who the result is for, optional", "carries: reader - who the result is for, required")), shapeDigestOf(GOOD));
+});
+
+test("§21.1: the check reports the shape digest a test case pins, and the text's own digest beside it", () => {
+  const r = check(GOOD);
+  assert.equal(r.digest, shapeDigestOf(GOOD));
+  assert.equal(r.text_digest, digestOf(GOOD));
+  assert.notEqual(r.digest, r.text_digest);
+});
+
+test("§6.7.1: a deviation line may end with limit: <n>, the most times one run takes it", () => {
+  const at = "is wrong, and the cards are written again\n";
+  const own = check(swap(at, `${at}    limit: 3\n`));
+  assert.deepEqual(own.failures, []);
+  assert.deepEqual(own.findings, []);
+  assert.equal(own.document.deviations[0].limit, 3);
+  assert.doesNotMatch(own.document.deviations[0].text, /limit/);
+  const trailing = check(swap(at, at.replace("\n", "   limit: 2\n")));
+  assert.deepEqual(trailing.failures, []);
+  assert.deepEqual(trailing.findings, []);
+  assert.equal(trailing.document.deviations[0].limit, 2);
+  assert.equal(check(GOOD).document.deviations[0].limit, null);
+  failsAt(swap(at, `${at}    limit: 0\n`), "§6.7.1", /limit/);
+  failsAt(swap(at, `${at}    limit: three\n`), "§6.7.1", /limit/);
+});
+
+test("a limit: line under a handoff is still a line the specification does not define (§20.3)", () => {
+  findsAs(swap("with its question\n", "with its question\n    limit: 3\n"), "undefined-line", /limit: 3/);
 });
 
 // §17.1, item by item.
@@ -313,7 +316,8 @@ test("§20.2: the extensions block is the last block, and each extension names i
 
 test("a line the specification does not define, outside the extensions: block, is a finding (§20.3)", () => {
   findsAs(GOOD.replace("policy:", "mapping-rules:\n  one thing\npolicy:"), "undefined-line", /mapping-rules/);
-  findsAs(swap("    is wrong, and the cards are written again", "    is wrong, and the cards are written again\n    limit: 3"), "undefined-line", /limit: 3/);
+  // A limit: under a deviation is 0.9.2's (§6.7.1); under a handoff it is still undefined.
+  findsAs(swap("    with its question", "    with its question\n    limit: 3"), "undefined-line", /limit: 3/);
   findsAs(swap("  data:    the topic as handed", "  data:    the topic as handed\n  mapping: plan-the-angles -> write-the-cards json"), "undefined-line", /mapping/);
   findsAs(swap("                      owner: card-writer", "                      owner: card-writer\n                      model: the big one"), "undefined-line", /model/);
   findsAs(swap("         carries: reader", "         form: a box\n         carries: reader"), "undefined-line", /form/);
@@ -357,6 +361,6 @@ test("the command line: exit 0 for a clean document, 1 with what failed, 2 witho
   const j = spawnSync(process.execPath, [CHECK, bad, "--json"], { encoding: "utf8" });
   const parsed = JSON.parse(j.stdout);
   assert.equal(parsed.conforms, false);
-  assert.equal(parsed.digest, digestOf(swap("after: plan-the-angles   automation", "after: plan-the-angle   automation")));
+  assert.equal(parsed.digest, shapeDigestOf(swap("after: plan-the-angles   automation", "after: plan-the-angle   automation")));
   assert.equal(spawnSync(process.execPath, [CHECK], { encoding: "utf8" }).status, 2);
 });

@@ -40,7 +40,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { callModel, cannotCall, readJson } from "./model-caller.mjs";
 import { promptFor, readDraft, fixHolders, renderProcess, openQuestions, PROCESS_KIND } from "./process-draft.mjs";
-import { checkProcess } from "./process-check.mjs";
+import { checkProcess, SPEC_VERSION } from "./process-check.mjs";
 import { note } from "./went-without.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -111,8 +111,8 @@ export function replyFor({ draft, check, questions, notes = [] }) {
   const head = `I wrote the process "${draft.name.toLowerCase()}" (<team>/${draft.slug} v1) as an Agent Processes 0.9.0 document: ${draft.phases.length} step${draft.phases.length === 1 ? "" : "s"}, ${gates} approval${gates === 1 ? "" : "s"} a person signs, ${draft.deviations.length} way${draft.deviations.length === 1 ? "" : "s"} back. No step names an agent: each is held by a role the catalog answers next, or a person.`;
   const steps = draft.phases.map((p, i) => `${i + 1}. ${p.name}: ${p.form}, held by ${p.holder.role === "whoever starts the run" ? "whoever starts the run" : `${p.holder.role} (${p.holder.kind})`}, ${p.automation}${p.reaches_outside ? `; reaches outside: ${p.reaches_outside}` : ""}`);
   const verdict = check.conforms && check.clean
-    ? `The process check: it conforms to Agent Processes 0.9.0 and has no findings (${check.digest}).`
-    : `The process check: it ${check.conforms ? "conforms to Agent Processes 0.9.0" : "does not conform to Agent Processes 0.9.0"} (${check.digest}): ${[...check.failures.map((f) => `${f.section} ${f.text}`), ...check.findings.map((f) => `${f.test}: ${f.text}`)].join("; ")}`;
+    ? `The process check: it conforms to Agent Processes ${SPEC_VERSION} and has no findings (${check.digest}).`
+    : `The process check: it ${check.conforms ? `conforms to Agent Processes ${SPEC_VERSION}` : `does not conform to Agent Processes ${SPEC_VERSION}`} (${check.digest}): ${[...check.failures.map((f) => `${f.section} ${f.text}`), ...check.findings.map((f) => `${f.test}: ${f.text}`)].join("; ")}`;
   const open = ["Still open:", ...questions.map((q) => `- \`${q.key}\`: ${q.question}`)].join("\n");
   const said = notes.length ? `What changed after the model answered: ${notes.join("; ")}.` : "";
   const parts = [head, steps.join("\n"), clip(verdict, 900), said ? clip(said, 400) : "", open].filter(Boolean);

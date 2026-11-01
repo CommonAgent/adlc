@@ -1,0 +1,53 @@
+// The documents the standards tests share.
+
+/** A small document that conforms and has no findings. */
+export const GOOD = `PROCESS: explore a topic         id: research/explore-a-topic   v3
+owner: head of research          effective: 2026-11-01
+trigger: a person asks for a topic to be explored
+         carries: topic - the words, a link or a document to explore,
+                  required
+         carries: reader - who the result is for, optional
+concurrency: runs may overlap - each run reads its own topic and shares
+             nothing with another
+goal: five cards on the topic, each with a source, approved by the
+      editor and published to the team's page
+phases:
+  plan-the-angles   - harness: the five angles worth a card, each with
+                      the question it answers
+                      owner: angle-planner
+                      after: trigger        automation: autonomous
+  write-the-cards   - harness: five cards, one per angle, each with a
+                      source
+                      owner: card-writer
+                      after: plan-the-angles   automation: autonomous
+  approve-the-cards - human: the editor reads the cards and approves
+                      them, asks for changes, or rejects them
+                      owner: editor (person)
+                      after: write-the-cards   automation: never
+  publish-the-cards - system: the approved cards published to the team's
+                      page
+                      owner: page-publisher
+                      after: approve-the-cards   automation: autonomous
+handoffs:
+  plan-the-angles -> write-the-cards [angles]: the five angles, each
+    with its question
+  write-the-cards -> approve-the-cards [cards]: the five cards, each
+    with its source
+  approve-the-cards -> publish-the-cards [approved-cards]: the cards as
+    the editor approved them, with who approved them and when
+  publish-the-cards -> the team's page: the published cards
+deviations:
+  approve-the-cards -> write-the-cards [changes]: the editor names what
+    is wrong, and the cards are written again
+bindings:
+  roster:  angle-planner, card-writer and page-publisher are agents named
+           in the roster; editor (person) is the head of research
+  systems: the team's page (write)
+  data:    the topic as handed
+policy:
+  no card goes out without a source
+measures:
+  cycle time: from the request to the published cards
+  quality gate: every published card carries a source and the editor's
+                approval
+`;

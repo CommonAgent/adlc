@@ -74,7 +74,7 @@ test("a good answer is written as a document the checker passes, with its open q
   // The reply: the name, each step, the check, what is open, in its room.
   assert.match(out.reply, /morning competitor summary/);
   assert.match(out.reply, /read-the-blogs/);
-  assert.match(out.reply, /conforms to Agent Processes 0\.9\.0/);
+  assert.match(out.reply, /conforms to Agent Processes 0\.9\.2/);
   assert.match(out.reply, /sha256:[0-9a-f]{64}/);
   assert.match(out.reply, /`signs`/);
   assert.ok(out.reply.length <= REPLY_MAX, `${out.reply.length} characters`);

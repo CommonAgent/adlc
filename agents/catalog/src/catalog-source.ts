@@ -60,6 +60,13 @@ export interface SourceStep {
   kind?: string;
   takes: SourcePort[];
   gives: SourcePort[];
+  /**
+   * A step read from a process document whose handoffs say no type: what it
+   * hands back is named by the document's own keys, which no listing shares,
+   * so an output of no stated kind stands for it on handing back something
+   * at all. Its words must still match closely and what it takes must fit.
+   */
+  untyped?: boolean;
 }
 
 export interface SourceRequest {
@@ -89,6 +96,16 @@ export interface SourceDeps {
   solution(id: string): Promise<{ takes: SourcePort[]; gives: SourcePort[] } | null>;
   /** This agent's own handle, never offered as an answer. */
   self?: string;
+  /** The process documents a step may be answered with (sourceProcess): each one's id, version, name and goal. */
+  processes?(): Promise<ListedProcess[]>;
+}
+
+/** A process document that exists, as sourceProcess reads it: a step whose words restate its goal is that process. */
+export interface ListedProcess {
+  id: string;
+  version: string;
+  name: string;
+  goal: string;
 }
 
 export type StepAnswer =
@@ -230,7 +247,7 @@ export function fitOffering(o: Offering, step: SourceStep): Fit {
     // recording, structured data) may stand on its kind. Dev proof,
     // 2026-10-06: "Email the quiz to the team" was answered with the quiz
     // maker, whose concept list is words.
-    const loose = ["text", "any"].includes(kindClass(g.kind));
+    const loose = ["text", "any"].includes(kindClass(g.kind)) && !(step.untyped && !g.kind);
     const pick = byName ?? (loose ? undefined : free.find((x) => sameKind(x.kind, g.kind)) ?? free.find((x) => kindClass(x.kind) === kindClass(g.kind)) ?? free[0]);
     if (!pick) return { ok: false, why: `it does not produce the ${g.name} (${kindWords(g.kind)})` };
     if (byName) named++;
@@ -456,7 +473,11 @@ export function summaryOf(answers: StepAnswer[]): string {
 }
 
 /** The whole exchange: a refusal to act, a request that cannot be read, or every step answered. */
-export async function source(input: unknown, deps: SourceDeps): Promise<SourceOutcome> {
+export async function source(input: unknown, deps: SourceDeps): Promise<SourceOutcome | ProcessSourceOutcome> {
+  // A process document is answered step by step (sourceProcess). Its words
+  // name acts (run, build, install), so it is read before them; a request
+  // that says to act is still refused there.
+  if (processTextOf(input) !== null) return sourceProcess(input, deps);
   const act = refusesToAct(input);
   if (act) return { result: "refused", why: act };
   const read = readSourceRequest(input);
@@ -482,4 +503,316 @@ export function offeringsOfDescriptor(descriptor: unknown): Offering[] {
     });
   }
   return out;
+}
+
+// ── a process document (the ADLC builds processes: find-the-holders) ────────
+
+export const SOURCE_PROCESS_ANSWER_FORMAT = "source-process-answers-v1";
+
+/** One step of a process document, as Source answers it: a phase an agent or a process does. */
+export interface ProcessStep extends SourceStep {
+  /** The job the phase says it runs (`runs <offering>`), when it names one. */
+  offering?: string;
+  owner: string;
+  /** The process a `runs process <id> v<n>` phase already runs. */
+  runsProcess?: { id: string; version: string };
+}
+
+export type ProcessStepAnswer =
+  | Extract<StepAnswer, { answer: "agent" }>
+  | { step: string; answer: "process"; process: { id: string; version: string; name: string }; phase_line: string; why: string; considered: number }
+  | { step: string; answer: "build one"; why: string; takes: string[]; gives: string[]; considered: number };
+
+export type ProcessSourceOutcome =
+  | {
+      result: "sourced";
+      format: typeof SOURCE_PROCESS_ANSWER_FORMAT;
+      process: { id: string; version: string };
+      answers: ProcessStepAnswer[];
+      /** The phases a person holds, as the document names them; nothing to source. */
+      people: Array<{ step: string; owner: string }>;
+      /** Each phase's holder: an agent's handle, a process's id and version, or the person. */
+      roster: Record<string, string>;
+      /** The document with its roster: line filled from the answers. */
+      document: string;
+      summary: string;
+    }
+  | { result: "refused"; why: string };
+
+/** The process document a request carries, or null when it carries none. */
+export function processTextOf(input: unknown): string | null {
+  const b = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const t = typeof input === "string" ? input : typeof b.process === "string" ? b.process : typeof b.text === "string" ? b.text : "";
+  return /^\s*PROCESS:/m.test(t) ? t : null;
+}
+
+const PHASE_KEYS = ["owner", "after", "by", "not-before", "automation", "under", "every", "until"];
+const ws = (x: string): string => x.replace(/\s+/g, " ").trim();
+
+/** The document out of what was read: a Markdown page's fenced block that opens with PROCESS:, or the text as it is. */
+function processDocumentText(text: string): string {
+  const t = String(text ?? "").replace(/\r\n?/g, "\n");
+  if (!/^```/m.test(t)) return t;
+  for (const m of t.matchAll(/^```[^\n]*\n([\s\S]*?)^```/gm)) if (/^\s*PROCESS:/.test(m[1]!)) return m[1]!;
+  return t;
+}
+
+/** The lines of one top-level part (`<key>:` at column 0), its own line first. */
+function partOf(lines: string[], key: string): string[] {
+  const at = lines.findIndex((l) => l.startsWith(`${key}:`));
+  if (at < 0) return [];
+  const out = [lines[at]!];
+  for (let i = at + 1; i < lines.length && !/^\S/.test(lines[i]!); i++) out.push(lines[i]!);
+  return out;
+}
+
+/** Entries by indent: a line at the shallowest indent opens one, deeper lines continue it. */
+function entriesOf(lines: string[]): string[][] {
+  const body = lines.filter((l) => l.trim());
+  if (!body.length) return [];
+  const base = Math.min(...body.map((l) => l.length - l.trimStart().length));
+  const out: string[][] = [];
+  for (const l of body) {
+    if (l.length - l.trimStart().length === base || !out.length) out.push([l]);
+    else out[out.length - 1]!.push(l);
+  }
+  return out;
+}
+
+/** The items the trigger carries (§5.4): name, what it is, whether required. */
+export function carriedItems(text: string): Array<{ name: string; what: string; required: boolean }> {
+  const lines = partOf(processDocumentText(text).split("\n"), "trigger").slice(1);
+  const items: Array<{ name: string; what: string; required: boolean }> = [];
+  let open: { indent: number; parts: string[] } | null = null;
+  const close = (): void => {
+    if (open) {
+      const m = /^(\S+)\s+-\s+(.*?)(?:,\s*(required|optional))?\s*$/.exec(ws(open.parts.join(" ")));
+      if (m) items.push({ name: m[1]!, what: m[2]!, required: m[3] === "required" });
+    }
+    open = null;
+  };
+  for (const l of lines) {
+    const indent = l.length - l.trimStart().length;
+    const t = l.trim();
+    if (/^carries:/.test(t)) { close(); open = { indent, parts: [t.replace(/^carries:\s*/, "")] }; continue; }
+    if (open && indent > open.indent && t) { open.parts.push(t); continue; }
+    close();
+  }
+  close();
+  return items;
+}
+
+/**
+ * The steps of a process document Source answers: every phase but a
+ * person's (`human:`), each with what it takes (the handoffs into it, and
+ * the trigger's items when it comes after the trigger) and what it hands
+ * back (the handoffs out of it), by the document's own keys.
+ */
+export function readProcessSteps(text: string): { ok: true; id: string; version: string; steps: ProcessStep[]; people: Array<{ step: string; owner: string }>; order: string[] } | { ok: false; problems: string[] } {
+  const lines = processDocumentText(text).split("\n");
+  const head = lines.slice(0, Math.max(1, lines.findIndex((l) => /^phases:/.test(l)))).join(" ");
+  const idm = /(?:^|\s)id:\s*(\S+)\s+(v\d+)\b/.exec(head);
+  const problems: string[] = [];
+  if (!idm) problems.push("the document names no id and version (id: <team>/<slug> v<n>)");
+  const handoffs: Array<{ from: string; to: string[]; key: string | null }> = [];
+  for (const e of entriesOf(partOf(lines, "handoffs").slice(1))) {
+    const m = /^(.+?)\s+->\s+(.+?)\s*(?:\[([^\]]*)\])?\s*:/.exec(ws(e.join(" ")));
+    if (m) handoffs.push({ from: ws(m[1]!), to: m[2]!.split(/\s*\/\s*/).map(ws).filter(Boolean), key: m[3] ? ws(m[3]) : null });
+  }
+  const items = carriedItems(text);
+  const steps: ProcessStep[] = [];
+  const people: Array<{ step: string; owner: string }> = [];
+  const order: string[] = [];
+  for (const e of entriesOf(partOf(lines, "phases").slice(1))) {
+    const m = /^\s*(\S+)\s+-\s+(.*)$/.exec(e[0]!);
+    if (!m) continue;
+    const name = m[1]!;
+    order.push(name);
+    const whole = ws([m[2]!, ...e.slice(1)].join(" "));
+    const re = new RegExp(`(?:^|\\s)(${PHASE_KEYS.join("|")}):(?=\\s|$)`, "g");
+    const found = [...whole.matchAll(re)];
+    const what = ws(found.length ? whole.slice(0, found[0]!.index) : whole);
+    const val = (k: string): string => {
+      const i = found.findIndex((f) => f[1] === k);
+      return i < 0 ? "" : ws(whole.slice(found[i]!.index! + found[i]![0].length, found[i + 1]?.index));
+    };
+    const owner = val("owner");
+    if (/^human:/.test(what)) { people.push({ step: name, owner }); continue; }
+    const words = what.replace(/^(harness|system|human):\s*/, "").replace(/^runs\s+process\s+\S+\s+v\d+\s*:\s*/, "").replace(/^(runs\s+\S+|convenes\s+\S+)\s*:\s*/, "");
+    const proc = /^runs\s+process\s+(\S+)\s+(v\d+)/.exec(what);
+    const offering = proc ? undefined : /^runs\s+([a-z0-9][a-z0-9.-]*)\s*:/.exec(what)?.[1];
+    const after = val("after").split(/\s*\+\s*/).map((a) => a.replace(/\?$/, ""));
+    const takes: SourcePort[] = handoffs.filter((h) => h.to.includes(name)).map((h) => ({ name: h.key ?? `${h.from}-to-${name}`, kind: null, required: true }));
+    if (after.includes("trigger")) for (const i of items) takes.push({ name: i.name, kind: null, required: i.required });
+    const gives: SourcePort[] = handoffs.filter((h) => h.from === name && h.key).map((h) => ({ name: h.key!, kind: null }));
+    steps.push({
+      id: name,
+      title: words.slice(0, SOURCE_LIMITS.title),
+      does: words.slice(0, SOURCE_LIMITS.does),
+      kind: owner.slice(0, SOURCE_LIMITS.kind),
+      takes: takes.slice(0, SOURCE_LIMITS.ports),
+      gives: gives.slice(0, SOURCE_LIMITS.ports),
+      untyped: true,
+      owner,
+      ...(offering ? { offering } : {}),
+      ...(proc ? { runsProcess: { id: proc[1]!, version: proc[2]! } } : {}),
+    });
+  }
+  if (!order.length) problems.push("the document has no phases");
+  if (steps.length > SOURCE_LIMITS.steps) problems.push(`the document has ${steps.length} steps an agent does, and one request may hold at most ${SOURCE_LIMITS.steps}`);
+  if (problems.length) return { ok: false, problems };
+  return { ok: true, id: idm![1]!, version: idm![2]!, steps, people, order };
+}
+
+const MORE_SMALL = new Set(["was", "were", "are", "has", "have", "been", "not", "did", "does", "who", "whose", "which", "what", "when", "each", "every", "one", "them", "they", "their", "than", "then", "there", "where", "once", "only", "also"]);
+const goalWords = (s: string): Set<string> => new Set([...tokens(s)].filter((w) => !MORE_SMALL.has(w)));
+
+/** A process whose goal the step's words restate: at least four words of substance, and most of the step's. */
+export function processFor(step: ProcessStep, processes: ListedProcess[], selfId: string): ListedProcess | null {
+  const said = goalWords(`${step.title} ${step.does ?? ""}`);
+  let best: { p: ListedProcess; share: number } | null = null;
+  for (const p of processes) {
+    if (p.id === selfId) continue;
+    const goal = goalWords(`${p.name} ${p.goal}`);
+    const shared = [...said].filter((w) => goal.has(w)).length;
+    const share = said.size ? shared / said.size : 0;
+    if (shared >= 4 && share >= 0.6 && (!best || share > best.share)) best = { p, share };
+  }
+  return best?.p ?? null;
+}
+
+/** Answer one step of a process document. Never throws. */
+export async function answerProcessStep(step: ProcessStep, req: SourceRequest, deps: SourceDeps, processes: ListedProcess[], selfId: string): Promise<ProcessStepAnswer> {
+  const names = (ps: SourcePort[]): string[] => ps.map((p) => p.name);
+  const buildOne = (why: string, considered: number): ProcessStepAnswer => ({ step: step.id, answer: "build one", why, takes: names(step.takes), gives: names(step.gives), considered });
+  const asProcess = (p: ListedProcess, why: string): ProcessStepAnswer => ({ step: step.id, answer: "process", process: { id: p.id, version: p.version, name: p.name }, phase_line: `runs process ${p.id} ${p.version}`, why, considered: processes.length });
+  if (step.runsProcess) {
+    const p = processes.find((x) => x.id === step.runsProcess!.id && x.version === step.runsProcess!.version);
+    return p ? asProcess(p, `The step already runs ${p.id} ${p.version}, "${p.name}", which exists.`) : buildOne(`The step runs ${step.runsProcess.id} ${step.runsProcess.version}, and no such process is listed, so it cannot run until that process exists.`, processes.length);
+  }
+  // The job the phase says it runs: an agent that declares exactly that offering does it.
+  if (step.offering) {
+    const self = (deps.self ?? "").toLowerCase();
+    const seen = new Map<string, FoundAgent>();
+    try {
+      const runs = await Promise.all([deps.search([step.offering.replace(/[-_.]+/g, " "), step.kind].filter(Boolean).join(". ")), deps.search(step.title)]);
+      for (const r of runs) for (const a of r.agents) { const k = a.key ?? a.handle ?? ""; const was = seen.get(k); if (k && (!was || a.score > was.score)) seen.set(k, a); }
+    } catch { /* read as nothing found; the general answer below says the catalog could not be searched */ }
+    const agents = [...seen.values()].filter((a) => {
+      const h = (a.handle ?? "").toLowerCase();
+      if (!a.key || !h || h === self || req.exclude.includes(h)) return false;
+      return req.only === "agentmesh" ? isAgentMeshHandle(h) : true;
+    }).sort((x, y) => y.score - x.score).slice(0, READ_AT_MOST); // cut-ok: the closest eight are read, as for any step
+    for (const a of agents) {
+      const offerings = await deps.offerings(a.key!).catch(() => null);
+      const o = offerings?.find((x) => x.id === step.offering);
+      if (!o) continue;
+      const fit = fitOffering(o, { ...step, gives: [] });
+      if (!fit.ok) continue;
+      const t = Object.keys(fit.takes);
+      return {
+        step: step.id,
+        answer: "agent",
+        agent: { handle: a.handle!, key: a.key!, name: a.name, offering: o.id, offering_name: o.name || o.id, takes: fit.takes, gives: {} },
+        why: `${a.name} declares ${o.id}, the job this step runs${t.length ? `, and takes the ${list(t)}` : ""}.`,
+        relevance: a.score,
+        considered: agents.length,
+      };
+    }
+  }
+  const listed = processFor(step, processes, selfId);
+  if (listed) return asProcess(listed, `The process ${listed.id} ${listed.version}, "${listed.name}", does this whole step: its goal is what this step says it makes.`);
+  // Otherwise the step's words and what it takes, against what each listing declares; solutions are drawings, not processes with an id.
+  const general = await answerStep(step, req, { ...deps, search: async (w) => ({ ...(await deps.search(w)), solutions: [] }) });
+  if (general.answer === "agent") return general;
+  return buildOne(general.why, general.considered);
+}
+
+/**
+ * The document with its `roster:` binding replaced by `roster` (a bindings
+ * block is made when there is none). Every other line is left as it was.
+ */
+export function bindRoster(text: string, roster: string): string {
+  const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+  const rosterLines: string[] = [];
+  let line = "  roster:";
+  // Wrapped between words, a blank <...> kept whole.
+  for (const w of roster.match(/<[^>]*>|\S+/g) ?? []) {
+    if (`${line} ${w}`.length > 76 && line !== "  roster:") { rosterLines.push(line); line = `      ${w}`; }
+    else line = `${line} ${w}`;
+  }
+  rosterLines.push(line);
+  const b = lines.findIndex((l) => /^bindings:/.test(l));
+  if (b < 0) {
+    const before = lines.findIndex((l) => /^(policy|measures|records|amendments|extensions):/.test(l));
+    lines.splice(before < 0 ? lines.length : before, 0, "bindings:", ...rosterLines, "  systems: none of the phases reaches a system of its own", "  data: what the trigger carries", "");
+    return lines.join("\n");
+  }
+  let end = b + 1;
+  while (end < lines.length && !/^\S/.test(lines[end]!)) end++;
+  const r = lines.findIndex((l, i) => i > b && i < end && /^\s+roster:/.test(l));
+  if (r < 0) { lines.splice(b + 1, 0, ...rosterLines); return lines.join("\n"); }
+  const indent = lines[r]!.length - lines[r]!.trimStart().length;
+  let stop = r + 1;
+  while (stop < end && lines[stop]!.trim() && lines[stop]!.length - lines[stop]!.trimStart().length > indent) stop++;
+  lines.splice(r, stop - r, ...rosterLines);
+  return lines.join("\n");
+}
+
+/** One sentence over a process's answers. */
+export function processSummaryOf(answers: ProcessStepAnswer[]): string {
+  const n = (k: number, one: string, many: string): string => `${k} ${k === 1 ? one : many}`;
+  const a = answers.filter((x) => x.answer === "agent").length;
+  const p = answers.filter((x) => x.answer === "process").length;
+  const b = answers.filter((x) => x.answer === "build one").length;
+  const parts = [a ? `${n(a, "step has an agent", "steps have an agent")} in the catalog` : "", p ? `${n(p, "step is a process", "steps are processes")} that exist${p === 1 ? "s" : ""}` : "", b ? `${n(b, "step needs", "steps need")} a new agent built` : ""].filter(Boolean);
+  return answers.length ? `Of ${n(answers.length, "step", "steps")}, ${list(parts)}.` : "Every step of this process is a person's, so there is nothing to find.";
+}
+
+/**
+ * Every step of a process document answered with an agent and its offering,
+ * a process (the step becomes `runs process <id> v<n>`), or build one with
+ * the reason; the people's phases named as the document names them; and the
+ * roster filled from the answers. It hires nothing and starts nothing.
+ */
+export async function sourceProcess(input: unknown, deps: SourceDeps): Promise<ProcessSourceOutcome> {
+  const b = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  if (typeof b.act === "string" && ACTS.test(b.act)) return { result: "refused", why: refusesToAct({ act: b.act }) ?? "I only look things up in the catalog." };
+  const text = processTextOf(input);
+  if (text === null) return { result: "refused", why: "I cannot answer this request: send the process document as process, the whole Agent Processes text." };
+  const read = readProcessSteps(text);
+  if (!read.ok) return { result: "refused", why: `I cannot answer this process: ${read.problems.join("; ")}.` };
+  const exclude = (Array.isArray(b.exclude) ? b.exclude : []).filter((h): h is string => typeof h === "string").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  const req: SourceRequest = { steps: read.steps, only: b.only === "agentmesh" ? "agentmesh" : null, exclude };
+  const processes = deps.processes ? await deps.processes().catch(() => []) : [];
+  const answers: ProcessStepAnswer[] = new Array(read.steps.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < read.steps.length) {
+      const i = next++;
+      answers[i] = await answerProcessStep(read.steps[i]!, req, deps, processes, read.id);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(AT_ONCE, read.steps.length) }, worker));
+  const roster: Record<string, string> = {};
+  const line: string[] = [];
+  for (const phase of read.order) {
+    const person = read.people.find((p) => p.step === phase);
+    const a = answers.find((x) => x.step === phase);
+    const holder = person ? (/\(person\)/i.test(person.owner) ? person.owner : `${person.owner} (person)`)
+      : a?.answer === "agent" ? a.agent.handle
+      : a?.answer === "process" ? `${a.process.id} ${a.process.version}` : null;
+    if (holder) roster[phase] = holder;
+    line.push(`${phase}: ${holder ?? "<build one>"}`);
+  }
+  return {
+    result: "sourced",
+    format: SOURCE_PROCESS_ANSWER_FORMAT,
+    process: { id: read.id, version: read.version },
+    answers,
+    people: read.people,
+    roster,
+    document: bindRoster(processDocumentText(text), line.join(", ")),
+    summary: processSummaryOf(answers),
+  };
 }
