@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { basename, join } from "node:path";
 import { reviewProcess, RULES } from "./process-rules.mjs";
 import { answerAgainst, earlierFindings } from "./write-findings.mjs";
-import { looksLikeReview } from "./read-change.mjs";
+import { looksLikeReview, plainName } from "./read-change.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -34,7 +34,7 @@ export function processAmong(files = [], asked = "") {
     try {
       if (!existsSync(f.path) || statSync(f.path).size > MAX_BYTES) continue;
       const text = readFileSync(f.path, "utf8");
-      if (isProcess(text) && !looksLikeReview(text)) return { name: basename(f.path), text };
+      if (isProcess(text) && !looksLikeReview(text)) return { name: plainName(f.path), text };
     } catch { /* not a text this review can read */ }
   }
   return isProcess(asked) ? { name: "the message", text: String(asked) } : null;

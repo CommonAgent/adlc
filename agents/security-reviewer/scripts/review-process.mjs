@@ -30,6 +30,13 @@ const q = (v) => JSON.stringify(String(v ?? "")).replace(UNSAFE, (c) => "\\u" + 
 const cell = (v) => String(v ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 const many = (n, word) => `${n} ${n === 1 ? word : `${word}s`}`;
 
+/** A file name without the prefix the host puts on it per hop (<n>-<8 characters>-). */
+export function plainName(path) {
+  let n = basename(String(path ?? ""));
+  while (/^\d+-[A-Za-z0-9_-]{8}-/.test(n)) n = n.replace(/^\d+-[A-Za-z0-9_-]{8}-/, "");
+  return n;
+}
+
 /** Whether a text is a process document: a PROCESS: line and a phases: part. */
 export const isProcess = (text) => /^\s*PROCESS:/m.test(String(text ?? "")) && /^phases:/m.test(String(text ?? "").replace(/\r/g, ""));
 
@@ -39,7 +46,7 @@ export function processAmong(files = [], message = "") {
     try {
       if (!existsSync(f.path) || statSync(f.path).size > MAX_BYTES) continue;
       const text = readFileSync(f.path, "utf8");
-      if (isProcess(text)) return { name: basename(f.path), text };
+      if (isProcess(text)) return { name: plainName(f.path), text };
     } catch { /* not a text this review reads */ }
   }
   return isProcess(message) ? { name: "the message", text: String(message) } : null;
