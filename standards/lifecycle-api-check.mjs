@@ -118,6 +118,13 @@ export function checkBuild(body, ids, id) {
       if (j > 0 && Number.isInteger(r?.n) && Number.isInteger(s.rounds[j - 1]?.n) && !(r.n < s.rounds[j - 1].n)) p.push(`body.build.stages[${i}].rounds[${j}]: rounds are newest first, and n ${r.n} follows n ${s.rounds[j - 1].n}`);
     });
   });
+  // The timeline (added in 0.1): bars ordered by start, each ending no earlier than it began.
+  (Array.isArray(b.timeline) ? b.timeline : []).forEach((t, i, all) => {
+    if (!isObj(t)) return;
+    const start = Date.parse(t.start), end = t.end ? Date.parse(t.end) : NaN;
+    if (i > 0 && isObj(all[i - 1]) && Date.parse(all[i - 1].start) > start) p.push(`body.build.timeline[${i}]: bars are ordered by start, and this one starts before the bar above it`);
+    if (Number.isFinite(end) && end < start) p.push(`body.build.timeline[${i}]: ends before it starts`);
+  });
   const offered = new Set(stages.filter((s) => s.state !== "not_offered").map((s) => s.stage));
   (Array.isArray(b.actions) ? b.actions : []).forEach((a, i) => {
     if (isObj(a) && typeof a.stage === "string" && !offered.has(a.stage)) p.push(`body.build.actions[${i}]: "${a.name}" acts at ${a.stage}, a stage the build does not offer`);
