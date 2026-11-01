@@ -158,7 +158,7 @@ test("a retire needs no files: the platform takes it down and the record says re
   assert.equal(got.record.status, "retired");
   assert.equal(got.record.process.id, "example/plan-a-page");
   assert.equal(got.pieces.length, 1);
-  assert.match(got.answer, /^Retired example\/plan-a-page v1:/);
+  assert.equal(got.answer, "Retired example/plan-a-page v1: the solution it was published as is removed, the document is out of the organization's processes. The signed deployment record is delivered as a piece.");
 });
 
 test("a trigger is said in words", () => {

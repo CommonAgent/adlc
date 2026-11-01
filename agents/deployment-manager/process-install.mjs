@@ -148,7 +148,11 @@ export async function doProcess({ files, words, verify, packageMakerKeys, signer
   const keptWords = kept.status === 200 ? "" : " The platform did not take the record back just now; it is delivered here.";
   const answer = req.act === "install"
     ? `Installed ${p.id} v${p.version} for the organization: filed as ${install.filed?.version ?? p.version} (${install.filed?.digest ? `sha256:${String(install.filed.digest).replace(/^sha256:/, "")}` : p.text_sha256}), solution ${install.solution?.id ?? "none"}, ${triggerWords(install.trigger)}. The signed deployment record is delivered as a piece.${keptWords}`
-    : `Retired ${p.id} v${p.version}: its schedule is unbound, the solution it was published as is removed, and the document is out of the organization's processes. The signed deployment record is delivered as a piece.${keptWords}`;
+    : `Retired ${p.id} v${p.version}: ${[
+      install.trigger?.schedule ? "its schedule is unbound" : null,
+      install.solution?.drawn ? "the solution it was published as is removed" : install.solution ? `the solution ${install.solution.id} it found already drawn is left in place` : null,
+      "the document is out of the organization's processes",
+    ].filter(Boolean).join(", ")}. The signed deployment record is delivered as a piece.${keptWords}`;
   return { ok: true, answer, record: rec, pieces, install };
 }
 
