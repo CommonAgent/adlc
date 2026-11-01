@@ -2,7 +2,7 @@
   "format": "agent-descriptor-v1",
   "agent_version": "0.7.0",
   "name": "Test writer",
-  "summary": "Writes the tests an agent's scripts must pass, before the scripts exist, and proves each test would notice a script being wrong; and writes a process's test cases, every approval and every way back exercised.",
+  "summary": "Writes the tests an agent's scripts must pass before the scripts exist, and the test cases that exercise every approval and way back of a process.",
   "will_not": [
     "It will not hand over a suite that passes against nothing as if it were a suite.",
     "It will not write the scripts the tests are for.",
