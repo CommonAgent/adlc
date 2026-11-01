@@ -14,6 +14,7 @@ when a process document is ready for review before it is wired, tested or instal
 ## What this needs
 
 - the process document (text/vnd.agentprocesses.process, required)
+- the earlier findings (text/markdown, optional)
 
 ## What a good result looks like
 
