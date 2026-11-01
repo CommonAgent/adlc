@@ -54,6 +54,14 @@ the same input in the test itself. Before the suite is delivered every worked
 value is checked against its own computation, and one that disagrees goes
 back to the model with both values named (technical debt 646).
 
+`printed-reply.test.mjs` is the fourth, and runs on its own: it runs each
+job's command the way the host does, with an empty message, and reads the
+reply the way the host does, `stdout` or `json:<member>` of the one JSON
+object printed. A reply that is empty there is a job the host records as
+stopped and tells the sender was cut short, so the suite fails at the code
+step instead of at Conformance (technical debt 657). Its reading is held to
+the host's (agents/image/one-message.mjs) by test/printed-reply.test.mjs.
+
 ## Replacing it
 
 This is a reference implementation. Any agent that holds the test writer role
