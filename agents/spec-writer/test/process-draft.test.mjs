@@ -127,6 +127,19 @@ test("the open questions are always the name, the owner, who signs and what may 
   assert.ok(withFail.some((x) => x.key === "conformance" && /§12\.2/.test(x.question)));
 });
 
+test("a supervised step is signed by a person, never by the agent that does it", () => {
+  const a = clone(ANSWER);
+  a.phases[1].automation = "supervised";
+  const { draft } = fixHolders(readDraft(a).draft, WORDS);
+  const text = renderProcess(draft, { today: TODAY });
+  assert.doesNotMatch(text.replace(/\s+/g, " "), /summary-writer signs/);
+  assert.match(text.replace(/\s+/g, " "), /whoever starts the run approves what write-the-summary hands on/);
+  const signs = openQuestions(draft).find((x) => x.key === "signs").question;
+  assert.doesNotMatch(signs, /drafted as summary-writer/);
+  assert.match(signs, /write-the-summary \(drafted as whoever starts the run\)/);
+  assert.deepEqual(checkProcess(text).failures, []);
+});
+
 test("words that would read as a key inside a sentence are not written as one", () => {
   const a = clone(ANSWER);
   a.phases[1].does = "a summary with owner: the editor and after: the read";
