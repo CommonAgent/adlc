@@ -12,6 +12,15 @@ the step's words closely and declares an offering whose inputs and outputs fit
 the step's. It answers only from what is listed, and it hires and starts
 nothing. There is no model in it: the same catalog gives the same answer.
 
+Given an Agent Processes document instead of plan steps (`process`), it
+answers every phase but a person's: with an agent that declares the offering
+the phase says it runs, or whose declared inputs fit what the phase takes;
+with a process that exists, when the phase's words restate its goal, so the
+phase becomes `runs process <id> v<n>`; or with build one and the reason. It
+names the people's phases as the document does and fills the document's
+roster from the answers (`source-process-answers-v1`). This is the
+find-the-holders step of a build whose artifact is a process.
+
 ## The parts
 
 - `src/catalog-source.ts` is the Source logic: reading the request, matching
@@ -52,7 +61,7 @@ version that the gate refused.
 
 ```sh
 npm install
-npm test          # 17 tests
+npm test          # 23 tests
 ```
 
 The role publishes its own conformance check at
