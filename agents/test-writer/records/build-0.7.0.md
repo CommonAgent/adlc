@@ -32,8 +32,8 @@ is that offering.
 
 ## Tests
 
-`test/check-cases.test.mjs` (13) and `test/test-cases.test.mjs` (10), written
-first and committed before the scripts. The package's suite: 205 tests, 204
+`test/check-cases.test.mjs` (14) and `test/test-cases.test.mjs` (10), written
+first and committed before the scripts. The package's suite: 206 tests, 205
 pass, 1 skipped (as before).
 
 ## Who held the step

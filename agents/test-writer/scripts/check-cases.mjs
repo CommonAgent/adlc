@@ -159,7 +159,7 @@ export function checkCases(processText, cases = []) {
     }
     if (c.for && doc.id && c.for !== doc.id) problems.push(`${who}: it is written for ${c.for}, and this document is ${doc.id}`);
     if (c.digest && c.digest !== digest) problems.push(`${who}: it is pinned to the digest ${c.digest}, and the document's digest is ${digest}; a runtime refuses a case written for another digest (§21.1)`);
-    for (const k of c.carried) if (!needs.items.includes(k.item)) problems.push(`${who}: carried: ${k.item} is not an item the trigger carries${needs.items.length ? ` (${needs.items.join(", ")})` : ""}`);
+    for (const k of c.carried) if (needs.items.length && !needs.items.includes(k.item)) problems.push(`${who}: carried: ${k.item} is not an item the trigger carries${needs.items.length ? ` (${needs.items.join(", ")})` : ""}`);
     for (const r of needs.required) if (!c.carried.some((k) => k.item === r)) problems.push(`${who}: it does not carry ${r}, an item the trigger marks required, so the run would be refused before it starts`);
     for (const a of c.answers) {
       if (!phases.has(a.phase)) { problems.push(`${who}: answer: ${a.phase} is not a phase of the document`); continue; }
