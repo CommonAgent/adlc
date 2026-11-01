@@ -365,7 +365,8 @@ test("§20.2: the extensions block is the last block, and each extension names i
 
 test("a line the specification does not define, outside the extensions: block, is a finding (§20.3)", () => {
   findsAs(GOOD.replace("policy:", "mapping-rules:\n  one thing\npolicy:"), "undefined-line", /mapping-rules/);
-  findsAs(swap("    is wrong, and the cards are written again", "    is wrong, and the cards are written again\n    limit: 3"), "undefined-line", /limit: 3/);
+  // A limit: under a deviation is 0.9.2's (§6.7.1); under a handoff it is still undefined.
+  findsAs(swap("    with its question", "    with its question\n    limit: 3"), "undefined-line", /limit: 3/);
   findsAs(swap("  data:    the topic as handed", "  data:    the topic as handed\n  mapping: plan-the-angles -> write-the-cards json"), "undefined-line", /mapping/);
   findsAs(swap("                      owner: card-writer", "                      owner: card-writer\n                      model: the big one"), "undefined-line", /model/);
   findsAs(swap("         carries: reader", "         form: a box\n         carries: reader"), "undefined-line", /form/);
