@@ -76,6 +76,7 @@
         "name": { "$ref": "#/$defs/Words" },
         "does": { "$ref": "#/$defs/Words" },
         "version": { "$ref": "#/$defs/Words" },
+        "kind": { "enum": ["agent", "process"], "description": "What the build makes: an agent, shaped as a Common Agent, or a process, shaped as an Agent Processes document. Absent means agent. Added in 0.1." },
         "at": {
           "type": "object",
           "required": ["stage", "state"],
@@ -95,7 +96,8 @@
       "type": "object",
       "required": ["does"],
       "properties": {
-        "does": { "type": "string", "minLength": 1, "description": "What the agent does, in the person's words." },
+        "kind": { "enum": ["agent", "process"], "description": "What to build. Absent means agent. A service that does not build the kind asked for refuses the request and says so. Added in 0.1." },
+        "does": { "type": "string", "minLength": 1, "description": "What the agent does, or what the process gets done, in the person's words." },
         "refuses": { "$ref": "#/$defs/Words", "description": "What it must refuse." },
         "more": { "$ref": "#/$defs/Words", "description": "Anything else the person wants said." },
         "name": { "$ref": "#/$defs/Words", "description": "A name for the agent, when the person has one." },
@@ -116,7 +118,8 @@
         "name": { "$ref": "#/$defs/Words" },
         "does": { "$ref": "#/$defs/Words" },
         "version": { "$ref": "#/$defs/Words" },
-        "handle": { "$ref": "#/$defs/Words", "description": "The address the agent answers at once it is installed." },
+        "kind": { "enum": ["agent", "process"], "description": "What the build makes: an agent, shaped as a Common Agent, or a process, shaped as an Agent Processes document. Absent means agent. Added in 0.1." },
+        "handle": { "$ref": "#/$defs/Words", "description": "The address the agent answers at once it is installed. For a process, the address of the installed process document." },
         "stages": { "type": "array", "items": { "$ref": "#/$defs/Stage" }, "description": "One entry for each of the stages in stages.json." },
         "actions": { "type": "array", "items": { "$ref": "#/$defs/Action" }, "description": "Everything the person may do now. A client draws one button for each, and nothing else." },
         "log": { "$ref": "#/$defs/Log" },
