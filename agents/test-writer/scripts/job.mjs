@@ -72,9 +72,28 @@ export function findSpec(files, read = (p) => readFileSync(p, "utf8")) {
   return null;
 }
 
+/** The process runner's line on the work of a phase a deviation reopened
+ *  (process-runner 0.30.0): "why this phase runs again: deviation [<key>]:
+ *  <words>", at the start of a line, the words running to the end of the
+ *  message. Under new-agent v3 Send back to Test is deviation [wrong-test]. */
+const RUNNER_REVISION = /^why this phase runs again: deviation \[[^\]\r\n]+\]:[ \t]*/m;
+
 /** A revision of a suite the code step sent back (debt 636): the message's
- *  first line begins "Revise the suite". */
-export const isRevision = (text) => /^\s*Revise the suite\b/i.test(String(text ?? "").split(/\r?\n/)[0] ?? "");
+ *  first line begins "Revise the suite", or the process runner sent this
+ *  phase back by a deviation (AgentMesh debt 665). */
+export const isRevision = (text) => /^\s*Revise the suite\b/i.test(String(text ?? "").split(/\r?\n/)[0] ?? "")
+  || RUNNER_REVISION.test(String(text ?? ""));
+
+/** What a revision asks, as the writing step reads it: for the process
+ *  runner's form, "Revise the suite." and the deviation's words alone, so the
+ *  work message's own lines (the inputs it lists by name) never name a file
+ *  to revise; any other message as it is. */
+export function revisionAsked(text) {
+  const t = String(text ?? "");
+  const m = RUNNER_REVISION.exec(t);
+  if (!m || /^\s*Revise the suite\b/i.test(t.split(/\r?\n/)[0] ?? "")) return t;
+  return `Revise the suite.\n\n${t.slice(m.index + m[0].length).trim()}`;
+}
 
 /** A test file among the attachments: its content imports node:test. Found
  *  by content for the same reason the spec is. */
@@ -205,6 +224,13 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
     extra.DEPENDS = DEPENDS;
   }
   if (textFile && existsSync(textFile)) extra.ASKED_TEXT = textFile;
+  // A revision the process runner sent is read from the deviation's words
+  // alone, written beside the work folder (AgentMesh debt 665).
+  if (extra.REVISE && revisionAsked(asked) !== asked) {
+    const at = `${WORK}.asked.txt`;
+    writeFileSync(at, revisionAsked(asked));
+    extra.ASKED_TEXT = at;
+  }
   const written = step("write-suite.mjs", { DECLARED: join(RECORDS, "declared.json"), SPEC, RECORDS, WORK, ...extra }, { spawn });
   if (!written.ok && written.reply) return { ok: false, code: written.code, reply: written.reply };
   if (!written.ok) return { ok: false, code: written.code, reply: `The suite could not be written: ${written.error ?? "the writing step failed"}.` };
