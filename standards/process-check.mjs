@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks a process document against Agent Processes 0.9.0
+// Checks a process document against Agent Processes 0.9.2
 // (agentprocesses.ai/spec.html; the source is CommonAgent/common-agent-standards
 // processes/SPEC.md). It reads the document and says two things:
 //
@@ -27,19 +27,24 @@
 // owner:/after:/by:/automation: read across the whole entry, after: split on
 // `+`, handoffs and deviations `a -> b / c [key]: text`, blanks `<...>`. Unlike
 // the runner it reads what 0.9.0 added (carries:, example:, extensions:,
-// keyless handoffs) and reads every line it cannot place as a finding rather
-// than a note. Nothing here is imported from AgentMesh.
+// keyless handoffs) and 0.9.2's `limit: <n>` at the end of a deviation line
+// (§6.7.1), and reads every line it cannot place as a finding rather than a
+// note. Nothing here is imported from AgentMesh.
 //
-// A document inside a Markdown page is read from its fenced block. The
-// document's digest, which a test case is pinned to (§21.1), is the sha256 of
-// its text with every line ending written as \n, so a checkout that turns line
-// endings into \r\n does not change it.
+// A document inside a Markdown page is read from its fenced block. The digest
+// a test case is pinned to (§21.1) is the digest of the document's SHAPE: the
+// sha256 of its text with the `bindings:` block left out, so swapping or
+// upgrading the agent that holds a role does not change it. The text's own
+// digest is reported beside it, for whatever pins the exact text. Both are
+// taken with every line ending written as \n, so a checkout that turns line
+// endings into \r\n changes neither.
 //
 //   node standards/process-check.mjs <document> [--inner <document>]... [--json]
 //
 //   --inner   another process document a phase of this one runs (§6.3.1), so
 //             a chain of runs process lines can be followed back to this one
-//   --json    print { conforms, clean, digest, failures, findings, document }
+//   --json    print { conforms, clean, digest, text_digest, failures,
+//             findings, document }; digest is the shape digest
 //
 //   exits 0 when the document conforms and has no findings, 1 when it does
 //   not, 2 when it could not start
@@ -48,7 +53,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-export const SPEC_VERSION = "0.9.0";
+export const SPEC_VERSION = "0.9.2";
 export const LEVELS = ["manual", "assisted", "supervised", "autonomous", "never"];
 /** The parts a document may carry at column 0 (§3, §4, §6.7.1, §13.6a, §18.3, §20.2). */
 export const TOP_KEYS = ["PROCESS", "id", "from", "owner", "effective", "confidential-under", "bounded-by", "trigger", "concurrency", "goal", "example",
@@ -72,9 +77,27 @@ export const isBlank = (s) => /^<[^<>]*>$/.test(squash(s));
 const indentOf = (l) => l.length - l.trimStart().length;
 const LINE_KEY = /^\s*([A-Za-z][A-Za-z-]*):(?=\s|$)/;
 
-/** The digest a test case pins (§21.1): sha256 of the text, line endings as \n. */
+/** The sha256 of a text, line endings as \n: the text's own digest. */
 export function digestOf(text) {
   return `sha256:${createHash("sha256").update(String(text ?? "").replace(/\r\n?/g, "\n")).digest("hex")}`;
+}
+
+/** The document's shape (§21.1): its text with the `bindings:` block left
+ *  out, meaning the `bindings:` line at column 0 and every line after it up
+ *  to the next line that starts at column 0. Line endings as \n. */
+export function shapeOf(text) {
+  const out = [];
+  let inBindings = false;
+  for (const l of documentText(text).split("\n")) {
+    if (/^\S/.test(l)) inBindings = /^bindings:/.test(l);
+    if (!inBindings) out.push(l);
+  }
+  return out.join("\n");
+}
+
+/** The digest a test case pins (§21.1): the sha256 of the document's shape. */
+export function shapeDigestOf(text) {
+  return digestOf(shapeOf(text));
 }
 
 /** The document out of what was read: a Markdown page's fenced block that
@@ -264,19 +287,36 @@ export function parseDocument(text) {
   }
 
   // Handoffs and deviations share a line (§8.1, §6.7.1).
+  // A deviation line may end with `limit: <n>` (§6.7.1), at the end of its
+  // last line or as a line of its own; nothing else under a handoff or a
+  // deviation is a line this specification defines.
   const arrows = (key) => {
     const out = [];
     for (const e of entries(sec(key)?.lines ?? [])) {
-      for (const l of e.slice(1)) if (/^\s+[a-z][a-z-]*:(?=\s)/.test(l.text)) undefinedLines.push(l);
-      const whole = squash(e.map((l) => l.text).join(" "));
+      const lastAt = e.length - 1;
+      e.forEach((l, i) => {
+        if (i === 0 || !/^\s+[a-z][a-z-]*:(?=\s)/.test(l.text)) return;
+        if (key === "deviations" && i === lastAt && /^\s+limit:\s+\S+\s*$/.test(l.text)) return;
+        undefinedLines.push(l);
+      });
+      let whole = squash(e.map((l) => l.text).join(" "));
+      let limitText = null;
+      if (key === "deviations") {
+        const lm = /\s+limit:\s+(\S+)$/.exec(whole);
+        if (lm) { limitText = lm[1]; whole = whole.slice(0, lm.index); }
+      }
       const m = ARROW.exec(whole);
       if (!m) { out.push({ line: e[0].n, malformed: true, whole }); continue; }
-      out.push({ line: e[0].n, fromText: squash(m[1]), toText: squash(m[2]), key: m[3] !== undefined ? squash(m[3]) : null, text: squash(m[4] ?? "") });
+      out.push({ line: e[0].n, fromText: squash(m[1]), toText: squash(m[2]), key: m[3] !== undefined ? squash(m[3]) : null, text: squash(m[4] ?? ""), limitText });
     }
     return out;
   };
-  const handoffs = arrows("handoffs").map((h) => (h.malformed ? h : { ...h, from: h.fromText.split(/\s*\+\s*/).map(squash).filter(Boolean), to: h.toText.split(/\s+\/\s+|\/(?=[a-z])/).map(squash).filter(Boolean) }));
-  const deviations = arrows("deviations").map((d) => (d.malformed ? d : { ...d, from: d.fromText, to: d.toText }));
+  const handoffs = arrows("handoffs").map(({ limitText: _l, ...h }) => (h.malformed ? h : { ...h, from: h.fromText.split(/\s*\+\s*/).map(squash).filter(Boolean), to: h.toText.split(/\s+\/\s+|\/(?=[a-z])/).map(squash).filter(Boolean) }));
+  const deviations = arrows("deviations").map(({ limitText, ...d }) => {
+    if (d.malformed) return d;
+    const limit = limitText === null || limitText === undefined ? null : /^[1-9]\d*$/.test(limitText) ? Number(limitText) : NaN;
+    return { ...d, from: d.fromText, to: d.toText, limit, ...(Number.isNaN(limit) ? { limitText } : {}) };
+  });
 
   // Bindings (§10).
   const bindings = { roster: null, systems: null, data: null, systemsText: "" };
@@ -333,7 +373,8 @@ const parseCache = (text) => (typeof text === "string" ? parseDocument(text) : t
 /**
  * Check a document. `inner` is a list of other documents (text or parsed) a
  * phase of this one may run, so a chain of runs process lines can be
- * followed. Returns { conforms, clean, digest, failures, findings, document }.
+ * followed. Returns { conforms, clean, digest, text_digest, failures,
+ * findings, document }: digest is the shape digest a test case pins (§21.1).
  */
 export function checkProcess(text, { inner = [] } = {}) {
   const d = parseDocument(text);
@@ -509,6 +550,7 @@ export function checkProcess(text, { inner = [] } = {}) {
     if (x.from !== "any" && !phaseNames.has(x.from)) fail("§6.7.1", `${where} leaves ${x.from}, which is not a phase of this document`);
     if (!phaseNames.has(x.to)) fail("§6.7.1", `${where} goes to ${x.to}, which is not a phase of this document`);
     if (!x.text) fail("§6.7.1", `${where} (${x.from} -> ${x.to}) does not say what happened`);
+    if (Number.isNaN(x.limit)) fail("§6.7.1", `${where} (${x.from} -> ${x.to}) ends with limit: ${x.limitText}, and a limit is a whole number of times, at least 1`);
     if (x.key !== null) takeKey(x.key, where);
   }
 
@@ -570,7 +612,7 @@ export function checkProcess(text, { inner = [] } = {}) {
     find("undefined-line", "§20.3", `line ${l.line}: "${squash(l.text)}" is not a line Agent Processes ${SPEC_VERSION} defines; outside the extensions: block it belongs in an extension, or out of the document`);
   }
 
-  return { conforms: failures.length === 0, clean: findings.length === 0, digest: digestOf(documentText(text)), failures, findings, document: d };
+  return { conforms: failures.length === 0, clean: findings.length === 0, digest: shapeDigestOf(text), text_digest: digestOf(documentText(text)), failures, findings, document: d };
 }
 
 /** The result in words, one line each. */
