@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.7.0",
+  "agent_version": "0.7.1",
   "name": "Test writer",
   "summary": "Writes the tests an agent's scripts must pass before the scripts exist, and the test cases that exercise every approval and way back of a process.",
   "will_not": [

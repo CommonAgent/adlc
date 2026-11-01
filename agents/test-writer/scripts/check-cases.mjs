@@ -36,7 +36,7 @@
 //   exit 0 the suite covers the rule, 1 it is refused, 2 called wrong, 3 no cases
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseDocument, digestOf } from "./process-check.mjs";
+import { parseDocument, shapeDigestOf } from "./process-check.mjs";
 
 export const ANSWERS = ["approve", "changes", "reject"];
 export const SIGNED_LEVELS = ["never", "supervised"];
@@ -139,7 +139,8 @@ export function wayBack(needs, phase, deviation) {
 /** The suite read against the document. `cases` is [{ file, text }]. */
 export function checkCases(processText, cases = []) {
   const doc = parseDocument(processText);
-  const digest = digestOf(processText);
+  // The shape digest (Agent Processes 0.9.2 §21.1): the text with the bindings: block left out.
+  const digest = shapeDigestOf(processText);
   const needs = needsOf(doc);
   const problems = [];
   const phases = new Set(doc.phases.map((p) => p.name));
@@ -158,7 +159,7 @@ export function checkCases(processText, cases = []) {
       else names.set(c.name, file);
     }
     if (c.for && doc.id && c.for !== doc.id) problems.push(`${who}: it is written for ${c.for}, and this document is ${doc.id}`);
-    if (c.digest && c.digest !== digest) problems.push(`${who}: it is pinned to the digest ${c.digest}, and the document's digest is ${digest}; a runtime refuses a case written for another digest (§21.1)`);
+    if (c.digest && c.digest !== digest) problems.push(`${who}: it is pinned to the digest ${c.digest}, and the document's shape digest is ${digest}; a runtime refuses a case written for another shape (§21.1)`);
     for (const k of c.carried) if (needs.items.length && !needs.items.includes(k.item)) problems.push(`${who}: carried: ${k.item} is not an item the trigger carries${needs.items.length ? ` (${needs.items.join(", ")})` : ""}`);
     for (const r of needs.required) if (!c.carried.some((k) => k.item === r)) problems.push(`${who}: it does not carry ${r}, an item the trigger marks required, so the run would be refused before it starts`);
     for (const a of c.answers) {
