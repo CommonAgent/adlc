@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/CommonAgent/adlc/main/standards/lifecycle-api.schema.json",
   "title": "The lifecycle API",
-  "version": "0.1",
-  "description": "What any service implementing the Agent Development Lifecycle answers, so that one client works against more than one service. Every request and answer is JSON, at the path /v1/lifecycle on the service. Times are ISO 8601 with a zone. Auth is Authorization: Bearer <key>, where the key is one the person makes for their own account, as the service says. A build lists the 24 stages of stages.json, one entry each, and a stage the service does not run is reported as not_offered. A client draws one button for each action the build offers, and nothing else. Version 0.1 changes only by adding fields: a client ignores a field it does not know, and a service never removes or retypes one. The operations list names the definition each request and answer must match; lifecycle-api-check.mjs checks a running service against it, together with the rules a schema cannot say.",
+  "version": "0.2",
+  "description": "What any service implementing the Agent Development Lifecycle answers, so that one client works against more than one service. Every request and answer is JSON, at the path /v1/lifecycle on the service. Times are ISO 8601 with a zone. Auth is Authorization: Bearer <key>, where the key is one the person makes for their own account, as the service says. A build lists the 24 stages of stages.json, one entry each, and a stage the service does not run is reported as not_offered. A client draws one button for each action the build offers, and nothing else. An organization chooses who holds each role of stages.json (the roles operations): the service's reference agent, its own agent, a contracted supplier, a person or an outside tool. A holder outside the service hands its evidence back in one of the open formats stages.json lists, and the service reads it onto the stage. The schema changes only by adding: a client ignores a field it does not know, and a service never removes or retypes one. Version 0.2 adds the roles operations, the evidence operation and new fields, and it also adds values to two lists, the holder's kinds and the stage's states; a client that does not know a state draws the stage as not_offered, and one that does not know a holder's kind shows the holder's name. The operations list names the definition each request and answer must match; lifecycle-api-check.mjs checks a running service against it, together with the rules a schema cannot say.",
   "basePath": "/v1/lifecycle",
   "operations": [
     { "method": "GET", "path": "/me", "answer": "#/$defs/MeAnswer", "does": "Who is asking, and the service's name." },
@@ -16,7 +16,11 @@
     { "method": "POST", "path": "/builds/{id}/try", "request": "#/$defs/TryRequest", "answer": "#/$defs/TryAnswer", "does": "Send one input to the build's pull request or to the installed agent, and read the answer." },
     { "method": "GET", "path": "/builds/{id}/tries", "answer": "#/$defs/TriesAnswer", "does": "The tries made on a build, newest first." },
     { "method": "POST", "path": "/builds/{id}/tries/{tid}/keep", "answer": "#/$defs/TryListAnswer", "does": "Keep a try: it is added to the agent's suite as a new test file." },
-    { "method": "POST", "path": "/builds/{id}/tries/{tid}/wrong", "request": "#/$defs/WrongRequest", "answer": "#/$defs/TryListAnswer", "does": "Say a try came back wrong: it goes back to whoever holds Code, as a comment on the pull request." }
+    { "method": "POST", "path": "/builds/{id}/tries/{tid}/wrong", "request": "#/$defs/WrongRequest", "answer": "#/$defs/TryListAnswer", "does": "Say a try came back wrong: it goes back to whoever holds Code, as a comment on the pull request." },
+    { "method": "POST", "path": "/builds/{id}/evidence", "request": "#/$defs/EvidenceRequest", "answer": "#/$defs/BuildAnswer", "does": "Hand back evidence for a stage held outside the service, in one of the formats stages.json lists. The service reads it and lists it on that stage. It answers 400 when the content does not read as the format named. Added in 0.2." },
+    { "method": "GET", "path": "/roles", "answer": "#/$defs/RolesAnswer", "does": "Every role of stages.json, each with who holds it now and where that binding comes from. With ?project=<name>, as a build started under that project would see them. Added in 0.2." },
+    { "method": "PUT", "path": "/roles/{role}", "request": "#/$defs/RoleBindingRequest", "answer": "#/$defs/RolesAnswer", "does": "Bind a role for the organization, or with ?project=<name> for builds started under that project. It answers 400 for a role stages.json does not name, a your_agent or contracted holder with no handle, the requester bound to anyone but a person, or an evidence format stages.json does not list. Added in 0.2." },
+    { "method": "DELETE", "path": "/roles/{role}", "answer": "#/$defs/RolesAnswer", "does": "Remove the organization's binding of a role, or with ?project=<name> that project's, so the role falls back to the organization's binding, then to the service's reference agent, then to nobody. Added in 0.2." }
   ],
   "errors": "#/$defs/ErrorAnswer",
   "$defs": {
@@ -24,8 +28,13 @@
     "Time": { "type": "string", "format": "date-time", "description": "ISO 8601, with a zone (Z or an offset)." },
     "StageId": { "type": "string", "minLength": 1, "description": "An id from stages.json, such as \"code\"." },
     "State": {
-      "enum": ["not_started", "working", "waiting_on_you", "done", "refused", "stopped", "not_offered"],
-      "description": "waiting_on_you: the person's act is next. not_offered: this service does not run the stage."
+      "enum": ["not_started", "working", "waiting_on_you", "done", "refused", "stopped", "not_offered", "not_bound", "not_applicable"],
+      "description": "waiting_on_you: the person's act is next. not_offered: this service cannot hand the stage to anyone, even if its role were bound. not_bound: the stage applies to the build, nobody holds its role, and the service does not run it (added in 0.2). not_applicable: the stage does not apply to this kind of build, such as Review on a process (added in 0.2). A stage held outside the service is not_started until its evidence or answer arrives, then done, or refused when the evidence says it failed. A client that does not know a state draws it as not_offered."
+    },
+    "RoleId": { "type": "string", "minLength": 1, "description": "A role id from stages.json, such as \"code-critic\". Added in 0.2." },
+    "EvidenceFormat": {
+      "enum": ["sarif", "cyclonedx", "spdx", "slsa", "in-toto", "otel-genai", "pact"],
+      "description": "An evidence format from stages.json's evidence_formats. Added in 0.2."
     },
     "Said": {
       "type": "object",
@@ -101,7 +110,8 @@
         "refuses": { "$ref": "#/$defs/Words", "description": "What it must refuse." },
         "more": { "$ref": "#/$defs/Words", "description": "Anything else the person wants said." },
         "name": { "$ref": "#/$defs/Words", "description": "A name for the agent, when the person has one." },
-        "prototype": { "$ref": "#/$defs/Words", "description": "A public repository, as owner/name, to read as the agent's prototype." }
+        "prototype": { "$ref": "#/$defs/Words", "description": "A public repository, as owner/name, to read as the agent's prototype." },
+        "project": { "$ref": "#/$defs/Words", "description": "The project the build is for, in the person's words. A role bound for that project holds its stages in place of the organization's binding. Added in 0.2." }
       }
     },
 
@@ -142,6 +152,7 @@
           "description": "The installed agent is paused, since when and why (for example, a conformance check it failed); null when it is not. Added in 0.1."
         },
         "archived": { "type": "boolean", "description": "The person archived it. Added in 0.1." },
+        "project": { "$ref": "#/$defs/Words", "description": "The project the build was started under, as its StartRequest gave it; absent when none was given. Added in 0.2." },
         "timeline": { "type": "array", "items": { "$ref": "#/$defs/TimelineBar" }, "description": "The build's run as one bar per step per round, ordered by start; empty when the service keeps no run for it. Steps that run at the same time keep their own bars, so overlaps show. Added in 0.1." }
       }
     },
@@ -187,7 +198,7 @@
       "properties": {
         "stage": { "$ref": "#/$defs/StageId" },
         "state": { "$ref": "#/$defs/State" },
-        "holder": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/Holder" }], "description": "Who holds the stage; null for a stage that is not offered." },
+        "holder": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/Holder" }], "description": "Who holds the stage; null for a stage that is not offered, not bound or not applicable." },
         "runs": { "type": "integer", "minimum": 0, "description": "How many times the stage has run." },
         "rounds": { "type": "array", "items": { "$ref": "#/$defs/Round" }, "description": "Newest first." },
         "given": { "$ref": "#/$defs/Words" },
@@ -201,15 +212,98 @@
         },
         "done_when_met": { "type": ["boolean", "null"], "description": "Whether the stage's \"done when\" was met; null when it is not known yet." },
         "log": { "$ref": "#/$defs/Log" },
-        "where": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/PullRequest" }], "description": "Where the stage's work is, when it is somewhere the person can open." }
+        "where": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/PullRequest" }], "description": "Where the stage's work is, when it is somewhere the person can open." },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/Evidence" }, "description": "The evidence handed back for the stage by a holder outside the service, as the service read it. Added in 0.2." }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["format", "name", "at", "summary"],
+      "description": "One piece of evidence, as the service read it. Added in 0.2.",
+      "properties": {
+        "format": { "$ref": "#/$defs/EvidenceFormat" },
+        "name": { "$ref": "#/$defs/Words", "description": "Its name, as it was handed back." },
+        "at": { "$ref": "#/$defs/Time", "description": "When it arrived." },
+        "summary": { "$ref": "#/$defs/Words", "description": "What the service read in it, in words, such as \"2 errors, 5 warnings\" or \"41 components\"." },
+        "file": { "$ref": "#/$defs/File", "description": "The file as it was handed back." }
       }
     },
     "Holder": {
       "type": "object",
       "required": ["kind", "name"],
       "properties": {
-        "kind": { "enum": ["reference_agent", "your_agent", "person"] },
-        "name": { "$ref": "#/$defs/Words" }
+        "kind": { "enum": ["reference_agent", "your_agent", "contracted", "person", "outside_tool"], "description": "reference_agent: the service's own agent for the role. your_agent: an agent of the organization's, on the mesh. contracted: a supplier's agent the organization contracted, on the mesh. person: a person. outside_tool: a tool outside the mesh, whose evidence is handed back to the service. contracted and outside_tool were added in 0.2." },
+        "name": { "$ref": "#/$defs/Words", "description": "Words a person reads, such as \"CodeRabbit\" or \"Our security team\"." },
+        "handle": { "$ref": "#/$defs/Words", "description": "The holder's handle on the mesh. A your_agent or contracted holder has one, a reference_agent may, and a person or an outside_tool has none. Added in 0.2." },
+        "role": { "$ref": "#/$defs/RoleId", "description": "The role it holds the stage as. Added in 0.2." },
+        "evidence": {
+          "type": "object",
+          "required": ["formats"],
+          "description": "The evidence the holder hands back, and where it can be read. Added in 0.2.",
+          "properties": {
+            "formats": { "type": "array", "items": { "$ref": "#/$defs/EvidenceFormat" } },
+            "where": { "$ref": "#/$defs/Words", "description": "Words or an address saying where the holder's evidence can be read." }
+          }
+        }
+      }
+    },
+    "RolesAnswer": {
+      "type": "object",
+      "required": ["roles"],
+      "description": "Every role of stages.json, once each. Added in 0.2.",
+      "properties": {
+        "project": { "$ref": "#/$defs/Words", "description": "The project asked about, when the request named one." },
+        "roles": { "type": "array", "items": { "$ref": "#/$defs/Role" } }
+      }
+    },
+    "Role": {
+      "type": "object",
+      "required": ["role", "name", "contract", "offering", "stages", "binding", "from", "reference_agent"],
+      "description": "One role, as stages.json names it, and who holds it now. Added in 0.2.",
+      "properties": {
+        "role": { "$ref": "#/$defs/RoleId" },
+        "name": { "$ref": "#/$defs/Words" },
+        "contract": { "$ref": "#/$defs/Words", "description": "The role's contract, https://agentroles.ai/<id>.html." },
+        "offering": { "$ref": "#/$defs/Words", "description": "The offering a bound handle is sent the stage's input under, role-<id>." },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/StageId" } },
+        "binding": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/RoleBinding" }], "description": "The binding in effect; null when nobody holds the role." },
+        "from": { "enum": ["project", "org", "default", "unbound"], "description": "Where the binding in effect comes from: the project's binding, the organization's, the service's default (its reference agent, or the person who asked for the requester), or nobody." },
+        "reference_agent": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/Holder" }], "description": "The service's own agent for the role, when it runs one." }
+      }
+    },
+    "RoleBinding": {
+      "type": "object",
+      "required": ["role", "holder"],
+      "description": "Who holds a role. scope, since and by are absent on a default, which nobody bound. Added in 0.2.",
+      "properties": {
+        "role": { "$ref": "#/$defs/RoleId" },
+        "holder": { "$ref": "#/$defs/Holder" },
+        "scope": {
+          "anyOf": [
+            { "type": "object", "required": ["org"], "properties": { "org": { "const": true } } },
+            { "type": "object", "required": ["project"], "properties": { "project": { "type": "string", "minLength": 1 } } }
+          ],
+          "description": "{ \"org\": true } for the organization's binding, or { \"project\": <name> } for one project's."
+        },
+        "since": { "$ref": "#/$defs/Time" },
+        "by": { "$ref": "#/$defs/Words", "description": "Who bound it." }
+      }
+    },
+    "RoleBindingRequest": {
+      "type": "object",
+      "required": ["holder"],
+      "description": "The holder to bind the role to. Added in 0.2.",
+      "properties": { "holder": { "$ref": "#/$defs/Holder" } }
+    },
+    "EvidenceRequest": {
+      "type": "object",
+      "required": ["stage", "format", "name", "content"],
+      "description": "Evidence for one stage of a build. Added in 0.2.",
+      "properties": {
+        "stage": { "$ref": "#/$defs/StageId" },
+        "format": { "$ref": "#/$defs/EvidenceFormat" },
+        "name": { "type": "string", "minLength": 1, "description": "Its name, such as the file's name." },
+        "content": { "type": ["object", "array", "string"], "description": "The file, as a JSON value or as a base64 string." }
       }
     },
     "Round": {

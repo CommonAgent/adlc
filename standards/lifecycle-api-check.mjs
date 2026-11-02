@@ -1,17 +1,27 @@
 #!/usr/bin/env node
 // Checks a running service against the lifecycle API (lifecycle-api.schema.json,
-// version 0.1): every answer against the schema, and the rules a schema cannot
-// say. It only reads. It asks who the key belongs to, lists the builds, reads
-// each one, reads its tries, and opens the first file each build handed back
-// (every file with --all-files).
+// version 0.2): every answer against the schema, and the rules a schema cannot
+// say. It only reads. It asks who the key belongs to, reads who holds each
+// role, lists the builds, reads each one, reads its tries, and opens the first
+// file each build handed back (every file with --all-files).
 //
 // The rules beyond the schema:
 //   - a build lists every stage of stages.json, once each, and no other;
-//   - an action acts at a stage the build lists and offers (not not_offered);
+//   - an action acts at a stage the build lists and offers (not not_offered,
+//     not_bound or not_applicable);
 //   - a stage's rounds are newest first (each round's n below the one before);
 //   - a build in the list is at a stage of stages.json;
 //   - reading a build by its id answers with that build;
-//   - every time is ISO 8601 with a zone, and a real date.
+//   - every time is ISO 8601 with a zone, and a real date;
+//   - the roles answer lists every role of stages.json once, and no other, each
+//     with the contract, offering and stages stages.json gives it;
+//   - the requester is always held by a person;
+//   - a role is unbound exactly when it has no binding, and a project or org
+//     binding says that scope;
+//   - a role bound to a your_agent or contracted holder names its handle, and
+//     one bound to a person or an outside_tool names none;
+//   - a not_bound stage has no holder, and one of its roles is unbound in the
+//     roles answer for the build's project (or the organization's).
 //
 //   node standards/lifecycle-api-check.mjs <base> [--key-file <path>] [--stages <path>] [--limit <n>] [--all-files]
 //
@@ -85,6 +95,64 @@ export function stageIds(path = join(HERE, "stages.json")) {
   return JSON.parse(readFileSync(path, "utf8")).stages.map((s) => s.id);
 }
 
+/** The roles of a stages.json, and the roles that hold each stage (added in 1.1.0). */
+export function stageRoles(path = join(HERE, "stages.json")) {
+  const d = JSON.parse(readFileSync(path, "utf8"));
+  return { roles: d.roles ?? [], byStage: Object.fromEntries(d.stages.map((s) => [s.id, s.role_ids ?? []])) };
+}
+
+// Who has a handle: an agent on the mesh does, a person and an outside tool do not.
+const NEEDS_HANDLE = new Set(["your_agent", "contracted"]);
+const NO_HANDLE = new Set(["person", "outside_tool"]);
+// The states at which nobody may act on a stage.
+const NOT_OFFERED = new Set(["not_offered", "not_bound", "not_applicable"]);
+
+function checkHolder(h, at, p) {
+  if (!isObj(h) || typeof h.kind !== "string") return;
+  if (NEEDS_HANDLE.has(h.kind) && !(typeof h.handle === "string" && h.handle.length > 0)) p.push(`${at}: a ${h.kind} holder names its handle`);
+  if (NO_HANDLE.has(h.kind) && "handle" in h) p.push(`${at}: ${h.kind === "person" ? "a" : "an"} ${h.kind} holder has no handle`);
+}
+
+/**
+ * The roles answer, against the roles of stages.json (sr, from stageRoles).
+ * Returns the problems, and fills `unbound` with the roles nobody holds.
+ */
+export function checkRoles(body, sr, unbound = new Set()) {
+  const p = validate("RolesAnswer", body);
+  const list = isObj(body) && Array.isArray(body.roles) ? body.roles.filter(isObj) : [];
+  const want = new Map(sr.roles.map((r) => [r.id, r]));
+  const listed = list.map((r) => r.role);
+  for (const id of new Set(listed)) {
+    if (!want.has(id)) p.push(`body.roles: "${id}" is not a role in stages.json`);
+    if (listed.filter((x) => x === id).length > 1) p.push(`body.roles: "${id}" appears more than once`);
+  }
+  const missing = [...want.keys()].filter((id) => !listed.includes(id));
+  if (missing.length) p.push(`body.roles: does not list ${missing.join(", ")}`);
+  const sorted = (a) => JSON.stringify([...a].sort());
+  list.forEach((r, i) => {
+    const at = `body.roles[${i}]`;
+    const w = want.get(r.role);
+    if (w) {
+      if (r.contract !== w.contract) p.push(`${at}.contract: is ${JSON.stringify(r.contract)}, not ${w.contract}`);
+      if (r.offering !== w.offering) p.push(`${at}.offering: is ${JSON.stringify(r.offering)}, not ${w.offering}`);
+      if (Array.isArray(r.stages) && sorted(r.stages) !== sorted(w.stages)) p.push(`${at}.stages: are ${r.stages.join(", ")}, not ${w.stages.join(", ")}`);
+    }
+    const b = isObj(r.binding) ? r.binding : null;
+    if (r.from === "unbound") unbound.add(r.role);
+    if (r.from === "unbound" && b) p.push(`${at}: is unbound, but it has a binding`);
+    if (r.from !== "unbound" && r.binding === null) p.push(`${at}: has no binding, so it is unbound, not ${r.from}`);
+    if (b) {
+      if (b.role !== undefined && b.role !== r.role) p.push(`${at}.binding.role: is ${JSON.stringify(b.role)}, not ${r.role}`);
+      checkHolder(b.holder, `${at}.binding.holder`, p);
+      if (r.from === "project" && !(isObj(b.scope) && typeof b.scope.project === "string")) p.push(`${at}.binding.scope: a project binding names its project`);
+      if (r.from === "org" && !(isObj(b.scope) && b.scope.org === true)) p.push(`${at}.binding.scope: an org binding says { "org": true }`);
+    }
+    if (r.role === "requester" && !(b && isObj(b.holder) && b.holder.kind === "person")) p.push(`${at}: the requester is always held by a person`);
+    checkHolder(r.reference_agent, `${at}.reference_agent`, p);
+  });
+  return p;
+}
+
 export function checkMe(body) {
   return validate("MeAnswer", body);
 }
@@ -99,7 +167,11 @@ export function checkBuildList(body, ids) {
   return p;
 }
 
-export function checkBuild(body, ids, id) {
+/**
+ * One build. Given roles ({ unbound, byStage }), a not_bound stage is checked
+ * against the roles answer for the build's project.
+ */
+export function checkBuild(body, ids, id, roles) {
   const p = validate("BuildAnswer", body);
   const b = isObj(body) ? body.build : null;
   if (!isObj(b)) return p;
@@ -125,7 +197,16 @@ export function checkBuild(body, ids, id) {
     if (i > 0 && isObj(all[i - 1]) && Date.parse(all[i - 1].start) > start) p.push(`body.build.timeline[${i}]: bars are ordered by start, and this one starts before the bar above it`);
     if (Number.isFinite(end) && end < start) p.push(`body.build.timeline[${i}]: ends before it starts`);
   });
-  const offered = new Set(stages.filter((s) => s.state !== "not_offered").map((s) => s.stage));
+  // A not_bound stage (added in 0.2): nobody holds it, and the roles answer agrees. A build
+  // stage's holder may be your coding agent on the pull request, which has no handle, so the
+  // handle rule is held only on bindings.
+  stages.forEach((s, i) => {
+    if (s.state !== "not_bound") return;
+    if (s.holder !== null && s.holder !== undefined) p.push(`body.build.stages[${i}]: is not_bound, so nobody holds it, but it names a holder`);
+    const held = roles?.byStage?.[s.stage];
+    if (roles?.unbound && held?.length && !held.some((r) => roles.unbound.has(r))) p.push(`body.build.stages[${i}]: ${s.stage} is not_bound, but the roles answer${b.project ? ` for project ${b.project}` : ""} has ${held.join(" and ")} held`);
+  });
+  const offered = new Set(stages.filter((s) => !NOT_OFFERED.has(s.state)).map((s) => s.stage));
   (Array.isArray(b.actions) ? b.actions : []).forEach((a, i) => {
     if (isObj(a) && typeof a.stage === "string" && !offered.has(a.stage)) p.push(`body.build.actions[${i}]: "${a.name}" acts at ${a.stage}, a stage the build does not offer`);
   });
@@ -144,7 +225,7 @@ export function checkError(body) {
  * Reads the service and checks every answer. Returns { calls, problems }, each
  * problem in words with the call it came from. `say` hears one line per call.
  */
-export async function run({ base, key, ids, limit = 50, allFiles = false, fetch: get = globalThis.fetch, say = () => {} }) {
+export async function run({ base, key, ids, roles: sr = stageRoles(), limit = 50, allFiles = false, fetch: get = globalThis.fetch, say = () => {} }) {
   const root = new URL(base.endsWith("/") ? base : `${base}/`);
   const problems = [];
   let calls = 0;
@@ -176,17 +257,33 @@ export async function run({ base, key, ids, limit = 50, allFiles = false, fetch:
       note(what, [`answered ${got.status}${typeof got.body?.error === "string" ? `: ${got.body.error}` : ""}`, ...shape]);
       return null;
     }
-    note(what, check(got.body));
+    note(what, await check(got.body));
     return got.body;
   };
 
   await answered("GET me", "me", checkMe);
+  // Who holds each role, for the organization and for each project a build names.
+  const unboundIn = new Map();
+  const rolesFor = async (project) => {
+    const k = project ?? "";
+    if (!unboundIn.has(k)) {
+      const unbound = new Set();
+      const got = await answered(project ? `GET roles?project=${project}` : "GET roles", project ? `roles?project=${encodeURIComponent(project)}` : "roles", (b) => checkRoles(b, sr, unbound));
+      unboundIn.set(k, got ? unbound : null);
+    }
+    return unboundIn.get(k);
+  };
+  await rolesFor(undefined);
   const list = await answered("GET builds", "builds", (b) => checkBuildList(b, ids));
   const builds = Array.isArray(list?.builds) ? list.builds.filter((b) => isObj(b) && typeof b.id === "string") : [];
   if (builds.length > limit) say(`reading the first ${limit} of ${builds.length} builds`);
   for (const item of builds.slice(0, limit)) {
     const id = encodeURIComponent(item.id);
-    const one = await answered(`GET builds/${item.id}`, `builds/${id}`, (b) => checkBuild(b, ids, item.id));
+    const one = await answered(`GET builds/${item.id}`, `builds/${id}`, async (b) => {
+      const project = typeof b?.build?.project === "string" && b.build.project ? b.build.project : undefined;
+      const unbound = await rolesFor(project);
+      return checkBuild(b, ids, item.id, unbound ? { unbound, byStage: sr.byStage } : undefined);
+    });
     await answered(`GET builds/${item.id}/tries`, `builds/${id}/tries`, checkTries);
     const files = (one?.build?.stages ?? []).flatMap((s) => (isObj(s?.handed_back) && Array.isArray(s.handed_back.files) ? s.handed_back.files : []));
     const links = [...new Set(files.filter((f) => typeof f?.link === "string" && f.link).map((f) => f.link))].slice(0, allFiles ? undefined : 1);
@@ -221,17 +318,18 @@ function args(argv) {
 }
 
 async function main() {
-  let o, key, ids;
+  let o, key, ids, roles;
   try {
     o = args(process.argv.slice(2));
     key = (o.keyFile ? readFileSync(resolve(o.keyFile), "utf8") : process.env.ADLC_API_KEY ?? "").trim();
     if (!key) throw new Error("No key: put it in a file and give --key-file, or set ADLC_API_KEY.");
     ids = stageIds(o.stages ? resolve(o.stages) : undefined);
+    roles = stageRoles(o.stages ? resolve(o.stages) : undefined);
   } catch (e) {
     console.error(e.message);
     process.exit(2);
   }
-  const { calls, problems } = await run({ base: o.base, key, ids, limit: o.limit, allFiles: o.allFiles, say: (s) => console.log(s) });
+  const { calls, problems } = await run({ base: o.base, key, ids, roles, limit: o.limit, allFiles: o.allFiles, say: (s) => console.log(s) });
   if (problems.length) {
     console.log("");
     for (const p of problems) console.log(`- ${p}`);
