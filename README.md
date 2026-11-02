@@ -73,7 +73,12 @@ the stage's standard, in
 [standards/architecture-standard.md](standards/architecture-standard.md).
 The [`standards/`](standards) folder holds the standing assets every Builder
 reads at a version it pins: the architecture standard, the audit checklist
-and the known kinds of standing asset.
+and the known kinds of standing asset. It also holds
+[standards/stages.json](standards/stages.json): the 24 stages, the roles that
+hold them, which an organization may bind to the reference agent, its own
+agent, a contracted supplier, a person or an outside tool, and the open
+evidence formats (such as SARIF and CycloneDX) in which a holder outside the
+service hands its evidence back.
 
 [agents/image](agents/image) is not an agent. It holds the tools the deployment
 manager uses to turn an Agent Package into a container image's build context,

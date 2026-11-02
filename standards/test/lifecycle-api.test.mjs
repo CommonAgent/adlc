@@ -1,19 +1,22 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.1) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.2) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
-// that each rule the check holds catches the answer that breaks it, and that
-// the check never sends the key elsewhere or prints it.
+// that each rule the check holds catches the answer that breaks it, that
+// the roles answer holds to stages.json's roles, and that the check never sends
+// the key elsewhere or prints it.
 //   node --test standards/test/*.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCHEMA, validate, stageIds, checkMe, checkBuildList, checkBuild, checkTries, checkError, run } from "../lifecycle-api-check.mjs";
+import { SCHEMA, validate, stageIds, stageRoles, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, run } from "../lifecycle-api-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
 const IDS = stageIds();
+const SR = stageRoles();
 const AT = "2026-10-31T09:15:00Z";
 const KEY = "key_for_the_test_0123456789";
 
@@ -53,8 +56,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.1 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.1");
+test("the schema is version 0.2 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.2");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -65,7 +68,7 @@ test("the schema is version 0.1 on /v1/lifecycle, with a definition for every re
     if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) { if (k === "$ref") assert.ok(SCHEMA.$defs[x.replace("#/$defs/", "")], `${x} is not defined`); else walk(x); }
   };
   walk(SCHEMA.$defs);
-  for (const o of SCHEMA.operations) assert.ok(["GET", "POST"].includes(o.method) && o.path.startsWith("/") && o.does, JSON.stringify(o));
+  for (const o of SCHEMA.operations) assert.ok(["GET", "POST", "PUT", "DELETE"].includes(o.method) && o.path.startsWith("/") && o.does, JSON.stringify(o));
 });
 
 test("answers in the contract's shape pass", () => {
@@ -190,6 +193,7 @@ function service({ broken = false, echo = false } = {}) {
     seen.push({ url: u.href, auth: init?.headers?.authorization ?? null });
     if (init?.headers?.authorization !== `Bearer ${KEY}`) return answer(401, { error: "No key." });
     const p = u.pathname.replace("/v1/lifecycle/", "");
+    if (p === "roles") return answer(200, roles());
     if (p === "me") return echo ? answer(403, { error: `The key ${KEY} may not read this.` }) : answer(200, me());
     if (p === "builds") return answer(200, list());
     if (p === "builds/b1") {
@@ -210,8 +214,8 @@ test("the check reads a service in the contract's shape and finds nothing wrong"
   const lines = [];
   const r = await run({ base: "https://svc.example/v1/lifecycle", key: KEY, ids: IDS, fetch: s.fetch, say: (l) => lines.push(l) });
   assert.deepEqual(r.problems, []);
-  assert.equal(r.calls, 5);
-  assert.deepEqual(s.seen.map((x) => new URL(x.url).pathname), ["/v1/lifecycle/me", "/v1/lifecycle/builds", "/v1/lifecycle/builds/b1", "/v1/lifecycle/builds/b1/tries", "/v1/lifecycle/builds/b1/files"]);
+  assert.equal(r.calls, 6);
+  assert.deepEqual(s.seen.map((x) => new URL(x.url).pathname), ["/v1/lifecycle/me", "/v1/lifecycle/roles", "/v1/lifecycle/builds", "/v1/lifecycle/builds/b1", "/v1/lifecycle/builds/b1/tries", "/v1/lifecycle/builds/b1/files"]);
   assert.ok(s.seen.every((x) => x.auth === `Bearer ${KEY}`));
 });
 
@@ -267,4 +271,192 @@ test("a build may carry its run's timeline, one bar per step per round, and a ba
   assert.ok(checkBuild(bad, IDS, "b1").length > 0, "a bar of an unknown kind is refused");
   const answer = { timeline: b.build.timeline, totals: { total_ms: 300000, by_kind_ms: { agent: 240000, person: 60000, external: 0 }, share: { agent: 0.8, person: 0.2, external: 0 } } };
   assert.deepEqual(validate("TimelineAnswer", answer), []);
+});
+
+// Version 0.2: who holds each role, and evidence from holders outside the
+// service. The roles answer as a service with its own reference agents gives
+// it: each role at its default, the requester the person who asked, and the
+// roles it runs no agent for unbound.
+function roles({ unbound = ["agent-critic", "impact-analyst"] } = {}) {
+  return {
+    roles: SR.roles.map((r) => {
+      const ref = r.reference_agent ? { kind: "reference_agent", name: r.name, handle: `${r.id}.platform@example.com` } : null;
+      let binding = null, from = "unbound";
+      if (r.id === "requester") { binding = { role: r.id, holder: { kind: "person", name: "the person who asked" } }; from = "default"; }
+      else if (ref && !unbound.includes(r.id)) { binding = { role: r.id, holder: ref }; from = "default"; }
+      return { role: r.id, name: r.name, contract: r.contract, offering: r.offering, stages: r.stages, binding, from, reference_agent: ref };
+    }),
+  };
+}
+const role = (body, id) => body.roles.find((r) => r.role === id);
+
+test("stages.json's roles are the ones the check reads", () => {
+  assert.ok(SR.roles.length >= 19);
+  assert.deepEqual(SR.byStage.acceptance, ["requester"]);
+  assert.deepEqual(SR.byStage.review, ["code-critic"]);
+});
+
+test("a roles answer in the contract's shape passes, with bindings for the org and for a project", () => {
+  assert.deepEqual(checkRoles(roles(), SR), []);
+  const r = roles();
+  Object.assign(role(r, "code-critic"), { from: "org", binding: { role: "code-critic", holder: { kind: "contracted", name: "A review supplier", handle: "reviews.supplier@example.com" }, scope: { org: true }, since: AT, by: "you@example.com" } });
+  Object.assign(role(r, "security-reviewer"), { from: "project", binding: { role: "security-reviewer", holder: { kind: "outside_tool", name: "Our scanner", evidence: { formats: ["sarif"], where: "the scanner's report on each pull request" } }, scope: { project: "billing" }, since: AT, by: "you@example.com" } });
+  Object.assign(role(r, "code-writer"), { from: "org", binding: { role: "code-writer", holder: { kind: "your_agent", name: "Our coding agent", handle: "coder.you@example.com" }, scope: { org: true }, since: AT, by: "you@example.com" } });
+  r.project = "billing";
+  assert.deepEqual(checkRoles(r, SR), []);
+  assert.deepEqual(validate("RoleBindingRequest", { holder: role(r, "code-critic").binding.holder }), []);
+});
+
+test("the roles answer lists every role of stages.json once, as stages.json names it, and no other", () => {
+  const r = roles();
+  r.roles = r.roles.filter((x) => x.role !== "watcher");
+  r.roles.push({ ...role(r, "publisher") }, { ...role(r, "publisher"), role: "barista" });
+  role(r, "catalog").offering = "catalog";
+  role(r, "catalog").contract = "https://example.com/catalog";
+  role(r, "test-writer").stages = ["test", "code"];
+  const p = checkRoles(r, SR).join("\n");
+  assert.match(p, /does not list watcher/);
+  assert.match(p, /"publisher" appears more than once/);
+  assert.match(p, /"barista" is not a role in stages\.json/);
+  assert.match(p, /offering: is "catalog", not role-catalog/);
+  assert.match(p, /contract: is "https:\/\/example\.com\/catalog"/);
+  assert.match(p, /stages: are test, code, not test/);
+});
+
+test("the requester is always held by a person", () => {
+  const r = roles();
+  role(r, "requester").binding.holder = { kind: "your_agent", name: "An approver", handle: "approver.you@example.com" };
+  assert.match(checkRoles(r, SR).join("\n"), /the requester is always held by a person/);
+  const u = roles();
+  Object.assign(role(u, "requester"), { binding: null, from: "unbound" });
+  assert.match(checkRoles(u, SR).join("\n"), /the requester is always held by a person/);
+});
+
+test("from is project, org, default or unbound, and says the truth about the binding", () => {
+  const r = roles();
+  role(r, "watcher").from = "inherited";
+  assert.match(checkRoles(r, SR).join("\n"), /from: is "inherited", not one of project, org, default, unbound/);
+  const a = roles();
+  role(a, "agent-critic").from = "default";
+  assert.match(checkRoles(a, SR).join("\n"), /has no binding, so it is unbound, not default/);
+  const b = roles();
+  role(b, "publisher").from = "unbound";
+  assert.match(checkRoles(b, SR).join("\n"), /is unbound, but it has a binding/);
+  const c = roles();
+  Object.assign(role(c, "publisher"), { from: "project" });
+  role(c, "publisher").binding.scope = { org: true };
+  Object.assign(role(c, "watcher"), { from: "org" });
+  role(c, "watcher").binding.scope = { project: "billing" };
+  const p = checkRoles(c, SR).join("\n");
+  assert.match(p, /a project binding names its project/);
+  assert.match(p, /an org binding says \{ "org": true \}/);
+});
+
+test("a binding to an agent on the mesh names its handle, and one to a person or an outside tool names none", () => {
+  const r = roles();
+  Object.assign(role(r, "code-critic"), { from: "org", binding: { role: "code-critic", holder: { kind: "contracted", name: "A supplier" }, scope: { org: true } } });
+  Object.assign(role(r, "watcher"), { from: "org", binding: { role: "watcher", holder: { kind: "outside_tool", name: "Our tracing", handle: "x@example.com" }, scope: { org: true } } });
+  const p = checkRoles(r, SR).join("\n");
+  assert.match(p, /a contracted holder names its handle/);
+  assert.match(p, /an? outside_tool holder has no handle/);
+});
+
+test("a holder's kind and its evidence formats come from the lists, and anything else is refused", () => {
+  assert.deepEqual(validate("Holder", { kind: "outside_tool", name: "Scanner", evidence: { formats: ["sarif", "cyclonedx"] } }), []);
+  assert.match(validate("Holder", { kind: "vendor", name: "x" }).join("\n"), /kind: is "vendor"/);
+  assert.match(validate("Holder", { kind: "outside_tool", name: "x", evidence: { formats: ["junit"] } }).join("\n"), /formats\[0\]: is "junit"/);
+  assert.match(validate("Holder", { kind: "outside_tool", name: "x", evidence: { where: "here" } }).join("\n"), /evidence: has no formats/);
+});
+
+test("the schema's evidence formats are stages.json's, and its operations for roles and evidence are there", () => {
+  const formats = JSON.parse(readFileSync(join(HERE, "..", "stages.json"), "utf8")).evidence_formats.map((f) => f.id);
+  assert.deepEqual(SCHEMA.$defs.EvidenceFormat.enum, formats);
+  const op = (m, path) => SCHEMA.operations.find((o) => o.method === m && o.path === path);
+  assert.equal(op("GET", "/roles")?.answer, "#/$defs/RolesAnswer");
+  assert.equal(op("PUT", "/roles/{role}")?.request, "#/$defs/RoleBindingRequest");
+  assert.equal(op("DELETE", "/roles/{role}")?.answer, "#/$defs/RolesAnswer");
+  assert.equal(op("POST", "/builds/{id}/evidence")?.request, "#/$defs/EvidenceRequest");
+  for (const o of [op("GET", "/roles"), op("PUT", "/roles/{role}"), op("DELETE", "/roles/{role}")]) assert.match(o.does, /\?project=<name>/);
+  for (const s of ["not_started", "working", "waiting_on_you", "done", "refused", "stopped", "not_offered", "not_bound", "not_applicable"]) assert.ok(SCHEMA.$defs.State.enum.includes(s), s);
+  assert.deepEqual(SCHEMA.$defs.Holder.properties.kind.enum, ["reference_agent", "your_agent", "contracted", "person", "outside_tool"]);
+});
+
+test("evidence is handed back as a JSON value or a base64 string, in a listed format", () => {
+  assert.deepEqual(validate("EvidenceRequest", { stage: "security", format: "sarif", name: "scan.sarif", content: { version: "2.1.0", runs: [] } }), []);
+  assert.deepEqual(validate("EvidenceRequest", { stage: "package", format: "cyclonedx", name: "bom.json", content: "eyJib21Gb3JtYXQiOiJDeWNsb25lRFgifQ==" }), []);
+  const p = validate("EvidenceRequest", { stage: "security", format: "pdf", name: "", content: 3 }).join("\n");
+  assert.match(p, /format: is "pdf"/);
+  assert.match(p, /name: is empty/);
+  assert.match(p, /content: is integer/);
+  assert.match(validate("EvidenceRequest", { stage: "security", format: "sarif", name: "x" }).join("\n"), /has no content/);
+});
+
+test("a build may carry its project, the new states, and the evidence read onto a stage", () => {
+  const b = build();
+  b.build.project = "billing";
+  const at = (s) => b.build.stages.find((x) => x.stage === s);
+  Object.assign(at("security"), {
+    state: "done", holder: { kind: "outside_tool", name: "Our scanner", role: "security-reviewer", evidence: { formats: ["sarif"] } }, done_when_met: true,
+    evidence: [{ format: "sarif", name: "scan.sarif", at: AT, summary: "0 errors, 2 warnings", file: { path: "evidence/scan.sarif", size: 812, link: "/v1/lifecycle/builds/b1/files?path=evidence%2Fscan.sarif" } }],
+  });
+  at("eval").state = "not_bound";
+  at("review").state = "not_applicable";
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  assert.deepEqual(validate("StartRequest", { does: "Count the words.", project: "billing" }), []);
+  at("security").evidence[0].format = "pdf";
+  delete at("security").evidence[0].summary;
+  const p = checkBuild(b, IDS, "b1").join("\n");
+  assert.match(p, /evidence\[0\]\.format: is "pdf"/);
+  assert.match(p, /evidence\[0\]: has no summary/);
+});
+
+test("nobody acts at a stage that is not bound or not applicable", () => {
+  for (const state of ["not_bound", "not_applicable"]) {
+    const b = build();
+    b.build.stages.find((s) => s.stage === "eval").state = state;
+    b.build.actions.push({ stage: "eval", name: "grade", label: "Grade it", needs: [] });
+    assert.match(checkBuild(b, IDS, "b1").join("\n"), /"grade" acts at eval, a stage the build does not offer/, state);
+  }
+});
+
+test("a not_bound stage has no holder, and its role is unbound in the roles answer", () => {
+  const unbound = new Set(["agent-critic"]);
+  const b = build();
+  b.build.stages.find((s) => s.stage === "eval").state = "not_bound";
+  assert.deepEqual(checkBuild(b, IDS, "b1", { unbound, byStage: SR.byStage }), []);
+  b.build.stages.find((s) => s.stage === "eval").holder = { kind: "person", name: "someone" };
+  assert.match(checkBuild(b, IDS, "b1").join("\n"), /is not_bound, so nobody holds it, but it names a holder/);
+  const held = build();
+  held.build.project = "billing";
+  held.build.stages.find((s) => s.stage === "review").state = "not_bound";
+  assert.match(checkBuild(held, IDS, "b1", { unbound, byStage: SR.byStage }).join("\n"), /review is not_bound, but the roles answer for project billing has code-critic held/);
+});
+
+test("the check asks for the roles of a build's project, once, and holds its not_bound stages to them", async () => {
+  const seen = [];
+  const answer = (body) => new Response(JSON.stringify(body), { status: 200 });
+  const fetch = async (url) => {
+    const u = new URL(url);
+    seen.push(u.pathname + u.search);
+    const p = u.pathname.replace("/v1/lifecycle/", "");
+    if (p === "me") return answer(me());
+    if (p === "roles") {
+      // The project binds the code critic; the organization leaves it unbound.
+      const r = u.searchParams.get("project") === "billing" ? roles({ unbound: ["agent-critic", "impact-analyst"] }) : roles({ unbound: ["agent-critic", "impact-analyst", "code-critic"] });
+      if (u.searchParams.get("project")) r.project = u.searchParams.get("project");
+      return answer(r);
+    }
+    if (p === "builds") return answer({ builds: [...list().builds, { ...list().builds[0], id: "b2" }] });
+    if (p === "builds/b1" || p === "builds/b2") {
+      const b = build(p.slice(7));
+      b.build.project = "billing";
+      b.build.stages.find((s) => s.stage === "review").state = "not_bound";
+      return answer(b);
+    }
+    if (p.endsWith("/tries")) return answer(tries());
+    return answer({});
+  };
+  const r = await run({ base: "https://svc.example/v1/lifecycle/", key: KEY, ids: IDS, fetch });
+  assert.equal(seen.filter((x) => x === "/v1/lifecycle/roles?project=billing").length, 1, seen.join("\n"));
+  assert.equal(r.problems.filter((x) => /review is not_bound, but the roles answer for project billing has code-critic held/.test(x)).length, 2, r.problems.join("\n"));
 });
