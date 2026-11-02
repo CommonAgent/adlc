@@ -8,8 +8,8 @@ version each Builder pins.
 |---|---|---|
 | [architecture-standard.md](architecture-standard.md) | `https://schemas.agentmesh.ai/architecture-standard/v1` | the solution architect, which applies it; the spec writer, which designs within it |
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
-| [stages.json](stages.json) | the lifecycle's 24 stages, in order, in seven phases (`version` in the file) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
-| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.1: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
+| [stages.json](stages.json) | the lifecycle's 24 stages, in order, in seven phases; the roles that hold them; and the evidence formats an outside holder hands back in (`version` in the file) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
+| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.2: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [process-check.mjs](process-check.mjs) | the check of a process document against Agent Processes 0.9.0: its §17.1 conformance items and the four tests of §20.1 (see [The process check](#the-process-check)) | the spec writer, which runs it over every process document before handing it back; the test writer, which reads a document's phases, deviations and digest through it; review and conformance |
 | [standing-asset-schemas.json](standing-asset-schemas.json) | the list of known standing-asset kinds | the package maker, which refuses a `can_use` entry naming any other; the solution architect and the spec writer, which choose from it |
 
@@ -133,18 +133,37 @@ actions the person may take now, and a client draws one button for each
 action and nothing else, so every judgment stays with the service. The page
 that explains it is https://agenticdevelopment.ai/api.html.
 
-The schema is version 0.1, served at `/v1/lifecycle` on the service. It
-changes only by adding fields: a client ignores a field it does not know, and
-a service never removes a field or changes its type. Its `operations` list
-names the definition each request and answer must match.
+The schema is version 0.2, served at `/v1/lifecycle` on the service. It
+changes only by adding: a client ignores a field it does not know, and a
+service never removes a field or changes its type. Version 0.2 also adds
+values to two lists, the holder's kinds and the stage's states, and a client
+that does not know a state draws the stage as `not_offered`. Its `operations`
+list names the definition each request and answer must match.
+
+**Role bindings.** An organization chooses who holds each role in
+stages.json's `roles`: the service's reference agent, its own agent, a
+contracted supplier, a person or an outside tool, for the whole organization
+or for one project. `GET /roles` says who holds each one now and where that
+comes from, and `PUT` and `DELETE` on `/roles/{role}` change it. The
+requester is always the person who asked. An agent bound to a role is sent
+the stage's input under the role's offering, `role-<id>`, and its answer is
+the stage's asset; the service never calls a vendor's API.
+
+**Evidence formats.** A holder outside the service hands its evidence back
+with `POST /builds/{id}/evidence`, in one of the open formats stages.json
+lists in `evidence_formats` (SARIF, CycloneDX, SPDX, SLSA provenance, in-toto,
+OpenTelemetry traces with `gen_ai` attributes, Pact). The service reads it
+for what that list says and shows it on the stage.
 
 [lifecycle-api-check.mjs](lifecycle-api-check.mjs) checks a running service
 against it (node 22, no dependencies). It only reads: it asks who the key
-belongs to, lists the builds, reads each build and its tries, and opens the
-first file each build handed back. It checks every answer against the schema
-and holds the rules a schema cannot say: every stage of stages.json listed
-once, an action only at a stage the build offers, rounds newest first, a
-build in the list at a known stage, and real ISO 8601 times with a zone.
+belongs to and who holds each role, lists the builds, reads each build and its
+tries, and opens the first file each build handed back. It checks
+every answer against the schema and holds the rules a schema cannot say: every
+stage of stages.json listed once, an action only at a stage the build offers,
+rounds newest first, a build in the list at a known stage, real ISO 8601 times
+with a zone, every role of stages.json in the roles answer, the requester held
+by a person, and a `not_bound` stage whose role nobody holds.
 
 ```
 ADLC_API_KEY=... node standards/lifecycle-api-check.mjs https://example.com/v1/lifecycle/
