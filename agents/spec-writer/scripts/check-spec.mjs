@@ -144,6 +144,32 @@ export function kindProblems(job) {
   return out;
 }
 
+/** The words a person reads on the form (owner, 2026-11-03). An input a
+ *  person gives, or may give, is drawn as a box with its `label` above and its
+ *  `about` under it, so the about is written to that person: one or two short
+ *  sentences saying what to put in the box, with an example or what a blank
+ *  box means. The shape of the data belongs to the kind and the job's skill,
+ *  never to the form. Found on 2026-11-03 across 62 agents: "The agent whose
+ *  storefront to write, by its handle or its key." and "The ranked list
+ *  (ranked-stories-v1) as the rank checker passed it." */
+export const FORM_WORDS_MAX = 25;
+const MEDIA_TYPE = /\b(?:application|text|image|audio|video)\/[a-z0-9.+-]+/i;
+const FORMAT_ID = /\b[a-z]+(?:-[a-z]+)*-v\d+\b/;
+const PLACEHOLDER = /\bYYYY\b|\bMM-DD\b|\blast N\b|\bN (?:days|weeks|posts)\b/;
+export function formWordsProblems(job) {
+  const out = [];
+  const slug = trim(job?.slug) || "a job with no slug";
+  for (const e of Array.isArray(job?.inputs) ? job.inputs : []) {
+    if (e?.given_by === "agent" || !trim(e?.about)) continue;
+    const said = trim(e.about);
+    const name = JSON.stringify(e.name ?? null);
+    if (words(said) > FORM_WORDS_MAX) out.push(`job ${slug}: input ${name}'s about is ${words(said)} words; a person reads it under the box, so say what to put there in ${FORM_WORDS_MAX} words or fewer and leave the rest to the skill`);
+    if (MEDIA_TYPE.test(said) || FORMAT_ID.test(said) || /[{}]/.test(said)) out.push(`job ${slug}: input ${name}'s about names a data format; a person reads it on the form, so say what the thing is and who makes it, and leave the format to the kind`);
+    if (PLACEHOLDER.test(said)) out.push(`job ${slug}: input ${name}'s about uses a placeholder such as YYYY-MM-DD or "last N days"; give a real example instead, such as 2026-10-01 or "last 30 days"`);
+  }
+  return out;
+}
+
 /** The format rules (owner, 2026-10-27). What one agent hands another, or a
  *  person reviews, is Markdown with a light convention; JSON is only for
  *  exact typed data code consumes and no person reads, and then under a kind
@@ -342,7 +368,7 @@ export function checkSpec(spec) {
   }
   const jobs = Array.isArray(spec.jobs) ? spec.jobs : [];
   if (!jobs.length) out.push("the spec has no jobs");
-  for (const j of jobs) out.push(...jobProblems(j), ...kindProblems(j));
+  for (const j of jobs) out.push(...jobProblems(j), ...kindProblems(j), ...formWordsProblems(j));
   const offered = jobs.filter((j) => j.offered);
   if (jobs.length && !offered.length) {
     out.push("no job is marked offered; one of them is what a caller orders and the rest are the steps that deliver it");
