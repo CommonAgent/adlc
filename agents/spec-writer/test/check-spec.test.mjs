@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DOES_MAX, EMPTY_MIN, GOOD_MIN, REFUSES_MIN, WHEN_MAX,
-  checkSpec, containerProblems, isKind, jobProblems, kindProblems, recordProblems, refusalProblems, systemProblems,
+  checkSpec, containerProblems, formWordsProblems, isKind, jobProblems, kindProblems, recordProblems, refusalProblems, systemProblems,
 } from "../scripts/check-spec.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -200,4 +200,15 @@ test("job_seconds outside what the builder takes is a problem, and inside it is 
     assert.ok(checkSpec({ ...worked, job_seconds: bad }).some((p) => /job_seconds .* from 60 to 7200/.test(p)), String(bad));
   }
   assert.deepEqual(checkSpec({ ...worked, job_seconds: 60 }), []);
+});
+
+test("a line a person reads under a box is short, names no data format and gives a real example, and an input only agents give is not held to it", () => {
+  const job = (inputs) => ({ slug: "write", inputs });
+  assert.deepEqual(formWordsProblems(job([{ name: "agent", kind: "identifier", given_by: "either", about: "Which agent? Its handle, such as help.example@example.com." }])), []);
+  const long = "The agent whose storefront to write, by its handle or its key, and the change to the words, in your own words, such as shorter or plainer, said once.";
+  assert.ok(formWordsProblems(job([{ name: "agent", given_by: "person", about: long }])).some((p) => /words or fewer/.test(p)));
+  assert.ok(formWordsProblems(job([{ name: "channel", given_by: "either", about: "The channel to read (channel-v1)." }])).some((p) => /data format/.test(p)));
+  assert.ok(formWordsProblems(job([{ name: "deck", given_by: "person", about: "A deck as application/pdf." }])).some((p) => /data format/.test(p)));
+  assert.ok(formWordsProblems(job([{ name: "window", given_by: "person", about: "last N days, or since YYYY-MM-DD." }])).some((p) => /placeholder/.test(p)));
+  assert.deepEqual(formWordsProblems(job([{ name: "list", given_by: "agent", about: "The ranked list (ranked-stories-v1) as the checker passed it." }])), []);
 });

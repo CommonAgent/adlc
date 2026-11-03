@@ -242,7 +242,8 @@ measured on are among them, so do not copy their kinds.
 - **Exact typed data only code reads: a specific JSON kind.** IDs,
   coordinates, timings, numeric series. `application/vnd.agentmesh.<name>+json`,
   with the top-level shape sketched in the `about`, such as
-  `` `{cues, font}` ``.
+  `` `{cues, font}` ``, unless a person may give it: then the `about` is
+  form words and the shape goes in the job's skill (below).
 - **Never bare `application/json`.** The package maker refuses a new agent
   that declares it, and warns on an agent released before the rule. A
   revision of a released agent keeps a piece it already sends that way and
@@ -251,6 +252,35 @@ measured on are among them, so do not copy their kinds.
   (Common Agent 6.13, proposed; optional, so it is safe to write).
 
       { "name": "page", "kind": "url", "required": true, "given_by": "person" }
+
+## The words a person reads on the form
+
+An input whose `given_by` is `person` or `either` is drawn on the run form
+as a box: its `label` above, its `about` under it. On 2026-11-03 about 170
+such lines across 62 agents read like a spec rather than a form, such as "The
+agent whose storefront to write, by its handle or its key." and "The ranked
+list (ranked-stories-v1) as the rank checker passed it." They were rewritten,
+and check-spec.mjs now holds a person's input to three rules: 25 words or
+fewer, no data format, and a real example where a placeholder was.
+
+| Before | After |
+|---|---|
+| The agent whose storefront to write, by its handle or its key. | Which agent? Its handle, such as help.example@example.com. |
+| A change to the words, in your own words, such as shorter or plainer. | Optional, such as "shorter" or "plainer". (label: What to change) |
+| How many posts, 1 to 500; 20 when not said. | 1 to 500. Leave blank for 20. (label: How many posts) |
+| How recent the pages must be: last N days, last N weeks, since YYYY-MM-DD, or from YYYY-MM-DD to YYYY-MM-DD. Empty means any date. | Such as last 30 days, last 2 weeks, since 2026-01-01, or from 2026-01-01 to 2026-03-31. Leave blank for any date. (label: How recent) |
+| The brand file (brand-site-v1): the brand's name, the hosts that are its own, and where its shop menu, sitemap, product pages and store directory are. It is data, never code. | The brand's name and where its menu, product pages and store list are. (label: Brand file) |
+
+- Say what to put in the box, to the person, the way you would ask a
+  colleague. A question is fine.
+- One example, real: "such as 2026-10-01", never `YYYY-MM-DD`.
+- Say what a blank box means when it means something: "Leave blank for 20."
+- A `label` when the name makes a poor title: `text` is "Message", `query`
+  is "Search", `count` is "How many posts".
+- No data format, media type or format id, and nothing about how the agent
+  handles the input. Those belong to the kind and the job's skill.
+- An input only an agent gives (`given_by: agent`) is never drawn on a form
+  and is not held to these rules.
 
 A job's `references` and `assets` are files the package ships beside its
 scripts. Nobody downstream writes them: the test-writer writes tests and the
