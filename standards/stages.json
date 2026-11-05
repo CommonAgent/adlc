@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "about": "The 24 stages of the reference Agent Development Lifecycle, in order, in seven phases, as written on https://agenticdevelopment.ai/stages.html (the assets each stage makes are from https://agenticdevelopment.ai/assets.html). The site, the auditor and the console read this file; the site's tools/check-stages.mjs fails when the page and this file differ. Each stage: its role, the reference agent that holds it (null where none does; reference_holders lists every reference agent on its card), what it is given, what it hands back, when it is done, the asset it makes (assets lists every one), and person_gate, true where a person approves or decides at that stage. A list in a field is written as lines starting with \"- \". aliases are older names for a stage that still point at it. roles lists the lifecycle roles of https://agentroles.ai: each role's id, its name, its contract (the role's page), the offering an agent holding it answers (role-<id>), the stages it holds, and the agent in this repository that holds it for reference (null where none does). Each stage's role_ids names the roles that hold it. An organization may bind each role to the reference agent, its own agent, a contracted supplier, a person or an outside tool; the requester is always the person who asked. evidence_formats lists the open formats a holder outside the service may hand its evidence back in, and what each is read for. A change here is a new version.",
   "phases": [
     {
@@ -566,8 +566,8 @@
       ],
       "reference_holder": "conformance-checker",
       "given": "the package, the agent's address, and its records",
-      "hands_back": "a signed verdict, case by case",
-      "done_when": "every case from the declaration ran, and the verdict is signed",
+      "hands_back": "a signed verdict, case by case, and an attestation: one signed statement, for this version, of which checks on a published check list it passed",
+      "done_when": "every case from the declaration ran, the verdict is signed, and the attestation names the version, the check list and who attested",
       "asset": "Conformance verdict",
       "person_gate": false,
       "why": "It checks the agent keeps its promises, not that the promises were right; that's Eval.",
@@ -575,7 +575,8 @@
         "conformance-checker"
       ],
       "assets": [
-        "Conformance verdict"
+        "Conformance verdict",
+        "Attestations"
       ],
       "aliases": []
     },
@@ -612,8 +613,8 @@
         "doc-writer"
       ],
       "reference_holder": "documenter",
-      "given": "the declaration, the identity, and any records and verdicts",
-      "hands_back": "the AgentDoc a stranger reads, each claim traced to its source, and documentation for people",
+      "given": "the declaration, the identity, and any records, verdicts and attestations",
+      "hands_back": "the AgentDoc a stranger reads, each claim traced to its source, with the attestations others signed shown as checked by others, and documentation for people",
       "done_when": "nothing in the AgentDoc was authored, and every silence shows",
       "asset": "AgentDoc",
       "person_gate": false,
@@ -772,7 +773,7 @@
       "reference_holder": "deployment-manager",
       "given": "a new package, and the agent it replaces",
       "hands_back": "the same agent on the new version, with what changed recorded",
-      "done_when": "the candidate passed before the promote, and the identity and address are unchanged",
+      "done_when": "the candidate passed before the promote, the identity and address are unchanged, and the old version's attestations are marked stale until the new version is attested",
       "asset": "Change records",
       "person_gate": false,
       "why": "New version, same identity: candidate first, then prove, then promote.",
