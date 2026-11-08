@@ -9,7 +9,7 @@ version each Builder pins.
 | [architecture-standard.md](architecture-standard.md) | `https://schemas.agentmesh.ai/architecture-standard/v1` | the solution architect, which applies it; the spec writer, which designs within it |
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [stages.json](stages.json) | the lifecycle's 24 stages, in order, in seven phases; the roles that hold them; and the evidence formats an outside holder hands back in (`version` in the file) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
-| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.2: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
+| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.3: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [process-check.mjs](process-check.mjs) | the check of a process document against Agent Processes 0.9.0: its §17.1 conformance items and the four tests of §20.1 (see [The process check](#the-process-check)) | the spec writer, which runs it over every process document before handing it back; the test writer, which reads a document's phases, deviations and digest through it; review and conformance |
 | [standing-asset-schemas.json](standing-asset-schemas.json) | the list of known standing-asset kinds | the package maker, which refuses a `can_use` entry naming any other; the solution architect and the spec writer, which choose from it |
 
@@ -133,12 +133,26 @@ actions the person may take now, and a client draws one button for each
 action and nothing else, so every judgment stays with the service. The page
 that explains it is https://agenticdevelopment.ai/api.html.
 
-The schema is version 0.2, served at `/v1/lifecycle` on the service. It
+The schema is version 0.3, served at `/v1/lifecycle` on the service. It
 changes only by adding: a client ignores a field it does not know, and a
-service never removes a field or changes its type. Version 0.2 also adds
+service never removes a field or changes its type. Version 0.2 also added
 values to two lists, the holder's kinds and the stage's states, and a client
-that does not know a state draws the stage as `not_offered`. Its `operations`
-list names the definition each request and answer must match.
+that does not know a state draws the stage as `not_offered`. Version 0.3 adds
+one more state, `not_used`, which a 0.2 client draws the same way. Its
+`operations` list names the definition each request and answer must match.
+
+**Lifecycle stages.** An organization chooses which of the 24 stages its
+lifecycle uses, for the whole organization or for one project, beside who
+holds each role. `GET /stages` lists every stage in stages.json's order, each
+with whether it is used, where that choice comes from (`project`, `org` or
+`default`), and whether this service can run its builds without it
+(`can_leave_out`, with `why_not` in words when it cannot). `PUT` and `DELETE`
+on `/stages/{stage}` change the choice; the service refuses to leave out a
+stage it cannot build without. When nothing is chosen every stage is used.
+A build keeps the choice in effect when it started, names it in
+`lifecycle`, and reports each stage it leaves out as `not_used`, with no
+holder and no actions. `not_applicable` comes before `not_used`, and
+`not_used` before every other state.
 
 **Role bindings.** An organization chooses who holds each role in
 stages.json's `roles`: the service's reference agent, its own agent, a
@@ -157,13 +171,16 @@ for what that list says and shows it on the stage.
 
 [lifecycle-api-check.mjs](lifecycle-api-check.mjs) checks a running service
 against it (node 22, no dependencies). It only reads: it asks who the key
-belongs to and who holds each role, lists the builds, reads each build and its
-tries, and opens the first file each build handed back. It checks
-every answer against the schema and holds the rules a schema cannot say: every
-stage of stages.json listed once, an action only at a stage the build offers,
-rounds newest first, a build in the list at a known stage, real ISO 8601 times
-with a zone, every role of stages.json in the roles answer, the requester held
-by a person, and a `not_bound` stage whose role nobody holds.
+belongs to, who holds each role and which stages are used, lists the builds,
+reads each build and its tries, and opens the first file each build handed
+back. It checks every answer against the schema and holds the rules a schema
+cannot say: every stage of stages.json listed once, an action only at a stage
+the build offers (a state it does not know reads as `not_offered`), rounds
+newest first, a build in the list at a known stage, real ISO 8601 times with
+a zone, every role of stages.json in the roles answer, the requester held by
+a person, a `not_bound` stage whose role nobody holds, a `not_used` stage with
+no holder and no runs, every stage in the stages answer once and in order, and
+a stage the service cannot leave out that says why and is used.
 
 ```
 ADLC_API_KEY=... node standards/lifecycle-api-check.mjs https://example.com/v1/lifecycle/
