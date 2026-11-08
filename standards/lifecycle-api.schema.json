@@ -814,6 +814,7 @@
         "action": { "$ref": "#/$defs/Words" },
         "needs": { "type": "object", "additionalProperties": { "type": "string" }, "description": "The action's request, one member per need; for start_version, version." },
         "words": { "$ref": "#/$defs/Words", "description": "The proposal as a question to the person, such as \"Start version 0.2.0?\"." },
+        "when": { "$ref": "#/$defs/Words", "description": "When the build will offer the action, if it does not offer it yet, such as the changes action on a version that has just started. A client shows the proposal and lets the person confirm it once the build offers the action." },
         "state": { "enum": ["open", "taken", "declined", "closed"], "description": "On a kept message: open until the person answers it; closed when it can no longer be taken, such as when a newer proposal replaced it." }
       }
     },
@@ -854,6 +855,7 @@
         "version": { "$ref": "#/$defs/Words" },
         "reply": { "$ref": "#/$defs/Words", "description": "The boss's message it was made in." },
         "message_id": { "$ref": "#/$defs/Words", "description": "routed and dropped: the message posted in the stage's chat." },
+        "withdraws": { "$ref": "#/$defs/Words", "description": "dropped: the commitment whose work was withdrawn." },
         "proposal": { "$ref": "#/$defs/BossProposal" },
         "answer": {
           "type": "object",

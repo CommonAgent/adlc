@@ -50,7 +50,8 @@
 //     a plan are at stages of stages.json, and a plan is in the lifecycle's
 //     order with each stage once;
 //   - a start_version proposal names the version; a proposal of a build's
-//     action names one the build offers now, with its needs;
+//     action names one the build offers now, with its needs, or says when
+//     the build will offer it;
 //   - a build is started only on a message that confirms a proposal;
 //   - commitments are oldest first; a route or a drop names the stage and the
 //     message posted there, a proposal carries the person's answer, and a
@@ -459,8 +460,8 @@ export function checkBossReply(body, ids, build) {
   const b = isObj(build) ? build.build : null;
   if (prop && prop.action !== "start_version" && isObj(b) && b.id === prop.build) {
     const action = (Array.isArray(b.actions) ? b.actions : []).find((a) => isObj(a) && a.name === prop.action);
-    if (!action) p.push(`body.reply.proposes.action: "${prop.action}" is not an action the build offers now`);
-    else for (const n of action.needs ?? []) if (isObj(n) && !n.optional && !(n.name in (prop.needs ?? {}))) p.push(`body.reply.proposes.needs: has no ${n.name}, which "${prop.action}" needs`);
+    if (!action && !(typeof prop.when === "string" && prop.when)) p.push(`body.reply.proposes.action: "${prop.action}" is not an action the build offers now, and the proposal does not say when it will be`);
+    else for (const n of action?.needs ?? []) if (isObj(n) && !n.optional && !(n.name in (prop.needs ?? {}))) p.push(`body.reply.proposes.needs: has no ${n.name}, which "${prop.action}" needs`);
   }
   return p;
 }

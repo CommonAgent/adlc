@@ -799,7 +799,8 @@ test("a boss reply starts a build only on a confirmation, and proposes only an a
   const ok = boss(T1, "Send it back?", { proposes: { id: "x3", build: "b1", action: "back_to_test", needs: { changes: "Cover an empty passage." } } });
   assert.deepEqual(checkBossReply({ message: person(AT, "Fix the suite."), reply: ok }, IDS, b), []);
   const off = boss(T1, "Change it?", { proposes: { id: "x4", build: "b1", action: "changes", needs: { changes: "x" } } });
-  assert.deepEqual(checkBossReply({ message: person(AT, "x"), reply: off }, IDS, b), ['body.reply.proposes.action: "changes" is not an action the build offers now']);
+  assert.deepEqual(checkBossReply({ message: person(AT, "x"), reply: off }, IDS, b), ['body.reply.proposes.action: "changes" is not an action the build offers now, and the proposal does not say when it will be']);
+  assert.deepEqual(checkBossReply({ message: person(AT, "x"), reply: { ...off, proposes: { ...off.proposes, when: "When Requirements waits on you." } } }, IDS, b), []);
   // A proposal on another build is not held to this build's actions.
   assert.deepEqual(checkBossReply({ message: person(AT, "x"), reply: { ...off, proposes: { ...off.proposes, build: "b2" } } }, IDS, b), []);
   assert.equal(checkBossReply({ message: person(AT, "x") }, IDS)[0], "body: has no reply");
