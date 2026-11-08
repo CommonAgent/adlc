@@ -1,4 +1,4 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.3) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.4) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run } from "../lifecycle-api-check.mjs";
+import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply } from "../lifecycle-api-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
@@ -57,8 +57,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.3 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.3");
+test("the schema is version 0.4 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -647,4 +647,109 @@ test("a service that does not answer the stages operation fails the 0.3 check, a
   const fetch = async (url, init) => (new URL(url).pathname.endsWith("/stages") ? new Response(JSON.stringify({ error: "Not here." }), { status: 404 }) : s.fetch(url, init));
   const r = await run({ base: "https://svc.example/v1/lifecycle/", key: KEY, ids: IDS, fetch });
   assert.deepEqual(r.problems, ["GET stages: answered 404: Not here."]);
+});
+
+// Version 0.4: products, stage workspaces, each stage's chat, and the build's artifacts.
+
+const artifacts = () => [
+  { id: "statement", stage: "requirements", name: "Statement of the job", by: "spec writer", state: "made", kind: "statement", version: "v2", at: AT,
+    summary: { agent: "word-tally 0.1.0", offerings: [{ name: "Count words", does: "Counts the words in a passage." }], refuses: ["anything but text"], records: ["what the job went without"], price: "free", open: [] },
+    files: [{ path: "spec/agent-descriptor.json", size: 2107, link: "/v1/lifecycle/builds/b1/files?path=spec%2Fagent-descriptor.json" }] },
+  { id: "suite", stage: "test", name: "The suite", by: "test writer", state: "made", kind: "suite", summary: { count: 2, tests: ["counts the words", "refuses an image"] } },
+  { id: "programs", stage: "code", name: "The programs", by: "your coding agent", state: "made", kind: "programs", summary: { scripts: [{ path: "scripts/count.mjs", lines: 40, does: "counts the words" }], commit: "772a7e4", pr: { number: 1, url: "https://github.com/you/word-tally/pull/1" } } },
+  { id: "findings", stage: "review", name: "Review findings", by: "code critic", state: "made", kind: "findings", summary: { open: [], verdict: "Nothing open." } },
+  { id: "security", stage: "security", name: "Security record", by: "security reviewer", state: "made", kind: "security", digest: "sha256:ab", summary: { reach: ["folder work (write)"], spend: "nothing", never: ["reach the network"], verdict: "Passed." } },
+  { id: "package", stage: "package", name: "The package", by: "package maker", state: "next", kind: "package" },
+  { id: "build_record", stage: "release", name: "Signed build record", by: "package maker", state: "not_run", kind: "build_record", summary: { words: "This service holds no signing key." } },
+  { id: "run_plan", stage: "deploy", name: "Run plan", by: "the service", state: "later", kind: "run_plan" },
+];
+const withArtifacts = () => { const b = build(); b.build.artifacts = artifacts(); return b; };
+
+test("the schema names the 0.4 operations, the build's artifacts, and a definition for each", () => {
+  const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
+  for (const o of ["GET /products", "GET /products/{name}", "GET /builds/{id}/stages/{stage}", "GET /products/{name}/stages/{stage}/messages", "POST /products/{name}/stages/{stage}/messages"]) assert.ok(ops.includes(o), o);
+  assert.equal(SCHEMA.$defs.Build.properties.artifacts.items.$ref, "#/$defs/Artifact");
+  assert.deepEqual(SCHEMA.$defs.Artifact.properties.state.enum, ["made", "next", "later", "not_made", "not_run"]);
+  assert.ok(!SCHEMA.$defs.Message.properties.from.properties.kind.enum.includes("gate"), "a gate lives on its stage, not in the chat");
+});
+
+test("a build's artifacts in their kinds' shapes pass, and a wrong one is caught", () => {
+  assert.deepEqual(checkBuild(withArtifacts(), IDS, "b1"), []);
+  const bad = withArtifacts();
+  bad.build.artifacts[1].summary = { tests: "two" };
+  bad.build.artifacts[2].stage = "coding";
+  bad.build.artifacts.push({ ...bad.build.artifacts[0] });
+  delete bad.build.artifacts[6].summary;
+  bad.build.artifacts[7].state = "soon";
+  const p = checkBuild(bad, IDS, "b1");
+  assert.ok(p.includes("body.build.artifacts[1].summary: has no count"), p.join("\n"));
+  assert.ok(p.includes("body.build.artifacts[1].summary.tests: is string, not array"));
+  assert.ok(p.includes('body.build.artifacts[2].stage: "coding" is not a stage in stages.json'));
+  assert.ok(p.includes('body.build.artifacts[8].id: "statement" is used twice'));
+  assert.ok(p.includes("body.build.artifacts[6]: is not_run, so its summary says why in words"));
+  assert.ok(p.some((x) => x.startsWith('body.build.artifacts[7].state: is "soon"')));
+  assert.deepEqual(checkArtifacts([{ id: "x", stage: "docs", name: "AgentDoc", by: "documenter", state: "made", kind: "agentdoc", summary: { words: "A page about the agent." } }], IDS), []);
+});
+
+const products = () => ({ products: [{ name: "word-tally", latest: { build: "b1", version: "0.1.0", state: "waiting_on_you", at: { stage: "code", state: "waiting_on_you", summary: "Waiting on you at Code" } }, versions: ["0.1.0"] }] });
+const product = () => ({
+  name: "word-tally",
+  builds: [{ id: "b1", version: "0.1.0", state: "waiting_on_you", at: { stage: "code", state: "waiting_on_you" }, created: AT }],
+  run_plan: { build: "b0", version: "0.0.9", at: AT, summary: { stages: [{ stage: "monitor", name: "Monitor", holder: "watcher", settings: "no settings", reads: "chosen" }, { stage: "eval", holder: null, settings: "no settings", reads: "not chosen" }] } },
+  activity: [{ at: "2026-10-31T09:16:00Z", build: "b1", version: "0.1.0", stage: "code", words: "The gate passed 772a7e4." }, { at: AT, build: "b1", stage: "requirements", words: "You approved the spec." }],
+});
+
+test("the products and a product, with its builds, run plan and activity newest first", () => {
+  assert.deepEqual(checkProducts(products()), []);
+  assert.deepEqual(checkProduct(product(), "word-tally"), []);
+  const twice = products(); twice.products.push(twice.products[0]);
+  assert.deepEqual(checkProducts(twice), ['body.products: "word-tally" appears more than once']);
+  const old = product(); old.activity.reverse();
+  assert.deepEqual(checkProduct(old, "word-tally"), ["body.activity[1]: the feed is newest first, and this line is newer than the one above it"]);
+  assert.deepEqual(checkProduct(product(), "other"), ['body.name: is "word-tally", not the product asked for (other)']);
+  const state = products(); state.products[0].latest.state = "paused";
+  assert.equal(checkProducts(state).length, 1);
+});
+
+const workspace = () => ({
+  stage: "code", name: "Code", state: "waiting_on_you", holder: { kind: "your_agent", name: "your coding agent", handle: "coder.you@example.com" },
+  given: ["statement", "suite"], outputs: [artifacts()[2]], done_when: "the suite passes",
+  gate: { actions: ["accept", "stop"], state: "open", who_may: "Anyone may answer this gate." },
+});
+
+test("a stage workspace: its outputs are its own, what it was given was made, and an open gate's buttons are the build's", () => {
+  assert.deepEqual(checkStageWorkspace(workspace(), IDS, "code", withArtifacts()), []);
+  const answered = { ...workspace(), stage: "requirements", outputs: [artifacts()[0]], given: [], gate: { actions: ["approve", "changes", "stop"], state: "answered", answered: { by: "You", at: AT, action: "approve" }, who_may: "Anyone may answer this gate." } };
+  assert.deepEqual(checkStageWorkspace(answered, IDS, "requirements", withArtifacts()), []);
+  const bad = workspace();
+  bad.outputs.push(artifacts()[0]);
+  bad.given.push("package");
+  bad.gate.actions.push("approve");
+  assert.deepEqual(checkStageWorkspace(bad, IDS, "code", withArtifacts()), [
+    "body.outputs[1]: is made at requirements, not at code",
+    'body.given[2]: "package" is not an artifact the build made',
+    'body.gate.actions[2]: "approve" is not an action the build offers at code',
+  ]);
+  assert.deepEqual(checkStageWorkspace(workspace(), IDS, "test"), ['body.stage: is "code", not the stage asked for (test)']);
+  const noWho = workspace(); delete noWho.gate.who_may;
+  assert.deepEqual(checkStageWorkspace(noWho, IDS, "code"), ["body.gate: has no who_may"]);
+});
+
+const said = (at, text) => ({ id: `m-${at}`, at, build: "b1", version: "0.1.0", from: { kind: "person", name: "You", stage: "test" }, to: { role: "test-writer" }, text });
+
+test("a stage's chat is oldest first at that stage, and a reply's proposal is an action the build offers, with its needs", () => {
+  const reply = { id: "m2", at: "2026-10-31T09:16:00Z", build: "b1", version: "0.1.0", from: { kind: "agent", name: "Test writer", role: "test-writer", stage: "test" }, text: "I would say an empty passage has no words." };
+  assert.deepEqual(checkMessages({ messages: [said(AT, "What about an empty passage?"), reply] }, "test"), []);
+  assert.deepEqual(checkMessages({ messages: [reply, said(AT, "Earlier.")] }, "test"), ["body.messages[1]: the chat is oldest first, and this message is older than the one above it"]);
+  assert.deepEqual(checkMessages({ messages: [reply] }, "code"), ['body.messages[0].from.stage: is "test", not the stage asked about (code)']);
+  const gate = { ...reply, from: { kind: "gate", name: "Gate", stage: "test" } };
+  assert.equal(checkMessages({ messages: [gate] }, "test").length, 1, "a gate is not a message");
+
+  const b = withArtifacts();
+  b.build.actions.push({ stage: "code", name: "back_to_test", label: "Send back to Test", needs: [{ name: "changes", label: "What is wrong", kind: "words" }] });
+  const proposes = { action: "back_to_test", needs: { changes: "Say an empty passage has no words." } };
+  assert.deepEqual(checkMessageReply({ message: said(AT, "Change the suite."), reply: { ...reply, proposes } }, b), []);
+  assert.deepEqual(checkMessageReply({ message: said(AT, "Change it."), reply: { ...reply, proposes: { action: "changes", needs: {} } } }, b), ['body.reply.proposes.action: "changes" is not an action the build offers now']);
+  assert.deepEqual(checkMessageReply({ message: said(AT, "Change it."), reply: { ...reply, proposes: { action: "back_to_test", needs: {} } } }, b), ['body.reply.proposes.needs: has no changes, which "back_to_test" needs']);
+  assert.equal(checkMessageReply({ message: said(AT, "x") }, b)[0], "body: has no reply");
 });
