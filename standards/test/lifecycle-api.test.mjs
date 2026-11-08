@@ -1,4 +1,4 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.4) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.4.1) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply } from "../lifecycle-api-check.mjs";
+import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments } from "../lifecycle-api-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
@@ -57,8 +57,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4");
+test("the schema is version 0.4.1 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.1");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -752,4 +752,74 @@ test("a stage's chat is oldest first at that stage, and a reply's proposal is an
   assert.deepEqual(checkMessageReply({ message: said(AT, "Change it."), reply: { ...reply, proposes: { action: "changes", needs: {} } } }, b), ['body.reply.proposes.action: "changes" is not an action the build offers now']);
   assert.deepEqual(checkMessageReply({ message: said(AT, "Change it."), reply: { ...reply, proposes: { action: "back_to_test", needs: {} } } }, b), ['body.reply.proposes.needs: has no changes, which "back_to_test" needs']);
   assert.equal(checkMessageReply({ message: said(AT, "x") }, b)[0], "body: has no reply");
+});
+
+// ---------- the boss (0.4.1) ----------
+
+const T1 = "2026-10-31T09:20:00Z";
+const T2 = "2026-10-31T09:21:00Z";
+const person = (at, text, extra = {}) => ({ id: `p-${at}`, at, build: "b1", version: "0.1.0", from: { kind: "person", name: "You" }, text, ...extra });
+const boss = (at, text, extra = {}) => ({ id: `s-${at}`, at, build: "b1", version: "0.1.0", from: { kind: "agent", name: "The boss", role: "boss" }, text, ...extra });
+const plan = () => [
+  { stage: "requirements", words: "The spec writer revises the statement.", gate: "You approve the spec. Anyone may answer this gate." },
+  { stage: "test", words: "The test writer writes the suite." },
+  { stage: "code", words: "Your coding harness writes the scripts.", gate: "You OK the code." },
+];
+
+test("the schema names the boss operations and a definition for each", () => {
+  const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
+  for (const o of ["GET /products/{name}/boss/messages", "POST /products/{name}/boss/messages", "GET /products/{name}/boss/commitments"]) assert.ok(ops.includes(o), o);
+  for (const o of SCHEMA.operations.filter((x) => x.path.includes("/boss/"))) for (const k of ["request", "answer"]) if (o[k]) assert.ok(SCHEMA.$defs[o[k].replace("#/$defs/", "")], o[k]);
+  assert.equal(SCHEMA.version, "0.4.1");
+  assert.deepEqual(SCHEMA.$defs.BossCommitment.properties.kind.enum, ["routed", "proposed", "started", "dropped"]);
+});
+
+test("the boss's conversation: oldest first, routes and plans at stages of stages.json, a plan in the lifecycle's order", () => {
+  const routed = boss(T1, "I posted it in the Test chat.", { routed: { stage: "test", message_id: "t1", build: "b1" } });
+  const planned = boss(T2, "Here is the plan.", { plan: plan(), proposes: { id: "x1", build: "b1", action: "start_version", needs: { version: "0.2.0" }, words: "Start version 0.2.0?", state: "open" } });
+  assert.deepEqual(checkBossMessages({ messages: [person(AT, "The tests should cover an empty passage."), routed, planned] }, IDS), []);
+  assert.deepEqual(checkBossMessages({ messages: [planned, routed] }, IDS), ["body.messages[1]: the conversation is oldest first, and this message is older than the one above it"]);
+  const bad = boss(T1, "x", { routed: { stage: "coding", message_id: "t1", build: "b1" }, plan: [plan()[2], plan()[0], plan()[2]], proposes: { id: "x2", build: "b1", action: "start_version", needs: {} } });
+  assert.deepEqual(checkBossMessages({ messages: [bad] }, IDS), [
+    'body.messages[0].routed.stage: "coding" is not a stage in stages.json',
+    "body.messages[0].plan[1]: requirements comes before the stage above it in the lifecycle, and a plan is in the lifecycle's order",
+    "body.messages[0].plan[2]: code is in the plan twice",
+    "body.messages[0].proposes.needs: has no version, which start_version needs",
+  ]);
+  const noStage = boss(T1, "x"); delete noStage.from.role; noStage.from = { kind: "agent" };
+  assert.deepEqual(checkBossMessages({ messages: [noStage] }), ["body.messages[0].from: has no name"]);
+});
+
+test("a boss reply starts a build only on a confirmation, and proposes only an action the build offers, with its needs", () => {
+  const started = boss(T1, "Started 0.2.0.", { started: { build: "b2", version: "0.2.0" } });
+  assert.deepEqual(checkBossReply({ message: person(AT, "Yes, start it.", { confirms: "x1" }), reply: started }, IDS), []);
+  assert.deepEqual(checkBossReply({ message: person(AT, "Start it."), reply: started }, IDS), ["body.reply.started: the boss started a build, and the person's message confirmed no proposal"]);
+  const b = withArtifacts();
+  b.build.actions.push({ stage: "code", name: "back_to_test", label: "Send back to Test", needs: [{ name: "changes", label: "What is wrong", kind: "words" }] });
+  const ok = boss(T1, "Send it back?", { proposes: { id: "x3", build: "b1", action: "back_to_test", needs: { changes: "Cover an empty passage." } } });
+  assert.deepEqual(checkBossReply({ message: person(AT, "Fix the suite."), reply: ok }, IDS, b), []);
+  const off = boss(T1, "Change it?", { proposes: { id: "x4", build: "b1", action: "changes", needs: { changes: "x" } } });
+  assert.deepEqual(checkBossReply({ message: person(AT, "x"), reply: off }, IDS, b), ['body.reply.proposes.action: "changes" is not an action the build offers now']);
+  // A proposal on another build is not held to this build's actions.
+  assert.deepEqual(checkBossReply({ message: person(AT, "x"), reply: { ...off, proposes: { ...off.proposes, build: "b2" } } }, IDS, b), []);
+  assert.equal(checkBossReply({ message: person(AT, "x") }, IDS)[0], "body: has no reply");
+});
+
+test("the boss's commitments: oldest first, each kind carrying what checks it against the record", () => {
+  const c = (at, kind, extra) => ({ id: `c-${at}-${kind}`, at, kind, to: "the test writer, at Test", what: "Cover an empty passage.", build: "b1", version: "0.1.0", reply: "s1", ...extra });
+  const all = [
+    c(AT, "routed", { stage: "test", message_id: "t1" }),
+    c(T1, "proposed", { to: "you", proposal: { id: "x1", build: "b1", action: "start_version", needs: { version: "0.2.0" } }, answer: { state: "taken", by: "You", at: T2 } }),
+    c(T2, "started", { to: "you", build: "b2", version: "0.2.0", confirmation: { message_id: "p1", by: "You", at: T2 } }),
+    c(T2, "dropped", { stage: "test", message_id: "t2" }),
+  ];
+  assert.deepEqual(checkBossCommitments({ commitments: all }, IDS), []);
+  assert.deepEqual(checkBossCommitments({ commitments: [all[2], all[0]] }, IDS), ["body.commitments[1]: the list is oldest first, and this one is older than the one above it"]);
+  assert.deepEqual(checkBossCommitments({ commitments: [c(AT, "routed", { stage: "test" }), c(AT, "proposed", {}), c(AT, "started", {}), c(AT, "dropped", { stage: "nowhere", message_id: "t3" })] }, IDS), [
+    "body.commitments[0]: is routed, so it names the stage and the message posted there",
+    "body.commitments[1]: is proposed, so it carries the proposal and the person's answer",
+    "body.commitments[2]: is started, so it carries the confirmation it was started on",
+    'body.commitments[3].stage: "nowhere" is not a stage in stages.json',
+  ]);
+  assert.equal(checkBossCommitments({ commitments: [{ ...all[0], kind: "promised" }] }).length, 1);
 });
