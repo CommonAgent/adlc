@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments } from "../lifecycle-api-check.mjs";
+import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments, stageCadences } from "../lifecycle-api-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
@@ -57,8 +57,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.1 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.1");
+test("the schema is version 0.4.2 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.2");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -770,7 +770,7 @@ test("the schema names the boss operations and a definition for each", () => {
   const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
   for (const o of ["GET /products/{name}/boss/messages", "POST /products/{name}/boss/messages", "GET /products/{name}/boss/commitments"]) assert.ok(ops.includes(o), o);
   for (const o of SCHEMA.operations.filter((x) => x.path.includes("/boss/"))) for (const k of ["request", "answer"]) if (o[k]) assert.ok(SCHEMA.$defs[o[k].replace("#/$defs/", "")], o[k]);
-  assert.equal(SCHEMA.version, "0.4.1");
+  assert.equal(SCHEMA.version, "0.4.2");
   assert.deepEqual(SCHEMA.$defs.BossCommitment.properties.kind.enum, ["routed", "proposed", "started", "dropped"]);
 });
 
@@ -823,4 +823,95 @@ test("the boss's commitments: oldest first, each kind carrying what checks it ag
     'body.commitments[3].stage: "nowhere" is not a stage in stages.json',
   ]);
   assert.equal(checkBossCommitments({ commitments: [{ ...all[0], kind: "promised" }] }).length, 1);
+});
+
+// ---------- 0.4.2: each stage's cadence, carried, and a product's setup and when_needed ----------
+
+const CAD = stageCadences();
+const setupItems = () => ["architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"].map((stage) => {
+  const role = SR.byStage[stage][0];
+  return stage === "monitor"
+    ? { stage, name: "Monitor", role, project: null, state: "chosen", holder: { kind: "your_agent", name: "Our watcher", handle: "watcher.you@example.com" }, settings: { every: "5 minutes" }, since: "0.1.0", words: "Unchanged since 0.1.0" }
+    : { stage, role, project: null, state: "not_chosen", holder: null, settings: {}, since: null, words: "Nobody chosen" };
+});
+const whenNeeded = () => ["impact", "retract", "reconfigure", "rollback", "decommission"].map((stage) => (stage === "rollback"
+  ? { stage, name: "Rollback", can_run: true, action: { build: "b1", name: "rollback", label: "Roll back to 0.0.9" } }
+  : { stage, can_run: false, why_not: "This service does not run it." }));
+
+test("the schema names a stage's cadence and a product's setup and when_needed lists, and they are stages.json's", () => {
+  assert.deepEqual(SCHEMA.$defs.Cadence.enum, ["every_build", "setup", "when_needed"]);
+  for (const d of ["Stage", "StageWorkspace"]) for (const k of ["cadence", "carried"]) assert.ok(SCHEMA.$defs[d].properties[k], `${d}.${k}`);
+  for (const k of ["setup", "when_needed"]) assert.ok(SCHEMA.$defs.ProductAnswer.properties[k], `ProductAnswer.${k}`);
+  assert.deepEqual(new Set(Object.values(CAD)), new Set(SCHEMA.$defs.Cadence.enum));
+  assert.deepEqual(Object.keys(CAD), IDS);
+});
+
+test("a build's stages may carry their cadence, which is stages.json's, and carried only on a setup stage", () => {
+  const b = build();
+  for (const s of b.build.stages) s.cadence = CAD[s.stage];
+  Object.assign(b.build.stages.find((s) => s.stage === "monitor"), { carried: { since: "0.1.0", build: "b0", words: "Unchanged since 0.1.0" } });
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  const bad = structuredClone(b);
+  bad.build.stages.find((s) => s.stage === "review").cadence = "setup";
+  bad.build.stages.find((s) => s.stage === "code").carried = { since: "0.1.0", words: "Unchanged since 0.1.0" };
+  const i = (id) => IDS.indexOf(id);
+  assert.deepEqual(checkBuild(bad, IDS, "b1"), [
+    `body.build.stages[${i("code")}].carried: code is not set up once (its cadence is every_build), so nothing is carried forward`,
+    `body.build.stages[${i("review")}].cadence: is "setup", but stages.json gives review the cadence every_build`,
+  ]);
+  const noCad = structuredClone(b); noCad.build.stages[0].cadence = "sometimes";
+  assert.ok(checkBuild(noCad, IDS, "b1").some((x) => x.startsWith("body.build.stages[0].cadence")));
+  // A build without cadences, as a 0.4.1 service answers, still passes.
+  assert.deepEqual(checkBuild(build(), IDS, "b1"), []);
+});
+
+test("a stage workspace carries the build's cadence for its stage", () => {
+  const b = withArtifacts();
+  for (const s of b.build.stages) s.cadence = CAD[s.stage];
+  assert.deepEqual(checkStageWorkspace({ ...workspace(), cadence: "every_build" }, IDS, "code", b), []);
+  assert.deepEqual(checkStageWorkspace({ ...workspace(), cadence: "setup" }, IDS, "code", b), [
+    'body.cadence: is "setup", but stages.json gives code the cadence every_build',
+    'body.cadence: is "setup", but the build\'s stage says "every_build"',
+  ]);
+  assert.deepEqual(checkStageWorkspace({ ...workspace(), carried: { since: "0.1.0", words: "Unchanged since 0.1.0" } }, IDS, "code"), ["body.carried: code is not set up once (its cadence is every_build), so nothing is carried forward"]);
+});
+
+test("a product's setup lists every setup stage once, in order, with its own role, a holder only when chosen, and a since from its builds", () => {
+  const p = { ...product(), builds: [...product().builds, { id: "b0", version: "0.0.9", state: "done", at: { stage: "deploy", state: "done" } }] };
+  p.builds[0].version = "0.1.0";
+  assert.deepEqual(checkProduct({ ...p, setup: setupItems(), when_needed: whenNeeded() }, "word-tally"), []);
+  // A product without the lists, as a 0.4.1 service answers, still passes.
+  assert.deepEqual(checkProduct(p, "word-tally"), []);
+  const short = setupItems().slice(1);
+  assert.deepEqual(checkProduct({ ...p, setup: short }, "word-tally"), ["body.setup: lists source, publish, monitor, eval, incident, cost, update, not stages.json's setup stages in order (architecture, source, publish, monitor, eval, incident, cost, update)"]);
+  const bad = setupItems();
+  bad[0].role = "code-writer";
+  bad[1].state = "chosen";
+  bad[2].holder = { kind: "person", name: "Ana" };
+  bad[4].since = "0.1.0";
+  bad[3].since = "9.9.9";
+  assert.deepEqual(checkProduct({ ...p, setup: bad }, "word-tally"), [
+    "body.setup[0].role: code-writer does not hold architecture in stages.json",
+    "body.setup[1]: is chosen, so it names its holder",
+    "body.setup[2]: is not_chosen, so nobody holds it, but it names a holder",
+    "body.setup[3].since: 9.9.9 is not a version of the product's builds",
+    'body.setup[4].since: is "0.1.0", but a stage not_chosen has held nothing since a version',
+  ]);
+  const state = setupItems(); state[0].state = "maybe";
+  assert.ok(checkProduct({ ...p, setup: state }, "word-tally").some((x) => x.startsWith("body.setup[0].state")));
+});
+
+test("a product's when_needed lists every when_needed stage once, in order: why not when it cannot run, its action when it can", () => {
+  const bad = whenNeeded();
+  delete bad[0].why_not;
+  bad[1].action = { build: "b1", name: "retract", label: "Retract" };
+  delete bad[3].action;
+  bad[3].why_not = "It can.";
+  assert.deepEqual(checkProduct({ ...product(), when_needed: bad }, "word-tally"), [
+    "body.when_needed[0]: cannot run, so it says why_not",
+    "body.when_needed[1]: cannot run, so it names no action",
+    "body.when_needed[3]: can run, so it names the action that runs it",
+    "body.when_needed[3]: can run, so it gives no why_not",
+  ]);
+  assert.deepEqual(checkProduct({ ...product(), when_needed: whenNeeded().reverse() }, "word-tally"), ["body.when_needed: lists decommission, rollback, reconfigure, retract, impact, not stages.json's when_needed stages in order (impact, retract, reconfigure, rollback, decommission)"]);
 });

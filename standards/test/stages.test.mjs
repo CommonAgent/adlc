@@ -3,7 +3,8 @@
 // the auditor and the console read it. This checks its shape, that the 24 are
 // there once each, numbered 1 to 24 in order, and that every stage the
 // auditor checks a record for is one of them. From 1.1.0 it also checks the
-// roles that hold the stages and the evidence formats.
+// roles that hold the stages and the evidence formats, and from 1.3.0 each
+// stage's cadence.
 //   node --test standards/test/*.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -154,4 +155,32 @@ test("the evidence formats are listed once each, with a name and what each is re
     assert.ok(nonEmpty(f.name) && nonEmpty(f.read_for), `${f.id}: name or read_for is empty`);
   }
   for (const id of ["sarif", "cyclonedx", "spdx", "slsa", "in-toto", "otel-genai", "pact"]) assert.ok(ids.includes(id), `${id} is not listed`);
+});
+
+// Version 1.3.0 adds each stage's cadence, so a client can show a build by
+// what runs on it: the routine on every build, the stages set up once per
+// product and carried forward, and the actions run when something happens.
+const CADENCES = ["every_build", "setup", "when_needed"];
+const EVERY_BUILD = ["requirements", "test", "code", "review", "security", "package", "release", "deploy", "conformance", "acceptance", "docs"];
+const SETUP = ["architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"];
+const WHEN_NEEDED = ["impact", "retract", "reconfigure", "rollback", "decommission"];
+
+test("the three cadences are listed once each, in order, with a name and what each means", () => {
+  assert.ok(Array.isArray(data.cadences), "the file lists no cadences");
+  assert.deepEqual(data.cadences.map((c) => c.id), CADENCES);
+  for (const c of data.cadences) assert.ok(nonEmpty(c.name) && nonEmpty(c.about), `${c.id}: name or about is empty`);
+});
+
+test("every stage has one of the three cadences, grouped as the lifecycle runs them", () => {
+  for (const s of data.stages) assert.ok(CADENCES.includes(s.cadence), `${s.id}: cadence ${JSON.stringify(s.cadence)}`);
+  const of = (c) => data.stages.filter((s) => s.cadence === c).map((s) => s.id);
+  assert.deepEqual(of("every_build"), EVERY_BUILD);
+  assert.deepEqual(of("setup"), SETUP);
+  assert.deepEqual(of("when_needed"), WHEN_NEEDED);
+});
+
+test("from 1.3.0 the file says what a cadence is", () => {
+  const [major, minor] = data.version.split(".").map(Number);
+  assert.ok(major > 1 || (major === 1 && minor >= 3), `version ${data.version} carries cadences, so it is 1.3.0 or later`);
+  assert.match(data.about, /cadence/);
 });
