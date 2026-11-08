@@ -9,7 +9,7 @@ version each Builder pins.
 | [architecture-standard.md](architecture-standard.md) | `https://schemas.agentmesh.ai/architecture-standard/v1` | the solution architect, which applies it; the spec writer, which designs within it |
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [stages.json](stages.json) | the lifecycle's 24 stages, in order, in seven phases; the roles that hold them; and the evidence formats an outside holder hands back in (`version` in the file) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
-| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.3: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
+| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [lifecycle-document.schema.json](lifecycle-document.schema.json) | a lifecycle document, version 0.1: one JSON file holding which stages an organization uses, who holds each role (and with what settings), and the stages it adds of its own, for the organization and each project; no service needed | a person or team defining its lifecycle as a file; the console (`npx adlc-console --lifecycle <path>`), which reads, checks and writes it |
 | [process-check.mjs](process-check.mjs) | the check of a process document against Agent Processes 0.9.0: its §17.1 conformance items and the four tests of §20.1 (see [The process check](#the-process-check)) | the spec writer, which runs it over every process document before handing it back; the test writer, which reads a document's phases, deviations and digest through it; review and conformance |
 | [standing-asset-schemas.json](standing-asset-schemas.json) | the list of known standing-asset kinds | the package maker, which refuses a `can_use` entry naming any other; the solution architect and the spec writer, which choose from it |
@@ -134,13 +134,15 @@ actions the person may take now, and a client draws one button for each
 action and nothing else, so every judgment stays with the service. The page
 that explains it is https://agenticdevelopment.ai/api.html.
 
-The schema is version 0.3, served at `/v1/lifecycle` on the service. It
+The schema is version 0.4, served at `/v1/lifecycle` on the service. It
 changes only by adding: a client ignores a field it does not know, and a
 service never removes a field or changes its type. Version 0.2 also added
 values to two lists, the holder's kinds and the stage's states, and a client
 that does not know a state draws the stage as `not_offered`. Version 0.3 adds
-one more state, `not_used`, which a 0.2 client draws the same way. Its
-`operations` list names the definition each request and answer must match.
+one more state, `not_used`, which a 0.2 client draws the same way. Version
+0.4 adds products, stage workspaces, each stage's chat and the build's
+artifacts; a 0.3 client ignores them. Its `operations` list names the
+definition each request and answer must match.
 
 **Lifecycle stages.** An organization chooses which of the 24 stages its
 lifecycle uses, for the whole organization or for one project, beside who
@@ -154,6 +156,23 @@ A build keeps the choice in effect when it started, names it in
 `lifecycle`, and reports each stage it leaves out as `not_used`, with no
 holder and no actions. `not_applicable` comes before `not_used`, and
 `not_used` before every other state.
+
+**Products, stages and chat.** A product is every build of one name, one
+build per version (not a project, which is the lifecycle's team scope).
+`GET /products` lists them and `GET /products/{name}` gives one product's
+builds, its newest run plan and a short activity feed. Each stage of a build
+is a workspace, `GET /builds/{id}/stages/{stage}`: what it was given (earlier
+stages' artifacts), what it handed back (its own artifacts), what done means
+for it, and its gate, whose buttons are the build's actions. Each stage has
+a chat with the agent holding it, kept per product per stage across builds:
+`GET` and `POST` on `/products/{name}/stages/{stage}/messages`. Answering
+changes nothing; a change the person asks for comes back as a proposal of the
+build's existing action, with its needs filled, which the person takes with
+the actions operation, so a change always goes back through its gate. A
+build's `artifacts` list what it made and will make, each with a summary in
+its kind's shape. `checkArtifacts`, `checkProducts`, `checkProduct`,
+`checkStageWorkspace`, `checkMessages` and `checkMessageReply` in the check
+hold these answers to the schema and to the rules it cannot say.
 
 **Role bindings.** An organization chooses who holds each role in
 stages.json's `roles`: the service's reference agent, its own agent, a
