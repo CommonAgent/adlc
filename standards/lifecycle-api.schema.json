@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/CommonAgent/adlc/main/standards/lifecycle-api.schema.json",
   "title": "The lifecycle API",
-  "version": "0.2",
-  "description": "What any service implementing the Agent Development Lifecycle answers, so that one client works against more than one service. Every request and answer is JSON, at the path /v1/lifecycle on the service. Times are ISO 8601 with a zone. Auth is Authorization: Bearer <key>, where the key is one the person makes for their own account, as the service says. A build lists the 24 stages of stages.json, one entry each, and a stage the service does not run is reported as not_offered. A client draws one button for each action the build offers, and nothing else. An organization chooses who holds each role of stages.json (the roles operations): the service's reference agent, its own agent, a contracted supplier, a person or an outside tool. A holder outside the service hands its evidence back in one of the open formats stages.json lists, and the service reads it onto the stage. The schema changes only by adding: a client ignores a field it does not know, and a service never removes or retypes one. Version 0.2 adds the roles operations, the evidence operation and new fields, and it also adds values to two lists, the holder's kinds and the stage's states; a client that does not know a state draws the stage as not_offered, and one that does not know a holder's kind shows the holder's name. The operations list names the definition each request and answer must match; lifecycle-api-check.mjs checks a running service against it, together with the rules a schema cannot say.",
+  "version": "0.3",
+  "description": "What any service implementing the Agent Development Lifecycle answers, so that one client works against more than one service. Every request and answer is JSON, at the path /v1/lifecycle on the service. Times are ISO 8601 with a zone. Auth is Authorization: Bearer <key>, where the key is one the person makes for their own account, as the service says. A build lists the 24 stages of stages.json, one entry each, and a stage the service does not run is reported as not_offered. A client draws one button for each action the build offers, and nothing else. An organization chooses who holds each role of stages.json (the roles operations): the service's reference agent, its own agent, a contracted supplier, a person or an outside tool. A holder outside the service hands its evidence back in one of the open formats stages.json lists, and the service reads it onto the stage. An organization also chooses which stages its lifecycle uses (the stages operations), for the whole organization or for one project; when nothing is chosen every stage is used, and a build keeps the choice in effect when it started. The schema changes only by adding: a client ignores a field it does not know, and a service never removes or retypes one. Version 0.2 adds the roles operations, the evidence operation and new fields, and it also adds values to two lists, the holder's kinds and the stage's states; a client that does not know a state draws the stage as not_offered, and one that does not know a holder's kind shows the holder's name. Version 0.3 adds the stages operations, the state not_used, and the build's lifecycle field; a client that knows only 0.2 draws a not_used stage as not_offered. The operations list names the definition each request and answer must match; lifecycle-api-check.mjs checks a running service against it, together with the rules a schema cannot say.",
   "basePath": "/v1/lifecycle",
   "operations": [
     { "method": "GET", "path": "/me", "answer": "#/$defs/MeAnswer", "does": "Who is asking, and the service's name." },
@@ -20,7 +20,10 @@
     { "method": "POST", "path": "/builds/{id}/evidence", "request": "#/$defs/EvidenceRequest", "answer": "#/$defs/BuildAnswer", "does": "Hand back evidence for a stage held outside the service, in one of the formats stages.json lists. The service reads it and lists it on that stage. It answers 400 when the content does not read as the format named. Added in 0.2." },
     { "method": "GET", "path": "/roles", "answer": "#/$defs/RolesAnswer", "does": "Every role of stages.json, each with who holds it now and where that binding comes from. With ?project=<name>, as a build started under that project would see them. Added in 0.2." },
     { "method": "PUT", "path": "/roles/{role}", "request": "#/$defs/RoleBindingRequest", "answer": "#/$defs/RolesAnswer", "does": "Bind a role for the organization, or with ?project=<name> for builds started under that project. It answers 400 for a role stages.json does not name, a your_agent or contracted holder with no handle, the requester bound to anyone but a person, or an evidence format stages.json does not list. Added in 0.2." },
-    { "method": "DELETE", "path": "/roles/{role}", "answer": "#/$defs/RolesAnswer", "does": "Remove the organization's binding of a role, or with ?project=<name> that project's, so the role falls back to the organization's binding, then to the service's reference agent, then to nobody. Added in 0.2." }
+    { "method": "DELETE", "path": "/roles/{role}", "answer": "#/$defs/RolesAnswer", "does": "Remove the organization's binding of a role, or with ?project=<name> that project's, so the role falls back to the organization's binding, then to the service's reference agent, then to nobody. Added in 0.2." },
+    { "method": "GET", "path": "/stages", "answer": "#/$defs/StagesAnswer", "does": "Every stage of stages.json, in its order, each saying whether the organization's lifecycle uses it, where that choice comes from, and whether this service can run its builds without it. With ?project=<name>, as a build started under that project would see them. When nothing is chosen, every stage is used. Added in 0.3." },
+    { "method": "PUT", "path": "/stages/{stage}", "request": "#/$defs/StageChoiceRequest", "answer": "#/$defs/StagesAnswer", "does": "Choose whether the organization's lifecycle uses a stage, or with ?project=<name> whether that project's does. A build started later keeps the choice; a build already started does not change. It answers 400 for a stage stages.json does not name, or for used: false on a stage this service cannot leave out; 403 for a member who is not an admin of the organization; and 409 when the choice could not be saved. Added in 0.3." },
+    { "method": "DELETE", "path": "/stages/{stage}", "answer": "#/$defs/StagesAnswer", "does": "Remove the organization's choice for a stage, or with ?project=<name> that project's, so the stage falls back to the organization's choice, then to the default, which uses it. It answers 403 and 409 as PUT does. Added in 0.3." }
   ],
   "errors": "#/$defs/ErrorAnswer",
   "$defs": {
@@ -28,8 +31,8 @@
     "Time": { "type": "string", "format": "date-time", "description": "ISO 8601, with a zone (Z or an offset)." },
     "StageId": { "type": "string", "minLength": 1, "description": "An id from stages.json, such as \"code\"." },
     "State": {
-      "enum": ["not_started", "working", "waiting_on_you", "done", "refused", "stopped", "not_offered", "not_bound", "not_applicable"],
-      "description": "waiting_on_you: the person's act is next. not_offered: this service cannot hand the stage to anyone, even if its role were bound. not_bound: the stage applies to the build, nobody holds its role, and the service does not run it (added in 0.2). not_applicable: the stage does not apply to this kind of build, such as Review on a process (added in 0.2). A stage held outside the service is not_started until its evidence or answer arrives, then done, or refused when the evidence says it failed. A client that does not know a state draws it as not_offered."
+      "enum": ["not_started", "working", "waiting_on_you", "done", "refused", "stopped", "not_offered", "not_bound", "not_applicable", "not_used"],
+      "description": "waiting_on_you: the person's act is next. not_offered: this service cannot hand the stage to anyone, even if its role were bound. not_bound: the stage applies to the build, nobody holds its role, and the service does not run it (added in 0.2). not_applicable: the stage does not apply to this kind of build, such as Review on a process (added in 0.2). not_used: the build's lifecycle leaves the stage out; the stage has no holder, has run 0 times, offers no action, and its given says \"Not part of this build's lifecycle\" with whose choice it was, the organization's default or the project's name (added in 0.3). When more than one could apply, not_applicable comes first, then not_used, then every other state. A stage held outside the service is not_started until its evidence or answer arrives, then done, or refused when the evidence says it failed. A client that does not know a state draws it as not_offered."
     },
     "RoleId": { "type": "string", "minLength": 1, "description": "A role id from stages.json, such as \"code-critic\". Added in 0.2." },
     "EvidenceFormat": {
@@ -153,6 +156,15 @@
         },
         "archived": { "type": "boolean", "description": "The person archived it. Added in 0.1." },
         "project": { "$ref": "#/$defs/Words", "description": "The project the build was started under, as its StartRequest gave it; absent when none was given. Added in 0.2." },
+        "lifecycle": {
+          "type": "object",
+          "required": ["project", "at"],
+          "description": "Whose choice of stages the build started under, and when it took it. The build keeps that choice: a stage chosen or left out later does not change it. Absent from a service that keeps no choice of stages. Added in 0.3.",
+          "properties": {
+            "project": { "type": ["string", "null"], "description": "The project whose stages the build took, the same as the build's project; null when the build named none, so it took the organization's choices and the default." },
+            "at": { "$ref": "#/$defs/Time", "description": "When the build took the choice: when it started." }
+          }
+        },
         "timeline": { "type": "array", "items": { "$ref": "#/$defs/TimelineBar" }, "description": "The build's run as one bar per step per round, ordered by start; empty when the service keeps no run for it. Steps that run at the same time keep their own bars, so overlaps show. Added in 0.1." }
       }
     },
@@ -198,7 +210,7 @@
       "properties": {
         "stage": { "$ref": "#/$defs/StageId" },
         "state": { "$ref": "#/$defs/State" },
-        "holder": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/Holder" }], "description": "Who holds the stage; null for a stage that is not offered, not bound or not applicable." },
+        "holder": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/Holder" }], "description": "Who holds the stage; null for a stage that is not offered, not bound, not applicable or not used." },
         "runs": { "type": "integer", "minimum": 0, "description": "How many times the stage has run." },
         "rounds": { "type": "array", "items": { "$ref": "#/$defs/Round" }, "description": "Newest first." },
         "given": { "$ref": "#/$defs/Words" },
@@ -294,6 +306,37 @@
       "required": ["holder"],
       "description": "The holder to bind the role to. Added in 0.2.",
       "properties": { "holder": { "$ref": "#/$defs/Holder" } }
+    },
+    "StagesAnswer": {
+      "type": "object",
+      "required": ["project", "stages"],
+      "description": "Every stage of stages.json, once each, in its order, and whether the lifecycle uses it. Added in 0.3.",
+      "properties": {
+        "project": { "type": ["string", "null"], "description": "The project asked about; null when the request named none." },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/StageChoice" } },
+        "updated_at": { "$ref": "#/$defs/Time", "description": "When a choice this answer reads was last changed; absent when nobody has chosen." }
+      }
+    },
+    "StageChoice": {
+      "type": "object",
+      "required": ["stage", "name", "phase", "roles", "used", "from", "can_leave_out"],
+      "description": "One stage, as stages.json names it, and whether the lifecycle uses it. Added in 0.3.",
+      "properties": {
+        "stage": { "$ref": "#/$defs/StageId" },
+        "name": { "$ref": "#/$defs/Words", "description": "The stage's name in stages.json." },
+        "phase": { "type": "string", "minLength": 1, "description": "The id of the stage's phase in stages.json, such as \"define\"." },
+        "roles": { "type": "array", "items": { "$ref": "#/$defs/RoleId" }, "description": "The roles that hold the stage, its role_ids in stages.json. Who holds each is in the roles answer." },
+        "used": { "type": "boolean", "description": "Whether the lifecycle uses the stage. A build started now runs a used stage and reports an unused one as not_used." },
+        "from": { "enum": ["project", "org", "default"], "description": "Where the choice comes from: the project's, the organization's, or the default, which uses every stage." },
+        "can_leave_out": { "type": "boolean", "description": "Whether this service can run its builds without the stage: false when a kind of build it makes, to which the stage applies, needs it. A fact about the service, not a rule of the organization's." },
+        "why_not": { "$ref": "#/$defs/Words", "description": "When can_leave_out is false, what needs the stage, in words a person reads, such as \"Code is written to Test's suite; this service cannot build without it.\"" }
+      }
+    },
+    "StageChoiceRequest": {
+      "type": "object",
+      "required": ["used"],
+      "description": "Whether the lifecycle uses the stage. Added in 0.3.",
+      "properties": { "used": { "type": "boolean" } }
     },
     "EvidenceRequest": {
       "type": "object",

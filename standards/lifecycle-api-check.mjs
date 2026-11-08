@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // Checks a running service against the lifecycle API (lifecycle-api.schema.json,
-// version 0.2): every answer against the schema, and the rules a schema cannot
+// version 0.3): every answer against the schema, and the rules a schema cannot
 // say. It only reads. It asks who the key belongs to, reads who holds each
-// role, lists the builds, reads each one, reads its tries, and opens the first
+// role and which stages the lifecycle uses, lists the builds, reads each one, reads its tries, and opens the first
 // file each build handed back (every file with --all-files).
 //
 // The rules beyond the schema:
 //   - a build lists every stage of stages.json, once each, and no other;
 //   - an action acts at a stage the build lists and offers (not not_offered,
-//     not_bound or not_applicable);
+//     not_bound, not_applicable or not_used); a state this check does not know
+//     reads as not_offered, as a client draws it (the rule since 0.2);
 //   - a stage's rounds are newest first (each round's n below the one before);
 //   - a build in the list is at a stage of stages.json;
 //   - reading a build by its id answers with that build;
@@ -21,7 +22,15 @@
 //   - a role bound to a your_agent or contracted holder names its handle, and
 //     one bound to a person or an outside_tool names none;
 //   - a not_bound stage has no holder, and one of its roles is unbound in the
-//     roles answer for the build's project (or the organization's).
+//     roles answer for the build's project (or the organization's);
+//   - a not_used stage has no holder and has run 0 times;
+//   - a build's lifecycle names the build's own project, or null when it has none;
+//   - the stages answer lists every stage of stages.json once, in its order, and
+//     no other, each with the name, phase and roles stages.json gives it;
+//   - it names the project asked about, or null, and a choice comes from the
+//     project only when one was asked about;
+//   - a stage the service cannot leave out says why not, and is used;
+//   - a stage at the default is used.
 //
 //   node standards/lifecycle-api-check.mjs <base> [--key-file <path>] [--stages <path>] [--limit <n>] [--all-files]
 //
@@ -95,6 +104,11 @@ export function stageIds(path = join(HERE, "stages.json")) {
   return JSON.parse(readFileSync(path, "utf8")).stages.map((s) => s.id);
 }
 
+/** The stages of a stages.json, in order, each with its id, name, phase and role_ids. */
+export function stageFacts(path = join(HERE, "stages.json")) {
+  return JSON.parse(readFileSync(path, "utf8")).stages.map((s) => ({ id: s.id, name: s.name, phase: s.phase, role_ids: s.role_ids ?? [] }));
+}
+
 /** The roles of a stages.json, and the roles that hold each stage (added in 1.1.0). */
 export function stageRoles(path = join(HERE, "stages.json")) {
   const d = JSON.parse(readFileSync(path, "utf8"));
@@ -105,7 +119,18 @@ export function stageRoles(path = join(HERE, "stages.json")) {
 const NEEDS_HANDLE = new Set(["your_agent", "contracted"]);
 const NO_HANDLE = new Set(["person", "outside_tool"]);
 // The states at which nobody may act on a stage.
-const NOT_OFFERED = new Set(["not_offered", "not_bound", "not_applicable"]);
+const NOT_OFFERED = new Set(["not_offered", "not_bound", "not_applicable", "not_used"]);
+// The states this version of the schema names.
+export const STATES = SCHEMA.$defs.State.enum;
+
+/**
+ * The state a client draws: the state itself when it knows it, and
+ * not_offered when it does not (the rule since 0.2). known is the list of
+ * states the client knows, this version's by default.
+ */
+export function drawnState(state, known = STATES) {
+  return known.includes(state) ? state : "not_offered";
+}
 
 function checkHolder(h, at, p) {
   if (!isObj(h) || typeof h.kind !== "string") return;
@@ -149,6 +174,46 @@ export function checkRoles(body, sr, unbound = new Set()) {
     }
     if (r.role === "requester" && !(b && isObj(b.holder) && b.holder.kind === "person")) p.push(`${at}: the requester is always held by a person`);
     checkHolder(r.reference_agent, `${at}.reference_agent`, p);
+  });
+  return p;
+}
+
+/**
+ * The stages answer (added in 0.3), against the stages of stages.json (facts,
+ * from stageFacts), for the project asked about (undefined for none).
+ */
+export function checkStages(body, facts, project) {
+  const p = validate("StagesAnswer", body);
+  if (!isObj(body)) return p;
+  const asked = project ?? null;
+  if ("project" in body && body.project !== asked) p.push(`body.project: is ${JSON.stringify(body.project)}, not the project asked about (${JSON.stringify(asked)})`);
+  const list = Array.isArray(body.stages) ? body.stages.filter(isObj) : [];
+  const want = new Map(facts.map((s) => [s.id, s]));
+  const listed = list.map((s) => s.stage);
+  for (const id of new Set(listed)) {
+    if (!want.has(id)) p.push(`body.stages: "${id}" is not a stage in stages.json`);
+    if (listed.filter((x) => x === id).length > 1) p.push(`body.stages: "${id}" appears more than once`);
+  }
+  const missing = facts.map((s) => s.id).filter((id) => !listed.includes(id));
+  if (missing.length) p.push(`body.stages: does not list ${missing.join(", ")}`);
+  const known = [...new Set(listed)].filter((id) => want.has(id));
+  const order = facts.map((s) => s.id).filter((id) => known.includes(id));
+  if (known.join() !== order.join()) p.push("body.stages: are not in stages.json's order");
+  const sorted = (a) => JSON.stringify([...a].sort());
+  list.forEach((s, i) => {
+    const at = `body.stages[${i}]`;
+    const w = want.get(s.stage);
+    if (w) {
+      if (s.name !== w.name) p.push(`${at}.name: is ${JSON.stringify(s.name)}, not ${w.name}`);
+      if (s.phase !== w.phase) p.push(`${at}.phase: is ${JSON.stringify(s.phase)}, not ${w.phase}`);
+      if (Array.isArray(s.roles) && sorted(s.roles) !== sorted(w.role_ids)) p.push(`${at}.roles: are ${s.roles.join(", ")}, not ${w.role_ids.join(", ")}`);
+    }
+    if (s.from === "project" && asked === null) p.push(`${at}: comes from a project, but no project was asked about`);
+    if (s.from === "default" && s.used === false) p.push(`${at}: is at the default, which uses every stage, but it is not used`);
+    if (s.can_leave_out === false) {
+      if (!(typeof s.why_not === "string" && s.why_not.trim())) p.push(`${at}: this service cannot leave out ${s.stage}, so it says why not`);
+      if (s.used === false) p.push(`${at}: this service cannot leave out ${s.stage}, so it is used`);
+    }
   });
   return p;
 }
@@ -206,7 +271,19 @@ export function checkBuild(body, ids, id, roles) {
     const held = roles?.byStage?.[s.stage];
     if (roles?.unbound && held?.length && !held.some((r) => roles.unbound.has(r))) p.push(`body.build.stages[${i}]: ${s.stage} is not_bound, but the roles answer${b.project ? ` for project ${b.project}` : ""} has ${held.join(" and ")} held`);
   });
-  const offered = new Set(stages.filter((s) => !NOT_OFFERED.has(s.state)).map((s) => s.stage));
+  // A not_used stage (added in 0.3): the build's lifecycle leaves it out, so nobody holds it and it never ran.
+  stages.forEach((s, i) => {
+    if (s.state !== "not_used") return;
+    if (s.holder !== null && s.holder !== undefined) p.push(`body.build.stages[${i}]: is not_used, so nobody holds it, but it names a holder`);
+    if (Number.isInteger(s.runs) && s.runs !== 0) p.push(`body.build.stages[${i}]: is not_used, so it has run 0 times, not ${s.runs}`);
+  });
+  // The build's lifecycle (added in 0.3) is its own project's.
+  if (isObj(b.lifecycle) && "project" in b.lifecycle) {
+    const own = typeof b.project === "string" && b.project ? b.project : null;
+    if (b.lifecycle.project !== own) p.push(`body.build.lifecycle.project: is ${JSON.stringify(b.lifecycle.project)}, not the build's project (${JSON.stringify(own)})`);
+  }
+  // A state the check does not know reads as not_offered, as a client draws it.
+  const offered = new Set(stages.filter((s) => !NOT_OFFERED.has(drawnState(s.state))).map((s) => s.stage));
   (Array.isArray(b.actions) ? b.actions : []).forEach((a, i) => {
     if (isObj(a) && typeof a.stage === "string" && !offered.has(a.stage)) p.push(`body.build.actions[${i}]: "${a.name}" acts at ${a.stage}, a stage the build does not offer`);
   });
@@ -225,7 +302,7 @@ export function checkError(body) {
  * Reads the service and checks every answer. Returns { calls, problems }, each
  * problem in words with the call it came from. `say` hears one line per call.
  */
-export async function run({ base, key, ids, roles: sr = stageRoles(), limit = 50, allFiles = false, fetch: get = globalThis.fetch, say = () => {} }) {
+export async function run({ base, key, ids, roles: sr = stageRoles(), stages: facts = stageFacts(), limit = 50, allFiles = false, fetch: get = globalThis.fetch, say = () => {} }) {
   const root = new URL(base.endsWith("/") ? base : `${base}/`);
   const problems = [];
   let calls = 0;
@@ -274,6 +351,15 @@ export async function run({ base, key, ids, roles: sr = stageRoles(), limit = 50
     return unboundIn.get(k);
   };
   await rolesFor(undefined);
+  // Which stages the lifecycle uses, for the organization and for each project a build names.
+  const stagesRead = new Set();
+  const stagesFor = async (project) => {
+    const k = project ?? "";
+    if (stagesRead.has(k)) return;
+    stagesRead.add(k);
+    await answered(project ? `GET stages?project=${project}` : "GET stages", project ? `stages?project=${encodeURIComponent(project)}` : "stages", (b) => checkStages(b, facts, project));
+  };
+  await stagesFor(undefined);
   const list = await answered("GET builds", "builds", (b) => checkBuildList(b, ids));
   const builds = Array.isArray(list?.builds) ? list.builds.filter((b) => isObj(b) && typeof b.id === "string") : [];
   if (builds.length > limit) say(`reading the first ${limit} of ${builds.length} builds`);
@@ -282,6 +368,7 @@ export async function run({ base, key, ids, roles: sr = stageRoles(), limit = 50
     const one = await answered(`GET builds/${item.id}`, `builds/${id}`, async (b) => {
       const project = typeof b?.build?.project === "string" && b.build.project ? b.build.project : undefined;
       const unbound = await rolesFor(project);
+      await stagesFor(project);
       return checkBuild(b, ids, item.id, unbound ? { unbound, byStage: sr.byStage } : undefined);
     });
     await answered(`GET builds/${item.id}/tries`, `builds/${id}/tries`, checkTries);
@@ -318,18 +405,19 @@ function args(argv) {
 }
 
 async function main() {
-  let o, key, ids, roles;
+  let o, key, ids, roles, facts;
   try {
     o = args(process.argv.slice(2));
     key = (o.keyFile ? readFileSync(resolve(o.keyFile), "utf8") : process.env.ADLC_API_KEY ?? "").trim();
     if (!key) throw new Error("No key: put it in a file and give --key-file, or set ADLC_API_KEY.");
     ids = stageIds(o.stages ? resolve(o.stages) : undefined);
     roles = stageRoles(o.stages ? resolve(o.stages) : undefined);
+    facts = stageFacts(o.stages ? resolve(o.stages) : undefined);
   } catch (e) {
     console.error(e.message);
     process.exit(2);
   }
-  const { calls, problems } = await run({ base: o.base, key, ids, roles, limit: o.limit, allFiles: o.allFiles, say: (s) => console.log(s) });
+  const { calls, problems } = await run({ base: o.base, key, ids, roles, stages: facts, limit: o.limit, allFiles: o.allFiles, say: (s) => console.log(s) });
   if (problems.length) {
     console.log("");
     for (const p of problems) console.log(`- ${p}`);

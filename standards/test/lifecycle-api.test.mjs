@@ -1,8 +1,8 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.2) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.3) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
-// the roles answer holds to stages.json's roles, and that the check never sends
+// the roles and stages answers hold to stages.json, and that the check never sends
 // the key elsewhere or prints it.
 //   node --test standards/test/*.test.mjs
 import { test } from "node:test";
@@ -11,12 +11,13 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCHEMA, validate, stageIds, stageRoles, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, run } from "../lifecycle-api-check.mjs";
+import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run } from "../lifecycle-api-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
 const IDS = stageIds();
 const SR = stageRoles();
+const SF = stageFacts();
 const AT = "2026-10-31T09:15:00Z";
 const KEY = "key_for_the_test_0123456789";
 
@@ -56,12 +57,12 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.2 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.2");
+test("the schema is version 0.3 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.3");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
-  assert.ok(refs.length >= 14);
+  assert.ok(refs.length >= 18);
   for (const r of refs) assert.ok(SCHEMA.$defs[r.replace("#/$defs/", "")], `${r} is not defined`);
   const walk = (v) => {
     if (Array.isArray(v)) return v.forEach(walk);
@@ -194,6 +195,7 @@ function service({ broken = false, echo = false } = {}) {
     if (init?.headers?.authorization !== `Bearer ${KEY}`) return answer(401, { error: "No key." });
     const p = u.pathname.replace("/v1/lifecycle/", "");
     if (p === "roles") return answer(200, roles());
+    if (p === "stages") return answer(200, stagesAnswer());
     if (p === "me") return echo ? answer(403, { error: `The key ${KEY} may not read this.` }) : answer(200, me());
     if (p === "builds") return answer(200, list());
     if (p === "builds/b1") {
@@ -214,8 +216,8 @@ test("the check reads a service in the contract's shape and finds nothing wrong"
   const lines = [];
   const r = await run({ base: "https://svc.example/v1/lifecycle", key: KEY, ids: IDS, fetch: s.fetch, say: (l) => lines.push(l) });
   assert.deepEqual(r.problems, []);
-  assert.equal(r.calls, 6);
-  assert.deepEqual(s.seen.map((x) => new URL(x.url).pathname), ["/v1/lifecycle/me", "/v1/lifecycle/roles", "/v1/lifecycle/builds", "/v1/lifecycle/builds/b1", "/v1/lifecycle/builds/b1/tries", "/v1/lifecycle/builds/b1/files"]);
+  assert.equal(r.calls, 7);
+  assert.deepEqual(s.seen.map((x) => new URL(x.url).pathname), ["/v1/lifecycle/me", "/v1/lifecycle/roles", "/v1/lifecycle/stages", "/v1/lifecycle/builds", "/v1/lifecycle/builds/b1", "/v1/lifecycle/builds/b1/tries", "/v1/lifecycle/builds/b1/files"]);
   assert.ok(s.seen.every((x) => x.auth === `Bearer ${KEY}`));
 });
 
@@ -440,6 +442,7 @@ test("the check asks for the roles of a build's project, once, and holds its not
     seen.push(u.pathname + u.search);
     const p = u.pathname.replace("/v1/lifecycle/", "");
     if (p === "me") return answer(me());
+    if (p === "stages") return answer(stagesAnswer({ project: u.searchParams.get("project") }));
     if (p === "roles") {
       // The project binds the code critic; the organization leaves it unbound.
       const r = u.searchParams.get("project") === "billing" ? roles({ unbound: ["agent-critic", "impact-analyst"] }) : roles({ unbound: ["agent-critic", "impact-analyst", "code-critic"] });
@@ -459,4 +462,189 @@ test("the check asks for the roles of a build's project, once, and holds its not
   const r = await run({ base: "https://svc.example/v1/lifecycle/", key: KEY, ids: IDS, fetch });
   assert.equal(seen.filter((x) => x === "/v1/lifecycle/roles?project=billing").length, 1, seen.join("\n"));
   assert.equal(r.problems.filter((x) => /review is not_bound, but the roles answer for project billing has code-critic held/.test(x)).length, 2, r.problems.join("\n"));
+});
+
+// Version 0.3: which stages the lifecycle uses. The stages answer as a service
+// gives it with nothing chosen: every stage used, at the default, and the
+// stages it cannot build without marked, with words.
+const NEEDED = ["requirements", "test", "code", "package", "release", "deploy", "acceptance"];
+function stagesAnswer({ project = null } = {}) {
+  return {
+    project,
+    stages: SF.map((s) => ({
+      stage: s.id, name: s.name, phase: s.phase, roles: s.role_ids, used: true, from: "default",
+      can_leave_out: !NEEDED.includes(s.id),
+      ...(NEEDED.includes(s.id) ? { why_not: `${s.name} is needed to make the package; this service cannot build without it.` } : {}),
+    })),
+  };
+}
+const choice = (body, id) => body.stages.find((s) => s.stage === id);
+
+test("the schema names the stages operations, the not_used state and the build's lifecycle", () => {
+  const op = (m, path) => SCHEMA.operations.find((o) => o.method === m && o.path === path);
+  assert.equal(op("GET", "/stages")?.answer, "#/$defs/StagesAnswer");
+  assert.equal(op("PUT", "/stages/{stage}")?.request, "#/$defs/StageChoiceRequest");
+  assert.equal(op("PUT", "/stages/{stage}")?.answer, "#/$defs/StagesAnswer");
+  assert.equal(op("DELETE", "/stages/{stage}")?.answer, "#/$defs/StagesAnswer");
+  for (const o of [op("GET", "/stages"), op("PUT", "/stages/{stage}"), op("DELETE", "/stages/{stage}")]) assert.match(o.does, /\?project=<name>/);
+  assert.match(op("PUT", "/stages/{stage}").does, /400.*403.*409/);
+  assert.ok(STATES.includes("not_used"));
+  assert.match(SCHEMA.$defs.State.description, /not_applicable comes first, then not_used, then every other state/);
+  assert.ok(SCHEMA.$defs.Build.properties.lifecycle);
+  assert.ok(!SCHEMA.$defs.Build.required.includes("lifecycle"), "lifecycle is optional, so a 0.2 build still passes");
+  // Additive: every 0.2 state is still there, in the same order.
+  assert.deepEqual(STATES.slice(0, 9), ["not_started", "working", "waiting_on_you", "done", "refused", "stopped", "not_offered", "not_bound", "not_applicable"]);
+});
+
+test("a stages answer in the contract's shape passes, for the organization and for a project", () => {
+  assert.deepEqual(checkStages(stagesAnswer(), SF), []);
+  const s = stagesAnswer({ project: "billing" });
+  Object.assign(choice(s, "impact"), { used: false, from: "org" });
+  Object.assign(choice(s, "docs"), { used: false, from: "project" });
+  Object.assign(choice(s, "security"), { used: true, from: "project" });
+  s.updated_at = AT;
+  assert.deepEqual(checkStages(s, SF, "billing"), []);
+  assert.deepEqual(validate("StageChoiceRequest", { used: false }), []);
+  assert.match(validate("StageChoiceRequest", {}).join("\n"), /has no used/);
+  assert.match(validate("StageChoiceRequest", { used: "no" }).join("\n"), /used: is string, not boolean/);
+});
+
+test("the stages answer lists every stage of stages.json once, in order, as stages.json names it", () => {
+  const s = stagesAnswer();
+  s.stages = s.stages.filter((x) => x.stage !== "cost");
+  s.stages.push({ ...choice(s, "docs") }, { ...choice(s, "docs"), stage: "lunch" });
+  choice(s, "impact").name = "Impact analysis";
+  choice(s, "source").phase = "make";
+  choice(s, "review").roles = ["code-critic", "security-reviewer"];
+  const p = checkStages(s, SF).join("\n");
+  assert.match(p, /does not list cost/);
+  assert.match(p, /"docs" appears more than once/);
+  assert.match(p, /"lunch" is not a stage in stages\.json/);
+  assert.match(p, /name: is "Impact analysis", not Impact/);
+  assert.match(p, /phase: is "make", not define/);
+  assert.match(p, /roles: are code-critic, security-reviewer, not code-critic/);
+  const swapped = stagesAnswer();
+  [swapped.stages[0], swapped.stages[1]] = [swapped.stages[1], swapped.stages[0]];
+  assert.match(checkStages(swapped, SF).join("\n"), /not in stages\.json's order/);
+});
+
+test("the stages answer names the project asked about, and a choice comes from a project only when one was asked about", () => {
+  assert.match(checkStages(stagesAnswer(), SF, "billing").join("\n"), /body\.project: is null, not the project asked about \("billing"\)/);
+  assert.match(checkStages(stagesAnswer({ project: "billing" }), SF).join("\n"), /body\.project: is "billing", not the project asked about \(null\)/);
+  const noProject = stagesAnswer();
+  delete noProject.project;
+  assert.match(checkStages(noProject, SF).join("\n"), /body: has no project/);
+  const s = stagesAnswer();
+  Object.assign(choice(s, "docs"), { used: false, from: "project" });
+  assert.match(checkStages(s, SF).join("\n"), /comes from a project, but no project was asked about/);
+  const bad = stagesAnswer();
+  choice(bad, "docs").from = "unbound";
+  assert.match(checkStages(bad, SF).join("\n"), /from: is "unbound", not one of project, org, default/);
+});
+
+test("a stage the service cannot leave out says why not and is used, and a stage at the default is used", () => {
+  const s = stagesAnswer();
+  delete choice(s, "code").why_not;
+  choice(s, "test").why_not = "  ";
+  Object.assign(choice(s, "deploy"), { used: false, from: "org" });
+  Object.assign(choice(s, "docs"), { used: false, from: "default" });
+  const p = checkStages(s, SF).join("\n");
+  assert.match(p, /cannot leave out code, so it says why not/);
+  assert.match(p, /cannot leave out test, so it says why not/);
+  assert.match(p, /cannot leave out deploy, so it is used/);
+  assert.match(p, /is at the default, which uses every stage, but it is not used/);
+  const missing = stagesAnswer();
+  delete choice(missing, "docs").can_leave_out;
+  assert.match(checkStages(missing, SF).join("\n"), /has no can_leave_out/);
+});
+
+test("a build may carry its lifecycle and not_used stages, which nobody holds and which never ran", () => {
+  const b = build();
+  b.build.project = "billing";
+  b.build.lifecycle = { project: "billing", at: AT };
+  const at = (s) => b.build.stages.find((x) => x.stage === s);
+  Object.assign(at("impact"), { state: "not_used", given: "Not part of this build's lifecycle (billing)." });
+  Object.assign(at("docs"), { state: "not_used", given: "Not part of this build's lifecycle (org default)." });
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  const own = build();
+  own.build.lifecycle = { project: null, at: AT };
+  assert.deepEqual(checkBuild(own, IDS, "b1"), []);
+  // The rules a not_used stage keeps.
+  at("impact").holder = { kind: "reference_agent", name: "impact-analyst" };
+  at("docs").runs = 2;
+  b.build.actions.push({ stage: "impact", name: "approve", label: "Approve", needs: [] });
+  const p = checkBuild(b, IDS, "b1").join("\n");
+  assert.match(p, /is not_used, so nobody holds it, but it names a holder/);
+  assert.match(p, /is not_used, so it has run 0 times, not 2/);
+  assert.match(p, /"approve" acts at impact, a stage the build does not offer/);
+});
+
+test("a build's lifecycle names the build's own project and when it took the choice", () => {
+  const other = build();
+  other.build.project = "billing";
+  other.build.lifecycle = { project: "payroll", at: AT };
+  assert.match(checkBuild(other, IDS, "b1").join("\n"), /lifecycle\.project: is "payroll", not the build's project \("billing"\)/);
+  const none = build();
+  none.build.lifecycle = { project: "billing", at: AT };
+  assert.match(checkBuild(none, IDS, "b1").join("\n"), /lifecycle\.project: is "billing", not the build's project \(null\)/);
+  const bad = build();
+  bad.build.lifecycle = { at: "yesterday" };
+  const p = checkBuild(bad, IDS, "b1").join("\n");
+  assert.match(p, /lifecycle: has no project/);
+  assert.match(p, /lifecycle\.at: is "yesterday", not an ISO 8601 time/);
+});
+
+test("a state a client does not know reads as not_offered, the rule since 0.2", () => {
+  for (const s of STATES) assert.equal(drawnState(s), s);
+  assert.equal(drawnState("paused_by_policy"), "not_offered");
+  // A client that knows only 0.2 draws a not_used stage as not_offered.
+  const v02 = ["not_started", "working", "waiting_on_you", "done", "refused", "stopped", "not_offered", "not_bound", "not_applicable"];
+  assert.equal(drawnState("not_used", v02), "not_offered");
+  assert.equal(drawnState("done", v02), "done");
+  // The check holds the same rule: an action at a stage in a state it does not
+  // know is at a stage the build does not offer, and the state itself is reported.
+  const b = build();
+  b.build.stages.find((s) => s.stage === "eval").state = "paused_by_policy";
+  b.build.actions.push({ stage: "eval", name: "grade", label: "Grade it", needs: [] });
+  const p = checkBuild(b, IDS, "b1").join("\n");
+  assert.match(p, /"grade" acts at eval, a stage the build does not offer/);
+  assert.match(p, /state: is "paused_by_policy", not one of/);
+});
+
+test("the check reads the stages for the organization and, once, for each project a build names", async () => {
+  const seen = [];
+  const answer = (body) => new Response(JSON.stringify(body), { status: 200 });
+  const fetch = async (url) => {
+    const u = new URL(url);
+    seen.push(u.pathname + u.search);
+    const p = u.pathname.replace("/v1/lifecycle/", "");
+    if (p === "me") return answer(me());
+    if (p === "roles") return answer({ ...roles(), ...(u.searchParams.get("project") ? { project: u.searchParams.get("project") } : {}) });
+    if (p === "stages") {
+      const s = stagesAnswer({ project: u.searchParams.get("project") });
+      // The project's answer says it is about another project.
+      if (u.searchParams.get("project")) s.project = "payroll";
+      return answer(s);
+    }
+    if (p === "builds") return answer({ builds: [...list().builds, { ...list().builds[0], id: "b2" }] });
+    if (p === "builds/b1" || p === "builds/b2") {
+      const b = build(p.slice(7));
+      b.build.project = "billing";
+      b.build.lifecycle = { project: "billing", at: AT };
+      return answer(b);
+    }
+    if (p.endsWith("/tries")) return answer(tries());
+    return answer({});
+  };
+  const r = await run({ base: "https://svc.example/v1/lifecycle/", key: KEY, ids: IDS, fetch });
+  assert.equal(seen.filter((x) => x === "/v1/lifecycle/stages").length, 1, seen.join("\n"));
+  assert.equal(seen.filter((x) => x === "/v1/lifecycle/stages?project=billing").length, 1, seen.join("\n"));
+  assert.deepEqual(r.problems, ["GET stages?project=billing: body.project: is \"payroll\", not the project asked about (\"billing\")"]);
+});
+
+test("a service that does not answer the stages operation fails the 0.3 check, and says so", async () => {
+  const s = service();
+  const fetch = async (url, init) => (new URL(url).pathname.endsWith("/stages") ? new Response(JSON.stringify({ error: "Not here." }), { status: 404 }) : s.fetch(url, init));
+  const r = await run({ base: "https://svc.example/v1/lifecycle/", key: KEY, ids: IDS, fetch });
+  assert.deepEqual(r.problems, ["GET stages: answered 404: Not here."]);
 });
