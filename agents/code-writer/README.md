@@ -17,6 +17,22 @@ The model is in control of this one job, so the check sits outside the work.
 folder before the reply is accepted. It reads only what came in and what went
 out, never a verdict the harness wrote.
 
+## The spec in the hand-off
+
+The hand-off (`hand-off-the-code`, `scripts/handoff.mjs`) lays out the build
+folder Product Factory or a person's own coding harness writes the scripts in,
+on a pull request. Since 0.4.0 it carries the spec (spec-v1, the analysis
+Requirements hands back since stages.json 1.6.0) at its top: `spec.json`, and
+`spec.md` when its rendering for a person came. Each is passed the way every
+other file is, as `--file <path>::<media type>`, and found by what is in it:
+spec.json is the JSON whose format is spec-v1; spec.md is a Markdown file named
+spec.md, or one carrying the product's name and every acceptance scenario's
+id. Both are pinned in `build.lock.json` like the agent's files, so the fence
+keeps them unchanged, and `AGENTS.md` tells the coding agent to read the spec
+first: the requirements, the exact words and patterns, the interfaces that
+must be kept, the acceptance scenarios; then the agent's files and the suite.
+A hand-off with no spec is laid out as before, with the same AGENTS.md.
+
 When a script blanked in turn is not noticed by the suite, delivery still goes
 ahead: the reply says which script nothing tests, for the code critic, because
 the missing test is the test writer's to write. Nobody is asked to decide
@@ -35,7 +51,7 @@ anything, so it is not an escalation.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 38 tests
+node --test test/*.test.mjs                                   # 119 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

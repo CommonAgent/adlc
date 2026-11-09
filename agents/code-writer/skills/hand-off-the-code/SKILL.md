@@ -13,13 +13,14 @@ when the code step is to be held by a coding agent or a person other than this o
 
 ## What this needs
 
+- the spec (document, optional)
 - the agent's files (document, required)
 - the suite (document, required)
 - the released package, as the prototype (document, optional)
 
 ## What a good result looks like
 
-One gzip tar archive that unpacks to the build folder: the agent's files as they came; the suite under test/, byte for byte, binary fixtures included; every script the spec names under scripts/, the released script where the prototype carries one at that path and otherwise a stub exporting what the suite imports; every other file the released package carries at its own path, read-only; AGENTS.md with the house rules; CLAUDE.md pointing to it; .adlc/ with the check, so `node .adlc/check.mjs` runs the same check locally; and build.lock.json with the digest of every pinned file, the record the hand-back is checked against.
+One gzip tar archive that unpacks to the build folder: the spec, when it came, at the top as spec.json and spec.md, byte for byte and read-only; the agent's files as they came; the suite under test/, byte for byte, binary fixtures included; every script the spec names under scripts/, the released script where the prototype carries one at that path and otherwise a stub exporting what the suite imports; every other file the released package carries at its own path, read-only; AGENTS.md with the house rules, which says to read the spec first when it came; CLAUDE.md pointing to it; .adlc/ with the check, so `node .adlc/check.mjs` runs the same check locally; and build.lock.json with the digest of every pinned file, the record the hand-back is checked against.
 
 ## What it produces
 
@@ -31,7 +32,7 @@ If no agent's files or no suite arrived, nothing is laid out and no archive is m
 
 ## How to do it
 
-Run `node scripts/handoff.mjs --job <job folder> --records <records folder> --work <work folder> --file <path>::<media type> ...`. A message asks for the hand-off when its first line begins with "Hand off the code". The host keeps one command for this agent and runs it for every ordinary message, so for any other message the command does nothing and answers {"escalate": true}, and the host wakes the coding session for write-the-scripts. For a hand-off it runs the three steps in order and prints one JSON object with a `reply` field. The agent's files may come loose; they are told apart by what is in them. A suite or a prototype that has folders comes as one gzip tar archive holding its own paths (test/... for the suite, the package's own layout for the prototype), because a loose file's folder is lost on the way; a released package's archive is taken as the prototype as it is. It calls no model and reaches no network: every step is a program. Archives are written and read by archive.mjs in node alone, with no tar binary.
+Run `node scripts/handoff.mjs --job <job folder> --records <records folder> --work <work folder> --file <path>::<media type> ...`. A message asks for the hand-off when its first line begins with "Hand off the code". The host keeps one command for this agent and runs it for every ordinary message, so for any other message the command does nothing and answers {"escalate": true}, and the host wakes the coding session for write-the-scripts. For a hand-off it runs the three steps in order and prints one JSON object with a `reply` field. The agent's files may come loose; they are told apart by what is in them. So is the spec, passed the same way as `--file <spec.json>::application/json` and `--file <spec.md>::text/markdown`: spec.json is the JSON whose format is spec-v1, and spec.md is a Markdown file named spec.md (once the process runner's prefixes are off) or one carrying the product's name and every acceptance scenario's id. Both go at the folder's top, pinned by build.lock.json, never under prototype/. A hand-off with no spec is laid out as before, and its AGENTS.md is the same as before. A suite or a prototype that has folders comes as one gzip tar archive holding its own paths (test/... for the suite, the package's own layout for the prototype), because a loose file's folder is lost on the way; a released package's archive is taken as the prototype as it is. It calls no model and reaches no network: every step is a program. Archives are written and read by archive.mjs in node alone, with no tar binary.
 
 ## Scripts
 

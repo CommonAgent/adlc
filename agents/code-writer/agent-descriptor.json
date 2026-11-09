@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.7",
+  "agent_version": "0.4.0",
   "name": "Code writer",
   "summary": "Writes the scripts a spec names until the test suite passes, and hands back the scripts with an account of how it got there.",
   "will_not": [
@@ -195,8 +195,19 @@
     {
       "id": "hand-off-the-code",
       "name": "Hand off the code",
-      "does": "Lays out a build folder for whoever writes the scripts, with the suite, the released scripts, the house rules and the check, and packs it as one archive.",
+      "does": "Lays out a build folder for whoever writes the scripts, with the spec, the suite, the released scripts, the house rules and the check, and packs it as one archive.",
       "inputs": [
+        {
+          "name": "the spec",
+          "kind": "document",
+          "required": false,
+          "given_by": "either",
+          "accepts": [
+            "application/json",
+            "text/markdown"
+          ],
+          "about": "The spec (spec-v1, standards/spec.schema.json) that Requirements hands back, found by content: spec.json, the JSON whose format is spec-v1, and spec.md, its rendering for a person (a Markdown file named spec.md, or one carrying the product's name and every acceptance scenario's id). Both go at the build folder's top, pinned by build.lock.json, and AGENTS.md says to read the spec first. A hand-off with no spec is laid out as before."
+        },
         {
           "name": "the agent's files",
           "kind": "document",
@@ -243,8 +254,19 @@
         {
           "id": "lay-out-the-build-folder",
           "name": "Lay out the build folder",
-          "does": "Lays out the agent's files, the suite, the scripts, the released package's other files and the check as a build folder.",
+          "does": "Lays out the spec, the agent's files, the suite, the scripts, the released package's other files and the check as a build folder.",
           "inputs": [
+            {
+              "name": "the spec",
+              "kind": "document",
+              "required": false,
+              "given_by": "either",
+              "accepts": [
+                "application/json",
+                "text/markdown"
+              ],
+              "about": "The spec (spec-v1, standards/spec.schema.json) that Requirements hands back, found by content: spec.json, the JSON whose format is spec-v1, and spec.md, its rendering for a person (a Markdown file named spec.md, or one carrying the product's name and every acceptance scenario's id). Both go at the build folder's top, pinned by build.lock.json, and AGENTS.md says to read the spec first. A hand-off with no spec is laid out as before."
+            },
             {
               "name": "the agent's files",
               "kind": "document",
@@ -281,7 +303,7 @@
         {
           "id": "write-the-house-rules",
           "name": "Write the house rules",
-          "does": "Writes AGENTS.md, CLAUDE.md and the build lock.",
+          "does": "Writes AGENTS.md, which says to read the spec first when it came, CLAUDE.md and the build lock, which pins the spec with the agent's files and the suite.",
           "inputs": [
             {
               "name": "the build folder laid out",

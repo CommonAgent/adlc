@@ -2,6 +2,19 @@
 
 This folder is a build folder from an Agent Development Lifecycle. The steps before the code are done: the agent is declared (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and each skills/<slug>/SKILL.md) and its test suite is written (test/). Your job, whoever you are (a coding agent or a person), is to write the scripts under scripts/ so that the suite passes. The steps after the code (review, security review, packing and deploy) take your work back through the same checks you can run here.
 
+<!-- when the spec came -->
+## Read the spec first
+
+{{spec_file}} in this folder is the spec: what the agent must do, and how anyone can tell that it does.{{spec_also}} Read it before anything else. It gives:
+
+- each feature's requirements (F1.R1, F1.R2, ...), each one sentence with shall;
+- the exact words, patterns and numbers a requirement fixes (its exact). Write each one into the scripts as it stands, byte for byte: a refusal's words, a reply's wording, a pattern the agent must recognize, a limit, a time;
+- the interfaces that must be kept (keep: true): a function under that name in that module, async only when its signature says so; a command with those flags; a file in that JSON Schema. test/kept-interfaces.test.mjs checks them, where the suite has it;
+- the acceptance scenarios (F1.A1, F1.A2, ...), each a Given, When and Then that the test named with its id checks.
+
+Then read the agent's files and the suite. The spec is pinned like them, so never change it. Where a test cannot pass without breaking what the spec says, stop as rule 3 says, and name the spec's requirement or scenario by its id.
+<!-- end when the spec came -->
+
 ## Where this folder is
 
 In a repository, this build folder is a folder of its own, agents/<name>/ (here, the folder that holds this file), beside the repository's own files and any other agent handed off to it. Work from this folder and run every command here. Nothing outside this folder is yours to change: the gate refuses a file outside it that was changed, removed or added, and so does the check below. Do not merge the default branch into this branch either; every hand-off has its own folder, so there is nothing to bring in.

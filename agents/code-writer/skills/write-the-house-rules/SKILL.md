@@ -17,7 +17,7 @@ after the build folder is laid out, before it is packed
 
 ## What a good result looks like
 
-AGENTS.md written from the template with the rules for whoever writes the scripts, CLAUDE.md with one line pointing to it, and build.lock.json holding the digest of every pinned file.
+AGENTS.md written from the template with the rules for whoever writes the scripts, opening, when the spec came, with the word to read it first (the requirements, the exact words, patterns and numbers, the interfaces that must be kept, the acceptance scenarios) and then the agent's files and the suite, CLAUDE.md with one line pointing to it, and build.lock.json holding the digest of every pinned file, the spec among them.
 
 ## What it produces
 
@@ -29,7 +29,7 @@ If the template is missing, no archive is made and the reply says so.
 
 ## How to do it
 
-Write AGENTS.md from references/agents-md-template.md: write only under scripts/; never change a test, the agent's files or anything pinned; a new test file under test/ is allowed but changing or removing an existing one sends the work back to the spec and test steps; models are reached only through the shared caller and its four settings MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL; no address written into a script; node 22 with no dependencies outside node; run the check with `node .adlc/check.mjs`. Write CLAUDE.md as one line pointing to AGENTS.md. Write build.lock.json with the digest of every pinned file.
+Write AGENTS.md from references/agents-md-template.md, keeping its part between "<!-- when the spec came -->" and "<!-- end when the spec came -->" when the folder holds the spec (naming spec.md, or spec.json when only it came) and taking it out whole when it does not: write only under scripts/; never change a test, the agent's files or anything pinned; a new test file under test/ is allowed but changing or removing an existing one sends the work back to the spec and test steps; models are reached only through the shared caller and its four settings MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL; no address written into a script; node 22 with no dependencies outside node; run the check with `node .adlc/check.mjs`. Write CLAUDE.md as one line pointing to AGENTS.md. Write build.lock.json with the digest of every pinned file.
 
 ## Scripts
 

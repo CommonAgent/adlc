@@ -1,0 +1,72 @@
+{
+  "format": "spec-v1",
+  "product": { "name": "points-reader", "version": "1.0.0", "kind": "agent" },
+  "purpose": "Reads a pasted list of titles, each followed by a line giving its points, and answers with the titles and their points in the order given. A made-up agent for the test writer's own tests.",
+  "users": [{ "who": "a person who pastes a list", "wants": "each title with its points, and a total" }],
+  "source": { "kind": "account" },
+  "features": [
+    {
+      "id": "F1",
+      "name": "Read the points",
+      "does": "Reads each title and the points line under it, in the order given.",
+      "inputs": [{ "name": "the list", "kind": "text", "about": "Lines of text: a title, then its points line." }],
+      "outputs": [{
+        "name": "the points",
+        "kind": "application/json",
+        "about": "out/points.json",
+        "schema": {
+          "type": "object",
+          "required": ["items", "total"],
+          "properties": {
+            "items": { "type": "array", "items": { "type": "object", "required": ["title", "points"], "properties": { "title": { "type": "string" }, "points": { "type": "integer", "minimum": 0 } } } },
+            "total": { "type": "integer" }
+          },
+          "additionalProperties": false
+        }
+      }],
+      "requirements": [
+        { "id": "F1.R1", "shall": "The agent shall recognize a points line only by the pattern ^(\\d+) points?$.", "kind": "pattern", "exact": ["^(\\d+) points?$"], "priority": "must", "verify": "test" },
+        { "id": "F1.R2", "shall": "The agent shall read at most 30 items from one list.", "kind": "limit", "exact": ["30"], "priority": "must", "verify": "test" },
+        { "id": "F1.R3", "shall": "The agent shall end its reply with the words \"Read by points-reader.\"", "kind": "wording", "exact": ["Read by points-reader."], "priority": "must", "verify": "test" },
+        { "id": "F1.R4", "shall": "The agent shall keep the titles in the order given.", "kind": "order", "priority": "should", "verify": "inspection" }
+      ],
+      "acceptance": [
+        { "id": "F1.A1", "gherkin": "Scenario: two titles with their points\n  Given a list \"Alpha\\n12 points\\nBeta\\n1 point\"\n  When it is read\n  Then the items are Alpha with 12 and Beta with 1\n  And the reply ends \"Read by points-reader.\"", "checks": ["F1.R1", "F1.R3"] },
+        { "id": "F1.A2", "gherkin": "Scenario: a list longer than the limit\n  Given a list of 31 titles, each with a points line\n  When it is read\n  Then only the first 30 are read", "checks": ["F1.R2"] }
+      ]
+    },
+    {
+      "id": "F2",
+      "name": "Refuse a list with no points",
+      "does": "Refuses a list with no points line in it, in fixed words.",
+      "requirements": [
+        { "id": "F2.R1", "shall": "The agent shall refuse a list with no points line with the words \"No points lines were found.\"", "kind": "refusal", "exact": ["No points lines were found."], "priority": "must", "verify": "test" }
+      ],
+      "acceptance": [
+        { "id": "F2.A1", "gherkin": "Scenario: a list with no points\n  Given a list \"Alpha\\nBeta\"\n  When it is read\n  Then it is refused with \"No points lines were found.\"", "checks": ["F2.R1"] }
+      ]
+    }
+  ],
+  "interfaces": [
+    { "id": "I1", "kind": "function", "name": "readPoints", "keep": true, "module": "scripts/read.mjs", "signature": "async readPoints(text, { limit })", "about": "The reading, which other code imports." },
+    { "id": "I2", "kind": "file", "name": "out/points.json", "keep": true, "schema": {
+      "type": "object",
+      "required": ["items", "total"],
+      "properties": {
+        "items": { "type": "array", "maxItems": 30, "items": { "$ref": "#/$defs/item" } },
+        "total": { "type": "integer" }
+      },
+      "additionalProperties": false,
+      "$defs": { "item": { "type": "object", "required": ["title", "points"], "properties": { "title": { "type": "string", "minLength": 1 }, "points": { "type": "integer", "minimum": 0 } } } }
+    }, "about": "What the job writes, which another program reads." },
+    { "id": "I3", "kind": "command", "name": "node scripts/read.mjs", "keep": true, "flags": ["--job <folder>", "--records <folder>"], "about": "The command the runner calls." },
+    { "id": "I4", "kind": "http", "name": "GET /points", "keep": true, "about": "An address a dashboard reads." },
+    { "id": "I5", "kind": "function", "name": "formatReply", "keep": false, "module": "scripts/read.mjs", "about": "Today's shape; may change." }
+  ],
+  "constraints": [
+    { "id": "C1", "shall": "The agent shall finish one list within 10 seconds.", "kind": "performance", "exact": ["10 seconds"], "verify": "test" }
+  ],
+  "systems": [],
+  "settings": [],
+  "open": []
+}
