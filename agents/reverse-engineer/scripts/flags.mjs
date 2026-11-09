@@ -11,7 +11,8 @@
 //   - optional: the field starts with a value that is not empty, is a list
 //     the flag adds to, falls back (`<field> || x`, `?? x`, `? :`, `&& x`), is
 //     tested by an `if` that does not refuse, or the flag is read and passed
-//     over;
+//     over; or the code never reads the flag from its arguments at all (it is
+//     only a word it passes on, such as to git);
 //   - otherwise it is not settled, and the draft is asked (evidence-checked);
 //     a command with a flag still not settled is a gap.
 // Each answer names the file and line it was read from.
@@ -48,13 +49,19 @@ function readsOf(s, flagSet) {
       // The condition the comparison is in: the ( that opens before it.
       let k = t.start; let d = 0;
       for (; k >= 0; k--) { if (m[k] === ")") d += 1; else if (m[k] === "(") { if (d === 0) break; d -= 1; } else if (m[k] === ";" || m[k] === "{" || m[k] === "}") { k = -1; break; } }
-      if (k < 0 || !/\b(if|while)\s*$/.test(m.slice(Math.max(0, k - 10), k))) continue;
+      if (k < 0 || !/\b(if|while)\s*$/.test(m.slice(Math.max(0, k - 10), k))) { out.push({ flag: t.value, field: null, compared: true, line: t.line }); continue; }
       branch = branchAfter(m, matching(m, k));
-    } else continue;
+    } else {
+      // Not compared in a branch: looked up some other way, or only a word
+      // the code passes on (to another program, or in its text).
+      const lookedUp = /(!==|!=)\s*$/.test(pre) || /\b(indexOf|lastIndexOf|includes|startsWith|has|get|findIndex|find|some)\s*\(\s*$/.test(pre) || /^\s*(!==|!=)/.test(m.slice(t.end, t.end + 4));
+      out.push({ flag: t.value, field: null, compared: lookedUp, line: t.line });
+      continue;
+    }
     const body = m.slice(branch[0], branch[1]);
     const set = /([A-Za-z_$][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\s*(?:=(?![=>])|\.\s*push\s*\()/.exec(body);
     const ignored = !set && /^\s*(\{\s*)?(\w+\s*(\+\+|\+=\s*1)|continue|break)\s*;?\s*\}?\s*$/.test(body.replace(/,\s*/g, ";"));
-    out.push({ flag: t.value, field: set ? set[2] : null, holder: set ? set[1] : null, ignored, line: t.line, at: branch[0] + (set ? set.index : 0) });
+    out.push({ flag: t.value, field: set ? set[2] : null, holder: set ? set[1] : null, ignored, compared: true, line: t.line, at: branch[0] + (set ? set.index : 0) });
   }
   return out;
 }
@@ -123,6 +130,7 @@ export function flagsOf(surface) {
       const withField = mine.filter((r) => r.field);
       if (!withField.length) {
         if (ignored) result.optional.push({ flag, why: "it is read and passed over", evidence: [{ file: ignored.file, line: ignored.line }] });
+        else if (mine.length && mine.every((r) => !r.compared)) result.optional.push({ flag, why: "the code never reads it from its arguments: it is only a word the code passes on (to another program, or in its text)", evidence: [{ file: mine[0].file, line: mine[0].line }] });
         else result.unsettled.push({ flag, why: mine.length ? "the field it is read into is not one this reader follows" : "the code does not compare an argument with it in a way this reader follows" });
         continue;
       }
