@@ -164,8 +164,8 @@ test("the evidence formats are listed once each, with a name and what each is re
 // product and carried forward, and the actions run when something happens.
 const CADENCES = ["every_build", "setup", "when_needed"];
 const EVERY_BUILD = ["requirements", "test", "code", "review", "security", "package", "release", "deploy", "conformance", "acceptance", "docs"];
-const SETUP = ["reverse-engineering", "architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"];
-const WHEN_NEEDED = ["impact", "retract", "reconfigure", "rollback", "decommission"];
+const SETUP = ["architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"];
+const WHEN_NEEDED = ["reverse-engineering", "impact", "retract", "reconfigure", "rollback", "decommission"];
 
 test("the three cadences are listed once each, in order, with a name and what each means", () => {
   assert.ok(Array.isArray(data.cadences), "the file lists no cadences");
@@ -187,21 +187,35 @@ test("from 1.3.0 the file says what a cadence is", () => {
   assert.match(data.about, /cadence/);
 });
 
-// Version 1.4.0 adds Reverse engineering, which runs once when a codebase that
-// already exists is adopted. It is numbered 0 so that the 24 stages after it,
-// whose numbers the site and the console show, keep them.
+// Version 1.4.0 adds Reverse engineering, run when needed: when a codebase
+// that already exists is adopted, or when it drifts. It is numbered 0 so that
+// the 24 stages after it, whose numbers the site and the console show, keep
+// them.
 const byId = (id) => data.stages.find((s) => s.id === id);
 const AS_BUILT_PARTS = ["behaviors", "architecture as built", "interfaces", "dependencies", "existing tests and gaps"];
 
-test("Reverse engineering is stage 0, in Define before Requirements, set up once, held by the reverse engineer", () => {
+test("Reverse engineering is stage 0, in Define before Requirements, run when needed, held by the reverse engineer", () => {
   const s = byId("reverse-engineering");
-  assert.deepEqual([s.number, s.phase, s.name, s.cadence], [0, "define", "Reverse engineering", "setup"]);
+  assert.deepEqual([s.number, s.phase, s.name, s.cadence], [0, "define", "Reverse engineering", "when_needed"]);
   assert.equal(data.stages[0], s, "it comes first");
   assert.equal(byId("requirements").number, 1, "Requirements keeps its number");
   assert.deepEqual(s.role_ids, ["reverse-engineer"]);
   assert.equal(s.reference_holder, null, "no reference agent holds it yet");
   const role = data.roles.find((r) => r.id === "reverse-engineer");
   assert.deepEqual([role.name, role.stages, role.reference_agent], ["Reverse engineer", ["reverse-engineering"], null]);
+});
+
+test("it runs on adoption or on drift, never by routine, and on drift covers only what changed", () => {
+  const s = byId("reverse-engineering");
+  assert.match(s.given, /adoption, when the codebase is taken on/);
+  assert.match(s.given, /drift, when the code changed outside the lifecycle/);
+  assert.match(s.given, /its commit differs from the last one any build knew/);
+  assert.match(s.given, /the last as-built record/);
+  assert.match(s.hands_back, /on drift only what changed since the last record/);
+  assert.match(s.why, /on drift each changed behavior goes there to be approved, flagged as a bug for the backlog, or dropped/);
+  assert.match(s.why, /lives fully inside the lifecycle never needs it again/);
+  assert.match(s.why, /never runs by routine/);
+  assert.equal(data.starting_points.find((p) => p.id === "existing-code").enters, "reverse-engineering", "adoption is a starting point");
 });
 
 test("it has no gate of its own: the person decides at Requirements", () => {

@@ -831,13 +831,13 @@ test("the boss's commitments: oldest first, each kind carrying what checks it ag
 // ---------- 0.4.2: each stage's cadence, carried, and a product's setup and when_needed ----------
 
 const CAD = stageCadences();
-const setupItems = () => ["reverse-engineering", "architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"].map((stage) => {
+const setupItems = () => ["architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"].map((stage) => {
   const role = SR.byStage[stage][0];
   return stage === "monitor"
     ? { stage, name: "Monitor", role, project: null, state: "chosen", holder: { kind: "your_agent", name: "Our watcher", handle: "watcher.you@example.com" }, settings: { every: "5 minutes" }, since: "0.1.0", words: "Unchanged since 0.1.0" }
     : { stage, role, project: null, state: "not_chosen", holder: null, settings: {}, since: null, words: "Nobody chosen" };
 });
-const whenNeeded = () => ["impact", "retract", "reconfigure", "rollback", "decommission"].map((stage) => (stage === "rollback"
+const whenNeeded = () => ["reverse-engineering", "impact", "retract", "reconfigure", "rollback", "decommission"].map((stage) => (stage === "rollback"
   ? { stage, name: "Rollback", can_run: true, action: { build: "b1", name: "rollback", label: "Roll back to 0.0.9" } }
   : { stage, can_run: false, why_not: "This service does not run it." }));
 
@@ -886,19 +886,19 @@ test("a product's setup lists every setup stage once, in order, with its own rol
   // A product without the lists, as a 0.4.1 service answers, still passes.
   assert.deepEqual(checkProduct(p, "word-tally"), []);
   const short = setupItems().slice(1);
-  assert.deepEqual(checkProduct({ ...p, setup: short }, "word-tally"), ["body.setup: lists architecture, source, publish, monitor, eval, incident, cost, update, not stages.json's setup stages in order (reverse-engineering, architecture, source, publish, monitor, eval, incident, cost, update)"]);
+  assert.deepEqual(checkProduct({ ...p, setup: short }, "word-tally"), ["body.setup: lists source, publish, monitor, eval, incident, cost, update, not stages.json's setup stages in order (architecture, source, publish, monitor, eval, incident, cost, update)"]);
   const bad = setupItems();
-  bad[1].role = "code-writer";
-  bad[2].state = "chosen";
-  bad[3].holder = { kind: "person", name: "Ana" };
-  bad[5].since = "0.1.0";
-  bad[4].since = "9.9.9";
+  bad[0].role = "code-writer";
+  bad[1].state = "chosen";
+  bad[2].holder = { kind: "person", name: "Ana" };
+  bad[4].since = "0.1.0";
+  bad[3].since = "9.9.9";
   assert.deepEqual(checkProduct({ ...p, setup: bad }, "word-tally"), [
-    "body.setup[1].role: code-writer does not hold architecture in stages.json",
-    "body.setup[2]: is chosen, so it names its holder",
-    "body.setup[3]: is not_chosen, so nobody holds it, but it names a holder",
-    "body.setup[4].since: 9.9.9 is not a version of the product's builds",
-    'body.setup[5].since: is "0.1.0", but a stage not_chosen has held nothing since a version',
+    "body.setup[0].role: code-writer does not hold architecture in stages.json",
+    "body.setup[1]: is chosen, so it names its holder",
+    "body.setup[2]: is not_chosen, so nobody holds it, but it names a holder",
+    "body.setup[3].since: 9.9.9 is not a version of the product's builds",
+    'body.setup[4].since: is "0.1.0", but a stage not_chosen has held nothing since a version',
   ]);
   const state = setupItems(); state[0].state = "maybe";
   assert.ok(checkProduct({ ...p, setup: state }, "word-tally").some((x) => x.startsWith("body.setup[0].state")));
@@ -906,17 +906,17 @@ test("a product's setup lists every setup stage once, in order, with its own rol
 
 test("a product's when_needed lists every when_needed stage once, in order: why not when it cannot run, its action when it can", () => {
   const bad = whenNeeded();
-  delete bad[0].why_not;
-  bad[1].action = { build: "b1", name: "retract", label: "Retract" };
-  delete bad[3].action;
-  bad[3].why_not = "It can.";
+  delete bad[1].why_not;
+  bad[2].action = { build: "b1", name: "retract", label: "Retract" };
+  delete bad[4].action;
+  bad[4].why_not = "It can.";
   assert.deepEqual(checkProduct({ ...product(), when_needed: bad }, "word-tally"), [
-    "body.when_needed[0]: cannot run, so it says why_not",
-    "body.when_needed[1]: cannot run, so it names no action",
-    "body.when_needed[3]: can run, so it names the action that runs it",
-    "body.when_needed[3]: can run, so it gives no why_not",
+    "body.when_needed[1]: cannot run, so it says why_not",
+    "body.when_needed[2]: cannot run, so it names no action",
+    "body.when_needed[4]: can run, so it names the action that runs it",
+    "body.when_needed[4]: can run, so it gives no why_not",
   ]);
-  assert.deepEqual(checkProduct({ ...product(), when_needed: whenNeeded().reverse() }, "word-tally"), ["body.when_needed: lists decommission, rollback, reconfigure, retract, impact, not stages.json's when_needed stages in order (impact, retract, reconfigure, rollback, decommission)"]);
+  assert.deepEqual(checkProduct({ ...product(), when_needed: whenNeeded().reverse() }, "word-tally"), ["body.when_needed: lists decommission, rollback, reconfigure, retract, impact, reverse-engineering, not stages.json's when_needed stages in order (reverse-engineering, impact, retract, reconfigure, rollback, decommission)"]);
 });
 
 // ---------- features (0.4.3) ----------

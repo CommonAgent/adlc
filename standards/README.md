@@ -200,12 +200,12 @@ answers to the schema and to the rules it cannot say.
 **Cadence.** stages.json 1.3.0 gives each stage a cadence. `every_build`
 stages are the routine: Requirements, Test, Code, Review, Security review,
 Package, Release, Deploy, Conformance, Acceptance and Docs run on every build.
-`setup` stages are set up once per product: Reverse engineering (from
-stages.json 1.4.0), Source, Architecture and Design, Publish, Monitor, Eval, Incident response, Cost and Update are given a
+`setup` stages are set up once per product: Source, Architecture and
+Design, Publish, Monitor, Eval, Incident response, Cost and Update are given a
 holder and settings once, and each later version carries them forward until
 someone changes them. `when_needed` stages are actions on the product, run
-when something happens: Impact, Retract, Reconfigure, Rollback and
-Decommission. From version 0.4.2 a build's stages and each stage workspace
+when something happens: Reverse engineering (from stages.json 1.4.0),
+Impact, Retract, Reconfigure, Rollback and Decommission. From version 0.4.2 a build's stages and each stage workspace
 carry `cadence`, and a setup stage whose holder and settings are the same as
 an earlier version's carries `carried` ("Unchanged since 0.1.0"), so nothing
 is asked again. `GET /products/{name}` adds `setup`, each setup stage with
@@ -220,10 +220,18 @@ says it can run it. `checkBuild`, `checkStageWorkspace` and `checkProduct`
 hold these to stages.json.
 
 **Reverse engineering.** stages.json 1.4.0 adds a stage for code that already
-exists. It runs once, when a codebase is adopted, before Requirements, and is
-numbered 0 so that the 24 stages after it keep the numbers the site and the
-console show. The reverse engineer is given the codebase at a named commit,
-and its running form if there is one, and hands back the as-built record:
+exists. It sits before Requirements and is numbered 0 so that the 24 stages
+after it keep the numbers the site and the console show. It runs when
+needed, on one of two triggers: adoption, when an existing codebase is taken
+on, and drift, when the code changed outside the lifecycle (hand edits,
+another team, a vendor drop), which shows when the code's commit differs
+from the last one any build knew. On drift the record covers only what
+changed since the last record, and each changed behavior goes to
+Requirements. A codebase that lives fully inside the lifecycle does not need
+it again, because its forward artifacts are already the truth, so it never
+runs by routine. The reverse engineer is given the codebase at a named
+commit, and its running form if there is one, and hands back the as-built
+record:
 the behaviors, the architecture as built, the interfaces, the dependencies
 and the existing tests and gaps, each claim naming its evidence (a file and
 line, or an observed run) and each gap marked. It describes what the code

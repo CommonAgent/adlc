@@ -5,10 +5,14 @@ Changes to the standards in this folder, newest first.
 ## stages.json
 
 - **1.4.0**: Reverse engineering, held by the new reverse engineer role, for
-  code that already exists. It is in Define, before Requirements, set up once
-  (when a codebase is adopted), and numbered 0 so that the 24 stages keep
-  their numbers. It hands back the as-built record (behaviors, architecture
-  as built, interfaces, dependencies, existing tests and gaps), and has no
+  code that already exists. It is in Define, before Requirements, numbered 0
+  so that the 24 stages keep their numbers, and run when needed
+  (`when_needed`) on adoption, when an existing codebase is taken on, or on
+  drift, when the code changed outside the lifecycle and its commit differs
+  from the last one any build knew. A codebase that lives fully inside the
+  lifecycle does not need it again. It hands back the as-built record
+  (behaviors, architecture as built, interfaces, dependencies, existing tests
+  and gaps; on drift, only what changed since the last record), and has no
   gate of its own: the person decides at Requirements. Requirements,
   Architecture and Design, Impact, Test and Security review may be given
   parts of the record, each said in words added to its `given`. The file
