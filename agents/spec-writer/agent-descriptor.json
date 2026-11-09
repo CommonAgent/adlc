@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.9.0",
+  "agent_version": "0.10.0",
   "name": "Spec writer",
   "summary": "Turns what you want an agent to do into its spec and then the agent's own files a builder takes, or your work into a process document, and asks what it could not settle.",
   "will_not": [
@@ -117,7 +117,7 @@
         {
           "id": "draft-the-spec",
           "name": "Draft the spec",
-          "does": "Writes the spec (spec-v1), seeded by code from an as-built record when one came, with the text-reasoning service writing the shall lines and acceptance scenarios; then drafts the agent's own files from the spec. Each part calls the service once, twice at most.",
+          "does": "Writes the spec (spec-v1), seeded by code from an as-built record when one came, with the text-reasoning service writing the shall lines and acceptance scenarios; then writes the structure of the agent's own files from the spec by code, with the service writing only their prose. Each part calls the service once, twice at most.",
           "how": {
             "control": "script",
             "intelligence": "called",

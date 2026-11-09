@@ -175,6 +175,31 @@ test("the round trip's case: a revision renaming one output leaves the offering,
   assert.deepEqual(second.design.structure_changed, ["jobs"]);
 });
 
+test("with no declaration, a rename of one output opens only that feature's pieces: its offering, and so the skill folder, stay", async () => {
+  const spec = theSpec();
+  spec.interfaces = spec.interfaces.filter((i) => i.kind !== "declaration");
+  spec.features[0].offering = "read-the-tides";
+  const first = await designFromSpec({ spec, call: greedy(), table: null });
+  assert.deepEqual(first.spec.jobs[0].outputs.map((o) => o.name), ["tides"]);
+  const words = "Rename the output tides to next-tides.";
+  const asked = { said: words, revision: { how: "sent back with changes", answers: { said: words } }, attached: [{ name: "spec.json", kind: "the spec", media_type: "application/vnd.agentmesh.spec+json", text: JSON.stringify(spec, null, 2) }] };
+  const f1 = spec.features[0];
+  // The stand-in renames the output and, as on the round trip, the offering.
+  const edit = { ...f1, offering: "read-next-tides", outputs: f1.outputs.map((o) => (o.name === "out/tides.json" ? { ...o, name: "next-tides" } : o)) };
+  const revised = await writeTheSpec({ asked, call: async () => ({ text: JSON.stringify({ edits: [{ set: "F1", value: edit }] }) }) });
+  assert.deepEqual(revised.revised.targets, ["F1.pieces"]);
+  assert.equal(revised.spec.features[0].offering, "read-the-tides", "the offering is not the words' to change");
+  assert.ok(revised.spec.features[0].outputs.some((o) => o.name === "next-tides"));
+  assert.match(revised.notes, /your words name F1's pieces and not its offering/);
+  const second = await designFromSpec({ spec: revised.spec, call: greedy(" (again)"), earlier: first.spec, words, table: null });
+  assert.deepEqual(second.spec.jobs.map((j) => j.slug), ["read-the-tides"]);
+  assert.deepEqual(second.spec.jobs[0].outputs.map((o) => o.name), ["next-tides"]);
+  assert.equal(second.spec.jobs[0].outputs[0].schema.properties.format.const, "tides-v1", "the renamed piece keeps its schema");
+  assert.deepEqual(Object.keys(agentFilesOf(second.spec)), Object.keys(agentFilesOf(first.spec)));
+  assert.equal(agentFilesOf(second.spec)["agent-runtime-requirements.json"], agentFilesOf(first.spec)["agent-runtime-requirements.json"]);
+  assert.deepEqual(second.design.prose_written, ["job:read-the-tides.outputs:next-tides.about"]);
+});
+
 test("words about the files alone leave the spec byte for byte and change only the prose they name", async () => {
   const spec = theSpec();
   const first = await designFromSpec({ spec, call: greedy(), table: null });

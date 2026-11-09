@@ -558,9 +558,13 @@ export function carriedProse(draft, earlier) {
         const ji = jobs.findIndex((x) => x.slug === m[1]);
         const ej = eJobs.find((x) => x.slug === m[1]) ?? (eJobs.length === jobs.length ? eJobs[ji] : undefined);
         if (ej && m[2]) {
+          // The piece of that name in the job, or a piece the spec renamed:
+          // the one at the same place whose name the new job no longer has.
+          const byName = list(ej[m[2]]).find((p) => trim(p.name) === m[3]);
           const pi = list(jobs[ji][m[2]]).findIndex((p) => trim(p.name) === m[3]);
           const ep = list(ej[m[2]])[pi];
-          if (ep && !list(jobs[ji][m[2]]).some((p) => trim(p.name) === trim(ep.name))) v = ep.about;
+          if (byName) v = byName.about;
+          else if (ep && !list(jobs[ji][m[2]]).some((p) => trim(p.name) === trim(ep.name))) v = ep.about;
         } else if (ej) v = ej[m[4]];
       }
       const s = /^system:(.+)\.needs$/.exec(key);

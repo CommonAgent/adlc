@@ -66,8 +66,11 @@ export function namedTargets(words = "", spec = null) {
   // A name or value the agent declares (spec-v1 1.1.0, kind declaration or
   // constant), named by its value in a sentence that renames it ("rename the
   // output stories to top-stories", "call the step fetch instead of read"),
-  // and each feature whose inputs or outputs carry that name. The value is a
-  // whole word: stories is not named by read-the-stories.
+  // and the pieces (inputs and outputs) of each feature that carries that
+  // name, and nothing else of the feature: not its offering, its name or its
+  // requirements (on the round trip a rename of one output renamed the
+  // offering too). The value is a whole word: stories is not named by
+  // read-the-stories.
   const sentences = t.split(/(?<=[.!?])\s+|\n+/);
   const renaming = sentences.filter((x) => /\brenam\w*\b|\binstead of\b|\b(?:be )?called\b|\bcall (?:it|the|this)\b/i.test(x));
   const wordIn = (v, text) => new RegExp(`(?<![\\w$-])${escRe(v)}(?![\\w$-])`).test(text);
@@ -80,7 +83,7 @@ export function namedTargets(words = "", spec = null) {
     // out/stories.json "stories".
     const pieces = [...list(f?.inputs), ...list(f?.outputs)].map((d) => trim(d?.name)).filter((n) => n.length > 1)
       .flatMap((n) => [n, n.replace(/\\/g, "/").split("/").pop().replace(/\.[a-z0-9]+$/i, "")]).filter((n) => n.length > 1);
-    if (pieces.some((n) => renaming.some((x) => wordIn(n, x)))) out.add(trim(f.id));
+    if (pieces.some((n) => renaming.some((x) => wordIn(n, x)))) out.add(`${trim(f.id)}.pieces`);
   }
   if (settled.version || /\bversion\b/i.test(t)) out.add("product.version");
   if (settled.price || /\bprice\b|\bcosts?\b|\bfree\b/i.test(t)) out.add("price");
@@ -159,6 +162,21 @@ export function applyEdits(before, edits = [], targets = new Set()) {
   for (const e of list(edits)) {
     if (!isObj(e)) continue;
     const said = JSON.stringify(e).slice(0, 160);
+    // A feature whose pieces the words name, and only its pieces: set
+    // F3.pieces to {inputs, outputs}, or set F3 whole, of which only the
+    // inputs and outputs are taken.
+    const pieceOnly = (p) => /^F[1-9]\d*$/.test(p) && !targets.has(p) && targets.has(`${p}.pieces`);
+    const piecesPath = /^(F[1-9]\d*)\.pieces$/.exec(trim(e.set))?.[1];
+    if (trim(e.set) && (pieceOnly(trim(e.set)) || (piecesPath && targets.has(`${piecesPath}.pieces`)))) {
+      const id = piecesPath ?? trim(e.set);
+      const f = list(spec.features).find((x) => x.id === id);
+      if (!f || !isObj(e.value)) { dropped.push({ edit: said, why: `the spec has no ${id}` }); continue; }
+      const other = Object.keys(e.value).filter((k) => !["inputs", "outputs", "id"].includes(k) && !same(e.value[k], f[k]));
+      for (const side of ["inputs", "outputs"]) if (Array.isArray(e.value[side])) f[side] = structuredClone(e.value[side]);
+      applied.push(`set ${id}'s pieces`);
+      if (other.length) dropped.push({ edit: said, why: `your words name ${id}'s pieces and not its ${other.join(", ")}` });
+      continue;
+    }
     if (trim(e.set) || trim(e.remove)) {
       const path = trim(e.set || e.remove);
       if (!mayTouch(path, targets)) { dropped.push({ edit: said, why: `${path} is not something your words name` }); continue; }
@@ -219,7 +237,12 @@ export function unchangedProblems(before, after, targets = new Set()) {
     if (!g) { check(f.id, f, undefined); continue; }
     const { requirements: fr, acceptance: fa, ...frest } = f;
     const { requirements: gr, acceptance: ga, ...grest } = g;
-    check(f.id, frest, grest);
+    // Its pieces may change where the words name them, and nothing else of it.
+    if (targets.has(`${f.id}.pieces`) && !mayTouch(f.id, targets)) {
+      const { inputs: fi, outputs: fo, ...fothers } = frest;
+      const { inputs: gi, outputs: go, ...gothers } = grest;
+      check(f.id, fothers, gothers);
+    } else check(f.id, frest, grest);
     for (const r of list(fr)) check(r.id, r, list(gr).find((x) => x.id === r.id));
     for (const a of list(fa)) check(a.id, a, list(ga).find((x) => x.id === a.id));
   }
