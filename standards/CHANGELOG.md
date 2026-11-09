@@ -4,6 +4,20 @@ Changes to the standards in this folder, newest first.
 
 ## stages.json
 
+- **1.6.0**: Requirements hands back the spec (`spec.schema.json`, spec-v1),
+  the analysis of the product's functional requirements and capabilities: each
+  feature with its requirements, its inputs and outputs, and acceptance
+  scenarios a test can check; the interfaces and which must be kept; the
+  constraints; the systems it reaches or names; its settings; and the open
+  questions. Its asset is now Spec (it was Statement of the job). Until now the
+  reference implementation handed back the agent's own files (descriptor,
+  runtime requirements, plugin manifest, skills) as the statement, which is a
+  declaration a package is built from, not an analysis of what the product must
+  do: details with no place in a descriptor were lost before Test. The Design
+  part of Architecture and Design now makes those files from the spec, Test
+  writes a test for each acceptance scenario, and Code is given the spec with
+  the files and the suite. Every given that said "the statement of the job"
+  says "the spec". No stage id or number changed.
 - **1.5.0**: the starting point `as-built-record`: someone brings the as-built
   record of code kept elsewhere, to build it again without taking that code
   on (a rewrite, a port or a clean-room rebuild). It enters at Requirements,
@@ -44,6 +58,9 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.8**: the spec artifact (kind `spec`, `SpecSummary`): what
+  Requirements hands back (stages.json 1.6.0). The `statement` artifact is the
+  agent's own files, made at Design. Additive.
 - **0.4.7**: starting from an as-built record (stages.json 1.5.0), and
   sending a build back to Requirements. The start request's `starting_point`
   may be `as-built-record`, with `source` naming the record (a `folder`, or a
