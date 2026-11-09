@@ -4,13 +4,19 @@
 // Read by rule (surface.mjs), each with its evidence and `read_by_rule: true`:
 //   - each file the code writes, as an interface of kind file, with the JSON
 //     Schema its value shows (field names, types, which fields are always
-//     there, constant values such as a format id);
-//   - each exported function or class of a module something imports (or of
-//     the main module, or of a command), as an interface of kind function:
-//     its name and parameters, async or not, and what its own body throws or
-//     rejects with;
+//     there, constant values such as a format id) and, 0.3.0, `values`: the
+//     allowed values of each field the code only writes from fixed literals;
+//   - each exported function or class of every module of the code, as an
+//     interface of kind function: its name and parameters, async or not, and
+//     what its own body throws or rejects with;
 //   - each file that starts as a command, as an interface of kind command,
-//     with the flags it and the files it imports read;
+//     with the flags it and the files it imports read and, 0.3.0, the flags
+//     it cannot run without (flags.mjs; the draft settles what the rule
+//     cannot, evidence-checked);
+//   - 0.3.0: each exported constant, as an interface of kind constant, with
+//     its value as JSON where the literal can be read (else null and a gap);
+//   - 0.3.0: each name and value the agent declares in its own files
+//     (declarations.mjs), as an interface of kind declaration;
 //   - beside them, the exported constants and values (with a literal's value),
 //     every flag, the environment variables read and the run-config settings
 //     declared.

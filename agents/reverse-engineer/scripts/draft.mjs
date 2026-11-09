@@ -164,9 +164,10 @@ const ARCHITECTURE_SHAPE = `{
     "formats": [{"direction": "in | out", "piece": "...", "kind": "a media type where the code shows one", "evidence": [...]}]
   }`;
 
-const INTERFACE_SHAPE = `{"id": "I1", "kind": "http | command | message | file | function", "name": "...", "does": "...",
-    "export": "for a function read by rule: its module#name", "returns": "for a function: what it gives back",
+const INTERFACE_SHAPE = `{"id": "I1", "kind": "http | command | message | file | function | constant", "name": "...", "does": "...",
+    "export": "for a function or a constant read by rule: its module#name", "returns": "for a function: what it gives back",
     "path": "for a file read by rule: its path", "command": "for a command read by rule: its file",
+    "required_flags": {"flags": ["for a command whose flags_unsettled are listed above: the ones it cannot run without"], "evidence": [...]},
     "evidence": [...], "schema": {"format": "openapi | json-schema", "document": {}}}`;
 
 const GAP_SHAPE = `{"kind": "unreachable | run-time-only | unclear", "about": "...", "why": "...", "evidence": [...]}`;
@@ -223,7 +224,10 @@ export function factsShown(facts, { only = null, patterns = false } = {}) {
       ...(e.value !== undefined ? { value: e.value } : {}),
       ...(e.imported_by?.length ? { imported_by: e.imported_by } : {}),
     })),
-    commands: s.entries.filter((e) => inF(e.file)).map((e) => ({ command: e.file, why: e.why, flags: e.flags ?? [] })),
+    commands: s.entries.filter((e) => inF(e.file)).map((e) => {
+      const rf = facts.required_flags?.get?.(e.file);
+      return { command: e.file, why: e.why, flags: e.flags ?? [], ...(rf ? { required_flags_by_rule: rf.required.map((x) => x.flag), optional_flags_by_rule: rf.optional.map((x) => x.flag), ...(rf.unsettled.length ? { flags_unsettled: rf.unsettled.map((x) => x.flag) } : {}) } : {}) };
+    }),
     files_written: s.writes.filter((w) => w.evidence.some((e) => inF(e.file))).map((w) => ({ path: w.path ?? `(named by ${w.written_as})`, content: w.content, at: at(w.evidence), ...(w.schema ? { schema_read_by_rule: w.schema } : {}) })),
     ...(patterns ? {
       patterns: s.patterns.filter((p) => inF(p.file)).map((p) => ({ at: `${p.file}:${p.line}`, ...(p.name ? { name: p.name } : {}), text: p.text })),
@@ -268,6 +272,7 @@ export function promptArchitecture({ repository, commit, files, sent, notSent, f
   L.push("The code, each line numbered:", "", ...sent.map((s) => numbered(s.file, s.text)), "");
   L.push("Answer with one JSON object of this shape:", SHAPE_ARCHITECTURE, "", "Rules for the answer:", ...RULES_COMMON,
     "- The exports, the files written and the commands listed above are interfaces already, read by rule. Describe each one you can as an interface: a function with \"export\": \"module#name\", what it does and what it returns; a file with \"path\" and, where the schema read by rule leaves a part as a $comment (the items of a list, a field built elsewhere), a JSON Schema that fills it in field by field from the code; a command with \"command\" and what it does. Do not restate parameters, async, throws or flags: they are read by rule.",
+    "- For a command with flags_unsettled, say which of those flags it cannot run without, as \"required_flags\": {\"flags\": [...], \"evidence\": [...]}, citing the lines where it refuses or stops without them; the flags you leave out are taken as optional. The flags read by rule as required or optional stand.",
     "- Add other interfaces (HTTP routes, messages, files read) with evidence.",
     "- In a schema, copy every constant value (a format id, a fixed word) from the code byte for byte, and name only fields the code writes.",
     "- A function no path reaches is a gap of kind unreachable. Behavior seen only when the code runs is a gap of kind run-time-only.");
