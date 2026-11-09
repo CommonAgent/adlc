@@ -2,7 +2,7 @@
   "format": "agent-descriptor-v1",
   "agent_version": "0.9.0",
   "name": "Spec writer",
-  "summary": "Turns what you want an agent to do into its spec, the requirements and acceptance scenarios a test can be written from, and then the agent's own files a builder takes; or the work you describe into a process document. It says plainly what it could not settle without you.",
+  "summary": "Turns what you want an agent to do into its spec and then the agent's own files a builder takes, or your work into a process document, and asks what it could not settle.",
   "will_not": [
     "It will not choose the agent's name or its price; it asks you.",
     "It will not give the agent access to a system you did not ask for.",
