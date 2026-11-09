@@ -16,6 +16,10 @@ import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState,
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
 const IDS = stageIds();
+// Where the fixtures put their work: Requirements and Code, by index, since
+// stages.json 1.4.0 puts Reverse engineering (number 0) before Requirements.
+const R = IDS.indexOf("requirements");
+const C = IDS.indexOf("code");
 const SR = stageRoles();
 const SF = stageFacts();
 const AT = "2026-10-31T09:15:00Z";
@@ -121,15 +125,15 @@ test("a build's end state, its pause and archive are optional fields of the list
 
 test("the schema catches a wrong shape", () => {
   const b = build();
-  b.build.stages[0].state = "finished";
-  b.build.stages[0].handed_back.files[0].size = "2 KB";
+  b.build.stages[R].state = "finished";
+  b.build.stages[R].handed_back.files[0].size = "2 KB";
   delete b.build.actions[0].needs;
-  b.build.stages[5].holder = { kind: "robot", name: "x" };
+  b.build.stages[C].holder = { kind: "robot", name: "x" };
   b.build.log[0].at = "yesterday";
-  b.build.stages[5].where.check.passed = "yes";
+  b.build.stages[C].where.check.passed = "yes";
   delete b.build.can_try;
   const p = checkBuild(b, IDS, "b1").join("\n");
-  assert.match(p, /stages\[0\]\.state: is "finished", not one of/);
+  assert.match(p, new RegExp(`stages\\[${R}\\]\\.state: is "finished", not one of`));
   assert.match(p, /files\[0\]\.size: is string, not integer/);
   assert.match(p, /actions\[0\]: has no needs/);
   assert.match(p, /holder.*kind: is "robot"/);
@@ -141,7 +145,7 @@ test("the schema catches a wrong shape", () => {
 test("a time must carry a zone and be a real date", () => {
   const b = build();
   b.build.log[0].at = "2026-10-31T09:15:00";
-  b.build.stages[0].log[0].at = "2026-13-45T09:15:00Z";
+  b.build.stages[R].log[0].at = "2026-13-45T09:15:00Z";
   const p = checkBuild(b, IDS, "b1");
   assert.equal(p.length, 2, p.join("\n"));
 });
@@ -160,8 +164,8 @@ test("a build lists every stage of stages.json once, and no other", () => {
 
 test("rounds are newest first", () => {
   const b = build();
-  b.build.stages[0].rounds.reverse();
-  assert.match(checkBuild(b, IDS).join("\n"), /stages\[0\]\.rounds\[1\]: rounds are newest first/);
+  b.build.stages[R].rounds.reverse();
+  assert.match(checkBuild(b, IDS).join("\n"), new RegExp(`stages\\[${R}\\]\\.rounds\\[1\\]: rounds are newest first`));
 });
 
 test("an action acts only at a stage the build offers", () => {
@@ -200,8 +204,8 @@ function service({ broken = false, echo = false } = {}) {
     if (p === "builds") return answer(200, list());
     if (p === "builds/b1") {
       const b = build();
-      if (broken) b.build.stages[0].rounds.reverse();
-      b.build.stages[0].handed_back.files.push({ path: "elsewhere.txt", size: 1, link: "https://other.example/elsewhere.txt" });
+      if (broken) b.build.stages[R].rounds.reverse();
+      b.build.stages[R].handed_back.files.push({ path: "elsewhere.txt", size: 1, link: "https://other.example/elsewhere.txt" });
       return answer(200, b);
     }
     if (p === "builds/b1/tries") return answer(200, tries());
@@ -833,7 +837,7 @@ const setupItems = () => ["architecture", "source", "publish", "monitor", "eval"
     ? { stage, name: "Monitor", role, project: null, state: "chosen", holder: { kind: "your_agent", name: "Our watcher", handle: "watcher.you@example.com" }, settings: { every: "5 minutes" }, since: "0.1.0", words: "Unchanged since 0.1.0" }
     : { stage, role, project: null, state: "not_chosen", holder: null, settings: {}, since: null, words: "Nobody chosen" };
 });
-const whenNeeded = () => ["impact", "retract", "reconfigure", "rollback", "decommission"].map((stage) => (stage === "rollback"
+const whenNeeded = () => ["reverse-engineering", "impact", "retract", "reconfigure", "rollback", "decommission"].map((stage) => (stage === "rollback"
   ? { stage, name: "Rollback", can_run: true, action: { build: "b1", name: "rollback", label: "Roll back to 0.0.9" } }
   : { stage, can_run: false, why_not: "This service does not run it." }));
 
@@ -902,17 +906,17 @@ test("a product's setup lists every setup stage once, in order, with its own rol
 
 test("a product's when_needed lists every when_needed stage once, in order: why not when it cannot run, its action when it can", () => {
   const bad = whenNeeded();
-  delete bad[0].why_not;
-  bad[1].action = { build: "b1", name: "retract", label: "Retract" };
-  delete bad[3].action;
-  bad[3].why_not = "It can.";
+  delete bad[1].why_not;
+  bad[2].action = { build: "b1", name: "retract", label: "Retract" };
+  delete bad[4].action;
+  bad[4].why_not = "It can.";
   assert.deepEqual(checkProduct({ ...product(), when_needed: bad }, "word-tally"), [
-    "body.when_needed[0]: cannot run, so it says why_not",
-    "body.when_needed[1]: cannot run, so it names no action",
-    "body.when_needed[3]: can run, so it names the action that runs it",
-    "body.when_needed[3]: can run, so it gives no why_not",
+    "body.when_needed[1]: cannot run, so it says why_not",
+    "body.when_needed[2]: cannot run, so it names no action",
+    "body.when_needed[4]: can run, so it names the action that runs it",
+    "body.when_needed[4]: can run, so it gives no why_not",
   ]);
-  assert.deepEqual(checkProduct({ ...product(), when_needed: whenNeeded().reverse() }, "word-tally"), ["body.when_needed: lists decommission, rollback, reconfigure, retract, impact, not stages.json's when_needed stages in order (impact, retract, reconfigure, rollback, decommission)"]);
+  assert.deepEqual(checkProduct({ ...product(), when_needed: whenNeeded().reverse() }, "word-tally"), ["body.when_needed: lists decommission, rollback, reconfigure, retract, impact, reverse-engineering, not stages.json's when_needed stages in order (reverse-engineering, impact, retract, reconfigure, rollback, decommission)"]);
 });
 
 // ---------- features (0.4.3) ----------
