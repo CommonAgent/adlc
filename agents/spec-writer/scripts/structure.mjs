@@ -422,7 +422,10 @@ export function structureOf(spec, { architecture = null } = {}) {
       const byIndex = declaredPieces(index, declared.length ? i : -1, side);
       if (!byIndex.size) return derived;
       return [...byIndex.entries()].sort((a, b) => a[0] - b[0]).map(([, p]) => {
-        const same = derived.find((x) => x.name === trim(p.name));
+        // The piece of that name, or else the one piece of that kind: a piece
+        // the spec renamed keeps its schema.
+        const ofKind = derived.filter((x) => trim(p.kind) && x.kind === trim(p.kind));
+        const same = derived.find((x) => x.name === trim(p.name)) ?? (ofKind.length === 1 ? ofKind[0] : undefined);
         return { name: trim(p.name), kind: trim(p.kind) || same?.kind || (side === "inputs" ? "text" : "text/markdown"), ...(same?.schema !== undefined ? { schema: same.schema } : {}) };
       });
     };
@@ -570,7 +573,7 @@ export function carriedProse(draft, earlier) {
 
 const FIELD_WORDS = {
   when: /\bwhen\b[^.\n]{0,20}\b(?:line|sentence|to use)\b|\bwhen to use\b|\bthe when\b/i,
-  good: /\bgood(?: result)?\b/i,
+  good: /\bgood result\b|\bthe good\b|\bwhat a good\b/i,
   empty: /\bempty\b|\bnothing to give\b/i,
   does: /\bthe does\b|\bwhat (?:it|the job) does\b|\bone[- ]line\b/i,
   instructions: /\binstructions?\b|\bhow to do it\b/i,

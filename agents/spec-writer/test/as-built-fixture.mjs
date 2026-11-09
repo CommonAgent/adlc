@@ -34,12 +34,12 @@ export function fillFor(seed, { skip = [] } = {}) {
 // declarations (each name and value the agent declares to the platform, with
 // where), the flags a command requires and the allowed values of a file's
 // fields; and strings.json lists every string a person reads and every
-// pattern, by file and line. The behaviors, architecture and tests are the
-// 0.2.0 fixture's.
+// pattern, by file and line. The behaviors and tests are the 0.2.0
+// fixture's; its architecture names the run-config setting how_many.
 const V3 = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "as-built-v3");
 export const RECORD_V3_FILES = [
-  ...["behaviors.json", "architecture.json", "tests-and-gaps.json"].map((f) => join(AT, f)),
-  join(V3, "interfaces.json"), join(V3, "strings.json"),
+  ...["behaviors.json", "tests-and-gaps.json"].map((f) => join(AT, f)),
+  join(V3, "architecture.json"), join(V3, "interfaces.json"), join(V3, "strings.json"),
   ...readdirSync(join(V3, "schemas")).map((f) => join(V3, "schemas", f)),
 ];
 export const askedWithV3 = (said, extra = []) => ({
