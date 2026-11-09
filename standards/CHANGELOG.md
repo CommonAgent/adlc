@@ -15,6 +15,11 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.3**: features. The statement's `features`; feature proposals on a
+  stage's or the boss's reply, answered one at a time with `approve`,
+  `not_now` or `ask`; a round's `by_feature`; the Requirements gate's `open`
+  and `features`; the features matrix per build and per product version, and
+  each feature's history. Additive.
 - **0.4.2**: each stage's `cadence` and `carried` on the build and the stage
   workspace, and a product's `setup` and `when_needed` lists. Additive.
 - **0.4.1**: the product's boss.
