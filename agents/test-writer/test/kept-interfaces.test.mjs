@@ -226,14 +226,14 @@ const WITH_VALUES = {
   interfaces: [
     ...SPEC.interfaces,
     { id: "I6", kind: "constant", name: "LIMIT", keep: true, module: "scripts/read.mjs", value: 30, about: "The most items read." },
-    { id: "I7", kind: "constant", name: "POINTS_LINE", keep: true, module: "scripts/read.mjs", value: "/^(\d+) points?$/", about: "The points line." },
+    { id: "I7", kind: "constant", name: "POINTS_LINE", keep: true, module: "scripts/read.mjs", value: "/^(\\d+) points?$/", about: "The points line." },
     { id: "I8", kind: "declaration", name: "read-points", keep: true, declared_in: "agent-descriptor.json offerings[0].id", value: "read-points", about: "The offering id." },
     { id: "I9", kind: "declaration", name: "the points", keep: true, declared_in: "agent-descriptor.json offerings[id=read-points].outputs[0].name", value: "the points", about: "The output's name." },
     { id: "I10", kind: "declaration", name: "the skill", keep: true, declared_in: "skills/read-points/SKILL.md", value: "read-points", about: "Not a JSON file." },
     { id: "I11", kind: "constant", name: "NOTHING", keep: true, module: "scripts/read.mjs", about: "No value kept." },
   ],
 };
-const CONSTANTS = "export const LIMIT = 30;\nexport const POINTS_LINE = /^(\d+) points?$/;\n";
+const CONSTANTS = "export const LIMIT = 30;\nexport const POINTS_LINE = /^(\\d+) points?$/;\n";
 
 test("a kept constant gets a test that it is exported with exactly its value, and a kept declaration one that the agent's file carries exactly its value at its place", () => {
   const plan = keptPlan(WITH_VALUES);
@@ -257,7 +257,7 @@ test("run in a package, the constant and declaration tests pass when the values 
   });
   await folders(async (dir) => {
     // A limit of 20, a pattern that also takes "pts", and the offering renamed.
-    const r = runIn(dir, `${KEEPS}export const LIMIT = 20;\nexport const POINTS_LINE = /^(\d+) (?:points?|pts)$/;\n`, text);
+    const r = runIn(dir, `${KEEPS}export const LIMIT = 20;\nexport const POINTS_LINE = /^(\\d+) (?:points?|pts)$/;\n`, text);
     const d = JSON.parse(readFileSync(join(dir, "agent-descriptor.json"), "utf8"));
     d.offerings[0].id = "read-the-points";
     writeFileSync(join(dir, "agent-descriptor.json"), JSON.stringify(d));
