@@ -1,8 +1,12 @@
 // What can be read off the code by rule, before any model sees it: the
 // settings and credentials it reads from its environment (by name, never by
 // value), its declared entry points and how it starts, its test files and its
-// own test command, and the OpenAPI and JSON Schema documents it already
-// carries. Each fact names the file and line it was read from.
+// own test command (node --test over its node:test files when package.json
+// names none), the OpenAPI and JSON Schema documents it already carries, the
+// run-config settings an Agent Package declares, and the surface of its
+// JavaScript (surface.mjs: exports, imports, commands and flags, files
+// written, patterns and constants). Each fact names the file and line it was
+// read from.
 //
 // These go into the record as they are, and the model is shown them so it
 // does not have to find them again. They are the floor of the record: a model
@@ -13,6 +17,7 @@
 import { createHash } from "node:crypto";
 import { basename, extname } from "node:path";
 import { LOCKFILES, linesOf } from "./codebase.mjs";
+import { readSurface } from "./surface.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -155,17 +160,106 @@ export function testFiles(files, read) {
 /** npm's placeholder test script, which runs nothing. */
 export const NPM_PLACEHOLDER = /echo\s+\\?"Error: no test specified\\?"\s*&&\s*exit 1/;
 
-/** The project's own test command, as package.json at its top names it:
- *  {command, evidence} or {none: why}. */
+/** A path written so a shell takes it as one word with no quoting. */
+const PLAIN_PATH = /^[A-Za-z0-9._/@+-]+$/;
+
+/** The test files node's own test runner runs: *.test.mjs, *.test.js and
+ *  *.test.cjs files that import node:test, outside any fixtures folder,
+ *  each with the line that imports it. */
+export function nodeTestFiles(files, read) {
+  const out = [];
+  for (const f of files) {
+    if (!/\.test\.(mjs|cjs|js)$/.test(f) || f.split("/").some((p) => p === "fixtures" || p === "node_modules")) continue;
+    const at = linesOf(read(f) ?? "").findIndex((l) => /["'`]node:test["'`]/.test(l));
+    if (at !== -1) out.push({ file: f, line: at + 1 });
+  }
+  return out;
+}
+
+/** node --test over the node test files, when a Node codebase has them and
+ *  package.json gives no test script to run instead: {command, evidence,
+ *  found_by, not_run?} or null. `why` says why package.json gave none. */
+function nodeTestCommand(files, read, why) {
+  const found = nodeTestFiles(files, read);
+  const plain = found.filter((t) => PLAIN_PATH.test(t.file));
+  if (!plain.length) return null;
+  const skipped = found.filter((t) => !PLAIN_PATH.test(t.file)).map((t) => t.file);
+  return {
+    command: `node --test ${plain.map((t) => t.file).join(" ")}`,
+    evidence: plain.map((t) => ({ file: t.file, line: t.line })),
+    found_by: `${why}, so the test files that import node:test are run with node's own test runner`,
+    ...(skipped.length ? { not_run: skipped.map((f) => ({ file: f, why: "its path has a character a shell would need quoted, so it was left out of the command" })) } : {}),
+  };
+}
+
+/** The project's own test command: the test script package.json at its top
+ *  names, or, when it names none (or there is no package.json) and the code
+ *  has node:test files, node --test over them. {command, evidence} or
+ *  {none: why}. */
 export function testCommand(files, read) {
-  if (!files.includes("package.json")) return { none: "there is no package.json at the codebase's top, and this agent runs only the test script one names" };
+  const fallback = (why, more = {}) => nodeTestCommand(files, read, why) ?? { none: `${why}, and there are no *.test.mjs, *.test.js or *.test.cjs files that import node:test to run with node --test`, ...more };
+  if (!files.includes("package.json")) return fallback("there is no package.json at the codebase's top");
   const text = read("package.json");
   let pkg;
   try { pkg = JSON.parse(text); } catch { return { none: "package.json is not JSON" }; }
   const script = trim(pkg?.scripts?.test);
-  if (!script) return { none: "package.json names no test script" };
-  if (NPM_PLACEHOLDER.test(script)) return { none: "package.json's test script is npm's placeholder, which runs no test", evidence: [{ file: "package.json", line: lineOfKey(text, "test", lineOfKey(text, "scripts") - 1) }] };
-  return { command: script, evidence: [{ file: "package.json", line: lineOfKey(text, "test", lineOfKey(text, "scripts") - 1) }] };
+  if (!script) return fallback("package.json names no test script");
+  const at = [{ file: "package.json", line: lineOfKey(text, "test", lineOfKey(text, "scripts") - 1) }];
+  if (NPM_PLACEHOLDER.test(script)) return fallback("package.json's test script is npm's placeholder, which runs no test", { evidence: at });
+  return { command: script, evidence: at };
+}
+
+/** Files the manifests name as commands or main modules, for the surface:
+ *  [{file, command?, main?, why, evidence}]. package.json main and bin, and
+ *  the scripts an Agent Package's run commands start
+ *  (agent-runtime-requirements.json). */
+export function entryHints(files, read, entry_points = []) {
+  const out = [];
+  const clean = (p) => trim(p).replace(/^\.\//, "");
+  for (const e of entry_points) {
+    if (/package\.json main/.test(e.how)) out.push({ file: clean(e.name), main: true, why: e.how, evidence: e.evidence });
+    if (/package\.json bin/.test(e.how)) out.push({ file: clean(e.name), command: true, why: e.how, evidence: e.evidence });
+  }
+  if (files.includes("agent-runtime-requirements.json")) {
+    const text = read("agent-runtime-requirements.json");
+    let doc = null;
+    try { doc = JSON.parse(text); } catch { /* not JSON: no hints */ }
+    const lines = linesOf(text ?? "");
+    for (const [name, run] of Object.entries(doc?.run ?? {})) {
+      for (const part of Array.isArray(run?.command) ? run.command : []) {
+        const m = /(?:^|\/)(scripts\/[^/\s]+\.(?:m?js|cjs))$/.exec(String(part));
+        if (!m) continue;
+        const matches = files.filter((f) => f === m[1] || f.endsWith(`/${m[1]}`));
+        if (matches.length !== 1) continue;
+        const at = lines.findIndex((l) => l.includes(String(part))) + 1;
+        out.push({ file: matches[0], command: true, why: `the run command ${name} starts it (agent-runtime-requirements.json)`, evidence: [{ file: "agent-runtime-requirements.json", line: at || 1 }] });
+      }
+    }
+  }
+  return out;
+}
+
+/** The run-config settings an Agent Package declares (agent-descriptor.json
+ *  run_config.settings), by name, each with its line: [{name, declared_in,
+ *  evidence}]. Never a value: the default is the descriptor's, not the code's. */
+export function declaredSettings(files, read) {
+  if (!files.includes("agent-descriptor.json")) return [];
+  const text = read("agent-descriptor.json");
+  let doc = null;
+  try { doc = JSON.parse(text); } catch { return []; }
+  const list = Array.isArray(doc?.run_config?.settings) ? doc.run_config.settings : [];
+  const lines = linesOf(text);
+  const from = Math.max(0, lineOfKey(text, "run_config") - 1);
+  let at = from;
+  const out = [];
+  for (const s of list) {
+    const name = trim(s?.name);
+    if (!name) continue;
+    const i = lines.findIndex((l, k) => k >= at && new RegExp(`"name"\\s*:\\s*"${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(l));
+    if (i !== -1) at = i + 1;
+    out.push({ name, declared_in: "agent-descriptor.json run_config", evidence: [{ file: "agent-descriptor.json", line: i === -1 ? from + 1 : i + 1 }] });
+  }
+  return out;
 }
 
 /** OpenAPI and JSON Schema documents the code already carries (JSON only;
@@ -196,11 +290,14 @@ const sha = (t) => createHash("sha256").update(t).digest("hex");
 
 /** Every fact at once. */
 export function readFacts(files, read, { keep } = {}) {
+  const entries = entryPoints(files, read);
   return {
     settings: settingsRead(files, read, keep),
-    ...entryPoints(files, read),
+    ...entries,
     tests: testFiles(files, read),
     test_command: testCommand(files, read),
     schemas: foundSchemas(files, read),
+    declared_settings: declaredSettings(files, read),
+    surface: readSurface(files, read, { isTest: isTestFile, entryHints: entryHints(files, read, entries.entry_points), keep }),
   };
 }

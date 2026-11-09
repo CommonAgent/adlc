@@ -2,7 +2,8 @@
 // ties them to their source, from the facts read by rule, the draft as
 // checked, the bill of materials and the baseline run.
 //
-// Pure: it is handed everything and answers the documents; pieces.mjs writes
+// Pure: it is handed everything (with `read`, which answers a file's text, for
+// checking quotes byte for byte) and answers the documents; pieces.mjs writes
 // them. The same inputs give the same bytes, with one exception said where it
 // is: the baseline run's own results (its time and what it printed) are an
 // observation, and differ from one run to the next.
@@ -11,8 +12,37 @@
 //   import { buildRecord } from "./record.mjs"
 import { createHash } from "node:crypto";
 import { checkClaims, checkEvidence } from "./evidence.mjs";
+import { anchorsWithout, checkBehaviors, labelOf } from "./behaviors.mjs";
+import { buildInterfaces } from "./interfaces.mjs";
+import { KIND_NAMES } from "./kinds.mjs";
+import { CODE_EXT, isTestFile } from "./facts.mjs";
 
 const trim = (s) => String(s ?? "").trim();
+
+/** What a drafted schema is checked against: whether a field name is written
+ *  in the code, and whether a constant is a literal there. Read from the
+ *  surface where the code is JavaScript, and from the text of every code
+ *  file otherwise. */
+export function knownIn(files, read, surface) {
+  let texts = null;
+  const all = () => {
+    texts ??= [...files].filter((f) => CODE_EXT.has(`.${f.split(".").pop()}`.toLowerCase()) && !isTestFile(f)).map((f) => read(f)).filter((t) => typeof t === "string");
+    return texts;
+  };
+  const words = new Set();
+  for (const [f, s] of surface?.scanned ?? []) if (!isTestFile(f)) for (const w of s.masked.match(/[A-Za-z_$][\w$]*/g) ?? []) words.add(w);
+  const strings = surface?.strings ?? new Set();
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return {
+    inCode: (name) => words.has(name) || strings.has(name) || all().some((t) => new RegExp(`(^|[^\\w$])${esc(name)}([^\\w$]|$)`).test(t)),
+    literalInCode: (v) => {
+      if (v === null) return true;
+      if (typeof v === "string") return strings.has(v) || all().some((t) => t.includes(JSON.stringify(v)) || t.includes(`'${v}'`));
+      if (typeof v === "number" || typeof v === "boolean") return all().some((t) => new RegExp(`(^|[^\\w.])${esc(String(v))}([^\\w.]|$)`).test(t));
+      return false;
+    },
+  };
+}
 const sha = (t) => createHash("sha256").update(t).digest("hex");
 
 /** Each part's format word and file name, in the order the stage lists them. */
@@ -68,6 +98,11 @@ function behaviorOut(b) {
     outputs: words(b.outputs),
     refusals: words(b.refusals),
     error_handling: words(b.error_handling),
+    ...(b.kind ? { kind: b.kind } : {}),
+    ...(b.anchor ? { anchor: b.anchor } : {}),
+    quotes: b.quotes ?? [],
+    rules: b.rules ?? [],
+    constants: b.constants ?? [],
     evidence: b.evidence,
     ...(b.change ? { change: b.change } : {}),
     ...(b.change && b.change !== "new" && trim(b.was) ? { was: trim(b.was) } : {}),
@@ -93,22 +128,36 @@ function mergeByName(items, key = "name") {
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined && o[k] !== null && o[k] !== "").map((k) => [k, typeof o[k] === "string" ? trim(o[k]) : o[k]]));
 
 /** The whole record. `draft` is null when no model drafted. */
-export function buildRecord({ source, facts, draft, draftProblem = "", sbom, baseline, notSent = [], ctx, drift = null, previous = null, tool }) {
+export function buildRecord({ source, facts, draft, draftProblem = "", sbom, baseline, notSent = [], seen = null, ctx, read = () => null, drift = null, previous = null, tool }) {
   const gaps = [];
   const add = (g) => gaps.push(g);
   const d = draft ?? { behaviors: [], architecture: { kind: null, parts: [], entry_points: [], data_stores: [], systems: [], networks: [], settings: [], starts_and_runs: [], dependencies: [], formats: [] }, interfaces: [], tests: [], gaps: [] };
+  const surface = facts.surface ?? null;
 
   if (!draft) {
     for (const part of ["behaviors", "architecture as built", "interfaces", "what each test covers"]) {
       add({ kind: "not-drafted", part, about: `the ${part}`, why: `no model drafted from the code (${draftProblem || "no model was reached"}), so only what is read by rule is in the record` });
     }
   }
-  for (const n of notSent) add({ kind: "not-read", part: "all", about: n.file, why: `the model was not shown this file: ${n.why}; nothing in the record describes what is in it` });
+  for (const m of draft?.missing ?? []) add({ kind: "not-drafted", part: m.part, about: m.about, why: `the pass that drafts it did not answer (${m.why || "no answer"}), so only what is read by rule is in the record` });
+  const notRead = new Map();
+  for (const n of notSent) { if (!notRead.has(n.file)) notRead.set(n.file, []); notRead.get(n.file).push(n); }
+  for (const [file, list] of notRead) {
+    const why = list.map((n) => (n.pass ? `the ${n.pass} pass was not shown it: ${n.why}` : `the model was not shown this file: ${n.why}`)).join("; ");
+    add({ kind: "not-read", part: "all", about: file, why: seen?.has(file) ? `${why}; another pass was shown it` : `${why}; nothing in the record describes what is in it` });
+  }
 
-  // Behaviors.
-  const checkedB = checkClaims(d.behaviors, ctx, { part: "behaviors", label: (c) => `${trim(c.name)}${trim(c.does) ? `: ${trim(c.does)}` : ""}`, fields: ["name", "does", "inputs", "outputs", "refusals", "error_handling"], drift });
+  // Behaviors: the evidence, then the kind, the anchor, the quotes and the rules.
+  const checkedB = checkClaims(d.behaviors, ctx, { part: "behaviors", label: labelOf, fields: ["name", "does", "inputs", "outputs", "refusals", "error_handling"], drift });
   checkedB.gaps.forEach(add);
-  const { behaviors, idOf } = assignIds(checkedB.kept, { previous: previous?.behaviors ?? [], drift: Boolean(drift) });
+  const detail = checkBehaviors(checkedB.kept, ctx, { read, surface, drift });
+  detail.gaps.forEach(add);
+  for (const g of checkedB.gaps) {
+    const b = d.behaviors.find((x) => labelOf(x) === g.about);
+    if (trim(b?.anchor)) detail.anchorsHeld.add(trim(b.anchor).replace(/^\.\//, ""));
+  }
+  if (draft && !drift) anchorsWithout(surface, detail.kept, detail.anchorsHeld, draft.behavior_files ?? null).forEach(add);
+  const { behaviors, idOf } = assignIds(detail.kept, { previous: previous?.behaviors ?? [], drift: Boolean(drift) });
   const behaviorsDoc = { format: "as-built-behaviors-v1", as_built: true, repository: source.repository, commit: source.commit, ...(drift ? { since: drift.since } : {}), behaviors: behaviors.map(behaviorOut) };
 
   // Architecture as built, in the architecture record's shape.
@@ -171,26 +220,11 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
   if (!kind && draft && !drift) add({ kind: "unclear", part: "architecture as built: kind", about: "what the code is made of, in the architecture standard's words", why: "the draft named no kind with evidence that checks" });
 
   // Interfaces, with the schemas found and derived.
-  const checkedI = checkClaims(d.interfaces, ctx, { part: "interfaces", label: (c) => `${trim(c.kind)} ${trim(c.name)}`.trim(), fields: ["name", "does"], drift });
+  const checkedI = checkClaims(d.interfaces, ctx, { part: "interfaces", label: (c) => `${trim(c.kind)} ${trim(c.name)}`.trim(), fields: ["name", "does", "returns"], drift });
   checkedI.gaps.forEach(add);
-  const schemaFiles = [];
-  const interfaces = checkedI.kept.map((it, i) => {
-    const id = `I${i + 1}`;
-    const out = { id, ...pick(it, ["kind", "name", "does"]), evidence: it.evidence };
-    const s = it.schema;
-    if (s && typeof s === "object" && s.document && typeof s.document === "object" && !Array.isArray(s.document)) {
-      const isOpenapi = s.format === "openapi" && typeof s.document.openapi === "string" && /^3\./.test(s.document.openapi) && s.document.paths && typeof s.document.paths === "object";
-      const isSchema = s.format === "json-schema" && (s.document.type || s.document.properties || s.document.$schema || s.document.oneOf || s.document.anyOf);
-      if (isOpenapi || isSchema) {
-        const file = `schemas/${id}.${isOpenapi ? "openapi" : "schema"}.json`;
-        schemaFiles.push({ file, format: isOpenapi ? "openapi" : "json-schema", text: `${JSON.stringify(s.document, null, 2)}\n`, derived: true, interface: id });
-        out.schema = file;
-      } else {
-        add({ kind: "unclear", part: "interfaces", about: `the schema drafted for ${id} (${trim(it.name)})`, why: `it is not a ${s.format === "openapi" ? "OpenAPI 3 document with paths" : "JSON Schema"}, so it was not delivered` });
-      }
-    }
-    return out;
-  });
+  const built = buildInterfaces({ surface, checked: checkedI.kept, settingsRead: settings.filter((x) => facts.settings.some((f) => f.name === x.name)), declared: facts.declared_settings ?? [], known: knownIn(ctx.files, read, surface), gap: add });
+  const { interfaces } = built;
+  const schemaFiles = [...built.schemaFiles];
   const found = [];
   for (const f of facts.schemas) {
     const entry = { file: f.file, format: f.format, sha256: f.sha256, evidence: [{ file: f.file, line: 1 }] };
@@ -201,7 +235,14 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
     }
     found.push(entry);
   }
-  const interfacesDoc = { format: "as-built-interfaces-v1", as_built: true, repository: source.repository, commit: source.commit, ...(drift ? { since: drift.since } : {}), interfaces, schemas_found: found, schemas_derived: schemaFiles.filter((s) => s.derived).map((s) => ({ file: s.file, format: s.format, interface: s.interface })) };
+  const interfacesDoc = {
+    format: "as-built-interfaces-v1", as_built: true, repository: source.repository, commit: source.commit, ...(drift ? { since: drift.since } : {}),
+    interfaces, constants: built.constants, flags: built.flags, environment: built.environment, settings: built.settings,
+    schemas_found: found, schemas_derived: schemaFiles.filter((s) => s.derived).map((s) => ({ file: s.file, format: s.format, interface: s.interface, ...(s.read_by_rule ? { read_by_rule: true } : {}), ...(s.drafted ? { drafted: true } : {}) })),
+  };
+
+  // Imports that reach outside the codebase's folder.
+  for (const o of surface?.outside ?? []) add({ kind: "outside-the-codebase", part: "dependencies", about: `${o.file} imports ${o.spec}`, why: `the code depends on a file outside the codebase's folder (${o.resolved}, from the folder's top), which this record does not describe and a copy of the folder alone does not carry; what imports it fails to load without it`, evidence: [{ file: o.file, line: o.line }] });
 
   // Tests: the files found by rule, what each covers as checked, the run.
   const coverage = new Map();
@@ -245,7 +286,7 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
     commit: source.commit,
     ...(drift ? { since: drift.since } : {}),
     tests,
-    test_command: facts.test_command.command ? { command: facts.test_command.command, evidence: facts.test_command.evidence } : { none: facts.test_command.none, ...(facts.test_command.evidence ? { evidence: facts.test_command.evidence } : {}) },
+    test_command: facts.test_command.command ? { command: facts.test_command.command, evidence: facts.test_command.evidence, ...(facts.test_command.found_by ? { found_by: facts.test_command.found_by } : {}), ...(facts.test_command.not_run ? { not_run: facts.test_command.not_run } : {}) } : { none: facts.test_command.none, ...(facts.test_command.evidence ? { evidence: facts.test_command.evidence } : {}) },
     baseline: baseline ?? { ran: false, why: "not asked" },
     ...(drift ? { in_scope: "only the test files that changed since the last record; what the unchanged tests cover is in the last record" } : { behaviors_without_tests: withoutTests }),
     gaps: numbered,
@@ -283,6 +324,7 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
       tests: tests.length,
       gaps: numbered.length,
       held_back: numbered.filter((g) => ["claim-without-evidence", "held-back", "outside-the-change"].includes(g.kind)).length,
+      behavior_kinds: Object.fromEntries(KIND_NAMES.map((k) => [k, behaviors.filter((b) => b.kind === k).length]).filter(([, n]) => n)),
     },
     done: true,
     done_means: "every claim delivered names evidence that was checked against the code at this commit (or the observed run), every gap is listed in tests-and-gaps.json, and claims that went beyond the evidence were held back as gaps",

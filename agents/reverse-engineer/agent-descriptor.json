@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.0",
+  "agent_version": "0.2.0",
   "name": "Reverse engineer",
   "summary": "Writes down what an existing codebase is, at a named commit: its behaviors, architecture, interfaces, dependencies and tests, each claim with its file and line.",
   "will_not": [

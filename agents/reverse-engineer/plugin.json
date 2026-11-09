@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "reverse-engineer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Writes down what an existing codebase is, at a named commit, as the as-built record: the behaviors the code has (each in the feature list's shape, with the file and line that shows it), the architecture as built (in the architecture standard's record shape), the interfaces (with any OpenAPI or JSON Schema found or derived), the dependencies (a CycloneDX bill of materials made from the lockfiles and manifests by rule, never by the model), and the existing tests with what they cover, one baseline run's results when it may run things, and every gap. A model drafts the behaviors, the architecture and the interfaces from the code; code then checks every cited file and line against the commit and holds back any claim whose evidence does not check, or that judges or infers, as a gap. Given the last as-built record, it covers only what changed since that record's commit. It describes and never judges, writes no tests and changes nothing in the codebase. It holds the reverse engineer role (agentroles.ai) for the Reverse engineering stage (00) of the Agent Development Lifecycle.",
   "license": "Apache-2.0",
   "author": {
@@ -29,11 +29,16 @@
               "scripts/archive.mjs",
               "scripts/codebase.mjs",
               "scripts/facts.mjs",
+              "scripts/surface.mjs",
+              "scripts/js-source.mjs",
               "scripts/sbom.mjs",
               "scripts/baseline.mjs",
               "scripts/draft.mjs",
+              "scripts/kinds.mjs",
               "scripts/model-caller.mjs",
               "scripts/evidence.mjs",
+              "scripts/behaviors.mjs",
+              "scripts/interfaces.mjs",
               "scripts/record.mjs",
               "scripts/pieces.mjs",
               "scripts/declines.mjs",
@@ -51,7 +56,9 @@
               "scripts/run-config.mjs",
               "scripts/archive.mjs",
               "scripts/codebase.mjs",
-              "scripts/facts.mjs"
+              "scripts/facts.mjs",
+              "scripts/surface.mjs",
+              "scripts/js-source.mjs"
             ]
           },
           "list-the-dependencies": {
@@ -69,7 +76,8 @@
             "scripts": [
               "scripts/draft.mjs",
               "scripts/model-caller.mjs",
-              "scripts/codebase.mjs"
+              "scripts/codebase.mjs",
+              "scripts/kinds.mjs"
             ],
             "references": [
               "references/the-as-built-record.md",
@@ -79,7 +87,12 @@
           "check-the-evidence": {
             "scripts": [
               "scripts/evidence.mjs",
-              "scripts/codebase.mjs"
+              "scripts/codebase.mjs",
+              "scripts/behaviors.mjs",
+              "scripts/interfaces.mjs",
+              "scripts/kinds.mjs",
+              "scripts/surface.mjs",
+              "scripts/js-source.mjs"
             ],
             "references": [
               "references/the-as-built-record.md"
@@ -91,6 +104,12 @@
               "scripts/pieces.mjs",
               "scripts/evidence.mjs",
               "scripts/codebase.mjs",
+              "scripts/behaviors.mjs",
+              "scripts/interfaces.mjs",
+              "scripts/kinds.mjs",
+              "scripts/facts.mjs",
+              "scripts/surface.mjs",
+              "scripts/js-source.mjs",
               "scripts/declines.mjs",
               "scripts/went-without.mjs"
             ]

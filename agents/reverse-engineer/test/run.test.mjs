@@ -104,18 +104,18 @@ test("the run command, from a laid-out package, describes an attached codebase t
     assert.equal(r.status, 0, r.doc.reply);
     assert.equal(r.doc.ok, true);
     assert.equal(r.doc.read_mode, "read and run");
-    assert.equal(model.seen.length, 1);
+    assert.equal(model.seen.length, 3, "the architecture, behavior and test-coverage passes");
     assert.equal(model.seen[0].url, "/chat/completions");
     assert.equal(model.seen[0].body.model, "stand-in-model");
     assert.equal(model.seen[0].headers.authorization, "Bearer test-key");
     assert.doesNotMatch(JSON.stringify(model.seen[0].body), /test-key/, "the key is never in the body");
     const record = json(join(r.jobDir, "out", "as-built", "record.json"));
-    assert.deepEqual([record.commit, record.commit_checked, record.counts.behaviors, record.made_by.version], [cb.commit, true, 6, PLUGIN.version]);
+    assert.deepEqual([record.commit, record.commit_checked, record.counts.behaviors, record.made_by.version], [cb.commit, true, 3, PLUGIN.version]);
     assert.deepEqual(checkDelivered(r.jobDir), []);
     const pieces = json(join(r.jobDir, "pieces.json"));
     assert.deepEqual(pieces.map((p) => p.step), ["write-the-record", "draft-from-the-code", "draft-from-the-code", "draft-from-the-code", "list-the-dependencies", "check-the-evidence", "draft-from-the-code"]);
     const calls = json(join(r.recordsDir, "calls.json"));
-    assert.deepEqual([calls.model, calls.service, calls.made], ["stand-in-model", "openai-chat", 1]);
+    assert.deepEqual([calls.model, calls.service, calls.made, calls.passes.length], ["stand-in-model", "openai-chat", 3, 3]);
   } finally { await model.close(); }
 });
 
