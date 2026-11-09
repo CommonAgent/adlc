@@ -41,6 +41,7 @@ Never write or edit a case yourself, and never change a case so the check passes
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/job.mjs
+- scripts/carried.mjs
 - scripts/agent-folder.mjs
 - scripts/test-cases.mjs
 - scripts/check-cases.mjs

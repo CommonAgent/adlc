@@ -28,6 +28,7 @@ A suite of test files that run under node's own runner and nothing else, one fil
 ## What it produces
 
 - the suite (text/javascript, per task)
+- the record of the original's own tests (application/vnd.agentmesh.carried-tests+json, per task)
 - what it could not test (text/markdown, per task)
 
 ## When it comes back empty
