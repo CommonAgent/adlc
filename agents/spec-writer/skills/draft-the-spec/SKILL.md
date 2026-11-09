@@ -1,41 +1,48 @@
 ---
 name: draft-the-spec
-description: once the request is recorded, to write the spec it describes
+description: once the request is recorded, to write the spec it describes and the agent's own files from it
 ---
 
 # Draft the spec
 
-Part of spec-writer. once the request is recorded, to write the spec it describes
+Part of spec-writer. once the request is recorded, to write the spec it describes and the agent's own files from it
 
 ## When to use this
 
-once the request is recorded, to write the spec it describes
+once the request is recorded, to write the spec it describes and the agent's own files from it
 
 ## What a good result looks like
 
-A draft that carries what the reference says a good spec carries, and a list of the blanks it could not fill, each with the question it would ask. Every input and output has a specific kind: Markdown (`text/markdown`, its convention sketched in its about) for what agents hand each other or a person reviews, a vendor JSON kind for exact typed data only code reads, and never a bare `application/json`; and every input says who gives it (`given_by`: person, agent or either). A job that calls a model declares the capability as a bound system (`text-reasoning`, `image-reading` and the like, access `trigger`) and names no model or version anywhere.
+A spec valid against spec-v1, every feature with requirements and at least one Gherkin scenario that checks requirement ids it has, every quote, rule value, refusal and interface of an as-built record in it byte for byte, no exact value nobody gave, and the name, price and access left to the person; a revision that changed only what the person's words name. Then a draft of the agent's own files made from that spec, which carries what the reference says a good one carries: every input and output with a specific kind, every input saying who gives it, a model reached as a bound system and named nowhere, no address outside an address setting's default, and the spec's settings, systems and price. Beside both, the blanks it could not fill, each with the question it would ask.
 
 ## When it comes back empty
 
-If the service will not answer, or answers with something that is not a spec, nothing is written and the reply says which of those happened. An answer wrapped in prose or a code fence is read for the JSON object inside it; an answer with no object in it is asked for once more with a reminder to answer with JSON only, and never a third time. The whole step runs inside DRAFT_SECONDS (240 by default): no call starts without a minute left, and each call is cut at what remains, so the job ends in words and never at its own time limit. A draft that still carries findings after a second go is delivered as it is, with every finding said out loud.
+If the service will not answer, or answers with something that is neither a fill, a set of edits nor a spec, nothing is written and the reply says which of those happened. An answer wrapped in prose or a code fence is read for the JSON object inside it; an answer with no object in it is asked for once more with a reminder to answer with JSON only, and never a third time. The spec runs inside SPEC_SECONDS (300 by default) and the files inside DRAFT_SECONDS (240 by default): no call starts without a minute left, and each call is cut at what remains, so the job ends in words and never at its own time limit. A spec or a draft that still carries findings after a second go is delivered as it is, with every finding said out loud.
 
 ## How to do it
 
 Nothing in this folder is run on its own; the write-a-spec skill names the one command that does the whole job, and this skill only explains what that command does for this step.
 
-draft.mjs builds one request carrying, in this order: the instruction, the request as it arrived, what came with it by name, what each text attachment says, anything named and not there, the person's answers to earlier questions, a spec they attached with the instruction to revise it rather than rewrite it, the architecture record when one came (with the rule that the draft declares exactly its systems, its kind, its formats and its settings), the reference, and one whole spec that produced an agent which runs today. It sends that as plain text to the text-reasoning model, through the four settings the install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, read on every run through the shared model caller (scripts/model-caller.mjs), with the step's remaining seconds as the call's time limit (the package names no model and no address, and with a setting missing the job is refused in words), reads the answer whether it arrived fenced or bare, and checks the draft with check-spec.mjs. Where the check finds something the same request goes once more with the findings appended, and never a third time. The check is check-spec.mjs's checkDraft: what a good spec carries, and the format rules (no bare application/json, a convention on every Markdown piece, given_by on every input, no model named anywhere), with a piece an attached earlier spec already sent as bare JSON left as it was. It writes records/<job>/draft.json, records/<job>/blanks.json and records/<job>/calls.json.
+draft.mjs does two parts in one run, the spec first and then the agent's own files from it (stages.json 1.6.0: Requirements hands back the spec, and the Design part of Architecture and Design makes the files from it).
 
-The draft is held to the architecture record's systems both ways: a system the record does not name is taken out of the draft after the second go and asked of the solution architect under the key architecture, and a system the record names that the draft leaves out is a finding. Without a record, a new draft says it chose its systems itself, which is the Architecture stage's decision.
+The spec (spec.mjs). With an as-built record attached (behaviors.json, interfaces.json, architecture.json, tests-and-gaps.json and the schemas, told by their formats), code seeds the spec with no model (seed.mjs): each behavior a feature unless the person dropped it or called it a bug, each quote a wording or pattern requirement with the quote in exact, each rule a requirement of its kind with its values in exact, each refusal and error handling a refusal or error requirement, each interface kept, each address the code reaches a system with an address setting, each address it only writes down a system with reach none, and the record's settings with an open question for each default it withholds. The model then answers with a fill by id: the shall lines, the purpose, Gherkin scenarios for every feature, and open questions; code keeps every value it seeded. Without a record the model drafts the whole spec from the person's words, and everything it cannot settle goes in open. On a revision (Ask for changes or Send back to Requirements) the earlier spec is changed by edits addressed by id to what the person's words name (revise.mjs), a keyed name, version or price is set by code, and every other part stays byte for byte. Each answer is checked (spec-check.mjs): valid against standards/spec.schema.json, every feature with requirements and a Gherkin scenario that checks ids it has, every quote, rule value and interface of the record carried byte for byte, no exact value nobody gave, and the name, price and access the person's. What the check finds goes back once, and never a third time; then code writes a scenario for a feature still without one, takes an invented value out to open and takes back a name or price nobody gave. It writes records/<job>/spec.json and records/<job>/spec.md.
 
-The draft is also held to what the person sent (given.mjs): every setting, runtime, price, address, JSON Schema, quoted word and exported function it names is in the draft, and an output of a JSON kind whose shape it does not state is asked under shape of <output> rather than sketched. Every outside system reached over the network is declared the way the security reviewer reads it (reaches.mjs): an address setting whose default is the real address, its host named in needs, or a read service that fetches what it is handed. After the second go, code moves a job's run_config to the spec, adds the runtime and price the given names and asks each shape not given; what still stands goes into blanks.json as findings, and the reply says it.
+The agent's own files. The drafting request carries the spec in place of the as-built record (design.mjs), with what the files owe it, and the given the draft is held to is the spec's (given.mjs, givenOfSpec): its settings, runtime, price, the addresses it reaches, the schemas of its outputs and the modules its interfaces name. The draft is checked as before (check-spec.mjs, reaches.mjs, given.mjs) and for any address outside an address setting's default, goes back once with the findings, and then code fits it: the name, version and price are the spec's, each address setting is the spec's by name with its default, each host the spec only writes down is named in a service's needs, and an address left anywhere else is written as its host. It writes records/<job>/draft.json, records/<job>/blanks.json (the spec's open questions first, then any the files add) and records/<job>/calls.json, with the digest of the spec, its Markdown and the draft.
 
-The blanks are checked against the draft itself rather than taken on the model's word: a model that forgets to report a blank produces a draft that looks complete, and an invented name would then reach the mesh. An empty systems list is an answer; an absent one is a blank.
+The model is reached through the shared model caller (scripts/model-caller.mjs) and the four settings the install places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, read on every run; the package names no model and no address, and with a setting missing the job is refused in words.
 
 ## Scripts
 
 Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/draft.mjs
+- scripts/spec.mjs
+- scripts/seed.mjs
+- scripts/spec-check.mjs
+- scripts/spec-v1.mjs
+- scripts/revise.mjs
+- scripts/design.mjs
+- scripts/json-in.mjs
 - scripts/model-caller.mjs
 - scripts/check-spec.mjs
 - scripts/asked.mjs
@@ -53,3 +60,4 @@ Run these from this skill's folder; each one says what it needs at the top.
 - references/what-a-good-spec-carries.md
 - references/a-spec-that-works.json
 - references/standing-asset-schemas.json
+- references/spec.schema.json

@@ -30,7 +30,7 @@
       "purpose": "drafts in progress"
     }
   ],
-  "job_seconds": 600,
+  "job_seconds": 900,
   "wants_replies": true,
   "price": {
     "sku": "default",

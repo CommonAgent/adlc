@@ -1,23 +1,24 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.8.2",
+  "agent_version": "0.9.0",
   "name": "Spec writer",
-  "summary": "Turns what you want an agent to do into the agent's own files a builder takes, or the work you describe into a process document, and says plainly what it could not settle without you.",
+  "summary": "Turns what you want an agent to do into its spec, the requirements and acceptance scenarios a test can be written from, and then the agent's own files a builder takes; or the work you describe into a process document. It says plainly what it could not settle without you.",
   "will_not": [
     "It will not choose the agent's name or its price; it asks you.",
     "It will not give the agent access to a system you did not ask for.",
+    "It will not change a part of the spec your words do not name when you ask for changes.",
     "It will not write the scripts the spec names, or build, pack or deploy anything.",
     "It will not say a spec builds when the files it names do not exist yet.",
     "It will not repeat a credential written into your message.",
     "It will not write an agent's name into a process; each step is held by a role the catalog answers next.",
     "It will not write a process that sends messages to people who did not ask, signs in to somebody else's account, or spends money."
   ],
-  "does": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), or work that passes between several agents and people into an Agent Processes 0.9.0 document, checked against the specification, and says plainly what it could not settle without them.",
+  "does": "Turns what somebody wants an agent to do into the spec (spec-v1): the analysis of its functional requirements, each feature with requirements in the attributes of ISO/IEC/IEEE 29148 and acceptance scenarios in Gherkin, its interfaces, constraints, systems and settings, seeded by code from an as-built record when one comes; then makes the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill) from that spec. Or it writes work that passes between several agents and people as an Agent Processes 0.9.0 document, checked against the specification. Either way it says plainly what it could not settle without them.",
   "offerings": [
     {
       "id": "write-a-spec",
       "name": "Write a spec",
-      "does": "Writes the agent's own files from what somebody asked for, and names what it could not settle.",
+      "does": "Writes the spec of an agent (spec-v1) from what somebody asked for or from an as-built record, then the agent's own files from that spec, and names what it could not settle.",
       "inputs": [
         {
           "name": "what it should do",
@@ -39,20 +40,21 @@
           "required": false,
           "given_by": "either",
           "accepts": [
+            "application/vnd.agentmesh.spec+json",
             "application/vnd.agentmesh.agent-descriptor+json",
             "application/vnd.agentmesh.agent-runtime-requirements+json",
             "application/vnd.agentmesh.agent-plugin+json",
             "text/markdown",
             "application/vnd.agentmesh.agent-spec+json"
           ],
-          "about": "A draft to revise rather than start again: the agent's own files this writer delivered, or a spec.json."
+          "about": "A spec to revise rather than start again: the spec.json (spec-v1) this writer handed back, or the agent's own files it delivered."
         },
         {
           "name": "notes or a document",
           "kind": "document",
           "required": false,
           "given_by": "person",
-          "about": "Anything that says more about the job: notes, a document, a page."
+          "about": "Anything that says more about the job: notes, a document, a page, or the as-built record of code the agent is built again from."
         },
         {
           "name": "answers to earlier questions",
@@ -64,10 +66,22 @@
       ],
       "outputs": [
         {
+          "name": "the spec",
+          "kind": "application/vnd.agentmesh.spec+json",
+          "when": "per_task",
+          "about": "The spec (spec-v1, standards/spec.schema.json): `{format, product, purpose, features, open}`, each feature with its requirements and Gherkin acceptance scenarios, then the interfaces, constraints, systems, settings and price."
+        },
+        {
+          "name": "the spec, readable",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "Markdown: `# <product> <version>`, then `## Purpose`, `## Features` with each requirement's shall line, its exact words and each scenario, then `## Interfaces`, `## Constraints`, `## Systems`, `## Settings`, `## Price` and `## Open questions`."
+        },
+        {
           "name": "the agent's own files",
           "kind": "document",
           "when": "per_task",
-          "about": "The agent's own files, each delivered under its own name and kind: agent-descriptor.json (application/vnd.agentmesh.agent-descriptor+json), agent-runtime-requirements.json (application/vnd.agentmesh.agent-runtime-requirements+json), plugin.json (application/vnd.agentmesh.agent-plugin+json) and a SKILL.md per skill (text/markdown)."
+          "about": "Made from the spec at Design. The agent's own files, each delivered under its own name and kind: agent-descriptor.json (application/vnd.agentmesh.agent-descriptor+json), agent-runtime-requirements.json (application/vnd.agentmesh.agent-runtime-requirements+json), plugin.json (application/vnd.agentmesh.agent-plugin+json) and a SKILL.md per skill (text/markdown)."
         },
         {
           "name": "what is still open",
@@ -79,7 +93,7 @@
           "name": "the container spec",
           "kind": "application/vnd.agentmesh.agent-spec+json",
           "when": "per_task",
-          "about": "Only for a container agent, whose code is in its own repository and which makes no package: its checked spec.json, `{name, version, description, kind, container, jobs, refuses, records}`, which a container deploy is filed with."
+          "about": "Only for a container agent, whose code is in its own repository and which makes no package: its checked draft, as out/agent/spec.json, `{name, version, description, kind, container, jobs, refuses, records}`, which a container deploy is filed with."
         }
       ],
       "how": {
@@ -103,7 +117,7 @@
         {
           "id": "draft-the-spec",
           "name": "Draft the spec",
-          "does": "Calls the text-reasoning service once, twice at most, to write the spec within the architecture record it was given and name what it could not settle.",
+          "does": "Writes the spec (spec-v1), seeded by code from an as-built record when one came, with the text-reasoning service writing the shall lines and acceptance scenarios; then drafts the agent's own files from the spec. Each part calls the service once, twice at most.",
           "how": {
             "control": "script",
             "intelligence": "called",

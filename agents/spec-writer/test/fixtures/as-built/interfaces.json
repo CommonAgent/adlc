@@ -1,0 +1,22 @@
+{
+  "format": "as-built-interfaces-v1",
+  "as_built": true,
+  "repository": "https://github.com/example/tide-reader",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "interfaces": [
+    { "id": "I1", "kind": "file", "name": "out/tides.json", "does": "The next tides for the harbor. Written by scripts/tides.mjs as JSON.", "direction": "out", "path": "out/tides.json", "content": "json", "read_by_rule": true, "schema": "schemas/I1.schema.json" },
+    { "id": "I2", "kind": "function", "name": "readTides(harbor, fetchImpl = fetch)", "does": "An async function exported by scripts/tides.mjs.", "module": "scripts/tides.mjs", "export": "readTides", "params": "harbor, fetchImpl = fetch", "async": true, "read_by_rule": true },
+    { "id": "I3", "kind": "function", "name": "stopReply(text)", "does": "A function exported by scripts/stop.mjs.", "module": "scripts/stop.mjs", "export": "stopReply", "params": "text", "async": false, "read_by_rule": true },
+    { "id": "I4", "kind": "command", "name": "scripts/tides.mjs", "does": "Reads the tides as a command.", "command": "scripts/tides.mjs", "flags": ["--job", "--harbor"], "read_by_rule": true }
+  ],
+  "constants": [
+    { "module": "scripts/tides.mjs", "name": "SERVICE", "kind": "constant", "value": "https://tides.example.org/api", "imported_by": [] },
+    { "module": "scripts/tides.mjs", "name": "CHART", "kind": "constant", "value": "https://charts.example.net/", "imported_by": [] },
+    { "module": "scripts/tides.mjs", "name": "TIDES_KIND", "kind": "constant", "value": "application/vnd.example.tides+json", "imported_by": ["test/tides.test.mjs"] }
+  ],
+  "flags": [{ "name": "--job" }, { "name": "--harbor" }],
+  "environment": [],
+  "settings": [{ "name": "harbor", "declared_in": "agent-descriptor.json run_config" }],
+  "schemas_found": [],
+  "schemas_derived": [{ "file": "schemas/I1.schema.json", "format": "json-schema", "interface": "I1", "read_by_rule": true }]
+}

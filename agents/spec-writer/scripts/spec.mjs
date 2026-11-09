@@ -342,7 +342,9 @@ export async function writeTheSpec({ asked = null, answers = null, call, referen
       version: settled.version ?? trim(earlier.product?.version),
       price: settled.price ?? (trim(earlier.price) || null),
     };
-    const modelTargets = new Set([...targets].filter((t) => !(t === "product.name" && settled.name) && !(t === "price" && settled.price) && !(t === "product.version" && settled.version)));
+    // What code settled from keyed words needs no model.
+    const byCode = new Set([...(settled.name ? ["product.name", "open:name"] : []), ...(settled.price ? ["price", "open:price"] : []), ...(settled.version ? ["product.version"] : [])]);
+    const modelTargets = new Set([...targets].filter((t) => !byCode.has(t)));
     const checkOf = (s) => [...specProblems(s, { record, corpus, person }), ...unchangedProblems(earlier, s, targets)];
     let out;
     if (!modelTargets.size) {

@@ -1,0 +1,10 @@
+{
+  "format": "as-built-tests-and-gaps-v1",
+  "as_built": true,
+  "repository": "https://github.com/example/tide-reader",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "tests": [{ "file": "test/tides.test.mjs", "cases": [{ "name": "reads the tides", "line": 4 }], "covers": ["B1"] }],
+  "test_command": { "command": "node --test test/*.test.mjs" },
+  "baseline": { "ran": false, "why": "not run" },
+  "gaps": [{ "id": "G1", "kind": "unclear", "part": "interfaces", "about": "what the banner is for" }]
+}

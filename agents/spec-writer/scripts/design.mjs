@@ -121,7 +121,12 @@ export function fitNoAddress(draft) {
   const walk = (v, at) => {
     if (typeof v === "string") {
       if (MAY_CARRY.some((re) => re.test(at))) return v;
-      return v.replace(AN_ADDRESS, (_, scheme, rest) => { n += 1; return rest.replace(/\/$/, ""); });
+      return v.replace(AN_ADDRESS, (_, scheme, rest) => {
+        n += 1;
+        // Punctuation after an address ends the sentence, not the address.
+        const [, body, tail] = /^(.*?)([.,;:!?]*)$/s.exec(rest);
+        return body.replace(/\/$/, "") + tail;
+      });
     }
     if (Array.isArray(v)) return v.map((x, i) => walk(x, `${at}[${i}]`));
     if (isObj(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, at ? `${at}.${k}` : k)]));
