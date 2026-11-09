@@ -218,3 +218,53 @@ test("the writing step adds the file as a standard check the model never writes 
   assert.match(f[0], /kept-interfaces\.test\.mjs is written by the test writer itself/);
   assert.deepEqual(namedForRevision([{ path: KEPT_TEST, text }], "kept-interfaces.test.mjs is wrong"), []);
 });
+
+// ── constants and declarations (test-writer 0.10.0) ─────────────────────────
+
+const WITH_VALUES = {
+  ...SPEC,
+  interfaces: [
+    ...SPEC.interfaces,
+    { id: "I6", kind: "constant", name: "LIMIT", keep: true, module: "scripts/read.mjs", value: 30, about: "The most items read." },
+    { id: "I7", kind: "constant", name: "POINTS_LINE", keep: true, module: "scripts/read.mjs", value: "/^(\d+) points?$/", about: "The points line." },
+    { id: "I8", kind: "declaration", name: "read-points", keep: true, declared_in: "agent-descriptor.json offerings[0].id", value: "read-points", about: "The offering id." },
+    { id: "I9", kind: "declaration", name: "the points", keep: true, declared_in: "agent-descriptor.json offerings[id=read-points].outputs[0].name", value: "the points", about: "The output's name." },
+    { id: "I10", kind: "declaration", name: "the skill", keep: true, declared_in: "skills/read-points/SKILL.md", value: "read-points", about: "Not a JSON file." },
+    { id: "I11", kind: "constant", name: "NOTHING", keep: true, module: "scripts/read.mjs", about: "No value kept." },
+  ],
+};
+const CONSTANTS = "export const LIMIT = 30;\nexport const POINTS_LINE = /^(\d+) points?$/;\n";
+
+test("a kept constant gets a test that it is exported with exactly its value, and a kept declaration one that the agent's file carries exactly its value at its place", () => {
+  const plan = keptPlan(WITH_VALUES);
+  const by = (id) => plan.find((i) => i.id === id);
+  assert.equal(by("I6").test, "[I6] LIMIT is exported from scripts/read.mjs with exactly the value the spec keeps");
+  assert.equal(by("I8").test, "[I8] read-points is declared at agent-descriptor.json offerings[0].id with exactly the value the spec keeps");
+  assert.equal(by("I9").test, "[I9] the points is declared at agent-descriptor.json offerings[id=read-points].outputs[0].name with exactly the value the spec keeps");
+  assert.equal(by("I10").test, null);
+  assert.match(by("I10").not_checked, /skills\/read-points\/SKILL\.md, which is not a JSON file/);
+  assert.equal(by("I11").not_checked, "the spec keeps no value for it, so there is nothing to hold it to");
+  const made = keptInterfacesTest(WITH_VALUES, MASTER);
+  assert.ok(made.could_not.some((c) => /I10/.test(c.what)) && made.could_not.some((c) => /I11/.test(c.what)), "what cannot be checked is said beside the suite");
+});
+
+test("run in a package, the constant and declaration tests pass when the values are kept and fail, naming the interface, when they are not", async () => {
+  const text = keptInterfacesTest(WITH_VALUES, MASTER).text;
+  const names = ["[I6] LIMIT", "[I7] POINTS_LINE", "[I8] read-points", "[I9] the points"];
+  await folders(async (dir) => {
+    const r = runIn(dir, `${KEEPS}${CONSTANTS}`, text);
+    for (const n of names) assert.ok(r.ok.some((t) => t.startsWith(n)), `${n} passes: ${r.out}`);
+  });
+  await folders(async (dir) => {
+    // A limit of 20, a pattern that also takes "pts", and the offering renamed.
+    const r = runIn(dir, `${KEEPS}export const LIMIT = 20;\nexport const POINTS_LINE = /^(\d+) (?:points?|pts)$/;\n`, text);
+    const d = JSON.parse(readFileSync(join(dir, "agent-descriptor.json"), "utf8"));
+    d.offerings[0].id = "read-the-points";
+    writeFileSync(join(dir, "agent-descriptor.json"), JSON.stringify(d));
+    const again = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "test/kept-interfaces.test.mjs"], { cwd: dir, env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("NODE_TEST_"))), encoding: "utf8", timeout: 120000 });
+    for (const n of ["[I6] LIMIT", "[I7] POINTS_LINE"]) assert.ok(r.failed.some((t) => t.startsWith(n)), `${n} fails`);
+    assert.match(again.stdout, /not ok \d+ - \[I8\] read-points/);
+    assert.match(again.stdout, /\[I8\] read-points at agent-descriptor\.json offerings\[0\]\.id is "read-the-points", and the spec keeps it as exactly "read-points"/);
+    assert.match(again.stdout, /not ok \d+ - \[I9\] the points[\s\S]*has no item whose id is read-points/);
+  });
+});

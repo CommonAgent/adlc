@@ -50,12 +50,36 @@ export function aboutOf(text, path) {
 export const couldNotMarkdown = (open) =>
   ["# What it could not test", "", ...open.map((c) => `- ${trim(c.what)}${trim(c.why) ? `: ${trim(c.why)}` : ""}`)].join("\n") + "\n";
 
-/** What to list and what to copy. Pure; the caller does the copying. */
-export function plan({ workDir = "", files = [], couldNot = [] } = {}) {
+/** The kind the record of the original's own tests is declared as. */
+export const CARRIED_KIND = "application/vnd.agentmesh.carried-tests+json";
+
+/** A support file's media type, by its extension. */
+export const mediaTypeOf = (path) => (/\.(m|c)?js$/i.test(path) ? "text/javascript" : /\.json$/i.test(path) ? "application/json"
+  : /\.md$/i.test(path) ? "text/markdown" : /\.(txt|csv)$/i.test(path) ? "text/plain" : "application/octet-stream");
+
+/** What to list and what to copy. Pure; the caller does the copying.
+ *  carried: the original's own tests, the files they import under
+ *  test/support/, and their record, by path in the suite (test-writer
+ *  0.10.0); each goes at out/<its path>, so the support files keep their
+ *  layout. */
+export function plan({ workDir = "", files = [], couldNot = [], carried = [] } = {}) {
   if (!workDir) throw new Error("there is no work folder to deliver from");
-  if (!files.length) throw new Error("there is no suite to deliver: nothing was written");
+  if (!files.length && !carried.length) throw new Error("there is no suite to deliver: nothing was written");
   const entries = [];
   const copies = [];
+  for (const p of carried) {
+    const test = /^test\/[^/]+\.test\.mjs$/.test(p);
+    const record = p === "test/carried-tests.json";
+    entries.push({
+      name: test || record ? basename(p) : p.replace(/^test\//, ""), step: STEP_OF["test file"], path: `out/${p}`,
+      media_type: test ? "text/javascript" : record ? CARRIED_KIND : mediaTypeOf(p),
+      about: test ? `${basename(p)}: one of the original's own tests, carried unchanged but for its import specifiers; locked.`
+        : record ? "carried-tests.json: the record of the original's own tests carried into the suite and the files they import; a revision reads it, and never changes a carried test."
+          : `${p.replace(/^test\//, "")}: a file an original test imports, carried byte for byte from the repository; not a test.`,
+      produced_from: ["spec"],
+    });
+    copies.push({ from: join(workDir, p), to: `out/${p}`, what: p });
+  }
   for (const f of files) {
     const name = basename(f.path);
     entries.push({
@@ -105,7 +129,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     if (!existsSync(suitePath)) throw new Error(`there is no suite record at ${suitePath}`);
     const suite = JSON.parse(readFileSync(suitePath, "utf8"));
     const files = (suite.files ?? []).map((f) => ({ path: f.path, text: readFileSync(join(suite.work, f.path), "utf8") }));
-    const listed = fill(JOB_DIR, plan({ workDir: suite.work, files, couldNot: suite.could_not ?? [] }));
+    const listed = fill(JOB_DIR, plan({ workDir: suite.work, files, couldNot: suite.could_not ?? [], carried: suite.carried?.delivered ?? [] }));
     console.log(`${listed.length} piece${listed.length === 1 ? "" : "s"} listed at ${join(JOB_DIR, "pieces.json")}`);
   } catch (e) {
     console.error(e.message);

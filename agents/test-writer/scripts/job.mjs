@@ -32,6 +32,15 @@
 // agent's own files still come too, and are still the folder the command,
 // format and records checks read.
 //
+// The original's own tests come the same way (test-writer 0.10.0): a
+// carried manifest, a JSON file whose carried_tests is "v1", lists each test
+// and each file it imports from outside the codebase, and each attached file
+// is matched to its entry by its digest. They are placed by code
+// (carried.mjs) beside the work folder and handed to the writer as CARRIED,
+// and nothing else reads them as a suite, a dependency or a spec. A suite
+// that carries them carries their record, test/carried-tests.json, which a
+// revision finds the same way, so a carried test is never revised.
+//
 //   needs: node >= 22; the model settings the writing step reads (MODEL_NAME,
 //   MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY where the endpoint asks for
 //   one), placed in the environment by the install
@@ -43,6 +52,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { agentFilesAmong, layOutAgentFiles } from "./agent-folder.mjs";
 import { specV1Among } from "./spec-rules.mjs";
+import { CARRIED_RECORD, carriedAmong, dropsAsked, placeCarried } from "./carried.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -192,6 +202,9 @@ export function processAmong(files = [], read = (p) => readFileSync(p, "utf8")) 
   return null;
 }
 
+/** The standard checks' paths, which a carried test never takes. */
+const STANDARD_PATHS = ["delivered-formats", "records-per-job", "worked-values", "printed-reply", "kept-interfaces"].map((n) => `test/${n}.test.mjs`);
+
 /** The job. Returns {reply, ...}; the reply is the whole answer. */
 export function runJob({ job, records, work, files = [], textFile = "", spawn = spawnSync, read } = {}) {
   if (!job || !records || !work) return { ok: false, reply: "The job command needs --job, --records and --work." };
@@ -237,8 +250,31 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
   // An existing suite is laid out by its bytes, beside the work folder and
   // never on the job folder's mount, and handed to the writer to add to.
   const used = new Set([...(agent?.used ?? []), ...(specV1 ? [specV1] : [])]);
-  const suite = findSuite(files.filter((f) => !used.has(f?.path)), SPEC, read);
+  // The original's own tests, with the files they import and their record,
+  // found by the carried manifest (or the record a suite carries) and placed
+  // by code, before anything else reads the attachments (test-writer 0.10.0).
   const extra = {};
+  const readBytes = read ? (p) => Buffer.from(read(p)) : (p) => readFileSync(p);
+  const rest = files.filter((f) => f?.path && !used.has(f.path));
+  const found = carriedAmong(rest, readBytes);
+  const carried = placeCarried({ found, files: rest, readBytes, drops: dropsAsked(asked), taken: STANDARD_PATHS });
+  for (const p of carried.used) used.add(p);
+  if (carried.record || carried.gaps.length) {
+    const CARRIED = `${WORK}.carried`;
+    for (const f of [...carried.tests.map((t) => ({ path: t.path, bytes: Buffer.from(t.text, "utf8") })), ...carried.support]) {
+      const at = join(CARRIED, f.path);
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, f.bytes);
+    }
+    mkdirSync(join(CARRIED, "test"), { recursive: true });
+    if (carried.record) writeFileSync(join(CARRIED, CARRIED_RECORD), JSON.stringify(carried.record, null, 2) + "\n");
+    writeFileSync(join(CARRIED, "carried.json"), JSON.stringify({
+      from: found?.kind ?? null, gaps: carried.gaps, dropped: carried.dropped,
+      tests: carried.tests.map((t) => ({ path: t.path, file: t.file, at: t.at })), support: carried.support.map((s) => s.path),
+    }, null, 2) + "\n");
+    extra.CARRIED = CARRIED;
+  }
+  const suite = findSuite(files.filter((f) => !used.has(f?.path)), SPEC, read);
   // A revision rewrites only the files it names, of the suite that came
   // with it; without a suite there is nothing to revise.
   // asked: the message, read above.

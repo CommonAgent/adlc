@@ -18,6 +18,10 @@
 //                             and checkKept(jobDir, { expect: [id] }) for the
 //                             suite's own tests to call;
 //   message, with a schema    keptProblems(id, value) for the suite's tests;
+//   constant, with a module   a test: exported from that module with exactly
+//   and a value               the value the spec keeps (test-writer 0.10.0);
+//   declaration, with         a test: the agent's file carries exactly that
+//   declared_in and a value   value at that place (test-writer 0.10.0);
 //   anything else             nothing, and the reason, said beside the suite
 //                             as what could not be tested.
 //
@@ -37,6 +41,31 @@ export const FROM_LINE = "export const FROM = null;";
 const flagOf = (f) => { const t = trim(f).split(/[\s=]/)[0]; return t.startsWith("-") ? t : `--${t}`; };
 const saysAsync = (signature) => /\basync\b|\bPromise\b/.test(String(signature ?? ""));
 const list = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** Where a declaration is, as the spec writes it: the file, a space, and the
+ *  place in it, "agent-descriptor.json offerings[0].outputs[1].name". The
+ *  place is members and indexes: .name, [0], ["a-b"], and [id=x] for the
+ *  item of a list whose id is x. { file, parts, why }: why says what cannot
+ *  be read. The same reading as the master copy's placeOf. */
+export function placeOf(declaredIn) {
+  const t = trim(declaredIn);
+  const m = /^(\S+)(?:\s+(.*))?$/.exec(t);
+  if (!m) return { file: "", parts: [], why: null };
+  const file = m[1].replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!/\.json$/i.test(file)) return { file, parts: [], why: `it is declared in ${file}, which is not a JSON file, so there is no place in it to read by members` };
+  const parts = [];
+  let rest = trim(m[2]);
+  while (rest) {
+    let p;
+    if ((p = /^\.?([A-Za-z_$][\w$-]*)/.exec(rest))) parts.push({ key: p[1] });
+    else if ((p = /^\[(\d+)\]/.exec(rest))) parts.push({ index: Number(p[1]) });
+    else if ((p = /^\[\s*(["'])((?:(?!\1).)*)\1\s*\]/.exec(rest))) parts.push({ key: p[2] });
+    else if ((p = /^\[\s*([A-Za-z_$][\w$-]*)\s*=\s*(["']?)([^\]"']*)\2\s*\]/.exec(rest))) parts.push({ where: p[1], is: p[3] });
+    else return { file, parts, why: `the place ${JSON.stringify(trim(m[2]))} in ${file} is not one this check reads (members, [n], ["name"] and [id=x])` };
+    rest = rest.slice(p[0].length);
+  }
+  return { file, parts, why: null };
+}
 
 /** The keywords anywhere in a schema the master copy does not read: the
  *  same lists as its READ and DESCRIBES. */
@@ -69,7 +98,7 @@ export function keptPlan(spec) {
   const out = [];
   for (const raw of keptOf(spec)) {
     const i = { id: trim(raw.id), kind: trim(raw.kind), name: trim(raw.name) };
-    for (const k of ["module", "signature", "flags", "schema", "about"]) if (raw[k] !== undefined) i[k] = raw[k];
+    for (const k of ["module", "signature", "flags", "schema", "about", "value", "declared_in"]) if (raw[k] !== undefined) i[k] = raw[k];
     let test = null; let held = null; let why = null;
     if (i.kind === "function") {
       if (!trim(i.module)) why = "the spec names no module it is exported from, so nothing can import it by that name";
@@ -84,6 +113,19 @@ export function keptPlan(spec) {
     } else if (i.kind === "message") {
       if (i.schema === undefined) why = "the spec keeps no JSON Schema for it, so there is no shape to hold it to";
       else held = "keptProblems";
+    } else if (i.kind === "constant") {
+      // A value a module exports, kept with its value (spec 1.1.0).
+      if (!trim(i.module)) why = "the spec names no module it is exported from, so nothing can import it by that name";
+      else if (i.value === undefined) why = "the spec keeps no value for it, so there is nothing to hold it to";
+      else test = `[${i.id}] ${i.name} is exported from ${trim(i.module)} with exactly the value the spec keeps`;
+    } else if (i.kind === "declaration") {
+      // A name or value the agent declares, kept with its value and where it
+      // is declared (spec 1.1.0).
+      const place = placeOf(i.declared_in);
+      if (i.value === undefined) why = "the spec keeps no value for it, so there is nothing to hold it to";
+      else if (!place.file) why = "the spec does not say where it is declared (declared_in), so there is no place to read it from";
+      else if (place.why) why = place.why;
+      else test = `[${i.id}] ${i.name} is declared at ${trim(i.declared_in)} with exactly the value the spec keeps`;
     } else if (i.kind === "http") {
       why = "nothing in a suite stands in for the address it answers on; the suite's own tests reach what answers it";
     } else if (i.kind === "setting") {

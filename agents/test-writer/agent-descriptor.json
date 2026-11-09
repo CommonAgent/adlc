@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.9.0",
+  "agent_version": "0.10.0",
   "name": "Test writer",
   "summary": "Writes the tests an agent's scripts must pass before the scripts exist, and the test cases that exercise every approval and way back of a process.",
   "will_not": [
@@ -11,7 +11,7 @@
     "It will not repeat a credential written into your message.",
     "It will not hand over test cases for a process that leave an approval or a way back untested as if they covered it."
   ],
-  "does": "Writes the test suite a package's scripts will have to pass, from the spec (a test for every acceptance scenario, named by its id) and the agent's own files, before the scripts exist, and runs it against nothing to prove it asserts something; and writes Agent Processes 0.9.0 test cases for a process document that answer every approval each way and take every way back.",
+  "does": "Writes the test suite a package's scripts will have to pass, from the spec (a test for every acceptance scenario, named by its id) and the agent's own files, before the scripts exist, carrying a rebuilt agent's own original tests in unchanged, and runs it against nothing to prove it asserts something; and writes Agent Processes 0.9.0 test cases for a process document that answer every approval each way and take every way back.",
   "offerings": [
     {
       "id": "write-a-suite",
@@ -49,6 +49,13 @@
           "given_by": "either"
         },
         {
+          "name": "the original's own tests",
+          "kind": "text/javascript",
+          "required": false,
+          "given_by": "either",
+          "about": "For a rebuild: each test file of the code being rebuilt, each file those tests import from outside its folder (and every file those import), and a carried manifest (JSON, carried_tests v1) listing each test, the import specifiers to rewrite and each support file, with digests. They go into the suite unchanged but for the listed specifiers, the support files under test/support/ with their layout, and are locked: no revision changes one, and only the person drops one, by naming it."
+        },
+        {
           "name": "the files the change depends on",
           "kind": "text/javascript",
           "required": false,
@@ -73,7 +80,14 @@
         {
           "name": "the suite",
           "kind": "text/javascript",
-          "when": "per_task"
+          "when": "per_task",
+          "about": "Test files, test/<name>.test.mjs; for a rebuild, also the original's own tests and, under test/support/, the files they import, with their layout."
+        },
+        {
+          "name": "the record of the original's own tests",
+          "kind": "application/vnd.agentmesh.carried-tests+json",
+          "when": "per_task",
+          "about": "test/carried-tests.json, carried_tests v1: each original test carried (its name in the suite, its path in the codebase, its digest, the specifiers rewritten), each support file and its digest, and each drop the person named. Only for a rebuild that carried tests, or a revision that dropped one."
         },
         {
           "name": "what it could not test",

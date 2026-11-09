@@ -42,9 +42,50 @@ by code (`scripts/kept-interfaces.mjs`, from the master copy in references/),
 for every interface with `keep: true`: a function is exported under that name
 from that module, async as its signature says; a command accepts its flags;
 and what a job writes to a kept file is held to its JSON Schema. Its tests are
-named by interface id, `[I4] ...`. What it cannot check (an http interface, a
-function with no module) is said beside the suite. In a revision, the spec's
-id for a scenario names a test the way its name does.
+named by interface id, `[I4] ...`. Since 0.10.0 it also holds a kept constant
+(exported from its module with exactly the value the spec keeps) and a kept
+declaration (the agent's file carries exactly that value at the place
+`declared_in` names, such as `agent-descriptor.json offerings[0].outputs[1].name`).
+What it cannot check (an http interface, a function with no module, a
+declaration in a file that is not JSON) is said beside the suite. In a
+revision, the spec's id for a scenario names a test the way its name does.
+
+## The original's own tests
+
+When an agent is rebuilt, its original's own tests are the strongest check on
+the rebuild, so they are carried into the suite unchanged (0.10.0). On a round
+trip the original had 21 tests and the rebuild passed its own 90-test gate
+while passing only 6 of the 21, because the original's tests never reached the
+gate. Product Factory attaches, from the reverse engineer's write-up, each
+original test file, each file those tests import from outside the codebase
+folder (the whole closure), and a carried manifest:
+
+```json
+{ "carried_tests": "v1",
+  "tests": [{ "file": "test/x.test.mjs", "at": "tests/test/x.test.mjs", "sha256": "<hex>",
+              "imports": [{ "from": "../../lib/a.mjs", "support": "support/lib/a.mjs" }] }],
+  "support": [{ "path": "support/lib/a.mjs", "sha256": "<hex>" }] }
+```
+
+The manifest is found by content and each file by its digest, under whatever
+name it came (`scripts/carried.mjs`). Each test goes to `test/<its file
+name>`, unchanged but for the import specifiers the manifest lists, which point
+at `./support/<path from the repository's top>`; code checks the other way
+round that nothing else changed. Each support file goes to
+`test/support/<the same path>` byte for byte, so the imports between support
+files work as they did, and none is ever run as a test. Their record,
+`test/carried-tests.json`, travels with the suite. The carried tests go to the
+model whole, and they are locked: an answer under one of their names is
+refused and never delivered, a revision never changes one (one that names only
+a carried test is refused in words), and only the person drops one, by writing
+"drop the original test <name>", which is recorded in the record.
+
+Every test file in the suite, carried, kept and new, is checked to load:
+`node --check` passes, and an ES module test uses no `__dirname`, `__filename`
+or `require` it does not declare (round trip 3 had two tests that threw a
+ReferenceError before reaching any script). A new file that fails goes back to
+the model as a finding; a carried or kept one is said in the reply and never
+edited.
 
 A build before stages.json 1.6.0 sends no spec. The suite is then written from
 the agent's own files alone, as before, and the reply says the job went without
@@ -82,7 +123,7 @@ byte for byte.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 246 tests
+node --test test/*.test.mjs                                   # 260 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

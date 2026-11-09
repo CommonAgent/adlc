@@ -142,6 +142,25 @@ that runs a job writing a kept file, end with:
 
 and for a kept message, `assert.deepEqual(keptProblems("I6", value), [])`.
 
+A kept constant (an exported value) and a kept declaration (a name or value
+the agent's files declare, at a place such as
+`agent-descriptor.json offerings[0].outputs[1].name`) are held there too, by
+their exact values. When a test of yours uses one, import the constant by its
+own name from its own module rather than writing its value again.
+
+## The original's own tests
+
+A rebuild's suite carries the original's own tests, placed by the test writer
+unchanged but for the import specifiers its manifest lists, with the files
+they import under `test/support/`. They are not yours: never write one again,
+never answer under one of their names, and never import from
+`test/support/` in a test of your own. Read them for the interface the
+scripts must keep, and import from the scripts by the same names they do.
+Every test file must load: a test that throws before it reaches a script pins
+nothing. In an ES module there is no `__dirname`, `__filename` or `require`;
+make a path from `import.meta.url` (`dirname(fileURLToPath(import.meta.url))`)
+and import what you need.
+
 ## What a suite pins, in the order it matters
 
 1. Each refusal the spec lists, as a case that tries the thing and is

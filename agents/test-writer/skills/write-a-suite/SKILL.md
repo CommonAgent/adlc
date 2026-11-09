@@ -16,6 +16,7 @@ when a spec exists and its scripts do not yet, and somebody wants the tests thos
 - the spec (document, optional)
 - the agent's own files (document, required)
 - the suite it already has (text/javascript, optional)
+- the original's own tests (text/javascript, optional)
 - the files the change depends on (text/javascript, optional)
 - what to add (text, optional)
 - what the code step sent back (text, optional)
@@ -38,6 +39,8 @@ If neither the spec nor the agent's files arrived, nothing is written and no mod
 This job runs as one command, job.mjs, which the package names as the job's command: it finds the spec and the agent's own files among the attached files by content, runs the four steps in order, files the pieces and prints the reply.
 
 The spec (spec-v1, standards/spec.schema.json) is what Requirements hands back since stages.json 1.6.0: each feature with its requirements and their exact words, patterns and numbers, acceptance scenarios in Gherkin, the interfaces that must be kept and the constraints. job.mjs finds it by its format ("format": "spec-v1"), under whatever name a hop gave it (with two, the one whose product version is the agent's own), lays it out by its bytes beside the work folder and passes it to the writing step as SPEC_V1. It is never taken for a suite or a file the change depends on. The agent's own files still come and are still the folder every step reads, for the command lines, the declared formats and the records. A spec with no agent's files is refused in words. No harness runs it and nothing is left to work out by hand. What follows says what that command does, step by step, so a reader can see it did the right thing.
+
+When a carried manifest came (a JSON file whose carried_tests is "v1"), the original's own tests of a rebuild came with it: job.mjs matches each attached file to the manifest by its digest, places each test at test/<its file name> with only the import specifiers the manifest lists rewritten to ./support/<path from the repository's top>, each support file at test/support/<the same path> byte for byte, and their record at test/carried-tests.json (scripts/carried.mjs), and hands that folder to the writing step as CARRIED. None of those files is read as a suite to add to, a dependency or a spec. In a revision the record that came with the suite finds them the same way, so a carried test is never revised; "drop the original test <name>" in the person's words drops one, and the drop is recorded.
 
 When what came with the message is a process document (text whose first lines open with PROCESS:, attached or pasted) and no agent's files or spec, the message is for the write-test-cases offering, and job.mjs runs test-cases.mjs instead of these steps: §21 test cases for the process, held to the coverage check (check-cases.mjs).
 
@@ -75,6 +78,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/suite-rules.mjs
 - scripts/spec-rules.mjs
 - scripts/kept-interfaces.mjs
+- scripts/carried.mjs
 - scripts/model-caller.mjs
 - scripts/check-suite.mjs
 - scripts/reply.mjs
