@@ -9,7 +9,7 @@ version each Builder pins.
 | [architecture-standard.md](architecture-standard.md) | `https://schemas.agentmesh.ai/architecture-standard/v1` | the solution architect, which applies it; the spec writer, which designs within it |
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [stages.json](stages.json) | the lifecycle's 24 stages, in order, in seven phases; each stage's cadence (every build, set up once, or when needed); the roles that hold them; and the evidence formats an outside holder hands back in (`version` in the file; changes in [CHANGELOG.md](CHANGELOG.md)) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
-| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.4: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
+| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.5: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [runtime-verbs.md](runtime-verbs.md) | how a lifecycle service hands a finished product to the runtime it is given: install, and from lifecycle API 0.4.4 rollback, reconfigure and retire, as one command with a package and a run plan and the verb in the environment | a runtime's author; a service that runs Rollback, Reconfigure and Decommission |
 | [lifecycle-document.schema.json](lifecycle-document.schema.json) | a lifecycle document, version 0.1: one JSON file holding which stages an organization uses, who holds each role (and with what settings), and the stages it adds of its own, for the organization and each project; no service needed | a person or team defining its lifecycle as a file; the console (`npx adlc-console --lifecycle <path>`), which reads, checks and writes it |
 | [process-check.mjs](process-check.mjs) | the check of a process document against Agent Processes 0.9.0: its §17.1 conformance items and the four tests of §20.1 (see [The process check](#the-process-check)) | the spec writer, which runs it over every process document before handing it back; the test writer, which reads a document's phases, deviations and digest through it; review and conformance |
@@ -135,7 +135,7 @@ actions the person may take now, and a client draws one button for each
 action and nothing else, so every judgment stays with the service. The page
 that explains it is https://agenticdevelopment.ai/api.html.
 
-The schema is version 0.4.4, served at `/v1/lifecycle` on the service. It
+The schema is version 0.4.5, served at `/v1/lifecycle` on the service. It
 changes only by adding: a client ignores a field it does not know, and a
 service never removes a field or changes its type. Version 0.2 also added
 values to two lists, the holder's kinds and the stage's states, and a client
@@ -145,7 +145,8 @@ one more state, `not_used`, which a 0.2 client draws the same way. Version
 artifacts; a 0.3 client ignores them. Version 0.4.1 adds the product's boss. Version 0.4.2 adds each stage's
 cadence and a product's setup and when-needed lists; a 0.4.1 client ignores
 them. Version 0.4.3 adds features. Version 0.4.4 adds the guided setup and
-the when-needed actions. Its `operations` list names the
+the when-needed actions. Version 0.4.5 shows features at every stage and
+lists the features of a product made before them. Its `operations` list names the
 definition each request and answer must match.
 
 **Lifecycle stages.** An organization chooses which of the 24 stages its
@@ -275,6 +276,32 @@ version is `running`, and once it is decommissioned, `retired`, when none of
 its when-needed actions can run. How a service hands Rollback, Reconfigure and
 Decommission to the runtime it is given is [runtime-verbs.md](runtime-verbs.md).
 `checkProduct` holds these to the schema and to the rules it cannot say.
+
+**Features at every stage.** Version 0.4.5 makes features visible beyond the
+product's matrix. Each every-build stage of a build carries `features`, a
+short count such as "4 of 5 features" that a client shows beside the stage,
+and the stage workspace carries the same stage's `features` in full, one line
+per feature: Requirements, each feature and whether it is approved; Test, the
+tests that check each approved feature, a feature with none marked to do;
+Code, how many of its tests pass ("6 of 6 passing"); Review, the findings tied
+to it through its tests (the finding's place is a line inside one of its
+tests, or the finding quotes a test's name), and the rest `untied`, not tied
+to a feature; Docs, whether the docs name it, once the docs are made. A row of
+the matrix also carries its `pending` proposal, so a client can answer it
+beside the list, `from`, the message it was proposed on, and `tests`, the
+tests that check it; the matrix lists the tests that check no feature as
+`unmapped`. A product made before features can have them listed after the
+fact: when the matrix's `backfill` is offered, `POST
+/builds/{id}/features/backfill` sends the spec writer a message in the
+Requirements chat, and its reply proposes every feature of the statement of
+the job, each with the `tests` already in the build whose names or content
+make clear they check it. A test that is not clear is left unmapped, never
+guessed. The features arrive as proposed; `POST
+/builds/{id}/features/approve_all` approves several at once, each a recorded
+decision as in a chat, together one new version of the statement.
+`checkBuild`, `checkStageWorkspace`, `checkFeatures` and
+`checkFeatureApproveAll` hold these to the schema and to the rules it cannot
+say.
 
 **Role bindings.** An organization chooses who holds each role in
 stages.json's `roles`: the service's reference agent, its own agent, a

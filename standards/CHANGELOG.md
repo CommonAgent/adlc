@@ -15,6 +15,14 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.5**: features at every stage. Each every-build stage's `features`
+  count on the build and its full list on the stage workspace
+  (`FeatureCount`, `FeatureSlice`); a matrix row's `pending`, `from` and
+  `tests`, and the matrix's `unmapped` tests and `backfill`; a proposal's
+  `tests`; `POST /builds/{id}/features/backfill`, which asks the spec writer
+  to list a product's features after the build, and `POST
+  /builds/{id}/features/approve_all`; and `minItems` in the validator.
+  Additive.
 - **0.4.4**: the guided setup and the when-needed actions. A setup item's
   `form` (`fields`, `ask`, `reference_agent`, `shares`), saved with the roles
   operations, each stage's settings under its id; a when-needed item's
