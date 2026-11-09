@@ -1,4 +1,4 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.4.5) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.4.6) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments, stageCadences, checkFeatures, checkFeature, checkFeatureDecision, featuresOfTest, FEATURE_COLUMNS, checkFeatureApproveAll } from "../lifecycle-api-check.mjs";
+import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments, stageCadences, checkFeatures, checkFeature, checkFeatureDecision, featuresOfTest, FEATURE_COLUMNS, checkFeatureApproveAll, AS_BUILT_PARTS } from "../lifecycle-api-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.5 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.5");
+test("the schema is version 0.4.6 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.6");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1211,4 +1211,84 @@ test("approve_all lists every proposal approved, each approved, and names the st
     "body.features[0].state: F1 was approved, and is not",
     "body.statement: approving gives the statement of the job a new version, and the answer does not name it",
   ]);
+});
+
+// ---------- 0.4.6: starting from existing code ----------
+
+const part = (id, name, items, extra = {}) => ({ part: id, name, count: items.length, words: `${items.length} ${name.toLowerCase()}`, items, ...extra });
+const asBuilt = (extra = {}) => ({
+  id: "as_built", stage: "reverse-engineering", name: "As-built record", by: "reverse engineer", state: "made", kind: "as_built", version: "3f2a9c1", at: AT,
+  summary: {
+    source: { repository: "https://github.com/acme/word-tally", commit: "3f2a9c1d0e", ran: true, words: "Read and run at 3f2a9c1." },
+    trigger: "adoption",
+    parts: [
+      part("behaviors", "Behaviors", ["B1 Counts the words: splits on spaces (scripts/count.mjs:4)"]),
+      part("architecture", "Architecture as built", ["Entry point: scripts/count.mjs"]),
+      part("interfaces", "Interfaces", ["Command: count <text>"]),
+      part("dependencies", "Dependencies", []),
+      part("tests_and_gaps", "Existing tests and gaps", ["Gap: what an empty passage gives was not determined"]),
+    ],
+    ...extra,
+  },
+});
+
+test("the schema names bug and drop, the as_built kind and the start request's starting point", () => {
+  const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
+  for (const o of ["POST /builds/{id}/features/{feature}/bug", "POST /builds/{id}/features/{feature}/drop"]) assert.ok(ops.includes(o), o);
+  assert.ok(SCHEMA.$defs.Artifact.properties.kind.enum.includes("as_built"));
+  assert.deepEqual(SCHEMA.$defs.AsBuiltPart.properties.part.enum, AS_BUILT_PARTS);
+  assert.deepEqual(validate("StartRequest", { does: "Adopt the existing code of word-tally", name: "word-tally", starting_point: "existing-code", source: { repository: "https://github.com/acme/word-tally", commit: "3f2a9c1" } }), []);
+  assert.deepEqual(validate("StartRequest", { does: "x", source: { folder: 3 } }), ["body.source.folder: is integer, not string"]);
+});
+
+test("an as_built artifact lists its five parts once, in order, and a drift record names the commit before", () => {
+  assert.deepEqual(checkArtifacts([asBuilt()], IDS), []);
+  const short = asBuilt(); short.summary.parts.pop();
+  assert.deepEqual(checkArtifacts([short], IDS), ["body.artifacts[0].summary.parts: has 4 items, fewer than 5"]);
+  const swapped = asBuilt(); [swapped.summary.parts[0], swapped.summary.parts[1]] = [swapped.summary.parts[1], swapped.summary.parts[0]];
+  assert.deepEqual(checkArtifacts([swapped], IDS), ["body.artifacts[0].summary.parts: are architecture, behaviors, interfaces, dependencies, tests_and_gaps, not behaviors, architecture, interfaces, dependencies, tests_and_gaps in that order"]);
+  assert.deepEqual(checkArtifacts([asBuilt({ trigger: "drift" })], IDS), ["body.artifacts[0].summary: is a drift record, so it names the commit it is described against (since)"]);
+  assert.deepEqual(checkArtifacts([asBuilt({ trigger: "drift", since: "1a2b3c4" })], IDS), []);
+});
+
+test("a behavior as built answered bug keeps a fix item; one dropped says so; neither is approved by it", () => {
+  const mark = { behavior: "B1", evidence: ["scripts/count.mjs:4"], commit: "3f2a9c1" };
+  const fix = { id: "fx1", feature: "F2", behavior: "B1", name: "Empty passage", does: "Answers 1 for an empty passage.", state: "proposed", by: "You", at: T2 };
+  const entry = { id: "F2", name: "Empty passage", does: "Answers 1 for an empty passage.", offering: "Count", state: "proposed", backlog: false, as_built: mark };
+  const bug = proposal({ as_built: mark, state: "bug", answered: { decision: "bug", by: "You", at: T2 }, fix });
+  assert.deepEqual(checkFeatureDecision({ feature: { ...entry, fix }, proposal: bug, fix }, "bug"), []);
+  assert.deepEqual(checkFeatureDecision({ feature: entry, proposal: proposal({ state: "bug" }) }, "bug"), [
+    "body.proposal: is bug, so it says who answered it, when, and with bug",
+    "body.proposal: is bug, which only a behavior marked as built can be, and it is not marked",
+    "body.proposal: is bug, so it carries the fix item kept for it",
+    "body.fix: a bug keeps a fix item, and the answer does not carry it",
+  ]);
+  const dropped = proposal({ as_built: mark, state: "dropped", answered: { decision: "dropped", by: "You", at: T2 } });
+  assert.deepEqual(checkFeatureDecision({ feature: { ...entry, dropped: { by: "You", at: T2 } }, proposal: dropped }, "drop"), []);
+  assert.deepEqual(checkFeatureDecision({ feature: { ...entry, state: "approved" }, proposal: dropped }, "drop"), [
+    "body.feature.state: a behavior answered drop is not approved by it",
+    "body.feature.dropped: the behavior was dropped, and the feature does not say so",
+  ]);
+  // The matrix keeps the fix items, each of one of its features.
+  const m = matrix([row("F1"), row("F2", { state: "proposed", cells: { ...row("F2").cells, spec: cell("missing", "A bug, kept as a fix item") }, as_built: mark, fix })]);
+  m.fixes = [fix];
+  assert.deepEqual(checkFeatures(m, "b1"), []);
+  m.features[1].as_built = undefined;
+  delete m.features[1].as_built;
+  m.fixes.push({ ...fix, id: "fx2", feature: "F9" });
+  assert.deepEqual(checkFeatures(m, "b1"), [
+    "body.features[1]: has a fix item, which only a behavior marked as built can, and it is not marked",
+    "body.fixes[1]: is a fix item of F9, which is not one of the matrix's features",
+  ]);
+});
+
+test("a build and a product say the commit they knew; drift is true exactly when the code moved", () => {
+  const b = withArtifacts();
+  b.build.source = { starting_point: "existing-code", trigger: "adoption", repository: "https://github.com/acme/word-tally", commit: "3f2a9c1d0e", at: AT, words: "Adopted at 3f2a9c1." };
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  const src = (extra) => ({ ...product(), source: { repository: "https://github.com/acme/word-tally", commit: "3f2a9c1d0e", build: "b1", version: "0.1.0", current: "9b1c2d4e5f", drift: true, words: "The code changed outside the lifecycle.", ...extra } });
+  assert.deepEqual(checkProduct(src(), "word-tally"), []);
+  assert.deepEqual(checkProduct(src({ current: null, drift: false, words: "The repository could not be read." }), "word-tally"), []);
+  assert.deepEqual(checkProduct(src({ drift: false }), "word-tally"), ["body.source.drift: is false, but the repository is at 9b1c2d4e5f and the last build knew 3f2a9c1d0e"]);
+  assert.deepEqual(checkProduct(src({ current: "3f2a9c1d0e", build: "b7" }), "word-tally"), ["body.source.drift: is true, but the commit read now is not a different one", "body.source.build: b7 is not one of the product's builds"]);
 });

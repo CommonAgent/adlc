@@ -30,6 +30,15 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.6**: starting from existing code (stages.json 1.4.0). The start
+  request's `starting_point` and `source`; the artifact kind `as_built` with
+  `AsBuiltSummary` and `AsBuiltPart`; `as_built` (`AsBuilt`) on a feature, a
+  matrix row and a proposal; `POST /builds/{id}/features/{feature}/bug` and
+  `.../drop`, the proposal states `bug` and `dropped`, the decision request's
+  `words`, and `FixItem` (on the proposal, the feature, the decision answer
+  and the matrix's `fixes`); the build's `source` (`BuildSource`) and the
+  product's `source` (`ProductSource`, with `drift`); `maxItems` in the
+  validator. Additive.
 - **0.4.5**: features at every stage. Each every-build stage's `features`
   count on the build and its full list on the stage workspace
   (`FeatureCount`, `FeatureSlice`); a matrix row's `pending`, `from` and
