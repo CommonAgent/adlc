@@ -4,6 +4,11 @@ Changes to the standards in this folder, newest first.
 
 ## stages.json
 
+- **1.4.1**: the reverse engineer role names its reference agent,
+  `reverse-engineer` (agents/reverse-engineer), which holds Reverse
+  engineering and hands back the as-built record. The stage's
+  `reference_holder` stays null until the stage card on the site names it.
+  No field added, changed or removed.
 - **1.4.0**: Reverse engineering, held by the new reverse engineer role, for
   code that already exists. It is in Define, before Requirements, numbered 0
   so that the 24 stages keep their numbers, and run when needed

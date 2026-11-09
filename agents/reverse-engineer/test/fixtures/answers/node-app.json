@@ -1,0 +1,45 @@
+{
+  "behaviors": [
+    {"id": "B1", "name": "Greet by name", "does": "Returns `Hello, <name>!` for a name given as a string.", "inputs": ["name, a string"], "outputs": ["the greeting"], "refusals": [], "error_handling": [], "evidence": [{"file": "src/index.js", "line": 4, "end_line": 13}]},
+    {"id": "B2", "name": "Greet an empty name", "does": "Returns `Hello, stranger!` when the name is empty or only spaces.", "inputs": ["name"], "outputs": ["the greeting for a stranger"], "evidence": ["src/index.js:8-10"]},
+    {"id": "B3", "name": "Refuse a name that is not a string", "does": "Throws a TypeError with the message `name must be a string` when the name is not a string.", "refusals": ["a name that is not a string"], "error_handling": ["throws TypeError"], "evidence": [{"file": "src/index.js", "line": 5, "end_line": 7}]},
+    {"id": "B4", "name": "Loud greeting", "does": "Writes the greeting in capitals when GREETING_STYLE is `loud`.", "inputs": ["GREETING_STYLE"], "evidence": [{"file": "src/index.js", "line": 2}, {"file": "src/index.js", "line": 11}]},
+    {"id": "B5", "name": "Say goodbye", "does": "Returns `Goodbye, <name>` with no exclamation mark.", "evidence": [{"file": "src/index.js", "line": 15, "end_line": 17}]},
+    {"id": "B6", "name": "Greet from the command line", "offering": "greet", "does": "Prints the greeting for the first argument, and prints a usage line and exits with code 2 when there is none.", "inputs": ["the first command-line argument"], "outputs": ["the greeting on standard output"], "refusals": ["no name given"], "error_handling": ["exit code 2 with a usage line"], "evidence": [{"file": "bin/greet.js", "line": 4, "end_line": 9}]},
+    {"id": "B7", "name": "Greet in French", "does": "Returns a French greeting.", "evidence": [{"file": "src/index.js", "line": 99}]},
+    {"id": "B8", "name": "Save greetings", "does": "Writes each greeting to a file.", "evidence": [{"file": "src/missing.js", "line": 1}]},
+    {"id": "B9", "name": "Farewell punctuation", "does": "Farewell is a bug: it leaves out the exclamation mark.", "evidence": [{"file": "src/index.js", "line": 16}]},
+    {"id": "B10", "name": "Log each greeting", "does": "Logs each greeting it makes."}
+  ],
+  "architecture": {
+    "kind": {"kind": "other", "why": "a Node package with a main module and one command", "evidence": [{"file": "package.json", "line": 5, "end_line": 8}]},
+    "parts": [
+      {"name": "greeting module", "does": "holds greet and farewell", "evidence": [{"file": "src/index.js", "line": 1, "end_line": 23}]},
+      {"name": "command", "does": "runs greet on the first argument", "evidence": [{"file": "bin/greet.js", "line": 1, "end_line": 9}]}
+    ],
+    "entry_points": [{"name": "src/index.js", "how": "the package's main module", "evidence": [{"file": "package.json", "line": 5}]}],
+    "data_stores": [],
+    "systems": [],
+    "networks": [],
+    "settings": [
+      {"name": "GREETING_STYLE", "credential": false, "evidence": [{"file": "src/index.js", "line": 2}]},
+      {"name": "API_TOKEN", "credential": true, "evidence": [{"file": "src/index.js", "line": 50}]}
+    ],
+    "starts_and_runs": [{"step": "node bin/greet.js <name> prints one greeting and exits", "evidence": [{"file": "bin/greet.js", "line": 4, "end_line": 9}]}],
+    "dependencies": [],
+    "formats": [{"direction": "out", "piece": "the greeting", "kind": "text/plain", "evidence": [{"file": "bin/greet.js", "line": 9}]}]
+  },
+  "interfaces": [
+    {"id": "I1", "kind": "command", "name": "greet <name>", "does": "prints the greeting for name", "evidence": [{"file": "bin/greet.js", "line": 4, "end_line": 9}]},
+    {"id": "I2", "kind": "function", "name": "greet(name)", "does": "returns the greeting", "evidence": [{"file": "src/index.js", "line": 4}], "schema": {"format": "json-schema", "document": {"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "greet's argument", "type": "string"}}},
+    {"id": "I3", "kind": "http", "name": "GET /greet", "does": "answers a greeting over HTTP", "evidence": [{"file": "src/server.js", "line": 3}]}
+  ],
+  "tests": [
+    {"file": "test/greet.test.js", "covers": ["B1"], "evidence": [{"file": "test/greet.test.js", "line": 5, "end_line": 7}]},
+    {"file": "test/greet.test.js", "covers": ["B2"], "evidence": [{"file": "test/greet.test.js", "line": 9, "end_line": 11}]},
+    {"file": "test/greet.test.js", "covers": ["B3"], "evidence": [{"file": "test/greet.test.js", "line": 13, "end_line": 15}]}
+  ],
+  "gaps": [
+    {"kind": "unreachable", "about": "unusedHelper in src/index.js", "why": "no code calls it and it is not exported", "evidence": [{"file": "src/index.js", "line": 19, "end_line": 21}]}
+  ]
+}

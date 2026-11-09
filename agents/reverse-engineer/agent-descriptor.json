@@ -1,0 +1,267 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "name": "Reverse engineer",
+  "summary": "Writes down what an existing codebase is, at a named commit: its behaviors, architecture, interfaces, dependencies and tests, each claim with its file and line.",
+  "will_not": [
+    "It will not say whether the code is right, wrong, wanted or a bug; you decide that at Requirements.",
+    "It will not write or change a test, or change anything in the codebase.",
+    "It will not state a behavior it cannot point at in the code; what it cannot tell is listed as a gap.",
+    "It will not follow a path or an address written in your message; it reads the codebase you attach."
+  ],
+  "does": "Writes down what an existing codebase is, at a named commit, as the as-built record: the behaviors the code has (each in the feature list's shape, with the file and line that shows it), the architecture as built (in the architecture standard's record shape), the interfaces (with any OpenAPI or JSON Schema found or derived), the dependencies (a CycloneDX bill of materials made from the lockfiles and manifests by rule, never by the model), and the existing tests with what they cover, one baseline run's results when it may run things, and every gap. A model drafts the behaviors, the architecture and the interfaces from the code; code then checks every cited file and line against the commit and holds back any claim whose evidence does not check, or that judges or infers, as a gap. Given the last as-built record, it covers only what changed since that record's commit. It describes and never judges, writes no tests and changes nothing in the codebase. It holds the reverse engineer role (agentroles.ai) for the Reverse engineering stage (00) of the Agent Development Lifecycle.",
+  "offerings": [
+    {
+      "id": "reverse-engineer",
+      "name": "Describe a codebase",
+      "does": "Writes the as-built record of a codebase at a named commit, tied to the repository, the commit digest and whether the code was only read or also run, in five parts, each claim with its evidence and each gap marked; on drift, only what changed since the last record.",
+      "inputs": [
+        {
+          "name": "codebase",
+          "kind": "application/gzip",
+          "required": true,
+          "given_by": "either",
+          "about": "The codebase's folder as a gzip tar archive, with its .git folder so the commit can be checked and drift read. Run as a command, the folder is named with --codebase instead."
+        },
+        {
+          "name": "repository",
+          "kind": "url",
+          "required": true,
+          "given_by": "either",
+          "about": "The repository's address, on a line of its own after `repository:`. It ties the record to its source and is never fetched."
+        },
+        {
+          "name": "commit",
+          "kind": "identifier",
+          "required": true,
+          "given_by": "either",
+          "about": "The full commit digest the codebase is at, on a line of its own after `commit:`. In a checkout it must be the commit checked out, with no tracked file changed."
+        },
+        {
+          "name": "last as-built record",
+          "kind": "application/vnd.agentmesh.as-built-record+json",
+          "required": false,
+          "given_by": "either",
+          "about": "For drift: the record.json of the last as-built record, `{format, repository, commit, behaviors_index}`. With it, the record covers only what changed since that record's commit, read from the git history."
+        },
+        {
+          "name": "last behaviors",
+          "kind": "application/vnd.agentmesh.as-built-behaviors+json",
+          "required": false,
+          "given_by": "either",
+          "about": "For drift, optional: the last record's behaviors.json, `{format, behaviors}`, so a changed or removed behavior keeps its id."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "as-built record",
+          "kind": "application/vnd.agentmesh.as-built-record+json",
+          "when": "per_task",
+          "about": "The record that ties the parts to their source, out/as-built/record.json: `{format, as_built, repository, commit, commit_checked, read_mode, trigger, drafted, parts, behaviors_index, counts, done}`. read_mode is `read` or `read and run`; trigger is `adoption` or `drift`, and on drift `since` and `changed_files` say what it covers."
+        },
+        {
+          "name": "behaviors",
+          "kind": "application/vnd.agentmesh.as-built-behaviors+json",
+          "when": "per_task",
+          "about": "Each thing the code does, behaviors.json: `{format, as_built, repository, commit, behaviors}`. Each behavior is in the feature list's shape (id, name, does, and offering when the code shows one), with its inputs, outputs, refusals and error handling, its evidence (file and line, or the observed run) and as_built true."
+        },
+        {
+          "name": "architecture as built",
+          "kind": "application/vnd.agentmesh.as-built-architecture+json",
+          "when": "per_task",
+          "about": "The architecture as built, architecture.json, in the architecture record's shape and marked as built: `{format, record, as_built, repository, commit, kind, systems, dependencies, egress, formats, settings, parts, entry_points, data_stores, starts_and_runs}`. Settings and credentials are named, never given a value."
+        },
+        {
+          "name": "interfaces",
+          "kind": "application/vnd.agentmesh.as-built-interfaces+json",
+          "when": "per_task",
+          "about": "The APIs, commands, messages and file formats, interfaces.json: `{format, as_built, interfaces, schemas_found, schemas_derived}`, each with its evidence and, where one was derived, the schema file it points at."
+        },
+        {
+          "name": "openapi",
+          "kind": "application/vnd.oai.openapi+json",
+          "when": "per_task",
+          "about": "An OpenAPI document the code already carried, copied as found, or one derived from the code for an HTTP interface, under out/as-built/schemas/."
+        },
+        {
+          "name": "json schema",
+          "kind": "application/schema+json",
+          "when": "per_task",
+          "about": "A JSON Schema the code already carried, copied as found, or one derived from the code for an interface whose shape it shows field by field, under out/as-built/schemas/."
+        },
+        {
+          "name": "dependencies",
+          "kind": "application/vnd.cyclonedx+json",
+          "when": "per_task",
+          "about": "A CycloneDX 1.5 bill of materials, sbom.cdx.json, made by rule from the lockfiles and manifests found: `{bomFormat, specVersion, serialNumber, metadata, components, dependencies}`. On drift it is delivered only when a manifest or lockfile changed."
+        },
+        {
+          "name": "existing tests and gaps",
+          "kind": "application/vnd.agentmesh.as-built-tests-and-gaps+json",
+          "when": "per_task",
+          "about": "The tests the code has, tests-and-gaps.json: `{format, as_built, tests, test_command, baseline, gaps}`. Each test file with its cases and the behaviors it covers, the project's own test command, one baseline run's results when it may run things (or why it did not run), and every gap, each marked with its kind."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      },
+      "steps": [
+        {
+          "id": "read-the-codebase",
+          "name": "Read the codebase",
+          "does": "Opens the codebase at the named commit, checks the commit in a checkout, lists its files, and reads off by rule the settings it reads, its entry points, how it starts, its test files and test command, and the schemas it carries.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "list-the-dependencies",
+          "name": "List the dependencies",
+          "does": "Makes the CycloneDX bill of materials from the lockfiles and manifests, by rule.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "run-the-baseline",
+          "name": "Run the baseline",
+          "does": "When the job may run things, runs the project's own test command once in a child process with a time limit, with no network where the host can cut it off, and reads the results.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "draft-from-the-code",
+          "name": "Draft from the code",
+          "does": "Shows the model the code with each line numbered and asks it to draft the behaviors, the architecture as built, the interfaces, what each test covers and the gaps, each claim with its file and line.",
+          "how": {
+            "control": "script",
+            "intelligence": "called",
+            "cost": "metered",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "check-the-evidence",
+          "name": "Check the evidence",
+          "does": "Checks every cited file and line against the code at the commit, and holds back as a gap each claim whose evidence does not check, that judges or infers, or on drift that is outside the change.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        },
+        {
+          "id": "write-the-record",
+          "name": "Write the record",
+          "does": "Writes the five parts, the record that ties them to the repository, the commit and the read mode, pieces.json and the reply, which declines any request to judge the code or write tests.",
+          "how": {
+            "control": "script",
+            "intelligence": "none",
+            "cost": "none",
+            "contract": "full"
+          }
+        }
+      ],
+      "revisions": {
+        "included": {
+          "count": 1,
+          "window_days": 14
+        },
+        "flat": {
+          "model": "flat",
+          "amount_micro": 500000,
+          "currency": "USD"
+        }
+      },
+      "started_by": [
+        "person",
+        "agent"
+      ]
+    }
+  ],
+  "refusals": "Judging the code. It never says whether a behavior is right, wrong, wanted, intended or a bug; asked, the reply says no and that the person decides at Requirements, where each behavior is approved, flagged as a bug for the backlog, or dropped. A drafted claim that judges is held back as a gap.\nWriting or changing tests. Test writes the characterization tests from the record; asked to write tests, the reply says no.\nChanging the codebase. It reads the code and, when allowed, runs the project's own test command once; it writes nothing into the codebase.\nStating what it cannot point at. Every claim names a file and line at the commit, or the observed run; a claim whose evidence does not check is not delivered and is listed as a gap.\nInferring beyond the evidence. It does not fill in what the code was meant to do from names, comments or habit; a drafted claim that infers is held back as a gap.\nLeaving a gap silent. What could not be determined (unreachable code, behavior seen only at run time, files not read, anything unclear) is listed as a gap, each marked.\nDescribing what did not change, on drift. Given the last record, it covers only what changed since that record's commit.\nTying a record to no commit. A checkout at another commit, or with tracked files changed, stops the job; a folder with no history is described with the commit marked as taken as given.\nGiving a setting's value. Settings and credentials are named, never given a value, and the code's own tests run without this agent's credentials.\nReading anything a message names. It reads the codebase attached or named on its command line; a path or an address in the message is not followed.",
+  "escalates": [
+    "Which behaviors to keep. The record goes to Requirements, where the person approves each behavior, flags it as a bug for the backlog, or drops it."
+  ],
+  "records": [
+    {
+      "name": "the model's draft as it answered, before any claim was checked, per job",
+      "when": "per_task",
+      "file": "*/draft.json"
+    },
+    {
+      "name": "how many calls were made to the text-reasoning service, which model answered, and which files it was shown",
+      "when": "per_task",
+      "file": "*/calls.json"
+    },
+    {
+      "name": "everything the baseline run printed, per job, when it ran",
+      "when": "per_task",
+      "file": "*/baseline.log"
+    },
+    {
+      "name": "what this job did not have and did anyway: each thing that was missing, what was done instead, and the reason where it is known",
+      "when": "per_task",
+      "file": "*/went-without.json"
+    },
+    {
+      "name": "the signed job manifest of each delivery, listing each piece by the step that made it. The adapter signs it from pieces.json and keeps it beside the reply.",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "access": "read",
+      "needs": "to draft the behaviors, the architecture as built and the interfaces from the code, which code then checks line by line"
+    }
+  ],
+  "can_use": [],
+  "run_config": {
+    "settings": [
+      {
+        "name": "may_run",
+        "kind": "rule",
+        "default": "no",
+        "allowed": [
+          "no",
+          "yes"
+        ],
+        "label": "Run the tests once",
+        "about": "Whether the reverse engineer may run the project's own test command once, for the baseline. With no, the code is only read.",
+        "value_labels": {
+          "no": "Only read the code",
+          "yes": "Read the code and run its tests once"
+        },
+        "job_may_set": true
+      },
+      {
+        "name": "baseline_seconds",
+        "kind": "preference",
+        "default": 300,
+        "label": "Seconds the test run may take",
+        "about": "How long the baseline run of the tests may take before it is stopped and reported as stopped.",
+        "range": {
+          "min": 30,
+          "max": 600,
+          "step": 30
+        },
+        "job_may_set": true
+      }
+    ]
+  }
+}

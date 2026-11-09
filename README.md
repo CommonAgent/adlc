@@ -44,6 +44,7 @@ replaced by any agent that holds the same role.
 
 | Stage | Role | Folder | Runs on its own? |
 |---|---|---|---|
+| Reverse engineering (when needed) | [reverse engineer](https://agentroles.ai/reverse-engineer.html) | [agents/reverse-engineer](agents/reverse-engineer) | Yes, with a model endpoint (the four model settings) and git; running the code's tests is optional |
 | Architecture and Design (architecture) | [solution architect](https://agentroles.ai/solution-architect.html) | [agents/solution-architect](agents/solution-architect) | Yes, with a model endpoint (the four model settings) |
 | Requirements, Architecture and Design (design) | [spec writer](https://agentroles.ai/spec-writer.html) | [agents/spec-writer](agents/spec-writer) | Yes, with a model endpoint (the four model settings) |
 | Requirements, Architecture and Design (design) | [solution planner](https://agentroles.ai/solution-planner.html) | [agents/solution-planner](agents/solution-planner) | Yes, with a model endpoint (the four model settings) |
@@ -91,8 +92,8 @@ only runs inside AgentMesh today.
 ## Layout
 
 - `agents/<role>/` holds one agent. The packages written for the lifecycle
-  (solution architect, spec writer, solution planner, test writer, code
-  writer, code critic, publisher) are
+  (reverse engineer, solution architect, spec writer, solution planner, test
+  writer, code writer, code critic, publisher) are
   package sources: the agent's own files (`agent-descriptor.json`,
   `agent-runtime-requirements.json`, `plugin.json` and `skills/<slug>/SKILL.md`,
   the layout Common Agent 13.2 says a package is authored in), the scripts,
@@ -125,7 +126,7 @@ deployment manager. From the repository root:
 
 ```sh
 export AGENTMESH_ENV=example
-for a in solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher agent-auditor usability-tester; do
+for a in reverse-engineer solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher agent-auditor usability-tester; do
   (cd agents/$a && node --test test/*.test.mjs)
 done
 node --test agents/conformance-checker/test/*.test.mjs

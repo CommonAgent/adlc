@@ -1,0 +1,74 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [
+    {
+      "name": "node",
+      "version": ">=22"
+    }
+  ],
+  "binaries": [
+    {
+      "name": "git",
+      "purpose": "to check that the codebase is at the named commit with nothing changed, to list the files it tracks, and on drift to read what changed since the last record's commit"
+    }
+  ],
+  "dependencies": [],
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "kind": "model",
+      "protocols": [
+        "anthropic-messages",
+        "openai-chat",
+        "gemini"
+      ]
+    }
+  ],
+  "ceilings": [],
+  "directories": [
+    {
+      "name": "records",
+      "purpose": "one folder per job, holding the model's draft, the calls, the baseline run's log and what the job went without"
+    },
+    {
+      "name": "work",
+      "purpose": "one folder per job, holding the codebase unpacked from its archive and the baseline run's own home and temporary folders"
+    }
+  ],
+  "job_seconds": 900,
+  "price": {
+    "sku": "default",
+    "covers": {
+      "offerings": [
+        "reverse-engineer"
+      ]
+    },
+    "price": {
+      "model": "flat",
+      "amount_micro": 500000,
+      "currency": "USD"
+    }
+  },
+  "run": {
+    "reverse-engineer": {
+      "command": [
+        "node",
+        "{home}/{package}/skills/reverse-engineer/scripts/describe.mjs",
+        "--job",
+        "{job_dir}",
+        "--records",
+        "{records}",
+        "--work",
+        "{work}",
+        "--text-file",
+        "{job_dir}/message.txt"
+      ],
+      "reply": "json:reply",
+      "per_file": [
+        "--file",
+        "{file_path}::{file_media_type}"
+      ],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}
