@@ -1,6 +1,9 @@
-// Write the record: the five parts of the as-built record and the record that
+// Write the record: the six parts of the as-built record and the record that
 // ties them to their source, from the facts read by rule, the draft as
-// checked, the bill of materials and the baseline run.
+// checked, the bill of materials, the baseline run and the tests carried
+// (carried.mjs); and the completeness check (0.3.0), which reads the code
+// again by code and lists, as gaps, what a rebuild needs that the record
+// does not hold.
 //
 // Pure: it is handed everything (with `read`, which answers a file's text, for
 // checking quotes byte for byte) and answers the documents; pieces.mjs writes

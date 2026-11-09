@@ -3,6 +3,10 @@
 // commands and the flags they read, the files the code writes and the shape
 // of each JSON one, the regular expressions and the literal constants the
 // code holds, and every import that reaches outside the codebase's folder.
+// 0.3.0 adds every string a person reads and every pattern, exactly as
+// written (`texts`, for strings.json), the exports of every module of the
+// code, and the literal values a field is written with in the object
+// literals shaped like the one it is in (`fieldValues`).
 // Each item names the file and line it was read from.
 //
 // These are the parts of the record a rebuild needs word for word: the

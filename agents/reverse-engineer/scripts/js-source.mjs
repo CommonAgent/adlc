@@ -16,7 +16,10 @@
 // literal's fields, and the JSON Schema type an expression shows when it shows
 // one (a literal, a template, String(...), a ternary, a const it names).
 // Where the code does not show a type, the schema says what the value is made
-// from, in a $comment, and claims nothing more.
+// from, in a $comment, and claims nothing more. 0.3.0 adds the JSON value an
+// expression writes when it is literals all the way down (literalValue), and
+// follows a let or var through each value it is given (assignedRanges), so a
+// field written from one that is only ever given literals has those values.
 //
 //   needs: node >= 22. Nothing here reads or writes a file.
 //   import { scan, typeOfExpr } from "./js-source.mjs"

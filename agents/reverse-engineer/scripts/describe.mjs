@@ -11,7 +11,9 @@
 // The steps, in order:
 //   read-the-codebase      read-request.mjs, codebase.mjs, facts.mjs: the
 //                          request, the files at the commit, and what is read
-//                          off them by rule
+//                          off them by rule; carried.mjs: the original tests,
+//                          copied byte for byte with what they import from
+//                          outside the codebase
 //   list-the-dependencies  sbom.mjs: the CycloneDX bill of materials
 //   run-the-baseline       baseline.mjs: one run of the project's own tests,
 //                          only when the job may run things
@@ -23,8 +25,9 @@
 //                          claim's file and line checked against the code,
 //                          each behavior's kind, anchor, quotes and rules,
 //                          each drafted schema; what fails goes to the gaps
-//   write-the-record       record.mjs, pieces.mjs: the five parts, the
-//                          record that ties them to the commit, and the reply
+//   write-the-record       record.mjs, pieces.mjs: the six parts, the
+//                          record that ties them to the commit, the
+//                          completeness check, and the reply
 //
 // It describes and does not judge, writes no tests and changes nothing in the
 // codebase. It prints one JSON object with a `reply` field. Exit codes: 0 the
