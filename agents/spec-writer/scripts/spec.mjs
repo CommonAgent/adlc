@@ -168,7 +168,9 @@ spec stays exactly as it is. An edit is one of:
   {"add": "<where>", "value": <the new item, with no id>}
 A path is purpose, price, product.name, product.version, a feature (F3), a
 requirement (F3.R2), a scenario (F3.A1), a constraint (C2), an interface
-(I4), system:<name>, setting:<name> or open:<key>. Where is features,
+(I4), system:<name>, setting:<name> or open:<key>. Where the words name
+only a feature's pieces (F3.pieces), set F3.pieces to {"inputs": [...],
+"outputs": [...]}, and nothing else of the feature changes. Where is features,
 constraints, interfaces, systems, settings, open, F3.requirements or
 F3.acceptance. Code gives every added item its id. When the words answer an
 open question, remove it and set what it settles. Answer with one JSON
@@ -345,7 +347,14 @@ export async function writeTheSpec({ asked = null, answers = null, call, referen
     // What code settled from keyed words needs no model.
     const byCode = new Set([...(settled.name ? ["product.name", "open:name"] : []), ...(settled.price ? ["price", "open:price"] : []), ...(settled.version ? ["product.version"] : [])]);
     const modelTargets = new Set([...targets].filter((t) => !byCode.has(t)));
-    const checkOf = (s) => [...specProblems(s, { record, corpus, person }), ...unchangedProblems(earlier, s, targets)];
+    const checkOf = (s) => [...specProblems(s, { record, corpus, person, targets }), ...unchangedProblems(earlier, s, targets)];
+    // Words that name nothing in the spec, and key nothing, leave it byte for
+    // byte as it was: no model, and no fit either. They go to the agent's own
+    // files (the Design, structure.mjs).
+    if (!targets.size && !keyed.applied.length) {
+      const spec = structuredClone(earlier);
+      return { spec, mode: "revision", notes: "Your words name nothing in the spec, so it stays as it was; they go to the agent's own files.", findings: specProblems(spec, { record, corpus, person, targets }), calls: 0, used: [], stopped: null, revised: { from: earlierFound.from, targets: [], changed: [] } };
+    }
     let out;
     if (!modelTargets.size) {
       const s = keyed.spec;
@@ -360,7 +369,7 @@ export async function writeTheSpec({ asked = null, answers = null, call, referen
       out.dropped = dropped;
     }
     const fit = fitSpec(out.spec, { person, corpus });
-    const findings = [...specProblems(fit.spec, { record, corpus, person }), ...unchangedProblems(earlier, fit.spec, targets)];
+    const findings = [...specProblems(fit.spec, { record, corpus, person, targets }), ...unchangedProblems(earlier, fit.spec, targets)];
     const named = [...targets];
     const notes = [
       named.length ? "" : "Your words name nothing in the spec, so it stays as it was; they go to the agent's own files.",

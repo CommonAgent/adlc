@@ -73,7 +73,7 @@ export function corpusOf(asked = null, answers = null, { record = null, earlier 
     parts.push(a.text);
     if (/^\s*[[{]/.test(a.text)) { try { walk(JSON.parse(a.text)); } catch { /* text only */ } }
   }
-  if (record) for (const k of ["behaviors", "interfaces", "architecture", "tests", "record", "schemas"]) walk(record[k]);
+  if (record) for (const k of ["behaviors", "interfaces", "architecture", "tests", "record", "strings", "schemas"]) walk(record[k]);
   if (isObj(answers)) walk(answers);
   if (earlier) walk(earlier);
   walk(extra);
@@ -126,7 +126,7 @@ export function featureProblems(spec) {
 }
 
 /** What the as-built record fixes that the spec does not carry byte for byte. */
-export function recordProblems(spec, record = null) {
+export function recordProblems(spec, record = null, { targets = new Set() } = {}) {
   if (!record) return [];
   const exacts = exactsOf(spec);
   const names = list(spec?.interfaces).flatMap((i) => [trim(i?.name), trim(i?.signature), ...list(i?.flags)]);
@@ -137,9 +137,18 @@ export function recordProblems(spec, record = null) {
       if (!exacts.some((e) => e === fix.value || e.includes(fix.value))) missing.push(fix);
     } else {
       const i = fix.interface;
-      const there = list(spec?.interfaces).find((x) => trim(x?.name) === i.name && trim(x?.kind) === i.kind);
-      if (!there) out.push(`the as-built record's ${i.kind} interface ${i.as_built}, ${i.name}, is not in the spec's interfaces under that name; a rebuild keeps it exactly, unless you loosen or drop it`);
-      else for (const flag of list(i.flags)) if (!list(there.flags).includes(flag)) out.push(`interface ${there.id} (${i.name}) does not carry the flag ${flag} the record gives it`);
+      // A declaration is found by where it is declared, since two may share
+      // a name; every other interface by its name and kind.
+      const there = i.kind === "declaration"
+        ? list(spec?.interfaces).find((x) => trim(x?.kind) === "declaration" && trim(x?.declared_in) === i.declared_in)
+        : list(spec?.interfaces).find((x) => trim(x?.name) === i.name && trim(x?.kind) === i.kind);
+      if (!there) { out.push(`the as-built record's ${i.kind} interface ${i.as_built}, ${i.kind === "declaration" ? `declared at ${i.declared_in}` : i.name}, is not in the spec's interfaces${i.kind === "declaration" ? " at that place" : " under that name"}; a rebuild keeps it exactly, unless you loosen or drop it`); continue; }
+      // An interface the person's words name in a revision is theirs to change.
+      if (targets.has(trim(there.id))) continue;
+      for (const flag of list(i.flags)) if (!list(there.flags).includes(flag)) out.push(`interface ${there.id} (${i.name}) does not carry the flag ${flag} the record gives it`);
+      for (const flag of list(i.required_flags)) if (!list(there.required_flags).includes(flag)) out.push(`interface ${there.id} (${i.name}) does not carry ${flag} among the flags it requires, as the record gives it`);
+      if ("value" in i && there.keep !== false && JSON.stringify(there.value) !== JSON.stringify(i.value)) out.push(`interface ${there.id} (${i.kind} ${i.kind === "declaration" ? i.declared_in : i.name}) is kept as ${JSON.stringify(there.value)}, and the record gives ${JSON.stringify(i.value)}; a kept value is the record's, byte for byte`);
+      if (isObj(i.values) && JSON.stringify(there.values) !== JSON.stringify(i.values)) out.push(`interface ${there.id} (${i.name}) does not carry the allowed values the record gives it: ${JSON.stringify(i.values)}`);
     }
   }
   if (missing.length) {
@@ -179,13 +188,13 @@ export function personProblems(spec, person = {}, corpus = null) {
 }
 
 /** Every problem with a spec, as sentences a model can act on. */
-export function specProblems(spec, { record = null, corpus = null, person = {} } = {}) {
+export function specProblems(spec, { record = null, corpus = null, person = {}, targets = new Set() } = {}) {
   if (!isObj(spec)) return ["the spec is not an object"];
   return [
     ...validateSpec(spec),
     ...idProblems(spec),
     ...featureProblems(spec),
-    ...recordProblems(spec, record),
+    ...recordProblems(spec, record, { targets }),
     ...inventedValues(spec, corpus).map((x) => `requirement ${x.id} fixes ${JSON.stringify(x.value)}, which nothing given states; a value nobody gave is asked in open, never fixed`),
     ...personProblems(spec, person, corpus),
   ];

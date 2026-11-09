@@ -24,6 +24,7 @@ const trim = (s) => String(s ?? "").trim();
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const list = (v) => (Array.isArray(v) ? v : []);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The person's own words in a revision, without the lines the runner adds
  *  around them: the material aimed at a phase ("[write-the-suite] ..."), the
@@ -59,7 +60,31 @@ export function namedTargets(words = "", spec = null) {
   for (const m of t.matchAll(/\b(B[1-9]\d*)\b/g)) { const f = features.find((x) => trim(x?.as_built) === m[1]); if (f) out.add(trim(f.id)); }
   for (const f of features) if (trim(f?.name).length > 3 && low.includes(trim(f.name).toLowerCase())) out.add(trim(f.id));
   const settled = personSettled([t]);
-  if (settled.name || /\b(?:the|its|a) name\b|\bcall(?:ed)? it\b|\brename\b/i.test(t)) out.add("product.name");
+  // The agent's own name: "the name" (not "the name of" a piece), "call it",
+  // or "rename it" or the agent. "Rename the output stories" names an output.
+  if (settled.name || /\b(?:the|its|a) name\b(?!\s+of\b)|\bcall(?:ed)? it\b|\brename (?:it|the agent|this agent)\b/i.test(t)) out.add("product.name");
+  // A name or value the agent declares (spec-v1 1.1.0, kind declaration or
+  // constant), named by its value in a sentence that renames it ("rename the
+  // output stories to top-stories", "call the step fetch instead of read"),
+  // and the pieces (inputs and outputs) of each feature that carries that
+  // name, and nothing else of the feature: not its offering, its name or its
+  // requirements (on the round trip a rename of one output renamed the
+  // offering too). The value is a whole word: stories is not named by
+  // read-the-stories.
+  const sentences = t.split(/(?<=[.!?])\s+|\n+/);
+  const renaming = sentences.filter((x) => /\brenam\w*\b|\binstead of\b|\b(?:be )?called\b|\bcall (?:it|the|this)\b/i.test(x));
+  const wordIn = (v, text) => new RegExp(`(?<![\\w$-])${escRe(v)}(?![\\w$-])`).test(text);
+  for (const i of list(spec?.interfaces)) {
+    if (!["declaration", "constant"].includes(trim(i?.kind)) || typeof i.value !== "string" || trim(i.value).length < 2) continue;
+    if (renaming.some((x) => wordIn(trim(i.value), x))) out.add(trim(i.id));
+  }
+  for (const f of features) {
+    // A piece that is a file is named by its file's name too: the files call
+    // out/stories.json "stories".
+    const pieces = [...list(f?.inputs), ...list(f?.outputs)].map((d) => trim(d?.name)).filter((n) => n.length > 1)
+      .flatMap((n) => [n, n.replace(/\\/g, "/").split("/").pop().replace(/\.[a-z0-9]+$/i, "")]).filter((n) => n.length > 1);
+    if (pieces.some((n) => renaming.some((x) => wordIn(n, x)))) out.add(`${trim(f.id)}.pieces`);
+  }
   if (settled.version || /\bversion\b/i.test(t)) out.add("product.version");
   if (settled.price || /\bprice\b|\bcosts?\b|\bfree\b/i.test(t)) out.add("price");
   if (/\bpurpose\b/i.test(t)) out.add("purpose");
@@ -137,6 +162,21 @@ export function applyEdits(before, edits = [], targets = new Set()) {
   for (const e of list(edits)) {
     if (!isObj(e)) continue;
     const said = JSON.stringify(e).slice(0, 160);
+    // A feature whose pieces the words name, and only its pieces: set
+    // F3.pieces to {inputs, outputs}, or set F3 whole, of which only the
+    // inputs and outputs are taken.
+    const pieceOnly = (p) => /^F[1-9]\d*$/.test(p) && !targets.has(p) && targets.has(`${p}.pieces`);
+    const piecesPath = /^(F[1-9]\d*)\.pieces$/.exec(trim(e.set))?.[1];
+    if (trim(e.set) && (pieceOnly(trim(e.set)) || (piecesPath && targets.has(`${piecesPath}.pieces`)))) {
+      const id = piecesPath ?? trim(e.set);
+      const f = list(spec.features).find((x) => x.id === id);
+      if (!f || !isObj(e.value)) { dropped.push({ edit: said, why: `the spec has no ${id}` }); continue; }
+      const other = Object.keys(e.value).filter((k) => !["inputs", "outputs", "id"].includes(k) && !same(e.value[k], f[k]));
+      for (const side of ["inputs", "outputs"]) if (Array.isArray(e.value[side])) f[side] = structuredClone(e.value[side]);
+      applied.push(`set ${id}'s pieces`);
+      if (other.length) dropped.push({ edit: said, why: `your words name ${id}'s pieces and not its ${other.join(", ")}` });
+      continue;
+    }
     if (trim(e.set) || trim(e.remove)) {
       const path = trim(e.set || e.remove);
       if (!mayTouch(path, targets)) { dropped.push({ edit: said, why: `${path} is not something your words name` }); continue; }
@@ -197,7 +237,12 @@ export function unchangedProblems(before, after, targets = new Set()) {
     if (!g) { check(f.id, f, undefined); continue; }
     const { requirements: fr, acceptance: fa, ...frest } = f;
     const { requirements: gr, acceptance: ga, ...grest } = g;
-    check(f.id, frest, grest);
+    // Its pieces may change where the words name them, and nothing else of it.
+    if (targets.has(`${f.id}.pieces`) && !mayTouch(f.id, targets)) {
+      const { inputs: fi, outputs: fo, ...fothers } = frest;
+      const { inputs: gi, outputs: go, ...gothers } = grest;
+      check(f.id, fothers, gothers);
+    } else check(f.id, frest, grest);
     for (const r of list(fr)) check(r.id, r, list(gr).find((x) => x.id === r.id));
     for (const a of list(fa)) check(a.id, a, list(ga).find((x) => x.id === a.id));
   }

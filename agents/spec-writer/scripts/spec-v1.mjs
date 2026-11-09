@@ -147,8 +147,11 @@ export function specMarkdown(spec) {
   L.push("## Interfaces", "");
   if (!list(spec?.interfaces).length) L.push("None.", "");
   for (const i of list(spec?.interfaces)) {
-    const extra = [trim(i.module) ? `from ${trim(i.module)}` : "", trim(i.signature) ? `signature ${trim(i.signature)}` : "", list(i.flags).length ? `flags ${i.flags.join(" ")}` : ""].filter(Boolean).join(", ");
+    const extra = [trim(i.module) ? `from ${trim(i.module)}` : "", trim(i.signature) ? `signature ${trim(i.signature)}` : "", list(i.flags).length ? `flags ${i.flags.join(" ")}` : "",
+      list(i.required_flags).length ? `requires ${i.required_flags.join(" ")}` : "", trim(i.declared_in) ? `declared at ${trim(i.declared_in)}` : ""].filter(Boolean).join(", ");
     L.push(`- **${trim(i.id)}** ${trim(i.kind)} \`${trim(i.name)}\`${i.keep ? ", kept exactly" : ", may change with your approval"}${extra ? `, ${extra}` : ""}: ${trim(i.about)}`);
+    if ("value" in i) L.push("  Value:", ...fenced(JSON.stringify(i.value), "json", "  "));
+    if (isObj(i.values)) L.push("  Allowed values:", ...Object.entries(i.values).map(([k, v]) => `  - \`${k}\`: ${list(v).map((x) => `\`${short(x)}\``).join(", ")}`));
     if (i.schema !== undefined) L.push(...fenced(JSON.stringify(i.schema, null, 2), "json", "  "));
   }
   if (list(spec?.interfaces).length) L.push("");

@@ -75,6 +75,8 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/spec-v1.mjs
 - scripts/revise.mjs
 - scripts/design.mjs
+- scripts/structure.mjs
+- scripts/declared.mjs
 - scripts/json-in.mjs
 - scripts/model-caller.mjs
 - scripts/check-spec.mjs

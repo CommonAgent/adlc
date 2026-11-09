@@ -89,6 +89,17 @@ false` means it describes today's shape and may change with the person's
 approval. A rebuild from an as-built record keeps every interface the record
 gives, and the person can loosen one.
 
+Since spec-v1 1.1.0 two more kinds are kept with their values. A constant is
+a value a module exports (`MOST`, 12, from scripts/tides.mjs). A declaration
+is a name or value the agent declares to the platform, with where:
+`declared_in` names the file and the place in it, such as
+`agent-descriptor.json offerings[0].outputs[1].name`, and `value` is what is
+declared there. Offering ids, step ids, each input's and output's name and
+kind, labels, run-config settings and run commands are declarations. A
+command also says which of its flags it cannot run without
+(`required_flags`), and a file or message says the only values a field may
+take (`values`, by JSON pointer: `{"/tides/*/kind": ["high", "low"]}`).
+
 ## Constraints, systems and settings
 
 Constraints are requirements on the whole product rather than one feature:
@@ -130,17 +141,28 @@ seeds the spec from it before the model is asked anything (scripts/seed.mjs):
 - each constant a behavior uses is a requirement with its value, and an
   exported one no behavior lists is a constraint;
 - each interface is kept, a function with its module and signature, a command
-  with its flags, a file with its schema;
+  with its flags and the flags it requires, a file with its schema and its
+  allowed values, a constant and a declaration with its value (and a
+  declaration with where it is declared);
 - each address the code reaches is a system with an address setting, and
   each one it only writes down is a system with reach none;
-- the record's settings are the spec's, with an open question for each
-  default the record withholds.
+- the record's settings are the spec's, each with the default and range its
+  declarations give, and an open question for each default the record
+  withholds;
+- each entry of the record's strings.json (reverse engineer 0.3.0), the
+  inventory of every string a person reads and every pattern the code
+  matches, lands byte for byte in some requirement's exact: under the
+  feature whose behavior's evidence covers its line, else under the feature
+  anchored to its file, as a wording requirement (a pattern requirement for a
+  pattern) where no requirement there carries it already; a string in no
+  behavior's file is a constraint, and one of a behavior the person dropped
+  is not kept.
 
 The model then writes what code cannot: a clear shall statement for each
 requirement, the purpose, a Gherkin scenario for every feature that checks
 its requirements, and the open questions. Code keeps every value it seeded,
-and the check holds every quote, rule value, refusal and interface of the
-record to the spec byte for byte.
+and the check holds every quote, rule value, refusal, string, interface and
+kept value of the record to the spec byte for byte.
 
 ## A revision
 
@@ -150,9 +172,12 @@ interface by its name, an open question by its key. Only those change, by
 edits addressed by id, and every other part of the spec stays byte for byte.
 A revision is never a fresh draft: in the round trip of 2026-11-09 the old
 writer redrafted on every round and ignored the words that named a change
-five times out of eight. Words that name nothing in the spec, such as a
-change to how a job's command is written, leave it as it was and go to the
-agent's own files.
+five times out of eight. A declaration is named by its value in a sentence
+that renames it ("rename the output tides to next-tides"), as a whole word,
+so the words open that declaration and the features whose pieces carry the
+name, and not the offering called read-the-tides. Words that name nothing in
+the spec, such as a change to a job's when line, leave it byte for byte as it
+was, with no model asked, and go to the agent's own files.
 
 ## The open questions
 
@@ -175,6 +200,55 @@ quiz-maker and video-watcher: 43 jobs between them.
 
 This is the reference the drafting step works from. It says what a spec that
 produced a working agent carries, and where the existing eight are thin.
+
+## Code writes the structure, the model writes the prose
+
+From 0.10.0 the structure of the files is written by code from the approved
+spec (scripts/structure.mjs), and never by the model. In the round trip of
+2026-11-09 the files were a fresh model draft every time: asked to rename one
+output, the draft renamed the offering, its step and its skill folder too,
+and the build could never pass, because the files disagreed with the spec.
+So:
+
+- the offering ids, the step ids and the skill folder names are the spec's
+  declarations when it keeps them; otherwise they are the slugs of the
+  features' offerings, in the order the features name them, which change only
+  when the features do;
+- each input's and output's name, kind and schema are the declarations', else
+  the spec's pieces (from an as-built record, the files the code writes, a
+  file `out/stories.json` being the piece `stories`, with a kind from its
+  extension when the spec gives none); a schema carries no address, which the
+  spec keeps;
+- the labels are the ones the spec keeps; the run-config settings are the
+  spec's settings, with their default, range and allowed values (a whole
+  number range steps by one);
+- the systems are the spec's systems it reaches, each with the address
+  setting the spec lists for its address; an address sits only in that
+  setting's default;
+- each run command is the declared one, else the command interface the spec
+  keeps, in the packaged form `{home}/{package}/skills/<slug>/scripts/...`,
+  with each flag and what the host puts after it (`--job {job_dir}`, `--records
+  {records}`, `--work {work}`, `--text-file {job_dir}/message.txt`, and `--file`
+  once per attached file); a required flag the host has nothing for is a
+  finding;
+- the scripts are the modules the spec's interfaces name; the runtimes are
+  the spec's runtime constraints, and node wherever a command runs it; the
+  price is the spec's.
+
+The model writes only the prose, by key: the description, the refusals, each
+job's does, when, good, empty and instructions, each piece's about and each
+system's needs. An answer to anything else is not read. Then code checks the
+files against the spec (scripts/declared.mjs): every declaration it keeps is
+at its place in the files with its value, and the package maker's own check
+runs as before.
+
+A revision of the files is an edit. The structure is written again from the
+spec, so it changes only when the spec does. The prose of the files delivered
+before is carried over; the model is asked only for the prose the person's
+words name (a job by its slug or title, a field such as its when line, a
+piece or a system by its name, the refusals, the description) and for any
+prose the new structure adds; every other field stays byte for byte, and the
+check says so if one does not.
 
 ## The four sentences on every job
 

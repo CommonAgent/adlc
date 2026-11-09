@@ -1,0 +1,15 @@
+{
+  "format": "as-built-strings-v1",
+  "as_built": true,
+  "repository": "https://github.com/example/tide-reader",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "strings": [
+    { "file": "scripts/tides.mjs", "line": 41, "kind": "template", "text": "Read ${count} tides for ${harbor}." },
+    { "file": "scripts/tides.mjs", "line": 36, "kind": "words", "text": "No tides were found for that harbor." },
+    { "file": "scripts/tides.mjs", "line": 8, "kind": "pattern", "text": "/^[A-Z]{4}$/" },
+    { "file": "scripts/stop.mjs", "line": 3, "kind": "pattern", "text": "^\\s*stop that\\b" },
+    { "file": "scripts/stop.mjs", "line": 20, "kind": "words", "text": "Stopped, as you asked." },
+    { "file": "scripts/banner.mjs", "line": 2, "kind": "words", "text": "~~ tides ~~" },
+    { "file": "scripts/util.mjs", "line": 4, "kind": "words", "text": "Something went wrong; nothing was written." }
+  ]
+}

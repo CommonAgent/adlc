@@ -18,13 +18,13 @@ import { recordOf, seedSpec } from "../scripts/seed.mjs";
 import { keepSpec, mergeFill, specCounts, writeTheSpec } from "../scripts/spec.mjs";
 import { THE_SPEC, addressProblems, designView, fitNoAddress, fitToSpec } from "../scripts/design.mjs";
 import { givenOfSpec, givenProblems } from "../scripts/given.mjs";
-import { askForSpec, requestParts } from "../scripts/draft.mjs";
+import { designFromSpec, requestParts } from "../scripts/draft.mjs";
 import { checkBuilds } from "../scripts/builds.mjs";
 import { fill, plan, SPEC_MD_PATH, SPEC_PATH } from "../scripts/pieces.mjs";
 import { replyText } from "../scripts/ask.mjs";
 import { validateSpec } from "../scripts/spec-v1.mjs";
 import { checkDelivered } from "./delivered-formats.test.mjs";
-import { askedWith, fillFor } from "./as-built-fixture.mjs";
+import { askedWith, fillFor, proseFor } from "./as-built-fixture.mjs";
 
 const SAID = "Write a spec.\nwhat it should do: Rebuild the tide reader\nname: tide-reader\nprice: free\n";
 const theSpec = () => { const seed = seedSpec(recordOf(askedWith(SAID)), { said: SAID }); return mergeFill(seed, fillFor(seed)); };
@@ -115,19 +115,20 @@ test("a whole job: the spec first, then the files from it, each piece filed as i
     const asked = askedWith(SAID);
     const seed = seedSpec(recordOf(asked), { said: SAID });
     const prompts = [];
-    // The stand-in model: a fill for the spec, then a draft of the files.
+    // The stand-in model: a fill for the spec, then the prose of the files.
     const call = async (req) => {
       const p = req.body.contents[0].parts.map((x) => x.text).join("\n\n");
       prompts.push(p);
-      return { text: JSON.stringify(/THE SPEC SO FAR/.test(p) ? fillFor(seed) : { spec: draftFrom(), blanks: [], notes: "drafted from the spec" }) };
+      return { text: JSON.stringify(/THE SPEC SO FAR/.test(p) ? fillFor(seed) : proseFor(p)) };
     };
     const written = await writeTheSpec({ asked, call });
     assert.deepEqual(written.findings, []);
     const kept = keepSpec(records, written.spec);
     const view = designView(asked, readFileSync(kept.json, "utf8"));
-    const out = await askForSpec({ call, asked: view, given: givenOfSpec(written.spec, view), specV1: written.spec, table: null });
+    const out = await designFromSpec({ call, spec: written.spec, asked: view, table: null });
     assert.equal(prompts.length >= 2, true);
     assert.match(prompts[1], /THE SPEC \(spec-v1\), APPROVED AT REQUIREMENTS/);
+    assert.match(prompts[1], /Code has already written every structural field/);
     assert.equal(out.spec.name, "tide-reader");
     assert.deepEqual(out.spec.price, { model: "free" });
     assert.deepEqual(addressProblems(out.spec), []);
