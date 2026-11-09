@@ -163,7 +163,12 @@ test("an address anywhere in a system is refused before the builder refuses the 
   const found = systemProblems(withAddress);
   assert.equal(found.length, 1);
   assert.match(found[0], /system text-reasoning: settings\[0\]\.purpose carries an address/);
-  assert.match(found[0], /a public read that needs no key is a system with access read, no credential and no settings/);
+  assert.match(found[0], /a public read that needs no key is a system with access read, no credential, and a setting named for its address/);
+  // The one place an address may sit is an address setting's default: the
+  // builder writes a setting's variable and purpose and never its default.
+  const withDefault = [{ name: "public-api", access: "read", needs: "reads at api.example.org", kind: "service",
+    settings: [{ env: "PUBLIC_API_ADDRESS", purpose: "where the API answers", default: "https://api.example.org/v1" }] }];
+  assert.deepEqual(systemProblems(withDefault), []);
   const keyless = [{ name: "public-page", access: "read", needs: "to read a public page", kind: "service", leaves: true }];
   assert.deepEqual(systemProblems(keyless), []);
 });

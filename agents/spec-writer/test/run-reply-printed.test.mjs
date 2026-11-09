@@ -36,6 +36,8 @@ const job = (reply, instructions) => ({
 });
 const specWith = (reply, instructions) => ({
   name: "consonant-ledger", version: "0.1.0",
+  // Its command runs node, and a draft says so (given.mjs).
+  runtimes: [{ name: "node", version: ">=22" }],
   jobs: [job(reply, instructions)],
   refuses: Array.from({ length: 4 }, (_, i) => `refusing act ${i}, because it is not this agent's to do, and it says so instead`),
   records: [{ name: "the signed job manifest" }],

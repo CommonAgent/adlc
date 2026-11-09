@@ -167,24 +167,78 @@ publisher in the worked example is written that way. A spec that gives
 `draft-host` a credential asks for a key no host holds, and the install
 stops on it.
 
-### Addresses are never settings
+### Where an address goes
 
 The builder refuses any package whose install file carries an address, so a
-setting never holds one and a setting's `purpose` never names one. There are
-three cases, and each has its own place:
+setting's `purpose` never names one and a system's `needs` names a host but
+never a whole address. The one member that may hold an address is an address
+setting's `default`: the builder writes a setting's variable and purpose into
+the install file and leaves the default out, and the install supplies the
+value. There are four cases, and each has its own place:
 
 - A product somebody binds (a database, a mail service, a model): the system
   name and the credential name. The installer binds the address from what the
   account chose. Nothing in the spec says where it is, and for a model nothing
   says which one: see the next section.
-- A public read that needs no key (a public web page, an open API anybody may
-  call): declare it as a system with `"access": "read"`, `"kind": "service"`,
-  `"leaves": true` when a caller's material is sent to it, no credential, and
-  the address it calls under `settings`, by variable name and purpose. A
-  script carries no address of its own (Common Agent 12.6 rule 2, the address
-  check of 12.10): it reads the address from the setting the install places.
+- A public read that needs no key (an open API anybody may call): declare it
+  as a system with `"access": "read"`, `"kind": "service"`, `"leaves": true`
+  when a caller's material is sent to it, no credential, and one address
+  setting: a variable ending in `_ADDRESS`, `_URL`, `_BASE`, `_ENDPOINT` or
+  `_HOST`, a purpose saying where the service answers, and the real address as
+  its `default`. Its `needs` names the host that address is at. A script
+  carries no address of its own (Common Agent 12.6 rule 2, the address check
+  of 12.10): it reads the address from the setting the install places. This
+  is also how the security reviewer matches the call: a program that reads a
+  declared service's address setting reaches that service, and a destination
+  is matched to a system by the host its reason names.
+
+      { "name": "tide-service", "access": "read", "kind": "service",
+        "needs": "reads the day's tide table from the public tide service at tides.example.org",
+        "settings": [{ "env": "TIDE_SERVICE_ADDRESS",
+                       "purpose": "where the public tide service answers, its base address",
+                       "default": "https://tides.example.org/v2" }] }
+
+- Pages at whatever address the job is handed at run time (each page a story
+  links to): one more read service, with no address setting, whose `needs`
+  says it fetches them, with the word "fetches". The security reviewer reads
+  a read service whose reason is fetching what it is handed as covering those
+  calls, and "requests" is not that word: a rebuild was refused on it on
+  2026-11-09.
 - An address the caller gives with the job (a page to read): an input of kind
   `url`, never a setting.
+
+check-spec.mjs holds a new draft to this (scripts/reaches.mjs), and the
+reply names each address setting the install supplies, with its default.
+
+## What the given names, the draft keeps
+
+What the person sent, words, attachments and answers, is the given. It may be
+notes or an as-built record the reverse engineer wrote from code. Whatever it
+names exactly, the draft carries exactly, and scripts/given.mjs checks it by
+rule, with no model:
+
+- every setting it names, as a setting in the spec's own `run_config` (a
+  `run_config` inside a job is dropped by the files) or a system setting;
+- the runtime it names (node, and its version), and node wherever a job's
+  command runs it;
+- the price it states;
+- each address the code reaches, as an address setting's default, and each
+  destination handed at run time, as a service that fetches what it is handed;
+- each JSON Schema, its properties and constant values word for word;
+- each word or pattern it quotes, in backticks or quotation marks, and each
+  exported function it names, carried into the job's instructions as written.
+
+Where it does not say what an output of a JSON kind holds, the draft does not
+sketch one: the shape is a blank, `shape of <output>`, with the question. A
+sketch nobody gave is built by the test writer and the code writer as though
+it were decided; on 2026-11-09 a rebuild invented `{stories, read}` for an
+output whose real shape the record did not state, and none of the original's
+tests could run against it. A Markdown piece's convention is still drafted,
+as above, and a revision keeps the shape the agent already declares.
+
+After the second go, code keeps what it can without guessing: a job's
+`run_config` moves to the spec, the runtime and price the given names go in,
+and each shape not given is asked. What still stands is said in the reply.
 
 ### A model is a bound system, never a name
 

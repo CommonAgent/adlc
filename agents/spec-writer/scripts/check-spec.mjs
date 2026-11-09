@@ -18,6 +18,8 @@ import { canUseProblems, loadSchemas } from "./can-use.mjs";
 import { optionProblems } from "./options.mjs";
 import { jobSecondsProblem } from "./job-seconds.mjs";
 import { runReplyProblems, runReplyUnprinted } from "./run-reply.mjs";
+import { reachProblems } from "./reaches.mjs";
+import { givenProblems } from "./given.mjs";
 export { PRINTED_MEMBER, RUN_REPLY_MEMBER, RUN_REPLY_STDOUT, fitRunReply, printedMembers, runReplyOk, runReplyProblems, runReplyUnprinted } from "./run-reply.mjs";
 export { JOB_SECONDS_MAX, JOB_SECONDS_MIN, fitJobSeconds, jobSecondsProblem } from "./job-seconds.mjs";
 
@@ -263,9 +265,14 @@ export function modelProblems(spec) {
 
 /** What the drafting step holds a draft to: what a good spec carries, and
  *  the format rules. checkSpec alone is the first, which is what the specs
- *  that shipped before the format rules are measured by. */
+ *  that shipped before the format rules are measured by. A new draft also
+ *  declares what it reaches over the network the way the security reviewer
+ *  reads it (reaches.mjs), and, given what the person sent (opts.given, from
+ *  given.mjs's givenOf), keeps every setting, runtime, price, address, shape
+ *  and quoted word it names. */
 export const checkDraft = (spec, opts = {}) => [...checkSpec(spec), ...formatProblems(spec, opts), ...modelProblems(spec), ...architectureProblems(spec, opts.architecture),
-  ...canUseProblems(spec, opts.architecture, opts.table === undefined ? loadSchemas() : opts.table), ...optionProblems(spec)];
+  ...canUseProblems(spec, opts.architecture, opts.table === undefined ? loadSchemas() : opts.table), ...optionProblems(spec),
+  ...reachProblems(spec), ...givenProblems(spec, opts.given)];
 
 /** The Design is held to the architecture record it was given (the
  *  Architecture and Design stage's done-when: every step uses only systems
@@ -297,7 +304,10 @@ function stringsIn(v, at, out = []) {
 }
 
 /** What a package's systems may not carry. An address anywhere in them ends
- *  in the install file, which the builder refuses whole (debt 67); a brokered
+ *  in the install file, which the builder refuses whole (debt 67), except an
+ *  address setting's `default`: the builder writes a setting's variable and
+ *  purpose and leaves its default out, and the install supplies the value
+ *  (reaches.mjs says why the default is there at all); a brokered
  *  system given a key asks for one no host holds; and a model system (kind
  *  model, Common Agent 12.4.1) names the request formats its scripts speak
  *  and no credential, variable or setting, because the installer places the
@@ -307,8 +317,9 @@ export function systemProblems(systems = []) {
   for (const s of Array.isArray(systems) ? systems : []) {
     const name = trim(s?.name) || "a system with no name";
     for (const [where, text] of stringsIn(s, "")) {
+      if (/^settings\[\d+\]\.default$/.test(where)) continue;
       if (/[a-z][a-z0-9+.-]*:\/\//i.test(text)) {
-        out.push(`system ${name}: ${where} carries an address, and the builder refuses a package whose install file carries one. A product somebody binds is named by its system and credential; a public read that needs no key is a system with access read, no credential and no settings, and its address is a constant in the script; an address the caller gives is an input of kind url`);
+        out.push(`system ${name}: ${where} carries an address, and the builder refuses a package whose install file carries one. A product somebody binds is named by its system and credential; a public read that needs no key is a system with access read, no credential, and a setting named for its address (such as API_ADDRESS) whose default is the address, never its purpose or needs; an address the caller gives is an input of kind url`);
         break;
       }
     }

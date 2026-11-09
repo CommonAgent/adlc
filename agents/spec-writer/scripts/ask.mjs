@@ -18,6 +18,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { NEEDS } from "./asked.mjs";
 import { paragraph } from "./went-without.mjs";
+import { addressSettingsOf } from "./reaches.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -97,6 +98,16 @@ export function formatsLine(spec) {
   return `The formats are drafted, so say if one should be different: ${parts.join("; ")}.`;
 }
 
+/** One sentence on the address settings the install supplies, each with the
+ *  default the draft gives it. The install file carries a setting's name and
+ *  purpose and never its default (an address), so this reply, beside the
+ *  draft, is where the value is said. Empty when the draft declares none. */
+export function addressesLine(spec) {
+  const each = addressSettingsOf(spec).map((a) => (typeof a.default === "string" && trim(a.default) ? `${a.env} (${a.system}), ${trim(a.default)} by default` : `${a.env} (${a.system})`));
+  if (!each.length) return "";
+  return `The install supplies where each outside system is, and the scripts read it from there: ${each.join("; ")}.`;
+}
+
 /** The whole reply.
  *
  *  Order is deliberate: what it is, then what somebody has to do about it,
@@ -138,6 +149,8 @@ export function replyText({
   if (Array.isArray(files)) lines.push(filesLine(files, { container }));
   const formats = formatsLine(spec);
   if (formats) lines.push(formats);
+  const addresses = addressesLine(spec);
+  if (addresses) lines.push(addresses);
   if (findings.length) {
     lines.push(`The draft was written twice and ${findings.length === 1 ? "this still stands" : "these still stand"}: ${findings.join("; ")}. `
       + "It is delivered as it is, so you can see it and say what to fix.");
@@ -171,7 +184,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       blanks: blanksDoc.blanks ?? [],
       notes: blanksDoc.notes ?? "",
       verdict: buildsDoc ? buildsDoc.verdict ?? "" : "",
-      findings: buildsDoc?.problems ?? [],
+      // What the drafting step's check still found after its second go, then
+      // what the builder refused.
+      findings: [...(blanksDoc.findings ?? []), ...(buildsDoc?.problems ?? [])],
       answered: Object.keys(answers),
       files: buildsDoc ? (buildsDoc.files?.list ?? []).map((f) => f.path) : null,
       container: buildsDoc?.container === true,

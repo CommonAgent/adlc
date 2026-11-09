@@ -127,7 +127,7 @@ test("a file changed after the builder made it is not delivered, and the reply s
 
 test("the drafting instruction says what a kind is, where an address goes, what a refusal is, and what a container spec carries", () => {
   assert.match(INSTRUCTION, /"array of \.\.\." and "list of \.\.\." are\nnot kinds/);
-  assert.match(INSTRUCTION, /No address goes anywhere in "systems"/);
+  assert.match(INSTRUCTION, /An address goes only in an address setting's "default"/);
   assert.match(INSTRUCTION, /draft-host is brokered/);
   assert.match(INSTRUCTION, /A refusal is something the agent will NOT do/);
   assert.match(INSTRUCTION, /third-party-framework or mesh-coded/);

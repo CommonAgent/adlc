@@ -34,6 +34,18 @@ Default every job to a program. Thirty two of the forty three jobs that work are
 
 A refusal is an act, written as a gerund, then why, then what happens instead. "Be careful with credentials" is not a refusal. "Accepting a credential value pasted into a message" is. A reader has to be able to tell whether a given request falls under it.
 
+## What the given names is kept, and what it does not say is asked
+
+The given is what the person sent: their words, what they attached and their answers, whether notes or an as-built record of code that already exists. Drafting is for what the given leaves open; what it names exactly is carried exactly. Every setting it names is declared, in the spec's own `run_config` (never inside a job, where the files drop it) or as a system setting. The runtime it names is declared, and node whenever a job's command runs node. The price it states is the price. Each exported function it names, and each word or pattern it quotes, goes into the job's instructions as written, because a test imports the function by that name and checks the words byte for byte. A JSON Schema it gives is carried with its properties and constant values word for word.
+
+An output's shape is not one of the things to draft. Where an output of a JSON kind has no shape in the given, the draft sketches none and asks, under the key `shape of <output>`, because a sketch nobody gave is built downstream as though it were decided. On 2026-11-09 a rebuild of an agent from its as-built record lost its count setting, its runtime and its output format this way, and none of the original's tests could run against it. A Markdown piece's convention is a format default, and is still drafted.
+
+scripts/given.mjs checks all of this by rule. What it finds goes back with the second ask; after that, code moves a job's `run_config` to the spec, adds the runtime and price the given names, and asks each shape not given, and whatever still stands is said in the reply.
+
+## What it reaches over the network is declared where the security reviewer reads it
+
+A script carries no address of its own, so every outside system a job reaches over the network says where it is in a setting the install places. A public read that needs no key is a read service with one address setting, a variable ending in `_ADDRESS`, `_URL`, `_BASE`, `_ENDPOINT` or `_HOST`, whose `default` is the real address; its `needs` names that address's host. Pages at whatever address the job is handed at run time are one more read service whose `needs` says it fetches them. Each address the given says the code reaches is the default of an address setting. These are the shapes the security reviewer matches a program's calls to (its trace-programs.mjs), and a spec without them is refused at Code, where nothing can change the spec: on 2026-11-09 a rebuild declared two services with neither, read the address from a variable nobody declared, and reached nothing once deployed. The default is the one place an address sits in a spec: the builder writes the setting's variable and purpose and never its default, and the reply names each setting the install supplies, with its default. scripts/reaches.mjs checks it.
+
 ## What each piece is, in a format somebody can read
 
 Every input and output is declared with a kind, and the kind is chosen for whoever reads the piece. This is where a hand-off between agents is made to work, and where a person is spared a page of raw JSON, because everything after the spec takes the kind as given.
@@ -88,4 +100,4 @@ When what somebody describes is work that passes between several agents or peopl
 
 ## Never
 
-Never open or edit a draft or a spec with your own file tools: they cut lines over 2000 characters, and a draft changed after the drafting step wrote it is refused at delivery. Never put an address into a package's systems. Never write a spec from nothing. Never fill a blank the person left. Never build, pack or deploy. Never accept a credential value written into a message, and never put anything that looks like one into a record or a reply. Never ask a model for a spec a third time.
+Never open or edit a draft or a spec with your own file tools: they cut lines over 2000 characters, and a draft changed after the drafting step wrote it is refused at delivery. Never put an address into a package's systems anywhere but an address setting's default. Never write a spec from nothing. Never fill a blank the person left. Never build, pack or deploy. Never accept a credential value written into a message, and never put anything that looks like one into a record or a reply. Never ask a model for a spec a third time.
