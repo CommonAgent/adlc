@@ -1,8 +1,8 @@
 {
   "behaviors": [
-    {"id": "B1", "name": "Total of items", "does": "Adds price times quantity over the items.", "evidence": [{"file": "src/price.js", "line": 3, "end_line": 9}]},
-    {"id": "B2", "name": "Receipt line", "does": "Returns `Total: ` and the total written as money.", "evidence": [{"file": "src/price.js", "line": 11, "end_line": 13}]},
-    {"id": "B3", "name": "Money format", "does": "Writes a number as dollars with two decimals.", "evidence": [{"file": "src/format.js", "line": 1, "end_line": 3}]}
+    {"id": "B1", "kind": "compute", "name": "Total of items", "does": "Adds price times quantity over the items.", "evidence": [{"file": "src/price.js", "line": 3, "end_line": 9}]},
+    {"id": "B2", "kind": "compose", "name": "Receipt line", "does": "Returns `Total: ` and the total written as money.", "evidence": [{"file": "src/price.js", "line": 11, "end_line": 13}]},
+    {"id": "B3", "kind": "compose", "name": "Money format", "does": "Writes a number as dollars with two decimals.", "evidence": [{"file": "src/format.js", "line": 1, "end_line": 3}]}
   ],
   "architecture": {"kind": {"kind": "other", "why": "a Node package with a main module", "evidence": ["package.json:4"]}},
   "interfaces": [],

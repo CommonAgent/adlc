@@ -1,9 +1,9 @@
 {
   "behaviors": [
-    {"id": "B1", "was": "B1", "change": "changed", "name": "Total of items with tax", "does": "Adds price times quantity over the items and multiplies the sum by one plus TAX_RATE.", "inputs": ["items", "TAX_RATE"], "evidence": [{"file": "src/price.js", "line": 5, "end_line": 11}]},
-    {"id": "N1", "change": "new", "name": "Discount", "does": "Takes a percent off an amount.", "refusals": ["a percent below 0 or above 100"], "error_handling": ["throws RangeError"], "evidence": [{"file": "src/discount.js", "line": 1, "end_line": 6}]},
-    {"id": "B2", "was": "B2", "change": "changed", "name": "Receipt line", "does": "Returns `Total: ` and the total written as money.", "evidence": [{"file": "src/price.js", "line": 13, "end_line": 15}]},
-    {"id": "B3", "was": "B3", "change": "changed", "name": "Money format", "does": "Writes a number as dollars with two decimals.", "evidence": [{"file": "src/format.js", "line": 1, "end_line": 3}]}
+    {"id": "B1", "kind": "compute", "was": "B1", "change": "changed", "name": "Total of items with tax", "does": "Adds price times quantity over the items and multiplies the sum by one plus TAX_RATE.", "inputs": ["items", "TAX_RATE"], "evidence": [{"file": "src/price.js", "line": 5, "end_line": 11}]},
+    {"id": "N1", "kind": "compute", "change": "new", "name": "Discount", "does": "Takes a percent off an amount.", "refusals": ["a percent below 0 or above 100"], "error_handling": ["throws RangeError"], "evidence": [{"file": "src/discount.js", "line": 1, "end_line": 6}]},
+    {"id": "B2", "kind": "compose", "was": "B2", "change": "changed", "name": "Receipt line", "does": "Returns `Total: ` and the total written as money.", "evidence": [{"file": "src/price.js", "line": 13, "end_line": 15}]},
+    {"id": "B3", "kind": "compose", "was": "B3", "change": "changed", "name": "Money format", "does": "Writes a number as dollars with two decimals.", "evidence": [{"file": "src/format.js", "line": 1, "end_line": 3}]}
   ],
   "architecture": {"settings": [{"name": "TAX_RATE", "evidence": [{"file": "src/price.js", "line": 3}]}]},
   "interfaces": [{"id": "I1", "kind": "function", "name": "discount(amount, percent)", "does": "returns the amount less the percent", "evidence": [{"file": "src/discount.js", "line": 1}]}],

@@ -32,7 +32,7 @@ export function plan({ record, docs, schemaFiles = [] }) {
   for (const s of schemaFiles) {
     const openapi = s.format === "openapi";
     entries.push({
-      name: `${openapi ? "openapi" : "json schema"} (${s.file})`, step: s.derived ? "draft-from-the-code" : "read-the-codebase",
+      name: `${openapi ? "openapi" : "json schema"} (${s.file})`, step: s.derived && !(s.read_by_rule && !s.drafted) ? "draft-from-the-code" : "read-the-codebase",
       path: `${DIR}/${s.file}`, media_type: openapi ? "application/vnd.oai.openapi+json" : "application/schema+json",
       produced_from: ["codebase"], text: s.text,
     });

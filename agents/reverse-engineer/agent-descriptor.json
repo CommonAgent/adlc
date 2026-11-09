@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.0",
+  "agent_version": "0.2.0",
   "name": "Reverse engineer",
   "summary": "Writes down what an existing codebase is, at a named commit: its behaviors, architecture, interfaces, dependencies and tests, each claim with its file and line.",
   "will_not": [
@@ -63,7 +63,7 @@
           "name": "behaviors",
           "kind": "application/vnd.agentmesh.as-built-behaviors+json",
           "when": "per_task",
-          "about": "Each thing the code does, behaviors.json: `{format, as_built, repository, commit, behaviors}`. Each behavior is in the feature list's shape (id, name, does, and offering when the code shows one), with its inputs, outputs, refusals and error handling, its evidence (file and line, or the observed run) and as_built true."
+          "about": "Each thing the code does, behaviors.json: `{format, as_built, repository, commit, behaviors}`. Each behavior is in the feature list's shape (id, name, does, and offering when the code shows one), with its inputs, outputs, refusals and error handling, its kind (one of entry, fetch, write, state, check, parse, compute, compose), its anchor (the exported function or command it describes, one behavior per anchor), the patterns and words other code depends on quoted byte for byte, its order, limit, header and default rules, the constants it uses, its evidence (file and line, or the observed run) and as_built true."
         },
         {
           "name": "architecture as built",
@@ -75,7 +75,7 @@
           "name": "interfaces",
           "kind": "application/vnd.agentmesh.as-built-interfaces+json",
           "when": "per_task",
-          "about": "The APIs, commands, messages and file formats, interfaces.json: `{format, as_built, interfaces, schemas_found, schemas_derived}`, each with its evidence and, where one was derived, the schema file it points at."
+          "about": "The APIs, commands, messages and file formats, interfaces.json: `{format, as_built, interfaces, constants, flags, environment, settings, schemas_found, schemas_derived}`, each with its evidence and, where one was derived, the schema file it points at. Read by rule: each file the code writes with the JSON Schema its value shows, each exported function with its parameters, whether it is async and what it throws or rejects with, each command with its flags, the exported constants with their values, the environment variables and the declared settings."
         },
         {
           "name": "openapi",
@@ -112,7 +112,7 @@
         {
           "id": "read-the-codebase",
           "name": "Read the codebase",
-          "does": "Opens the codebase at the named commit, checks the commit in a checkout, lists its files, and reads off by rule the settings it reads, its entry points, how it starts, its test files and test command, and the schemas it carries.",
+          "does": "Opens the codebase at the named commit, checks the commit in a checkout, lists its files, and reads off by rule the settings it reads, its entry points, how it starts, its test files and test command, the schemas it carries, and the surface of its JavaScript: exports and who imports them, commands and their flags, files written with the shape of each JSON one, patterns, constants, and imports that leave the codebase.",
           "how": {
             "control": "script",
             "intelligence": "none",
@@ -134,7 +134,7 @@
         {
           "id": "run-the-baseline",
           "name": "Run the baseline",
-          "does": "When the job may run things, runs the project's own test command once in a child process with a time limit, with no network where the host can cut it off, and reads the results.",
+          "does": "When the job may run things, runs the project's own test command (or node --test over its node:test files when package.json names none) once in a child process with a time limit, with no network where the host can cut it off, and reads the results.",
           "how": {
             "control": "script",
             "intelligence": "none",
@@ -145,7 +145,7 @@
         {
           "id": "draft-from-the-code",
           "name": "Draft from the code",
-          "does": "Shows the model the code with each line numbered and asks it to draft the behaviors, the architecture as built, the interfaces, what each test covers and the gaps, each claim with its file and line.",
+          "does": "Shows the model the code with each line numbered, with the facts read by rule, in bounded passes (architecture and interfaces; behaviors, a few files per pass, one behavior per anchor; what each test covers) and asks for the behaviors, the architecture as built, the interfaces, test coverage and the gaps, each claim with its file and line, and the patterns and words other code depends on quoted exactly.",
           "how": {
             "control": "script",
             "intelligence": "called",
@@ -156,7 +156,7 @@
         {
           "id": "check-the-evidence",
           "name": "Check the evidence",
-          "does": "Checks every cited file and line against the code at the commit, and holds back as a gap each claim whose evidence does not check, that judges or infers, or on drift that is outside the change.",
+          "does": "Checks every cited file and line against the code at the commit, and holds back as a gap each claim whose evidence does not check, that judges or infers, or on drift that is outside the change; holds each behavior to the fixed kinds and one behavior per anchor, each quote to the code byte for byte, and each drafted schema to the fields and constants the code has.",
           "how": {
             "control": "script",
             "intelligence": "none",

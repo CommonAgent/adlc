@@ -21,7 +21,7 @@ It writes nothing when the job stopped earlier.
 
 ## How to do it
 
-`buildRecord` in scripts/record.mjs, `plan` and `fill` in scripts/pieces.mjs.
+`buildRecord` in scripts/record.mjs (with `buildInterfaces` in scripts/interfaces.mjs and `checkBehaviors` in scripts/behaviors.mjs), `plan` and `fill` in scripts/pieces.mjs.
 
 ## Scripts
 
@@ -31,5 +31,11 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/pieces.mjs
 - scripts/evidence.mjs
 - scripts/codebase.mjs
+- scripts/behaviors.mjs
+- scripts/interfaces.mjs
+- scripts/kinds.mjs
+- scripts/facts.mjs
+- scripts/surface.mjs
+- scripts/js-source.mjs
 - scripts/declines.mjs
 - scripts/went-without.mjs

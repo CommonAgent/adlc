@@ -35,9 +35,10 @@ test("adoption: the node-app described at its commit, read and run, every claim 
     ["as-built-record-v1", REPOSITORY, cb.commit, true, "read and run", "adoption", true, true]);
   assert.deepEqual(record.parts.map((p) => p.file), ["behaviors.json", "architecture.json", "interfaces.json", "sbom.cdx.json", "tests-and-gaps.json"]);
 
-  // Behaviors: the six with evidence that checks, in the feature list's shape.
+  // Behaviors: one per anchor (the command, greet, farewell) with evidence
+  // that checks, in the feature list's shape, each with its kind.
   const { behaviors } = readPiece(j.jobDir, "behaviors.json");
-  assert.deepEqual(behaviors.map((b) => b.id), ["B1", "B2", "B3", "B4", "B5", "B6"]);
+  assert.deepEqual(behaviors.map((b) => [b.id, b.kind, b.anchor]), [["B1", "entry", "bin/greet.js"], ["B2", "compose", "src/index.js#greet"], ["B3", "compose", "src/index.js#farewell"]]);
   for (const b of behaviors) {
     assert.ok(b.name && b.does && b.evidence.length, b.id);
     assert.equal(b.as_built, true);
@@ -46,10 +47,13 @@ test("adoption: the node-app described at its commit, read and run, every claim 
       assert.ok(e.line >= 1 && e.line <= lines, `${b.id} cites ${e.file}:${e.line}`);
     }
   }
-  assert.equal(behaviors.find((b) => b.id === "B6").offering, "greet");
-  assert.ok(!("offering" in behaviors[0]), "no offering where the code shows none");
+  assert.equal(behaviors.find((b) => b.id === "B1").offering, "greet");
+  assert.ok(!("offering" in behaviors[1]), "no offering where the code shows none");
   // The quirk is recorded as what the code does, not as a bug.
-  assert.match(behaviors.find((b) => b.id === "B5").does, /no exclamation mark/);
+  assert.match(behaviors.find((b) => b.id === "B3").does, /no exclamation mark/);
+  // The branches of greet are fields of its one behavior, quoted from the code.
+  assert.deepEqual(behaviors[1].quotes.map((q) => [q.text, q.evidence[0].line]), [["Hello, stranger!", 9], ["name must be a string", 6]]);
+  assert.deepEqual(behaviors[1].rules.map((r) => [r.kind, r.quote]), [["default", "process.env.GREETING_STYLE || \"plain\""]]);
 
   // Gaps: bad evidence, the judgment, the unreachable function, each marked.
   const tg = readPiece(j.jobDir, "tests-and-gaps.json");
@@ -70,11 +74,15 @@ test("adoption: the node-app described at its commit, read and run, every claim 
   assert.doesNotMatch(JSON.stringify(arch), /"plain"|"loud"/, "no setting's value is written");
   assert.deepEqual(arch.entry_points.map((e) => e.name), ["src/index.js", "bin/greet.js"]);
 
-  // Interfaces: the derived JSON Schema is delivered as its own file.
+  // Interfaces: the exports and the command read by rule, the draft laid onto
+  // them; the derived JSON Schema is delivered as its own file.
   const ifs = readPiece(j.jobDir, "interfaces.json");
-  assert.deepEqual(ifs.interfaces.map((i) => [i.id, i.kind]), [["I1", "command"], ["I2", "function"]]);
-  assert.equal(ifs.interfaces[1].schema, "schemas/I2.schema.json");
-  assert.equal(readPiece(j.jobDir, "schemas/I2.schema.json").type, "string");
+  assert.deepEqual(ifs.interfaces.map((i) => [i.id, i.kind, i.name, i.read_by_rule]), [["I1", "function", "greet(name)", true], ["I2", "function", "farewell(name)", true], ["I3", "command", "bin/greet.js", true]]);
+  assert.deepEqual([ifs.interfaces[0].async, ifs.interfaces[0].throws.map((t) => [t.error, t.evidence[0].line]), ifs.interfaces[0].imported_by], [false, [["TypeError", 6]], ["bin/greet.js", "test/greet.test.js"]]);
+  assert.match(ifs.interfaces[0].does, /^returns the greeting\. A function exported by src\/index\.js/);
+  assert.equal(ifs.interfaces[0].schema, "schemas/I1.schema.json");
+  assert.equal(readPiece(j.jobDir, "schemas/I1.schema.json").type, "string");
+  assert.deepEqual(ifs.environment.map((e) => e.name), ["GREETING_STYLE"]);
 
   // Dependencies: CycloneDX, naming every package.
   const bom = readPiece(j.jobDir, "sbom.cdx.json");
@@ -82,17 +90,21 @@ test("adoption: the node-app described at its commit, read and run, every claim 
   assert.deepEqual(bom.components.map((c) => c.name), ["debug", "is-number", "left-pad", "ms"]);
 
   // Tests: listed with their cases, what they cover, and one baseline run.
-  assert.deepEqual(tg.tests.map((t) => [t.file, t.cases.length, t.covers]), [["test/greet.test.js", 3, ["B1", "B2", "B3"]]]);
+  assert.deepEqual(tg.tests.map((t) => [t.file, t.cases.length, t.covers]), [["test/greet.test.js", 3, ["B2"]]]);
   assert.deepEqual(tg.test_command.command, "node --test");
   assert.equal(tg.baseline.ran, true);
   assert.deepEqual([tg.baseline.exit_code, tg.baseline.passed, tg.baseline.failed], [0, 3, 0], tg.baseline.output_tail);
-  assert.deepEqual(tg.behaviors_without_tests, ["B4", "B5", "B6"]);
+  assert.deepEqual(tg.behaviors_without_tests, ["B1", "B3"]);
   assert.doesNotMatch(JSON.stringify(tg), new RegExp(cb.dir.replace(/[\\]/g, "\\\\").replace(/[.*+?^${}()|[\]]/g, "\\$&")), "no local path in the record");
 
   // The prompt showed the code with line numbers, and the delivery is in its declared formats.
   assert.match(model.prompts[0], /=== src\/index\.js\n\s+1\| \/\/ Greets people by name\./);
   assert.deepEqual(checkDelivered(j.jobDir), []);
-  assert.deepEqual(out.listed, ["as-built record", "behaviors", "architecture as built", "interfaces", "dependencies", "existing tests and gaps", "json schema (schemas/I2.schema.json)"]);
+  assert.deepEqual(out.listed, ["as-built record", "behaviors", "architecture as built", "interfaces", "dependencies", "existing tests and gaps", "json schema (schemas/I1.schema.json)"]);
+  // Three passes, each recorded: architecture and interfaces, behaviors, test coverage.
+  const calls = JSON.parse(readFileSync(join(j.recordsDir, "calls.json"), "utf8"));
+  assert.deepEqual(calls.passes.map((p) => [p.pass, p.ok]), [["architecture and interfaces", true], ["behaviors 1 of 1", true], ["what each test covers", true]]);
+  assert.equal(calls.made, 3);
   assert.ok(existsSync(join(j.recordsDir, "draft.json")));
   assert.ok(existsSync(join(j.recordsDir, "baseline.log")));
 });

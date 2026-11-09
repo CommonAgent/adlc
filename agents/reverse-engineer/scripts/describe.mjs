@@ -16,9 +16,12 @@
 //                          only when the job may run things
 //   draft-from-the-code    draft.mjs: the model drafts the behaviors, the
 //                          architecture as built, the interfaces and what
-//                          each test covers
-//   check-the-evidence     evidence.mjs: every claim's file and line checked
-//                          against the code; what fails goes to the gaps
+//                          each test covers, in bounded passes on adoption
+//                          and in one pass on drift
+//   check-the-evidence     evidence.mjs, behaviors.mjs, interfaces.mjs: every
+//                          claim's file and line checked against the code,
+//                          each behavior's kind, anchor, quotes and rules,
+//                          each drafted schema; what fails goes to the gaps
 //   write-the-record       record.mjs, pieces.mjs: the five parts, the
 //                          record that ties them to the commit, and the reply
 //
@@ -35,7 +38,7 @@ import { changedSince, diffText, filesAt, linesOf, openCodebase, readAt, readIns
 import { readFacts } from "./facts.mjs";
 import { componentChanges, isManifest, makeSbom } from "./sbom.mjs";
 import { runBaseline, tailOf } from "./baseline.mjs";
-import { callFor, chooseFiles, declaredProtocols, draftRecord, promptOf, whyNoCall } from "./draft.mjs";
+import { callFor, chooseFiles, declaredProtocols, draftInPasses, draftRecord, promptOf, whyNoCall } from "./draft.mjs";
 import { contextFor, touchesChange } from "./evidence.mjs";
 import { buildRecord } from "./record.mjs";
 import { fill, plan } from "./pieces.mjs";
@@ -160,9 +163,17 @@ export async function runJob(argv = [], env = process.env, { call = null, cutNet
   } : undefined;
   const facts = readFacts(cb.files, read, { keep });
   if (drift) {
-    facts.entry_points = facts.entry_points.filter((e) => touchesChange(e.evidence, "new", drift));
-    facts.starts_and_runs = facts.starts_and_runs.filter((e) => touchesChange(e.evidence, "new", drift));
+    const touched = (evidence) => touchesChange(evidence, "new", drift);
+    facts.entry_points = facts.entry_points.filter((e) => touched(e.evidence));
+    facts.starts_and_runs = facts.starts_and_runs.filter((e) => touched(e.evidence));
     facts.schemas = facts.schemas.filter((s) => drift.byNewFile.has(s.file));
+    facts.declared_settings = facts.declared_settings.filter((s) => touched(s.evidence));
+    const s = facts.surface;
+    s.writes = s.writes.filter((w) => touched(w.evidence));
+    s.exports = s.exports.filter((e) => touched([{ file: e.module, line: e.line }]));
+    s.entries = s.entries.filter((e) => drift.byNewFile.has(e.file));
+    s.anchors = s.anchors.filter((a) => drift.byNewFile.has(a.module));
+    s.flags = s.flags.filter((f) => touched(f.evidence));
   }
   const tool = toolOf();
 
@@ -189,7 +200,7 @@ export async function runJob(argv = [], env = process.env, { call = null, cutNet
   }
 
   // draft-from-the-code
-  let draft = null; let draftProblem = ""; let notSent = []; let calls = { calls: "v1", made: 0, each: [] };
+  let draft = null; let draftProblem = ""; let notSent = []; let seen = new Set(); let calls = { calls: "v1", made: 0, each: [] };
   const nothingToDraft = drift && !drift.changed.length;
   const protocols = declaredProtocols();
   const why = call ? "" : whyNoCall(env, { protocols });
@@ -198,21 +209,34 @@ export async function runJob(argv = [], env = process.env, { call = null, cutNet
     draftProblem = why;
     note(RECORDS, { wanted: "a model to draft from the code", did: "wrote the parts read by rule (the settings, entry points, bill of materials, test files and the run) and marked the drafted parts as gaps", why });
   } else {
-    const only = drift ? new Set([...drift.byNewFile.keys()]) : null;
-    const chosen = chooseFiles(cb.files, read, { only, first: facts.entry_points.map((e) => e.name.replace(/^\.\//, "")) });
-    notSent = chosen.notSent;
-    const prompt = promptOf({ repository: source.repository, commit: source.commit, files: cb.files, sent: chosen.sent, notSent, facts, drift });
-    const out = await draftRecord({ call: call ?? callFor(env, { protocols }), prompt });
-    draft = out.draft; draftProblem = out.problem;
-    calls = { calls: "v1", model: call ? "stand-in" : modelSettings(env).name, service: call ? "stand-in" : modelSettings(env).protocol, made: out.calls, each: out.used, files_sent: chosen.sent.map((s) => s.file) };
-    if (!draft) note(RECORDS, { wanted: "a usable draft from the model", did: "wrote the parts read by rule and marked the drafted parts as gaps", why: out.problem });
+    const who = { model: call ? "stand-in" : modelSettings(env).name, service: call ? "stand-in" : modelSettings(env).protocol };
+    const ask = call ?? callFor(env, { protocols });
+    if (drift) {
+      // Drift: one pass over the changed files and the diff.
+      const only = new Set([...drift.byNewFile.keys()]);
+      const chosen = chooseFiles(cb.files, read, { only, first: facts.entry_points.map((e) => e.name.replace(/^\.\//, "")) });
+      notSent = chosen.notSent;
+      const prompt = promptOf({ repository: source.repository, commit: source.commit, files: cb.files, sent: chosen.sent, notSent, facts, drift });
+      const out = await draftRecord({ call: ask, prompt });
+      draft = out.draft; draftProblem = out.problem;
+      seen = new Set(chosen.sent.map((s) => s.file));
+      calls = { calls: "v1", ...who, made: out.calls, each: out.used.map((u) => ({ pass: "drift", ...u })), passes: [{ pass: "drift", files: [...seen], ok: Boolean(draft), calls: out.calls, ...(out.problem ? { problem: out.problem } : {}) }], files_sent: [...seen] };
+    } else {
+      // Adoption: bounded passes, each recorded.
+      const out = await draftInPasses({ call: ask, files: cb.files, read, facts, repository: source.repository, commit: source.commit });
+      draft = out.draft; draftProblem = out.problem; notSent = out.notSent;
+      seen = new Set(out.filesSent);
+      calls = { calls: "v1", ...who, made: out.calls, each: out.used, passes: out.passes, files_sent: out.filesSent };
+      for (const m of draft?.missing ?? []) note(RECORDS, { wanted: `a usable answer for ${m.about}`, did: "wrote the rest of the record and marked that part as a gap", why: m.why });
+    }
+    if (!draft) note(RECORDS, { wanted: "a usable draft from the model", did: "wrote the parts read by rule and marked the drafted parts as gaps", why: draftProblem });
     else writeFileSync(join(RECORDS, "draft.json"), `${JSON.stringify(draft, null, 2)}\n`);
   }
   writeFileSync(join(RECORDS, "calls.json"), `${JSON.stringify(calls, null, 2)}\n`);
 
   // check-the-evidence and write-the-record
   const ctx = contextFor({ files: cb.files, read, ran: Boolean(baseline?.ran), previous });
-  const built = buildRecord({ source, facts, draft, draftProblem: draftProblem || "no model was reached", sbom, baseline, notSent, ctx, drift, previous, tool });
+  const built = buildRecord({ source, facts, draft, draftProblem: draftProblem || "no model was reached", sbom, baseline, notSent, seen, ctx, read, drift, previous, tool });
   if (nothingToDraft) built.record.nothing_changed = true;
   const listed = fill(args.job, plan(built)).map((e) => e.name);
   const went = sentence(wentWithout(RECORDS));

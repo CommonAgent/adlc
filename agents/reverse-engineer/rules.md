@@ -22,9 +22,29 @@ Every behavior, part, entry point, system, setting, interface and test entry nam
 
 It does not fill in what the code was meant to do from names, comments or habit. A drafted claim that infers (meant to, supposed to, probably, seems to, the author) is held back as a gap. Where the evidence stops, the record says so.
 
+## What can be read by rule is read by rule
+
+Before any model sees the code, the scripts read off it: the environment variables it reads, its entry points, its test files and test command, the schemas it carries, the run-config settings an Agent Package declares, and the surface of its JavaScript: each module's exports (name, parameters, async or not, what its own body throws or rejects with, a literal constant's value) and who imports them, the files that start as commands and the flags they read, each file the code writes with the JSON Schema its value shows (field names, types, the fields always written, constants such as a format id), the regular expressions as written, the literal constants, and every import that leaves the codebase's folder. These are the floor of the record: the model describes and links them and does not have to recall them, and a model that leaves one out does not take it out.
+
+## The draft is made in bounded passes
+
+On adoption the model drafts in passes, so no one answer has to hold the whole codebase: one pass for the architecture as built, the interfaces and the gaps; behavior passes, each shown a few source files whole and asked for their behaviors only; and one pass for what each test covers. Each pass is shown the facts read by rule, has a limit on what it is shown, and is recorded in calls.json. A pass that does not answer leaves its part as a `not-drafted` gap, and the other parts stand. On drift the draft is one pass over the changed files and the diff.
+
+## What counts as one behavior
+
+One behavior per anchor. The anchors are read by rule: each exported function or class that another file of the codebase imports (a test counts), each export of the package's main module, and each file that starts as a command. A function used only inside its own file is part of the behavior of the anchor that calls it. The branches, defaults, fallbacks, limits, quoted patterns and refusals of one anchor are fields of its one behavior, never behaviors of their own. Where the code has no anchors read by rule, there is one behavior per public function, command, route or message handler. A second behavior for the same anchor, and one anchored to a function that is not an anchor, are held back as gaps; on adoption an anchor no behavior describes is a gap, and the behaviors are numbered in the order of their anchors.
+
+## Every behavior has one of the fixed kinds
+
+The kinds, in order of precedence (the first that fits is the kind): `entry` (starts a job), `fetch` (calls a system outside the codebase), `write` (writes something that outlives the call), `state` (reads what an earlier job left), `check` (decides whether to go on, or refuses), `parse` (reads structured values out of what it is handed), `compute` (works out a value), `compose` (makes the words or document it gives back). A behavior with any other kind, or none, is held back as a gap. references/the-as-built-record.md says each one in full.
+
+## Exact words are quoted exactly
+
+A pattern or wording other components depend on (a regular expression, a magic string or format id, a reply sentence, a refusal, a notice it recognizes) is quoted in the behavior's quotes, and the quote must be in the code byte for byte: the scripts search the cited lines, then the cited file, and a quote they do not find is dropped and listed as a gap. The regular expressions a behavior's lines hold, or use by name from the top of their file, are quoted by rule. The order things are tried in, the limits (caps, timeouts, sizes), the request headers and the defaults are stated as rules on the behavior (`order`, `limit`, `header`, `default`), each with its evidence. A drafted schema keeps only the fields the code writes and the constants that are literals in the code.
+
 ## Every gap is marked
 
-What could not be determined is listed in tests-and-gaps.json, each with its kind: `unreachable` (code no path reaches, never listed as a behavior), `run-time-only` (behavior seen only when the code runs, and everything when it was not run), `unclear`, `not-read` (a file the model was not shown), `not-drafted` (a part no model drafted), `not-checked` (a commit taken as given), `claim-without-evidence`, `held-back` and `outside-the-change`.
+What could not be determined is listed in tests-and-gaps.json, each with its kind: `unreachable` (code no path reaches, never listed as a behavior), `run-time-only` (behavior seen only when the code runs, and everything when it was not run), `unclear`, `not-read` (a file the model was not shown), `not-drafted` (a part no model drafted), `not-checked` (a commit taken as given), `claim-without-evidence`, `held-back`, `outside-the-change`, and `outside-the-codebase` (an import that reaches a file outside the codebase's folder, which the code depends on and the record does not describe).
 
 ## The record is tied to its source
 
@@ -32,7 +52,7 @@ record.json names the repository, the commit digest, whether the commit was chec
 
 ## Formats that already exist
 
-The behaviors are in the feature list's shape (id, name, does, and offering when the code shows one), marked as built. The architecture as built is in the architecture record's shape (standards/architecture-standard.md, section 9), marked as built, with what the code cannot say (the statement, the bindings per environment, the limits, the decisions) named as not in the code. Interfaces carry OpenAPI or JSON Schema documents where they are found or can be derived. The dependencies are a CycloneDX 1.5 bill of materials.
+The behaviors are in the feature list's shape (id, name, does, and offering when the code shows one), marked as built. Changes to the record's files are additive: a new version adds fields or values and never renames, retypes or removes one, so a reader of an earlier version still reads it. The architecture as built is in the architecture record's shape (standards/architecture-standard.md, section 9), marked as built, with what the code cannot say (the statement, the bindings per environment, the limits, the decisions) named as not in the code. Interfaces carry OpenAPI or JSON Schema documents where they are found or can be derived. The dependencies are a CycloneDX 1.5 bill of materials.
 
 ## The bill of materials is made by rule
 
@@ -40,7 +60,7 @@ The dependencies part is made from the lockfiles and manifests by the scripts, n
 
 ## One baseline run, sealed as far as the host allows
 
-When the job may run things, the project's own test command runs once, in a child process with a time limit, its process tree stopped at the limit. It is handed only the variables it needs by exact name and a home and temporary folder of its own, so no credential of this agent reaches the code. Where the host can cut the network off it does; where it cannot, the record says the network was not cut off. The results are read from what the run printed, and the record keeps its last part with local paths written as `.`.
+When the job may run things, the project's own test command runs once (the test script package.json names, or, when it names none or there is no package.json, `node --test` over the code's `*.test.mjs`, `*.test.js` and `*.test.cjs` files that import `node:test`), in a child process with a time limit, its process tree stopped at the limit. It is handed only the variables it needs by exact name and a home and temporary folder of its own, so no credential of this agent reaches the code. Where the host can cut the network off it does; where it cannot, the record says the network was not cut off. The results are read from what the run printed, and the record keeps its last part with local paths written as `.`.
 
 ## On drift, only what changed
 
