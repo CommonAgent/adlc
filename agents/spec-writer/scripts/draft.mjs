@@ -53,11 +53,18 @@ import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
 import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
 import { jsonCandidates, jsonIn } from "./json-in.mjs";
-import { THE_SPEC, addressProblems, designView, fitToSpec, specPart } from "./design.mjs";
-import { NoSpec, keepSpec, referenceParts, specCounts, specSecondsOf, writeTheSpec } from "./spec.mjs";
+import { PROSE_FINDING, THE_SPEC, addressProblems, designView, earlierDraftOf, fitNeeds, fitToSpec, prosePrompt, specPart } from "./design.mjs";
+import { NoSpec, askTwice, keepSpec, referenceParts, specCounts, specSecondsOf, writeTheSpec } from "./spec.mjs";
+import { carriedProse, mergeProse, namedProse, proseAt, proseSlots, proseUnchangedProblems, setProse, structureChanges, structureOf } from "./structure.mjs";
+import { declarationProblems } from "./declared.mjs";
+import { agentFilesOf } from "./files.mjs";
+import { personWords } from "./revise.mjs";
+import { earlierDraft } from "./asked.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
+const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const list = (v) => (Array.isArray(v) ? v : []);
 
 /** The digest a draft is delivered against: sha256 over its bytes. */
 export const digestOf = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -598,6 +605,96 @@ export async function askForSpec({
   };
 }
 
+/** The agent's own files, made from the spec (0.10.0): the structure by code
+ *  (structure.mjs), the prose by the model, by key, and only the keys it may
+ *  write. On a first Design that is every prose field; on a revision
+ *  (`earlier` is the draft of the files delivered before) the fields the
+ *  person's words name and any new ones, and every other field stays byte
+ *  for byte. The check holds the files to the spec (every kept declaration
+ *  at its place, declared.mjs) and to what good files carry, and what a
+ *  change of prose can settle goes back once. Returns what askForSpec does,
+ *  with `design`: the mode, the prose keys written and what changed. */
+export async function designFromSpec({
+  spec, asked = null, answers = null, call, reference = "", env = {}, earlier = null, words = null,
+  seconds = null, minCallSeconds = MIN_CALL_SECONDS, now = Date.now, table,
+} = {}) {
+  const architecture = asked?.architecture ?? null;
+  const built = structureOf(spec, { architecture });
+  const structure = built.draft;
+  const before = earlier ?? earlierDraftOf(asked);
+  const revision = Boolean(before);
+  const said = words ?? personWords([asked?.said, ...Object.entries(isObj(answers) ? answers : {}).filter(([k, v]) => k !== "said" && typeof v === "string").map(([k, v]) => `${k}: ${v}`)].filter(Boolean).join("\n"));
+  const carried = carriedProse(structure, before);
+  const base = structuredClone(structure);
+  for (const [k, v] of carried) setProse(base, k, v);
+  const fixed = new Set(built.fixed);
+  const slots = proseSlots(base).filter((k) => !fixed.has(k));
+  const named = revision ? namedProse(said, base) : new Set(slots);
+  const may = new Set(slots.filter((k) => named.has(k) || !carried.has(k)));
+  const given = givenOfSpec(spec, asked, answers);
+  const earlierJson = earlierBareJson(asked);
+  const tbl = table === undefined ? loadSchemas() : table;
+  const filesProblems = (d) => { try { return declarationProblems(spec, agentFilesOf(d)); } catch (e) { return [`the agent's files could not be written to check them against the spec: ${e.message}`]; } };
+  const problemsOf = (d) => [...new Set([
+    ...checkDraft(d, { earlier: earlierJson, architecture, given, table: tbl }),
+    ...addressProblems(d),
+    ...filesProblems(d),
+    ...built.problems,
+    ...(revision ? proseUnchangedProblems(carried, d, may) : []),
+  ])];
+  let draft = base;
+  let calls = 0; let used = []; let notes = ""; let stopped = null;
+  const modelBlanks = [];
+  if (may.size) {
+    if (typeof call !== "function" && env && typeof env === "object") call = callFor(env);
+    if (typeof call !== "function") throw new Error("designFromSpec needs a call");
+    let out;
+    try {
+      out = await askTwice({
+        call: (prompt, o) => call({ body: { contents: [{ parts: [{ text: prompt }] }] } }, o),
+        seconds: seconds ?? draftSecondsOf(env), minCallSeconds, now,
+        build: (findings, notJson, last) => prosePrompt({ spec, draft: last ?? base, may, words: said, revision, reference, findings, notJson }),
+        read: (doc, last) => {
+          for (const b of list(doc.blanks)) if (isObj(b) && trim(b.key) && !modelBlanks.some((x) => x.key === trim(b.key))) modelBlanks.push({ key: trim(b.key), question: trim(b.question) });
+          return mergeProse(last ?? base, doc, may).draft;
+        },
+        check: (d) => problemsOf(d).filter((f) => PROSE_FINDING.test(f)),
+      });
+    } catch (e) {
+      throw new NoDraft(e.message);
+    }
+    ({ calls, used, notes, stopped } = out);
+    draft = out.spec;
+  }
+  // What code settles after the last go: the hosts in the needs, no address
+  // outside a setting's default, the standing assets the record decides, and
+  // no system the record does not name.
+  const needs = fitNeeds(draft, spec);
+  const fitted = fitToArchitecture(needs.draft, architecture);
+  const withAssets = fitCanUse(fitted.spec, architecture, tbl);
+  draft = withAssets.spec;
+  const blanks = blanksOf(draft, modelBlanks);
+  if (fitted.blank && !blanks.some((b) => b.key === "architecture")) blanks.push(fitted.blank);
+  for (const b of fitToGiven(draft, given).blanks) if (!blanks.some((x) => x.key === b.key)) blanks.push(b);
+  const askedKeys = blanks.map((b) => b.key);
+  const findings = problemsOf(draft)
+    .filter((f) => !/^can_use |declare it in can_use$/.test(f))
+    .filter((f) => !askedKeys.some((k) => f.includes(`put "${k}" in blanks`)));
+  const written = [...may].filter((k) => JSON.stringify(proseAt(draft, k)) !== JSON.stringify(carried.get(k)));
+  return {
+    spec: draft,
+    blanks,
+    notes: [notes, ...built.notes, ...needs.notes, ...withAssets.notes].filter(Boolean).join(" "),
+    findings: [...findings, ...canUseProblems(draft, architecture, tbl)].filter((f, i, a) => a.indexOf(f) === i),
+    calls, used, tried_again: calls > 1, stopped: findings.length ? stopped : null,
+    design: {
+      mode: revision ? "revision" : "fresh",
+      prose_written: written,
+      ...(revision ? { named: [...named].filter((k) => slots.includes(k)), structure_changed: structureChanges(before, draft) } : {}),
+    },
+  };
+}
+
 /** What this step goes ahead without, from the gathering record: a file the
  *  person named that never arrived, and the rest of any attachment that was
  *  cut at the cap. Both are things a reader of the draft cannot see, because
@@ -679,16 +776,19 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const written = await writeTheSpec({ asked, answers, call, reference, recordsRoot: dirname(resolve(RECORDS)), seconds: specSecondsOf(env) });
     const kept = keepSpec(RECORDS, written.spec);
     const specText = readFileSync(kept.json, "utf8");
-    // Then the Design: the agent's own files, made from the spec. Its given
-    // is the spec, not the raw request.
+    // Then the Design: the agent's own files, made from the spec. Code
+    // writes their structure from it and the model writes only their prose
+    // (designFromSpec). A revision starts from the files delivered before:
+    // the ones sent back, or else the newest draft an earlier job wrote.
     const designAsked = designView(asked, specText);
-    const out = await askForSpec({
-      call, asked: designAsked, answers,
-      reference: parts.design,
-      worked: read(workedAt(env)),
-      env,
-      given: givenOfSpec(written.spec, designAsked, answers),
-      specV1: written.spec,
+    let earlier = earlierDraftOf(designAsked);
+    if (!earlier && asked?.revision) {
+      const at = earlierDraft(dirname(resolve(RECORDS)));
+      if (at) { try { earlier = JSON.parse(readFileSync(at, "utf8")); } catch { earlier = null; } }
+    }
+    const out = await designFromSpec({
+      call, spec: written.spec, asked: designAsked, answers, earlier,
+      reference: parts.design, env,
     });
     // What is still open: the spec's own questions first, then any the
     // Design adds (the same key is asked once).
@@ -719,6 +819,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     writeFileSync(join(RECORDS, "blanks.json"), JSON.stringify({
       blanks: "v1", blanks: out.blanks, notes: out.notes, ...(out.findings.length ? { findings: out.findings } : {}),
       spec: { mode: written.mode, counts: specCounts(written.spec), notes: written.notes, ...(written.findings.length ? { findings: written.findings } : {}), ...(written.revised ? { revised: written.revised } : {}) },
+      // What the Design wrote: the structure is code's, and these are the
+      // prose fields the model wrote (on a revision, only those named).
+      ...(out.design ? { design: out.design } : {}),
     }, null, 2) + "\n");
     console.log(JSON.stringify({
       ok: true, code: 0, spec: kept.json, spec_md: kept.md, draft: join(RECORDS, "draft.json"),

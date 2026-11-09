@@ -345,7 +345,14 @@ export async function writeTheSpec({ asked = null, answers = null, call, referen
     // What code settled from keyed words needs no model.
     const byCode = new Set([...(settled.name ? ["product.name", "open:name"] : []), ...(settled.price ? ["price", "open:price"] : []), ...(settled.version ? ["product.version"] : [])]);
     const modelTargets = new Set([...targets].filter((t) => !byCode.has(t)));
-    const checkOf = (s) => [...specProblems(s, { record, corpus, person }), ...unchangedProblems(earlier, s, targets)];
+    const checkOf = (s) => [...specProblems(s, { record, corpus, person, targets }), ...unchangedProblems(earlier, s, targets)];
+    // Words that name nothing in the spec, and key nothing, leave it byte for
+    // byte as it was: no model, and no fit either. They go to the agent's own
+    // files (the Design, structure.mjs).
+    if (!targets.size && !keyed.applied.length) {
+      const spec = structuredClone(earlier);
+      return { spec, mode: "revision", notes: "Your words name nothing in the spec, so it stays as it was; they go to the agent's own files.", findings: specProblems(spec, { record, corpus, person, targets }), calls: 0, used: [], stopped: null, revised: { from: earlierFound.from, targets: [], changed: [] } };
+    }
     let out;
     if (!modelTargets.size) {
       const s = keyed.spec;
@@ -360,7 +367,7 @@ export async function writeTheSpec({ asked = null, answers = null, call, referen
       out.dropped = dropped;
     }
     const fit = fitSpec(out.spec, { person, corpus });
-    const findings = [...specProblems(fit.spec, { record, corpus, person }), ...unchangedProblems(earlier, fit.spec, targets)];
+    const findings = [...specProblems(fit.spec, { record, corpus, person, targets }), ...unchangedProblems(earlier, fit.spec, targets)];
     const named = [...targets];
     const notes = [
       named.length ? "" : "Your words name nothing in the spec, so it stays as it was; they go to the agent's own files.",

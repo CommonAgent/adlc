@@ -198,3 +198,120 @@ export function fitToSpec(draft, spec) {
   d = fitted.spec;
   return { spec: d, notes, blanks: [] };
 }
+
+// ---------- the Design by code (0.10.0) ----------
+//
+// The structure of the agent's files is written by code from the spec
+// (structure.mjs); the model is asked only for the prose, by key, and only
+// for the keys it may write: every prose field on a first Design, and on a
+// revision the fields the person's words name and any the structure has
+// that the earlier files did not. Everything else is code's or carried from
+// the earlier files byte for byte, and the check holds it there.
+
+/** What the model is told when it writes the prose. */
+export const PROSE_INSTRUCTION = `You are writing the words of an agent's own files: the prose a person and a
+caller read. Code has already written every structural field from the spec
+Requirements handed back (below as THE FILES SO FAR): the offering and step
+ids, the skill folders, each input's and output's name, kind and schema, the
+labels, the settings, the systems, the run commands, the scripts, the
+records and the price. Those are the spec's, and code keeps them whatever you
+answer, so do not repeat or change them.
+
+Write only the fields listed under WHAT YOU WRITE, each by its key:
+- description: one sentence on what the agent does, for somebody choosing an
+  agent.
+- refuses: at least four refusals, each an act the agent will not do, written
+  as a gerund ("Publishing anything it was not handed"), then why, then what
+  happens instead. The spec's refusal requirements say what it refuses.
+- a job's does: one line for somebody skimming, under 60 words.
+- a job's when: the sentence for somebody choosing between jobs, under 45
+  words.
+- a job's good: what a good result looks like, as the artifact somebody could
+  check and not the effort, at least 15 words.
+- a job's empty: what the job does when there is nothing to give, at least 10
+  words, and not an error message.
+- a job's instructions: how its scripts do what its features require. Name
+  the spec (spec.json) as where the exact words, patterns, numbers and
+  schemas are, and do not copy every exact value into them.
+- an input's about: written to the person filling the box, what to put there
+  in 25 words or fewer, with a real example; name no data format.
+- an output's about: a text/markdown piece sketches its convention, a short
+  header's fields and then each heading in backticks ("Markdown: a header
+  \`source, read_at\`, then \`## Key points\`"); a JSON piece sketches its
+  top-level members in backticks, such as \`{format, stories}\`.
+- a system's needs: why the agent reaches it. A service with an address
+  setting names the host given beside it (never the address); a service that
+  reaches whatever it is handed says it fetches them.
+Never write an address (anything with ://), and never name a model or a
+version. Where something only the person can settle is missing, ask it in
+blanks rather than inventing it.
+
+Answer with one JSON object and nothing else:
+{"description": "...", "refuses": ["..."],
+ "jobs": {"<slug>": {"does": "...", "when": "...", "good": "...", "empty": "...", "instructions": "...",
+   "inputs": {"<name>": "..."}, "outputs": {"<name>": "..."}}},
+ "systems": {"<name>": "..."},
+ "blanks": [{"key": "...", "question": "..."}],
+ "notes": "what you wrote that the spec did not settle"}`;
+
+/** The keys the model may write, as it reads them. */
+const keyLines = (may, draft) => [...may].map((k) => {
+  const s = /^system:(.+)\.needs$/.exec(k);
+  if (!s) return `- ${k}`;
+  const sys = list(draft?.systems).find((x) => trim(x.name) === s[1]);
+  const hosts = list(sys?.settings).map((x) => hostOf(x?.default)).filter(Boolean);
+  return `- ${k}${hosts.length ? ` (name the host ${hosts.join(" and ")})` : ""}`;
+}).join("\n");
+
+/** The prompt for one go. Pure. */
+export function prosePrompt({ spec, draft, may = new Set(), words = "", revision = false, reference = "", findings = [], notJson = "" } = {}) {
+  const parts = [PROSE_INSTRUCTION];
+  parts.push(`--- THE SPEC (spec-v1), APPROVED AT REQUIREMENTS ---\n${JSON.stringify(spec, null, 2)}`);
+  parts.push(`--- THE FILES SO FAR ---\n${JSON.stringify(draft, null, 2)}`);
+  if (revision) {
+    parts.push(`--- THEIR WORDS, WHICH NAME WHAT CHANGES ---\n${trim(words) || "(none)"}`);
+    parts.push("This is a revision. Write only the keys below; every other field of the files stays exactly as it is.");
+  }
+  parts.push(`--- WHAT YOU WRITE ---\n${keyLines(may, draft)}`);
+  if (trim(reference)) parts.push(`--- WHAT GOOD FILES CARRY ---\n${trim(reference)}`);
+  if (findings.length) parts.push(`--- WHAT WAS WRONG WITH YOUR LAST ANSWER ---\n${findings.map((f) => `- ${f}`).join("\n")}\nAnswer again with these fixed. Change nothing else.`);
+  if (trim(notJson)) parts.push(`--- YOUR LAST ANSWER COULD NOT BE READ ---\n${trim(notJson)}.\nAnswer with exactly one JSON object and nothing else: no words before or after it, no code fence, no comments and no trailing commas.`);
+  return parts.join("\n\n");
+}
+
+/** A finding a change of prose can settle: a job's sentences, the
+ *  refusals, an about, a needs, a model named or an address written out. */
+export const PROSE_FINDING = /\bno (?:when|good|empty|does)\b|\b(?:when|good|empty|does) is \d+ words|\brefusals?\b|\babout\b|\bneeds\b|names the model|carries an address|sketches no convention/;
+
+/** The earlier draft of the agent's files a revision is made from: the one
+ *  the person sent back (asked.mjs reads the files as a draft), or an
+ *  earlier job's draft.json. Null when none came. */
+export function earlierDraftOf(asked = null) {
+  for (const a of list(asked?.attached)) {
+    if (a?.missing || typeof a?.text !== "string" || !["a spec", "an agent's own file", "data"].includes(a.kind)) continue;
+    try { const d = JSON.parse(a.text); if (isObj(d) && Array.isArray(d.jobs) && d.jobs.length && d.jobs.every((j) => isObj(j) && trim(j.slug))) return d; } catch { /* not a draft */ }
+  }
+  return null;
+}
+
+/** Each address setting's host named in its service's needs, and each host
+ *  the spec only writes down named in a service's needs, by code. Returns
+ *  { draft, notes }. */
+export function fitNeeds(draft, spec) {
+  const d = structuredClone(draft);
+  const notes = [];
+  for (const s of services(d)) {
+    for (const st of list(s.settings)) {
+      const host = hostOf(st?.default);
+      if (!host || saysHost(s, host)) continue;
+      s.needs = `${trim(s.needs)}${trim(s.needs) && !/[.!?]$/.test(trim(s.needs)) ? "." : ""} It reads from ${host}.`.trim();
+      notes.push(`${trim(s.name)}'s needs now names ${host}, where its address setting points.`);
+    }
+    if (!list(s.settings).length && !trim(s.credential) && !/\bfetch/i.test(String(s.needs ?? ""))) {
+      s.needs = `${trim(s.needs)}${trim(s.needs) && !/[.!?]$/.test(trim(s.needs)) ? "." : ""} It fetches the pages it is handed.`.trim();
+      notes.push(`${trim(s.name)}'s needs now says it fetches what it is handed, since it has no address of its own.`);
+    }
+  }
+  const fit = fitToSpec(d, spec);
+  return { draft: fit.spec, notes: [...notes, ...fit.notes] };
+}

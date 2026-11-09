@@ -44,6 +44,7 @@
 //   import { recordOf, seedSpec, ruleValues } from "./seed.mjs"
 import { readFileSync } from "node:fs";
 import { sameAddress } from "./reaches.mjs";
+import { declaredSettingsIn } from "./declared.mjs";
 import { SPEC_FORMAT } from "./spec-v1.mjs";
 
 const trim = (s) => String(s ?? "").trim();
@@ -59,6 +60,13 @@ export const STAND_IN_NAME = "agent-not-named-yet";
 /** The version a first spec drafts when the person gave none. */
 export const FIRST_VERSION = "0.1.0";
 
+/** The kinds of interface spec-v1 1.1.0 gives a place to. */
+export const INTERFACE_KINDS = ["command", "file", "function", "constant", "declaration", "message", "http", "setting"];
+
+/** The format of the reverse engineer's inventory of every string a person
+ *  reads and every pattern the code matches (0.3.0, strings.json). */
+export const STRINGS_FORMAT = "as-built-strings-v1";
+
 /** The parts of an as-built record among what came with the request, read by
  *  their format, never by their file names: behaviors, interfaces,
  *  architecture, tests and gaps, the record itself, and each JSON Schema by
@@ -66,7 +74,7 @@ export const FIRST_VERSION = "0.1.0";
  *  behaviors part came. An attachment cut at the gathering step's cap is
  *  read again whole from its path. */
 export function recordOf(asked = null, { read = (p) => readFileSync(p, "utf8") } = {}) {
-  const out = { behaviors: null, interfaces: null, architecture: null, tests: null, record: null, schemas: {} };
+  const out = { behaviors: null, interfaces: null, architecture: null, tests: null, record: null, strings: null, schemas: {} };
   for (const a of list(asked?.attached)) {
     if (a?.missing) continue;
     let text = typeof a?.text === "string" ? a.text : null;
@@ -81,6 +89,7 @@ export function recordOf(asked = null, { read = (p) => readFileSync(p, "utf8") }
     else if (f === "as-built-architecture-v1" || (doc.as_built === true && trim(doc.record) === "architecture-record-v1")) out.architecture = doc;
     else if (f === "as-built-tests-and-gaps-v1") out.tests = doc;
     else if (f === "as-built-record-v1") out.record = doc;
+    else if (f === STRINGS_FORMAT) out.strings = doc;
     else if (/json-schema/i.test(String(doc.$schema ?? "")) || (doc.type && isObj(doc.properties))) out.schemas[baseName(a.name ?? a.path)] = doc;
   }
   return out.behaviors && list(out.behaviors.behaviors).length ? out : null;
@@ -201,20 +210,31 @@ export function interfacesOf(record) {
     used.add(`I${next}`); return `I${next}`;
   };
   for (const i of list(record?.interfaces?.interfaces)) {
-    const kind = ["command", "file", "function", "message", "http", "setting"].includes(trim(i?.kind)) ? trim(i.kind) : null;
+    const kind = INTERFACE_KINDS.includes(trim(i?.kind)) ? trim(i.kind) : null;
     if (!kind || !trim(i?.name)) continue;
+    // A constant or a declaration with no value is nothing to keep.
+    if ((kind === "constant" || kind === "declaration") && (i.value === undefined || i.withheld)) continue;
+    if (kind === "declaration" && !trim(i.declared_in)) continue;
     const e = { id: idFor(i.id), kind };
     if (kind === "function") {
       const name = trim(i.export) || trim(i.name).replace(/\(.*$/s, "");
       Object.assign(e, { name, keep: true, ...(trim(i.module) ? { module: trim(i.module) } : {}), signature: `${i.async ? "async " : ""}${trim(i.name).includes("(") ? trim(i.name) : `${name}(${trim(i.params)})`}` });
     } else if (kind === "command") {
       Object.assign(e, { name: trim(i.command) || trim(i.name), keep: true, ...(list(i.flags).length ? { flags: i.flags.map(String) } : {}) });
+      if (list(i.required_flags).length) e.required_flags = i.required_flags.map(String);
+    } else if (kind === "constant") {
+      Object.assign(e, { name: trim(i.name), keep: true, ...(trim(i.module) ? { module: trim(i.module) } : {}), value: structuredClone(i.value) });
+    } else if (kind === "declaration") {
+      Object.assign(e, { name: trim(i.name), keep: true, declared_in: trim(i.declared_in), value: structuredClone(i.value) });
     } else {
       Object.assign(e, { name: trim(i.name), keep: true });
     }
-    e.about = trim(i.does) || `The ${kind} ${trim(i.name)}, as the as-built record gives it.`;
+    e.about = trim(i.does) || (kind === "constant" ? `The constant ${trim(i.name)}${trim(i.module) ? `, exported by ${trim(i.module)}` : ""}, kept with its value.`
+      : kind === "declaration" ? `What the agent declares to the platform at ${trim(i.declared_in)}, kept with its value.`
+        : `The ${kind} ${trim(i.name)}, as the as-built record gives it.`);
     const schema = trim(i.schema) ? record?.schemas?.[baseName(i.schema)] : undefined;
     if (schema !== undefined) e.schema = schema;
+    if (isObj(i.values) && Object.keys(i.values).length) e.values = structuredClone(i.values);
     e.as_built = trim(i.id);
     out.push(e);
   }
@@ -301,7 +321,11 @@ function constsIn(schema) {
  *  imports it. */
 export function constantsOf(record) {
   const out = new Map();
-  for (const c of list(record?.interfaces?.constants)) {
+  // An interface of kind constant (reverse engineer 0.3.0) first, then the
+  // record's own list of constants; one name is one constant.
+  const listed = [...list(record?.interfaces?.interfaces).filter((i) => trim(i?.kind) === "constant"), ...list(record?.interfaces?.constants)];
+  for (const c of listed) {
+    if (out.has(trim(c?.name))) continue;
     if (!trim(c?.name) || c.value === undefined || c.withheld) continue;
     out.set(trim(c.name), { name: trim(c.name), value: c.value, module: trim(c.module), exported: true, imported: list(c.imported_by).length > 0 });
   }
@@ -322,15 +346,82 @@ export const addressEnvOf = (name) => `${String(name).toUpperCase().replace(/[^A
  *  and an address setting for each system the code reaches at an address.
  *  Returns the settings and an open question for each setting whose default
  *  the record withholds. */
+/** The run-config settings the record's declarations give, by name. */
+const declaredSettings = (record) => declaredSettingsIn(list(record?.interfaces?.interfaces).filter((i) => trim(i?.kind) === "declaration" && i.value !== undefined));
+
+/** Every string the record's inventory lists (strings.json): a words, a
+ *  template or a pattern, with its file and line, as written. */
+export function stringsOf(record) {
+  return list(record?.strings?.strings)
+    .filter((s) => isObj(s) && typeof s.text === "string" && s.text && trim(s.file))
+    .map((s) => ({ file: trim(s.file), line: Number.isInteger(s.line) ? s.line : null, kind: ["words", "template", "pattern"].includes(trim(s.kind)) ? trim(s.kind) : "words", text: s.text }));
+}
+
+/** Which behavior a string belongs to: the one whose evidence covers its
+ *  line, the narrowest when several do; else the first anchored to its file.
+ *  Returns { behavior, by } with by "evidence" or "anchor", or null. */
+export function behaviorOfString(s, behaviors = []) {
+  let best = null;
+  for (const b of behaviors) {
+    for (const e of list(b?.evidence)) {
+      if (!isObj(e) || trim(e.file) !== s.file || !Number.isInteger(e.line) || s.line == null) continue;
+      const end = Number.isInteger(e.end_line) ? e.end_line : e.line;
+      if (s.line < e.line || s.line > end) continue;
+      const width = end - e.line;
+      if (!best || width < best.width) best = { behavior: b, width };
+    }
+  }
+  if (best) return { behavior: best.behavior, by: "evidence" };
+  const anchored = behaviors.find((b) => anchorOf(b).module === s.file);
+  return anchored ? { behavior: anchored, by: "anchor" } : null;
+}
+
+/** Where each string of the inventory lands in the spec, by code: in some
+ *  requirement's exact, byte for byte. Under the feature of the behavior it
+ *  belongs to (behaviorOfString): where a requirement there already carries
+ *  it in exact nothing is added, and otherwise a wording requirement (a
+ *  pattern requirement for a pattern) is. A string of no behavior is a
+ *  constraint; a string of a behavior the person dropped is not kept. Pure:
+ *  changes the features and constraints it is handed. */
+export function landStrings(record, { behaviors = [], features = [], constraints = [], left = new Map() } = {}) {
+  const byBehavior = new Map(features.map((f) => [trim(f.as_built), f]));
+  for (const s of stringsOf(record)) {
+    const found = behaviorOfString(s, behaviors);
+    if (found && left.has(trim(found.behavior.id))) continue;
+    const pattern = s.kind === "pattern";
+    const evidence = s.line != null ? [{ file: s.file, line: s.line }] : [];
+    const shall = pattern ? "The agent shall recognize this pattern exactly as given." : s.kind === "template" ? "The agent shall say these words exactly as given, with each placeholder filled." : "The agent shall say these words exactly as given.";
+    const f = found ? byBehavior.get(trim(found.behavior.id)) : null;
+    if (f) {
+      if (list(f.requirements).some((r) => list(r.exact).includes(s.text))) continue;
+      f.requirements.push({ id: `${f.id}.R${f.requirements.length + 1}`, shall, kind: pattern ? "pattern" : "wording", exact: [s.text], priority: "must", source: { behavior: trim(found.behavior.id), ...(evidence.length ? { evidence } : {}) }, verify: "test" });
+      continue;
+    }
+    if (constraints.some((c) => list(c.exact).includes(s.text))) continue;
+    constraints.push({ shall, kind: pattern ? "pattern" : "wording", exact: [s.text], priority: "must", source: { said: `the as-built record's strings list it at ${s.file}${s.line != null ? `:${s.line}` : ""}, in no behavior`, ...(evidence.length ? { evidence } : {}) }, verify: "test" });
+  }
+}
+
 export function settingsOf(record, systems = []) {
   const out = [];
   const open = [];
   const has = (n) => out.some((s) => s.name === n);
+  const declared = declaredSettings(record);
   for (const s of list(record?.interfaces?.settings)) {
     const name = trim(typeof s === "string" ? s : s?.name);
     if (!name || has(name)) continue;
-    out.push({ name, kind: "run-config", set_by: "either", about: `A run-config setting the agent declares${trim(s?.declared_in) ? ` (${trim(s.declared_in)})` : ""}; the as-built record names it and never its value.` });
-    open.push({ key: `setting ${name}`, question: `The as-built record names the setting ${name} and not its default, its range or what it changes. What are they?` });
+    // What the agent declares of the setting (reverse engineer 0.3.0) is
+    // copied: its default, its range and its allowed values. Only a default
+    // nobody declared is asked.
+    const d = declared.get(name) ?? {};
+    out.push({
+      name, kind: "run-config", set_by: "either",
+      about: `A run-config setting the agent declares${trim(s?.declared_in) ? ` (${trim(s.declared_in)})` : ""}; ${"default" in d ? "its declared values are kept" : "the as-built record names it and never its value"}.`,
+      ...("default" in d ? { default: d.default } : {}),
+      ...(typeof d.min === "number" ? { min: d.min } : {}), ...(typeof d.max === "number" ? { max: d.max } : {}),
+      ...(Array.isArray(d.allowed) ? { values: d.allowed } : {}),
+    });
+    if (!("default" in d)) open.push({ key: `setting ${name}`, question: `The as-built record names the setting ${name} and not its default, its range or what it changes. What are they?` });
   }
   const env = [...list(record?.interfaces?.environment), ...list(record?.architecture?.settings)];
   for (const s of env) {
@@ -472,6 +563,9 @@ export function seedSpec(record, { said = "", answers = null } = {}) {
     if (!c.exported || listed.has(c.name) || isAddress(c.value) || (typeof c.value !== "string" && typeof c.value !== "number")) continue;
     constraints.push({ shall: `The agent shall hold ${c.name} at ${String(c.value)}${c.module ? `, as ${c.module} exports it` : ""}.`, kind: typeof c.value === "number" ? "limit" : "wording", exact: [c.name, String(c.value)], priority: "must", source: { said: `the as-built record's interfaces list the constant ${c.name}` }, verify: "test" });
   }
+  // Every string a person reads and every pattern the code matches, by
+  // code, byte for byte, in some requirement's exact.
+  landStrings(record, { behaviors, features, constraints, left });
   constraints.forEach((c, i) => { c.id = `C${i + 1}`; });
 
   const open = [];
@@ -516,6 +610,14 @@ export function recordFixes(record, spec) {
   for (const i of interfacesOf(record)) {
     if (leftOut.has(i.as_built)) continue;
     out.push({ what: `the ${i.kind} interface ${i.as_built}`, value: i.name, where: "interfaces", interface: i });
+  }
+  // Every string of the inventory, unless it belongs to a behavior the spec
+  // does not keep.
+  const behaviors = list(record?.behaviors?.behaviors);
+  for (const s of stringsOf(record)) {
+    const found = behaviorOfString(s, behaviors);
+    if (found && !keptBehaviors.has(trim(found.behavior.id))) continue;
+    out.push({ what: `the ${s.kind} at ${s.file}${s.line != null ? `:${s.line}` : ""}`, value: s.text, where: "exact", behavior: found ? trim(found.behavior.id) : "no behavior", string: s });
   }
   return out;
 }

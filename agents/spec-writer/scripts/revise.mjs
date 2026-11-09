@@ -24,6 +24,7 @@ const trim = (s) => String(s ?? "").trim();
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const list = (v) => (Array.isArray(v) ? v : []);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The person's own words in a revision, without the lines the runner adds
  *  around them: the material aimed at a phase ("[write-the-suite] ..."), the
@@ -59,7 +60,28 @@ export function namedTargets(words = "", spec = null) {
   for (const m of t.matchAll(/\b(B[1-9]\d*)\b/g)) { const f = features.find((x) => trim(x?.as_built) === m[1]); if (f) out.add(trim(f.id)); }
   for (const f of features) if (trim(f?.name).length > 3 && low.includes(trim(f.name).toLowerCase())) out.add(trim(f.id));
   const settled = personSettled([t]);
-  if (settled.name || /\b(?:the|its|a) name\b|\bcall(?:ed)? it\b|\brename\b/i.test(t)) out.add("product.name");
+  // The agent's own name: "the name" (not "the name of" a piece), "call it",
+  // or "rename it" or the agent. "Rename the output stories" names an output.
+  if (settled.name || /\b(?:the|its|a) name\b(?!\s+of\b)|\bcall(?:ed)? it\b|\brename (?:it|the agent|this agent)\b/i.test(t)) out.add("product.name");
+  // A name or value the agent declares (spec-v1 1.1.0, kind declaration or
+  // constant), named by its value in a sentence that renames it ("rename the
+  // output stories to top-stories", "call the step fetch instead of read"),
+  // and each feature whose inputs or outputs carry that name. The value is a
+  // whole word: stories is not named by read-the-stories.
+  const sentences = t.split(/(?<=[.!?])\s+|\n+/);
+  const renaming = sentences.filter((x) => /\brenam\w*\b|\binstead of\b|\b(?:be )?called\b|\bcall (?:it|the|this)\b/i.test(x));
+  const wordIn = (v, text) => new RegExp(`(?<![\\w$-])${escRe(v)}(?![\\w$-])`).test(text);
+  for (const i of list(spec?.interfaces)) {
+    if (!["declaration", "constant"].includes(trim(i?.kind)) || typeof i.value !== "string" || trim(i.value).length < 2) continue;
+    if (renaming.some((x) => wordIn(trim(i.value), x))) out.add(trim(i.id));
+  }
+  for (const f of features) {
+    // A piece that is a file is named by its file's name too: the files call
+    // out/stories.json "stories".
+    const pieces = [...list(f?.inputs), ...list(f?.outputs)].map((d) => trim(d?.name)).filter((n) => n.length > 1)
+      .flatMap((n) => [n, n.replace(/\\/g, "/").split("/").pop().replace(/\.[a-z0-9]+$/i, "")]).filter((n) => n.length > 1);
+    if (pieces.some((n) => renaming.some((x) => wordIn(n, x)))) out.add(trim(f.id));
+  }
   if (settled.version || /\bversion\b/i.test(t)) out.add("product.version");
   if (settled.price || /\bprice\b|\bcosts?\b|\bfree\b/i.test(t)) out.add("price");
   if (/\bpurpose\b/i.test(t)) out.add("purpose");
