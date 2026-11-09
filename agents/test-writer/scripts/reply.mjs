@@ -48,7 +48,13 @@ export function wroteLine(declared = null, suite = null, checked = null) {
 
 /** The whole reply. Every part is optional but the first. */
 export function replyText({ declared = null, suite = null, checked = null, wentWithout = "" } = {}) {
-  const lines = [wroteLine(declared, suite, checked)];
+  const dropsOnly = !(suite?.files ?? []).length && (suite?.carried?.dropped ?? []).length;
+  const lines = [dropsOnly ? `Changed no test for ${declared ? `${declared.name}${declared.version ? ` ${declared.version}` : ""}` : "the package"}.` : wroteLine(declared, suite, checked)];
+  // The original's own tests, carried (test-writer 0.10.0), and every test
+  // that will not load and is not the writer's to edit.
+  if (trim(suite?.carried?.words)) lines.push(trim(suite.carried.words));
+  const gaps = suite?.load_gaps ?? [];
+  if (gaps.length) lines.push(`${gaps.length === 1 ? "One thing" : `${gaps.length} things`} about the tests kept as they are: ${gaps.map((g) => trim(g).replace(/\.$/, "")).join("; ")}.`);
   if (trim(checked?.verdict)) lines.push(trim(checked.verdict));
   else if (suite?.stand_ins) {
     // The writing step ran the stand-ins itself; say what it saw even when

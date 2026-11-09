@@ -19,6 +19,14 @@
 //     otherwise;
 //   - a command, run with each of its flags, does not refuse one as unknown
 //     and does not stop as a usage error (exit 2);
+//   - a constant is exported from its module with exactly the value the spec
+//     keeps (a regular expression is compared by its written form, /a+/i,
+//     or its source), and anything else as JSON;
+//   - a declaration, a name or value the agent declares to the platform
+//     (an offering id, a step id, an output's name, a label, a setting), is
+//     at exactly the place the spec says it is declared, with exactly its
+//     value: "agent-descriptor.json offerings[0].outputs[1].name" is read
+//     from the package's top, by members, [n], ["name"] and [id=x];
 //   - a file or a message is held to the JSON Schema the spec keeps for it.
 //     The suite's other tests call checkKept(jobDir, { expect: ["I5"] }) on
 //     each job folder whose job writes the file, and keptProblems("I6", value)
@@ -47,6 +55,7 @@ import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -279,6 +288,73 @@ export const saysAsync = (signature) => /\basync\b|\bPromise\b/.test(String(sign
 /** Whether a function is async as JavaScript makes it. */
 export const isAsync = (fn) => ["AsyncFunction", "AsyncGeneratorFunction"].includes(fn?.constructor?.name);
 
+// ── constants and declarations ──────────────────────────────────────────────
+
+/** A value as the spec keeps it, as JSON; a regular expression as its
+ *  written form. */
+export const asKept = (v) => {
+  if (v instanceof RegExp) return String(v);
+  if (v === undefined || typeof v === "function") return v;
+  try { return JSON.parse(JSON.stringify(v)); } catch { return v; }
+};
+
+/** Whether what a module exports is exactly the value the spec keeps: a
+ *  regular expression whose written form or source is the kept words, or the
+ *  same JSON. */
+export function sameKept(got, want) {
+  if (got instanceof RegExp && typeof want === "string") return String(got) === want || got.source === want;
+  return isDeepStrictEqual(asKept(got), want);
+}
+
+/** Where a declaration is: the file, then the place in it. The same reading
+ *  as the test writer's (scripts/kept-interfaces.mjs placeOf). */
+export function placeOf(declaredIn) {
+  const t = trim(declaredIn);
+  const m = /^(\S+)(?:\s+(.*))?$/.exec(t);
+  if (!m) return { file: "", parts: [], why: null };
+  const file = m[1].replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!/\.json$/i.test(file)) return { file, parts: [], why: `${file} is not a JSON file` };
+  const parts = [];
+  let rest = trim(m[2]);
+  while (rest) {
+    let p;
+    if ((p = /^\.?([A-Za-z_$][\w$-]*)/.exec(rest))) parts.push({ key: p[1] });
+    else if ((p = /^\[(\d+)\]/.exec(rest))) parts.push({ index: Number(p[1]) });
+    else if ((p = /^\[\s*(["'])((?:(?!\1).)*)\1\s*\]/.exec(rest))) parts.push({ key: p[2] });
+    else if ((p = /^\[\s*([A-Za-z_$][\w$-]*)\s*=\s*(["']?)([^\]"']*)\2\s*\]/.exec(rest))) parts.push({ where: p[1], is: p[3] });
+    else return { file, parts, why: `the place ${JSON.stringify(trim(m[2]))} is not one this check reads` };
+    rest = rest.slice(p[0].length);
+  }
+  return { file, parts, why: null };
+}
+
+/** What the agent's files carry at a declaration's place: { found, value,
+ *  why }; why says where the reading stopped. */
+export function declaredAt(declaredIn, root = ROOT) {
+  const place = placeOf(declaredIn);
+  if (!place.file) return { found: false, why: "no file is named" };
+  if (place.why) return { found: false, why: place.why };
+  const at = join(root, place.file);
+  if (!existsSync(at)) return { found: false, why: `${place.file} is not in the package` };
+  let v;
+  try { v = JSON.parse(readFileSync(at, "utf8")); } catch (e) { return { found: false, why: `${place.file} does not parse as JSON: ${e.message}` }; }
+  let said = place.file;
+  for (const p of place.parts) {
+    if (p.index !== undefined) {
+      if (!Array.isArray(v) || p.index >= v.length) return { found: false, why: `${said} has no item [${p.index}]` };
+      v = v[p.index]; said += `[${p.index}]`;
+    } else if (p.where !== undefined) {
+      const hit = Array.isArray(v) ? v.find((x) => x && typeof x === "object" && String(x[p.where]) === p.is) : undefined;
+      if (hit === undefined) return { found: false, why: `${said} has no item whose ${p.where} is ${p.is}` };
+      v = hit; said += `[${p.where}=${p.is}]`;
+    } else {
+      if (!v || typeof v !== "object" || Array.isArray(v) || !(p.key in v)) return { found: false, why: `${said} has no ${p.key}` };
+      v = v[p.key]; said += `.${p.key}`;
+    }
+  }
+  return { found: true, value: v };
+}
+
 // ── commands ────────────────────────────────────────────────────────────────
 
 /** A flag as given on a command line: "--job <folder>" is --job. */
@@ -370,6 +446,21 @@ for (const i of ranDirectly ? KEPT : []) {
         assert.equal(isAsync(mod[i.name]), saysAsync(i.signature),
           `[${i.id}] ${i.name} is ${isAsync(mod[i.name]) ? "async" : "not async"}, and its signature as the spec keeps it, ${JSON.stringify(i.signature)}, says it is ${saysAsync(i.signature) ? "async" : "not"}`);
       }
+    });
+  } else if (i.kind === "constant") {
+    test(i.test, async () => {
+      const at = moduleAt(i.module);
+      assert.ok(at, `[${i.id}] ${i.module} is not in the package, and the spec keeps ${i.name} exported from it`);
+      const mod = await import(pathToFileURL(at).href);
+      assert.ok(i.name in mod, `[${i.id}] ${i.module} does not export ${i.name}, and the spec keeps it`);
+      assert.ok(sameKept(mod[i.name], i.value),
+        `[${i.id}] ${i.name} is ${JSON.stringify(asKept(mod[i.name]))}, and the spec keeps it as exactly ${JSON.stringify(i.value)}`);
+    });
+  } else if (i.kind === "declaration") {
+    test(i.test, () => {
+      const got = declaredAt(i.declared_in);
+      assert.ok(got.found, `[${i.id}] ${i.name} is not at ${i.declared_in}: ${got.why}`);
+      assert.deepEqual(got.value, i.value, `[${i.id}] ${i.name} at ${i.declared_in} is ${JSON.stringify(got.value)}, and the spec keeps it as exactly ${JSON.stringify(i.value)}`);
     });
   } else if (i.kind === "command") {
     test(i.test, () => {

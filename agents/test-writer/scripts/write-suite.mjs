@@ -88,7 +88,21 @@
 //   DECLARED=<declared.json> SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder> WORK=<work folder>
 //   [EXISTING=<folder holding test/>] [ASKED_TEXT=<the message, as a file>] [REVISE=1]
 //   [DEPENDS=<folder holding scripts/ the change depends on>] [SPEC_V1=<the spec, spec-v1 JSON>]
+//   [CARRIED=<folder holding the original's own tests, placed>]
 //   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] [KEPT_TEST=<master copy>] node write-suite.mjs
+//
+// The original's own tests are carried (test-writer 0.10.0). CARRIED names a
+// folder job.mjs filled by code (carried.mjs): each original test at
+// test/<name>, unchanged but for the import specifiers the manifest lists,
+// each support file at test/support/<path from the repository's top>, and
+// their record, test/carried-tests.json. They go to the model whole, as the
+// strongest check the rebuild meets; the model never answers with one of
+// their names, a revision never changes one, and they are delivered with the
+// suite. Every test file of the suite, carried, kept and new, is checked to
+// load, by code: node --check passes, and an ES module test uses no
+// __dirname, __filename or require it does not declare. A new file that
+// fails goes back to the model as a finding; a carried or kept one that fails
+// is said in the reply, and never edited.
 //
 // The model is reached through the shared model caller (model-caller.mjs,
 // Common Agent 12.4.1) and nothing else: which model, where it is, the
@@ -117,6 +131,7 @@ import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
 import { asyncThrowsFindings, namedByScenario, namedTestsIn, pinFindings, restoreNotes, restoreUnnamed, scenarioIdsIn } from "./suite-rules.mjs";
 import { isSpecV1, keptOf, scenariosOf, specFindings, testedRequirements } from "./spec-rules.mjs";
 import { keptInterfacesTest } from "./kept-interfaces.mjs";
+import { CARRIED_RECORD, carriedWords, loadFindings } from "./carried.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -331,6 +346,17 @@ names is refused. Write only NEW test files, for what they asked for above,
 in the same style and against the same interface the existing files import.
 A new file must still fail against empty stand-ins on its own.`;
 
+/** What is said with the original's own tests (test-writer 0.10.0). */
+export const CARRIED_INSTRUCTION = `These are the original's own tests, given whole: the code being rebuilt
+passed them, and the rebuilt scripts must pass them too, so they are in the
+suite as they are. The test writer placed them, and they are locked. Do not
+write them again, do not change them, and do not answer with any of their
+names: a file under one of their names is refused. Where they import
+./support/..., those are the original's own files, placed beside them. Read
+them for the interface the scripts must keep: the scripts they import, and
+the names and arguments they call. Your own tests are still written from the
+spec, named by its ids, and import from the scripts by the same names these do.`;
+
 /** What is said when the code step sent the suite back (technical debt 636):
  *  a test it could not pass without breaking what the spec says, and a
  *  person who decided the test is the one that is wrong. Only the files the
@@ -528,6 +554,34 @@ export function dependenciesIn(dir) {
   });
 }
 
+/** The original's own tests as job.mjs placed them under a folder
+ *  (test-writer 0.10.0): { tests: [{path, text}], support: [{path, bytes}],
+ *  record (its text, or null), from ("manifest" or "record"), gaps, dropped,
+ *  files: path -> {file, at} }. Empty without a folder. */
+export function carriedIn(dir) {
+  const none = { tests: [], support: [], record: null, from: null, gaps: [], dropped: [], files: new Map() };
+  if (!dir || !existsSync(dir)) return none;
+  const tests = suiteFiles(dir);
+  const support = [];
+  const walk = (at, rel) => {
+    if (!existsSync(at)) return;
+    for (const n of readdirSync(at).sort()) {
+      const p = join(at, n);
+      if (statSync(p).isDirectory()) walk(p, `${rel}/${n}`);
+      else support.push({ path: `${rel}/${n}`, bytes: readFileSync(p) });
+    }
+  };
+  walk(join(dir, "test", "support"), "test/support");
+  let meta = {};
+  try { meta = JSON.parse(readFileSync(join(dir, "carried.json"), "utf8")); } catch { meta = {}; }
+  const record = existsSync(join(dir, CARRIED_RECORD)) ? readFileSync(join(dir, CARRIED_RECORD), "utf8") : null;
+  return {
+    tests, support, record, from: meta.from ?? null,
+    gaps: Array.isArray(meta.gaps) ? meta.gaps : [], dropped: Array.isArray(meta.dropped) ? meta.dropped : [],
+    files: new Map((Array.isArray(meta.tests) ? meta.tests : []).map((t) => [t.path, { file: t.file ?? null, at: t.at ?? null }])),
+  };
+}
+
 /** What is said with the files the change depends on. */
 export const DEPENDS_INSTRUCTION = `These are the real files the scripts will call, given whole. The suite
 calls them as they are written: import from each only the names it exports,
@@ -616,7 +670,7 @@ export function agentFilesOf(folder) {
 
 /** The parts of the request, in order, as text. Pure and exported so the
  *  whole prompt can be read in a test rather than inferred from a fixture. */
-export function requestParts({ spec = null, specV1 = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], revise = [], part = null, dependencies = [], agentFiles = [] } = {}) {
+export function requestParts({ spec = null, specV1 = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], revise = [], part = null, dependencies = [], agentFiles = [], carried = [] } = {}) {
   const parts = [INSTRUCTION];
   if (trim(asked)) parts.push(`--- WHAT THEY ASKED FOR ---\n${trim(asked)}`);
   // The spec (spec-v1), whole and in its own section, ahead of the reading of
@@ -640,6 +694,10 @@ export function requestParts({ spec = null, specV1 = null, declared = null, refe
   if (depends.length) {
     parts.push(`--- THE FILES THE CHANGE DEPENDS ON ---\n${DEPENDS_INSTRUCTION}\n\n${depends.map((d) =>
       `=== ${d.path} (exports: ${d.exports.length ? d.exports.join(", ") : "nothing"}) ===\n${d.text}${d.text.endsWith("\n") ? "" : "\n"}=== end of ${d.path} ===`).join("\n\n")}`);
+  }
+  if (carried.length) {
+    parts.push(`--- THE ORIGINAL'S OWN TESTS ---\n${CARRIED_INSTRUCTION}\n\n${carried.map((f) =>
+      `<<<FILE ${f.path}>>>\n${f.text}${String(f.text).endsWith("\n") ? "" : "\n"}<<<END>>>`).join("\n")}`);
   }
   if (existing.length) {
     parts.push(`--- THE SUITE IT ALREADY HAS ---\n${existing.map((f) => `<<<FILE ${f.path}>>>\n${f.text}<<<END>>>`).join("\n")}`);
@@ -1016,7 +1074,7 @@ export function importFindings(files = [], dependencies = []) {
   return out;
 }
 
-export function staticFindings(files = [], declared = null, { existing = [], revise = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [], fresh = null, pins = null, specV1 = null, specCheck = false } = {}) {
+export function staticFindings(files = [], declared = null, { existing = [], revise = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [], fresh = null, pins = null, specV1 = null, specCheck = false, carried = [] } = {}) {
   const out = [];
   if (!files.length) return [revise.length ? `the answer changes none of the tests the words name in the files it was sent back for: ${revise.join(", ")}; the answer rewrites none of the files it was sent back for, so change those tests, and only those, and answer with each file whole under its own name` : "no test file came back"];
   // The format check and the records check are the test writer's own files,
@@ -1033,9 +1091,15 @@ export function staticFindings(files = [], declared = null, { existing = [], rev
   // In a revision the files it names may come back under their own names.
   const revisable = new Set(revise);
   const kept = new Set([...existing.map((f) => f.path).filter((p) => !revisable.has(p)), ...taken]);
+  // The original's own tests are locked (test-writer 0.10.0): an answer
+  // under one of their names is refused and never delivered.
+  const locked = new Set(carried.map((f) => f.path));
   for (const f of files) {
-    if (kept.has(f.path)) out.push(`${f.path} is already in the suite and is kept as it is; put new tests in a new file with a name of its own`);
+    if (locked.has(f.path)) out.push(`${f.path} is one of the original's own tests, carried unchanged and locked; never answer with it, and put new tests in a file with a name of its own`);
+    else if (kept.has(f.path)) out.push(`${f.path} is already in the suite and is kept as it is; put new tests in a new file with a name of its own`);
   }
+  files = files.filter((f) => !locked.has(f.path));
+  if (!files.length) return out;
   if (revise.length && !files.some((f) => revisable.has(f.path))) {
     out.push(`the answer rewrites none of the files it was sent back for: ${revise.join(", ")}; answer with each of them whole, under its own name`);
   }
@@ -1050,7 +1114,7 @@ export function staticFindings(files = [], declared = null, { existing = [], rev
   // Reach and count are over the suite as it will stand: what it already
   // has, and what came back. In a part they are over that part's scripts.
   const answered = new Set(files.map((f) => f.path));
-  const whole = [...existing.filter((f) => !answered.has(f.path)), ...files];
+  const whole = [...existing.filter((f) => !answered.has(f.path)), ...carried, ...files];
   const named = scripts ?? declared?.scripts ?? [];
   let total = existing.filter((f) => !answered.has(f.path)).reduce((n, f) => n + testNamesOf(f.text).length, 0);
   for (const f of files) {
@@ -1094,13 +1158,15 @@ export function staticFindings(files = [], declared = null, { existing = [], rev
 }
 
 /** What the stand-in run says is wrong, in the model's terms. */
-export function standInFindings(run) {
+export function standInFindings(run, { skip = [] } = {}) {
   if (!run) return [];
   if (run.timed_out) return [`against empty stand-ins the suite did not finish in time; a test must not wait on anything`];
   if (run.tests === 0 && run.status === 0) return ["against empty stand-ins no test ran at all; the files must be test/<name>.test.mjs and use node:test"];
   if (!run.fails) return [`against empty stand-ins for every script the suite passed (${run.pass} of ${run.tests}), so it asserts nothing about them; import the functions and assert what they return`];
   const out = [];
-  const u = run.unpassable ?? [];
+  // A standard check or an original test that fails against the agent's
+  // files is not the model's to mend, so it is not sent back to it.
+  const u = (run.unpassable ?? []).filter((x) => !STANDARD_TESTS.includes(x.path) && !skip.includes(x.path));
   if (u.length) {
     out.push(`${u.length === 1 ? "this test touches" : `these ${u.length} tests touch`} no script and still ${u.length === 1 ? "fails" : "fail"} against the agent's own files as they are, so no script can ever make ${u.length === 1 ? "it" : "them"} pass: `
       + u.map((x) => `"${x.name}" in ${x.path}${x.error ? ` (${x.error.replace(/\s+/g, " ")})` : ""}`).join("; ")
@@ -1161,11 +1227,16 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
       // never a revision, which changes only the tests it names.
       specV1: opts.specV1 ?? null,
       specCheck: isSpecV1(opts.specV1) && !opts.part && !(opts.revise ?? []).length,
+      carried: opts.carried ?? [],
     });
+    // Every test file the model wrote loads (test-writer 0.10.0): node
+    // --check passes, and an ES module uses no CommonJS name it lacks.
+    const locked = new Set((opts.carried ?? []).map((f) => f.path));
+    findings.push(...(opts.load ?? loadFindings)(last.files.filter((f) => !STANDARD_TESTS.includes(f.path) && !locked.has(f.path))));
     standIns = null;
     if (!findings.length && run) {
-      standIns = await run(withStandardTests(last.files, opts));
-      findings = standInFindings(standIns);
+      standIns = await run(withStandardTests(last.files.filter((f) => !locked.has(f.path)), opts));
+      findings = standInFindings(standIns, { skip: [...locked] });
     }
     if (!findings.length) break;
   }
@@ -1204,7 +1275,7 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
   let calls = 0; let triedAgain = false; let parts = 0;
   while (queue.length) {
     const p = queue.shift();
-    const part = { ...p, others: scripts.filter((s) => !p.scripts.includes(s)), taken: files.map((f) => f.path) };
+    const part = { ...p, others: scripts.filter((s) => !p.scripts.includes(s)), taken: [...files.map((f) => f.path), ...(opts.carried ?? []).map((f) => f.path)] };
     let got;
     try {
       got = await askForSuite({ call, run, tries, ...opts, part });
@@ -1230,7 +1301,7 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
   for (const f of pinFindings(files, { words: opts.asked ?? "", declared: opts.declared, skip: STANDARD_TESTS })) findings.push(`the whole suite: ${f}`);
   for (const f of specFindings(files, opts.specV1, { skip: STANDARD_TESTS })) findings.push(`the whole suite: ${f}`);
   const standIns = run ? await run(withStandardTests(files, opts)) : null;
-  if (standIns) for (const f of standInFindings(standIns)) findings.push(`the whole suite: ${f}`);
+  if (standIns) for (const f of standInFindings(standIns, { skip: (opts.carried ?? []).map((x) => x.path) })) findings.push(`the whole suite: ${f}`);
   return { files, could_not: couldNot, notes: notes.join("\n"), findings, stand_ins: standIns, calls, tried_again: triedAgain, parts };
 }
 
@@ -1342,14 +1413,32 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // A revision (debt 636): only the files the message names are written
     // again. One that names none is refused before the model is asked.
     const asked = read(trim(env.ASKED_TEXT));
+    // The original's own tests, placed by job.mjs (test-writer 0.10.0).
+    const carriedSet = carriedIn(trim(env.CARRIED));
+    const carried = carriedSet.tests;
+    // Every carried and kept test loads, or that is said: never edited.
+    const keptGaps = [
+      ...carriedSet.gaps,
+      ...loadFindings(carried).map((w) => `${w}. It is one of the original's own tests, so it is said here and never edited; drop it by naming it ("drop the original test <name>") if it cannot be kept`),
+      ...loadFindings(existing.filter((f) => !STANDARD_TESTS.includes(f.path))).map((w) => `${w}. It is kept as it is`),
+    ];
     const revise = trim(env.REVISE) === "1" ? namedForRevision(existing, asked) : [];
-    if (trim(env.REVISE) === "1" && !revise.length) {
+    // A revision that only drops an original test, as the person named it,
+    // changes no other test and asks no model.
+    const dropsOnly = trim(env.REVISE) === "1" && !revise.length && carriedSet.dropped.length > 0;
+    // A revision may not change one of the original's own tests.
+    const lockedNamed = trim(env.REVISE) === "1" && !revise.length && !dropsOnly ? namedForRevision(carried, asked) : [];
+    if (lockedNamed.length) {
+      console.log(JSON.stringify({ ok: false, code: 3, reply: `Nothing was revised: ${lockedNamed.map((p) => p.replace(/^test\//, "")).join(", ")} ${lockedNamed.length === 1 ? "is one" : "are"} of the original's own tests, carried unchanged, and a revision never changes ${lockedNamed.length === 1 ? "one" : "them"}. To take ${lockedNamed.length === 1 ? "it" : "one"} out of the suite, say "drop the original test ${lockedNamed[0].replace(/^test\//, "")}" and ask again.` }));
+      process.exit(0);
+    }
+    if (trim(env.REVISE) === "1" && !revise.length && !dropsOnly) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: `Nothing was revised: the message names no file of the suite and no test in it (the suite has ${existing.filter((f) => !STANDARD_TESTS.includes(f.path)).map((f) => f.path.replace(/^test\//, "")).join(", ") || "no file"}). Name the test file, or the test as it is written, that cannot pass without breaking what the spec says, and ask again.` }));
       process.exit(0);
     }
-    const out = await askInParts({
+    const out = dropsOnly ? { files: [], could_not: [], notes: "", findings: [], stand_ins: null, calls: 0, restored: [] } : await askInParts({
       call, declared, spec, specV1, existing, dependencies, revise,
-      asked,
+      asked, carried,
       keptTest,
       run: async (files) => standInChecks({ spec, files, folder: statSync(SPEC).isDirectory() ? SPEC : null }),
       agentFiles: statSync(SPEC).isDirectory() ? agentFilesOf(SPEC) : [],
@@ -1369,7 +1458,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const generated = [];
     const standard = [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest], [REPLY_TEST, replyTest]];
     if (trim(keptTest)) standard.push([KEPT_TEST, keptTest]);
-    for (const [path, text] of standard) {
+    for (const [path, text] of dropsOnly ? [] : standard) {
       const refreshed = refreshStandardTest(existing, path, text);
       existing.splice(0, existing.length, ...refreshed.existing);
       generated.push(...refreshed.generated);
@@ -1389,16 +1478,31 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       if (got.dropped.length) out.findings = [...(out.findings ?? []), `not delivered, because a revision changes only the files it was sent back for: ${got.dropped.join(", ")}`];
       out.files = got.files;
     }
+    // A file the answer still wrote under the name of an original test is
+    // never delivered: the original's own test keeps its name.
+    const lockedPaths = new Set(carried.map((f) => f.path));
+    const tookName = out.files.filter((f) => lockedPaths.has(f.path)).map((f) => f.path);
+    if (tookName.length) {
+      out.files = out.files.filter((f) => !lockedPaths.has(f.path));
+      out.findings = [...(out.findings ?? []), `not delivered, because the name is an original test's, carried unchanged: ${tookName.join(", ")}`];
+    }
     // A revised file replaces the one it revises; the rest are kept.
     const revised = out.files.map((f) => f.path).filter((p) => revise.includes(p));
     existing.splice(0, existing.length, ...existing.filter((f) => !revised.includes(f.path)));
     // The kept files go into the work folder beside the new ones, so the
     // check runs the suite as it will stand; only the new ones are delivered.
-    for (const f of [...existing, ...out.files]) {
+    // The original's own tests go in too, with the files they import and
+    // their record; they are delivered when they came by the manifest, and
+    // the record alone when a revision dropped one (test-writer 0.10.0).
+    for (const f of [...existing, ...out.files, ...carried, ...carriedSet.support]) {
       const at = join(WORK, f.path);
       mkdirSync(dirname(at), { recursive: true });
-      writeFileSync(at, f.text);
+      writeFileSync(at, f.bytes ?? f.text);
     }
+    if (carriedSet.record) writeFileSync(join(WORK, CARRIED_RECORD), carriedSet.record);
+    const carriedDelivered = carriedSet.from === "manifest"
+      ? [...carried.map((f) => f.path), ...carriedSet.support.map((f) => f.path), ...(carriedSet.record ? [CARRIED_RECORD] : [])]
+      : carriedSet.dropped.length && carriedSet.record ? [CARRIED_RECORD] : [];
     mkdirSync(RECORDS, { recursive: true });
     const files = out.files.map((f) => ({ path: f.path, tests: testNamesOf(f.text).length, names: testNamesOf(f.text) }));
     writeFileSync(join(RECORDS, "suite.json"), JSON.stringify({
@@ -1416,6 +1520,18 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
         kept: keptOf(specV1).map((i) => i.id),
         ...(kept ? { kept_tests: kept.tests } : {}),
       } } : {}),
+      // The original's own tests (test-writer 0.10.0): each by its name in
+      // the suite and its path in the codebase, with the tests it names, so
+      // a reader can tell them from the ones written from the spec.
+      ...(carriedSet.record || carriedSet.gaps.length || carriedSet.dropped.length ? { carried: {
+        tests: carried.map((f) => ({ path: f.path, file: carriedSet.files.get(f.path)?.file ?? null, at: carriedSet.files.get(f.path)?.at ?? null, tests: testNamesOf(f.text).length, names: testNamesOf(f.text) })),
+        support: carriedSet.support.map((f) => f.path),
+        record: carriedSet.record ? CARRIED_RECORD : null,
+        delivered: carriedDelivered,
+        dropped: carriedSet.dropped,
+        words: carriedWords({ tests: carried, support: carriedSet.support, dropped: carriedSet.dropped }),
+      } } : {}),
+      ...(keptGaps.length ? { load_gaps: keptGaps } : {}),
       could_not: out.could_not, notes: out.notes, findings: out.findings, stand_ins: out.stand_ins,
     }, null, 2) + "\n");
     writeFileSync(join(RECORDS, "calls.json"), JSON.stringify({

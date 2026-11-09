@@ -102,19 +102,46 @@ export function standInPackage(spec, dir, folder = null) {
   return scripts;
 }
 
-/** Write the suite's files under a package folder. Each is test/<name>. */
+/** A test file of a suite: test/<name>.test.mjs, the only files run. */
+export const isTestPath = (p) => /^test\/[^/]+\.test\.mjs$/.test(String(p ?? "").replace(/\\/g, "/"));
+/** A file a suite carries beside its tests and never runs (test-writer
+ *  0.10.0): a file an original test imports, under test/support/, and the
+ *  record of the original tests, test/carried-tests.json. */
+export const isSupportPath = (p) => { const n = String(p ?? "").replace(/\\/g, "/"); return /^test\/support\/.+/.test(n) || n === "test/carried-tests.json"; };
+
+/** Write the suite's files under a package folder: each test at
+ *  test/<name>, and each file it carries beside them at its own path, by its
+ *  bytes. Returns the tests' paths, which are what is run. */
 export function placeSuite(files, dir) {
   const placed = [];
   for (const f of files) {
-    if (!staysInside(f.path) || !/^test\/[^/]+\.test\.mjs$/.test(f.path.replace(/\\/g, "/"))) {
-      throw new Error(`a suite file must be test/<name>.test.mjs, not ${f.path}`);
+    const test = isTestPath(f.path);
+    if (!staysInside(f.path) || (!test && !isSupportPath(f.path))) {
+      throw new Error(`a suite file must be test/<name>.test.mjs, or a file it carries under test/support/, not ${f.path}`);
     }
     const at = join(dir, f.path);
     mkdirSync(dirname(at), { recursive: true });
-    writeFileSync(at, f.text);
-    placed.push(f.path);
+    writeFileSync(at, f.bytes ?? f.text);
+    if (test) placed.push(f.path);
   }
   return placed;
+}
+
+/** The files a suite carries beside its tests under a folder (test/support/
+ *  and test/carried-tests.json), as {path, bytes}. */
+export function supportFiles(dir) {
+  const out = [];
+  const walk = (at, rel) => {
+    if (!existsSync(at)) return;
+    for (const n of readdirSync(at).sort()) {
+      const p = join(at, n);
+      if (statSync(p).isDirectory()) walk(p, `${rel}/${n}`);
+      else out.push({ path: `${rel}/${n}`, bytes: readFileSync(p) });
+    }
+  };
+  walk(join(dir, "test", "support"), "test/support");
+  if (existsSync(join(dir, "test", "carried-tests.json"))) out.push({ path: "test/carried-tests.json", bytes: readFileSync(join(dir, "test", "carried-tests.json")) });
+  return out;
 }
 
 /** The suite files under a folder: test/*.test.mjs, as {path, text}. */
@@ -358,7 +385,7 @@ export function declarationRun({ spec, files, folder = null, spawn = spawnSync }
       writeFileSync(join(dir, "spec.json"), JSON.stringify(spec, null, 2) + "\n");
     }
     const wanted = new Map(scriptsOf(spec).map((s) => [posix.normalize(s.replace(/\\/g, "/")), new Set()]));
-    for (const f of files) {
+    for (const f of files.filter((x) => isTestPath(x.path))) {
       for (const i of importsOf(f.text)) {
         if (!i.script) continue;
         if (!wanted.has(i.from)) wanted.set(i.from, new Set());
@@ -391,7 +418,7 @@ export function declarationRun({ spec, files, folder = null, spawn = spawnSync }
       // checked against its computation (technical debt 646).
       wrong_values: wrongValuesFrom(failures),
       unpassable: unpassableFrom(failures, {
-        dir, files, scripts: [...wanted.keys()],
+        dir, files: files.filter((x) => isTestPath(x.path)), scripts: [...wanted.keys()],
         read: (p) => (staysInside(p) && existsSync(join(dir, p)) ? readFileSync(join(dir, p), "utf8") : null),
       }),
     };
@@ -491,15 +518,17 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const spec = loadSpec(SPEC);
     const folder = statSync(SPEC).isDirectory() ? SPEC : null;
     const files = suiteFiles(SUITE);
+    // The files the suite carries beside its tests go with it, never run.
+    const carried = supportFiles(SUITE);
     if (!files.length) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: `There is no suite under ${join(SUITE, "test")} to check: nothing named test/<name>.test.mjs.` }));
       process.exitCode = 3;
     } else {
-      const standIns = standInChecks({ spec, files, folder });
+      const standIns = standInChecks({ spec, files: [...files, ...carried], folder });
       let real = null; let mutations = [];
       if (AGAINST) {
         if (!existsSync(join(AGAINST, "scripts"))) throw new Error(`${AGAINST} has no scripts folder to prove the suite against`);
-        ({ real, mutations } = provingRuns({ spec, files, realDir: AGAINST }));
+        ({ real, mutations } = provingRuns({ spec, files: [...files, ...carried], realDir: AGAINST }));
       }
       const said = verdict({ standIns, real, mutations });
       const record = { checked: "v1", at: new Date().toISOString(), files: files.map((f) => f.path), stand_ins: standIns, real, mutations, verdict: said };
