@@ -226,21 +226,21 @@ export function buildInterfaces({ surface, checked, settingsRead = [], declared 
   }
   // 0.3.0: each exported constant, with its value as JSON where the literal can be read.
   for (const e of s.exports.filter((x) => x.kind !== "function" && x.kind !== "class")) {
-    let value = null; let withheld = null; let pattern = false;
+    let value = null; let withheld = null; let pattern = false; let madeAs = null;
     if (e.withheld) withheld = e.withheld;
     else if (e.kind === "constant") value = e.value;
     else if (e.kind === "pattern") { value = e.value; pattern = true; } else {
       const home = e.value_in ?? e.module;
       const sc = s.scanned?.get(home);
       const r = sc && e.range ? literalValue(sc, e.range[0], e.range[1]) : { ok: false, why: e.kind === "re-export" ? `it is re-exported from ${e.from ?? "a module"}, which is not a module of the codebase read here` : "where its value is written could not be read" };
-      if (r.ok) value = r.value;
+      if (r.ok) { value = r.value; madeAs = r.made_as ?? null; }
       else gap({ kind: "unclear", part: "interfaces", about: `the value of the constant ${e.name} (${e.module})`, why: `${r.why}, so its value is not known from the code as written`, evidence: [{ file: e.module, line: e.line }] });
     }
     items.push({
       rule: true, match: { kind: "constant", key: `${e.module}#${e.name}`, name: e.name, file: e.module },
       out: {
         kind: "constant", name: e.name, does: `A constant exported by ${e.module}${e.imported_by?.length ? `, imported by ${e.imported_by.join(", ")}` : ""}.`,
-        module: e.module, export: e.name, value, ...(withheld ? { withheld } : {}), ...(pattern ? { pattern: true } : {}), ...(e.from ? { from: e.from } : {}),
+        module: e.module, export: e.name, value, ...(withheld ? { withheld } : {}), ...(pattern ? { pattern: true } : {}), ...(madeAs ? { value_made_as: madeAs } : {}), ...(e.from ? { from: e.from } : {}),
         imported_by: e.imported_by ?? [], evidence: [{ file: e.module, line: e.line }], read_by_rule: true,
       },
     });

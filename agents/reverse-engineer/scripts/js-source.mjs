@@ -516,6 +516,33 @@ function letValues(s, name, before, depth) {
   return { type: types.length === 1 ? types[0] : types, enum: values };
 }
 
+/** The binary operator an expression [a, b) splits at last, of the lowest
+ *  precedence it has at the top level (+ and -, then *, / and %, then **):
+ *  {at, op} or null. A sign before an operand is not one. */
+function binaryAt(m, a, b) {
+  for (const ops of [["+", "-"], ["*", "/", "%"], ["**"]]) {
+    let d = 0; let found = null;
+    for (let k = a; k < b; k++) {
+      const ch = m[k];
+      if (OPEN[ch]) { d += 1; continue; }
+      if (CLOSE[ch]) { d -= 1; continue; }
+      if (d !== 0) continue;
+      const two = m.slice(k, k + 2);
+      let op = null;
+      if (ops.includes("**") && two === "**") op = "**";
+      else if (two === "**" || two === "++" || two === "--" || two === "=>" || m[k + 1] === "=") { k += 1; continue; }
+      else if (ops.includes(ch)) op = ch;
+      if (!op) continue;
+      const before = m.slice(a, k).trimEnd();
+      if (!before || /[+\-*/%(,=:?!&|<>]$/.test(before)) { k += op.length - 1; continue; }
+      found = { at: k, op };
+      k += op.length - 1;
+    }
+    if (found) return found;
+  }
+  return null;
+}
+
 /** The JSON value an expression [a, b) writes, when it is literals all the
  *  way down: strings, numbers, true, false, null, arrays and objects of them,
  *  templates whose parts are such constants, and names of consts declared
@@ -592,6 +619,25 @@ export function literalValue(s, a0, b0, { depth = 0, before = a0 } = {}) {
   }
   const call = /^Object\s*\.\s*freeze\s*\(/.exec(m.slice(a, b));
   if (call && m[b - 1] === ")") return literalValue(s, a + call[0].length, b - 1, { depth: depth + 1, before });
+  // new Set([...]): its members, in order, said to be a Set.
+  const set = /^new\s+Set\s*\(/.exec(m.slice(a, b));
+  if (set && matching(m, a + set[0].length - 1) === b - 1) {
+    const v = literalValue(s, a + set[0].length, b - 1, { depth: depth + 1, before });
+    return v.ok && Array.isArray(v.value) ? { ok: true, value: v.value, made_as: "new Set" } : (v.ok ? no("it is a Set made from something other than a list") : v);
+  }
+  // Arithmetic on number constants, and + joining strings: 2 * 1024 * 1024.
+  const op = binaryAt(m, a, b);
+  if (op) {
+    const x = literalValue(s, a, op.at, { depth: depth + 1, before });
+    const y = literalValue(s, op.at + op.op.length, b, { depth: depth + 1, before });
+    if (!x.ok) return x;
+    if (!y.ok) return y;
+    const nums = typeof x.value === "number" && typeof y.value === "number";
+    if (op.op === "+" && (nums || typeof x.value === "string" || typeof y.value === "string") && [x.value, y.value].every((v) => typeof v === "string" || typeof v === "number")) return { ok: true, value: x.value + y.value };
+    if (!nums) return no(`it works out ${collapse(src).slice(0, 80)} from values that are not numbers`);
+    const r = { "-": x.value - y.value, "*": x.value * y.value, "/": x.value / y.value, "%": x.value % y.value, "**": x.value ** y.value }[op.op];
+    return Number.isFinite(r) ? { ok: true, value: r } : no(`${collapse(src)} is not a finite number`);
+  }
   if (/^[A-Za-z_$][\w$]*$/.test(src)) {
     const d = constBefore(s, src, before);
     if (d) return literalValue(s, d.start, d.end, { depth: depth + 1, before: d.start });
