@@ -279,6 +279,31 @@ export function functionsNamed(texts) {
   return [...out].map(([name, from]) => ({ name, from }));
 }
 
+/** The script modules the given names: in an as-built record's interfaces,
+ *  each function's module and each command under scripts/. A rebuild writes
+ *  these files, so a job that runs scripts names them. */
+export function modulesNamed(texts) {
+  const out = new Map();
+  const add = (f, from) => { const v = trim(f).replace(/^\.\//, ""); if (/^scripts\/[\w./-]+\.(?:mjs|js|cjs)$/.test(v) && !v.split("/").includes("..") && !out.has(v)) out.set(v, from); };
+  for (const t of texts) {
+    const d = t.json;
+    if (!isObj(d) || !asBuilt(d)) continue;
+    for (const i of list(d.interfaces)) {
+      const k = trim(i?.kind);
+      if (k === "function") add(i.module ?? list(i.evidence)[0]?.file, t.from);
+      else if (k === "command") add(i.command ?? i.name, t.from);
+    }
+  }
+  return [...out].map(([file, from]) => ({ file, from }));
+}
+
+/** The scripts a job's command runs: each scripts/... path in run.command. */
+export function commandScripts(job) {
+  return list(job?.run?.command).map((w) => trim(w).replace(/^\.\//, "")).filter((w) => /^scripts\/[\w./-]+\.(?:mjs|js|cjs)$/.test(w));
+}
+
+const runsScripts = (j) => trim(j?.how?.control) === "script" || commandScripts(j).length > 0;
+
 /** The pieces an earlier spec or the agent's own descriptor already declared,
  *  as "outputs:<name>": a revision keeps their shape as it was given. */
 function earlierOutputs(texts) {
@@ -304,6 +329,7 @@ export function givenOf(asked = null, answers = null) {
     shapes: shapesNamed(texts),
     exact: exactNamed(texts),
     functions: functionsNamed(texts),
+    modules: modulesNamed(texts),
     earlier_outputs: earlierOutputs(texts),
   };
 }
@@ -444,6 +470,19 @@ export function fitToGiven(spec, given = null) {
     said.push(`The runtime ${r.name}${r.version ? ` ${r.version}` : ""} was added, as ${r.from ?? "a job's command"} names it.`);
   }
   if (runtimes.length !== list(s.runtimes).length) s = { ...s, runtimes };
+  // A job that runs scripts names them: its command's scripts, and when it is
+  // the only such job, every module the given's as-built record lists.
+  const scriptJobs = jobsOf(s).filter((j) => runsScripts(j) && !list(j?.scripts).length);
+  if (scriptJobs.length) {
+    const lone = jobsOf(s).filter(runsScripts).length === 1;
+    s = { ...s, jobs: jobsOf(s).map((j) => {
+      if (!scriptJobs.includes(j)) return j;
+      const files = [...new Set([...commandScripts(j), ...(lone ? list(given.modules).map((m) => m.file) : [])])];
+      if (!files.length) return j;
+      said.push(`The job ${trim(j.slug)} runs scripts and named none, so it now names ${files.join(", ")}${lone && list(given.modules).length ? ", from its command and the modules the as-built record lists" : ", from its command"}.`);
+      return { ...j, scripts: files };
+    }) };
+  }
   if (given.price && !isObj(s.price)) {
     const { from, ...price } = given.price;
     s = { ...s, price };

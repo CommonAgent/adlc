@@ -109,6 +109,11 @@ export function jobProblems(job) {
   if (trim(job?.does) && words(job.does) > DOES_MAX) {
     out.push(`job ${slug}: does is ${words(job.does)} words; it is one line for somebody skimming the package`);
   }
+  // A job whose command runs a script names its scripts: they are the files
+  // Code writes, and a job that names none leaves Code nothing to write.
+  const runs = (Array.isArray(job?.run?.command) ? job.run.command : []).map((w) => trim(w).replace(/^\.\//, "")).filter((w) => /^scripts\/[\w./-]+\.(?:mjs|js|cjs)$/.test(w));
+  const named = Array.isArray(job?.scripts) ? job.scripts.map((f) => trim(f).replace(/^\.\//, "")) : [];
+  for (const f of runs) if (!named.includes(f)) out.push(`job ${slug}: its command runs ${f}, and scripts does not name it; name every script the job runs in scripts, because those are the files Code writes`);
   const how = job?.how;
   if (!how || typeof how !== "object") out.push(`job ${slug}: no how; every job says control, intelligence, cost and contract`);
   else {
