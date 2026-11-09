@@ -134,7 +134,7 @@ test("the drafting instruction says what a kind is, where an address goes, what 
   assert.match(INSTRUCTION, /put "container" in "blanks"/);
 });
 
-test("a container agent's draft makes no files, and its checked spec goes as spec.json, the one this agent still delivers", () => {
+test("a container agent's draft makes no files, and its checked draft goes as out/agent/spec.json, out/spec.json being the spec", () => {
   const dir = mkdtempSync(join(tmpdir(), "spec-writer-pieces-container-"));
   try {
     const spec = { name: "box-agent", version: "0.1.0", description: "Answers in a box.", kind: "mesh-coded",
@@ -153,7 +153,7 @@ test("a container agent's draft makes no files, and its checked spec goes as spe
     const ok = runPieces(job, records);
     assert.equal(ok.status, 0, ok.stderr);
     const listed = JSON.parse(readFileSync(join(job, "pieces.json"), "utf8"));
-    assert.deepEqual(listed.map((e) => [e.name, e.path, e.media_type]), [["the container spec", "out/spec.json", "application/vnd.agentmesh.agent-spec+json"]]);
-    assert.equal(readFileSync(join(job, "out", "spec.json"), "utf8"), text);
+    assert.deepEqual(listed.map((e) => [e.name, e.path, e.media_type]), [["the container spec", "out/agent/spec.json", "application/vnd.agentmesh.agent-spec+json"]]);
+    assert.equal(readFileSync(join(job, "out", "agent", "spec.json"), "utf8"), text);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

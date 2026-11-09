@@ -364,6 +364,79 @@ export function givenOf(asked = null, answers = null) {
   };
 }
 
+/** What the spec (spec-v1) names, read the way givenOf reads what a person
+ *  sent, for the Design: from 0.9.0 the agent's own files are made from the
+ *  approved spec, so the spec is their given and the raw request is not.
+ *
+ *  - settings: each setting the spec lists;
+ *  - runtimes: each constraint of kind runtime (node, and a version such as
+ *    >=22 when its exact gives one);
+ *  - price: the spec's price, in its words;
+ *  - reaches: each system the spec reaches at an address (its address is the
+ *    default of an address setting), and each it reaches with no address (a
+ *    service that fetches what it is handed). A system of reach none is
+ *    written down and never reached, so it is no reach;
+ *  - shapes: the JSON Schema of each output and each file interface, with
+ *    every constant that is an address left out of what the files must
+ *    carry: an address in a descriptor is refused at Package, and the spec
+ *    is where it is kept (the round trip of 2026-11-09 stopped there);
+ *  - modules: each function interface's module and each command under
+ *    scripts/, so a job names its scripts. The functions themselves are the
+ *    spec's interfaces, which Test and Code read, so the files are not held
+ *    to naming each one;
+ *  - exact: none. The words and patterns the spec fixes are the spec's, and
+ *    Test and Code read them there.
+ *  `asked` is what the Design was handed (the spec and any earlier files), for
+ *  the outputs an earlier draft already declared. */
+export function givenOfSpec(spec, asked = null, answers = null) {
+  const from = "the spec";
+  const settings = list(spec?.settings).filter((s) => trim(s?.name)).map((s) => ({ name: trim(s.name), from }));
+  const runtimes = [];
+  for (const c of list(spec?.constraints)) {
+    if (trim(c?.kind) !== "runtime") continue;
+    const words = [trim(c.shall), ...list(c.exact).map(String)].join(" ");
+    if (/\bnode\b/i.test(words)) {
+      const v = /(>=?\s*\d+(?:\.\d+)*)/.exec(list(c.exact).join(" "))?.[1]?.replace(/\s+/g, "") ?? null;
+      if (!runtimes.some((r) => r.name === "node")) runtimes.push({ name: "node", version: v, from });
+    }
+  }
+  const price = trim(spec?.price) ? priceNamed([{ from, text: `price: ${trim(spec.price)}` }]) : null;
+  const addresses = [];
+  const handed = [];
+  for (const s of list(spec?.systems)) {
+    const reach = trim(s?.reach);
+    if (!reach || reach === "none") continue;
+    if (trim(s.address)) addresses.push({ address: sameAddress(trim(s.address)), from });
+    else handed.push({ what: trim(s.name), from });
+  }
+  const members = new Set();
+  const schemas = [];
+  const takeSchema = (doc, name) => {
+    if (!isObj(doc)) return;
+    const e = schemaEntry(doc, name);
+    e.name = name;
+    for (const c of [...e.consts]) if (/^[a-z][a-z0-9+.-]*:\/\//i.test(c)) e.consts.delete(c);
+    schemas.push(e);
+    for (const m of e.members) members.add(m);
+  };
+  for (const f of list(spec?.features)) for (const o of list(f?.outputs)) if (o?.schema !== undefined) takeSchema(o.schema, trim(o.name));
+  for (const i of list(spec?.interfaces)) if (trim(i?.kind) === "file" && i?.schema !== undefined && !schemas.some((s) => s.name === trim(i.name))) takeSchema(i.schema, trim(i.name));
+  // The functions the spec keeps are its interfaces, by name and module, and
+  // Test and Code read them there; the files are not asked to repeat them.
+  const functions = [];
+  const modules = [];
+  const addModule = (f) => { const v = trim(f).replace(/^\.\//, ""); if (/^scripts\/[\w./-]+\.(?:mjs|js|cjs)$/.test(v) && !v.split("/").includes("..") && !modules.some((m) => m.file === v)) modules.push({ file: v, from }); };
+  for (const i of list(spec?.interfaces)) { if (trim(i?.kind) === "function") addModule(i.module); else if (trim(i?.kind) === "command") addModule(i.name); }
+  return {
+    settings, runtimes, price,
+    reaches: { addresses, handed },
+    shapes: { members, schemas },
+    exact: [],
+    functions, modules,
+    earlier_outputs: earlierOutputs(givenTexts(asked, answers)),
+  };
+}
+
 /** Every string in a value, joined, whitespace collapsed: what the draft says. */
 function saidIn(v) {
   const out = [];

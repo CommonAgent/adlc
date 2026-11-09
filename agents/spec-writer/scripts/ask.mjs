@@ -1,4 +1,11 @@
-// The reply: what was drafted, what is still open, and what nobody checked.
+// The reply: the spec, what is still open, the agent's own files made from
+// it, and what nobody checked.
+//
+// From 0.9.0 the reply opens with the spec (spec-v1) Requirements hands
+// back: its product, how many features, requirements and acceptance
+// scenarios it carries, and how many interfaces it keeps; on a revision, what
+// changed and that everything else is as it was. Then the questions, then the
+// agent's own files the Design made from it.
 //
 // The draft always goes, even when it is not finished. A spec missing its name
 // is still most of the work and reading it is what lets somebody answer the
@@ -14,8 +21,9 @@
 //
 //   needs: node >= 22
 //   DRAFT=<draft.json> BLANKS=<blanks.json> [BUILDS=<builds.json>]
-//   [RECORDS=<records folder>] node ask.mjs
+//   [RECORDS=<records folder>] [SPEC=<spec.json>, else <records>/spec.json] node ask.mjs
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { NEEDS } from "./asked.mjs";
 import { paragraph } from "./went-without.mjs";
 import { addressSettingsOf } from "./reaches.mjs";
@@ -60,6 +68,25 @@ export function draftLine(spec) {
   return named
     ? `The draft is ${named}, which offers ${what}${inSteps}.`
     : `The draft offers ${what}${inSteps}, and has no name yet.`;
+}
+
+/** One sentence saying what the spec is, for somebody who has not opened it:
+ *  the product, then what it carries. Empty with no spec. */
+export function specLine(spec, counts = null) {
+  if (!spec || typeof spec !== "object") return "";
+  const c = counts ?? {};
+  const n = (x) => (Number.isInteger(x) ? x : 0);
+  const named = trim(spec.product?.name) && !(spec.open ?? []).some((o) => o?.key === "name");
+  const what = named ? `${trim(spec.product.name)} ${trim(spec.product?.version)}`.trim() : "for an agent not named yet";
+  return `The spec is ${named ? "" : ""}${what}: ${many(n(c.features), "feature")} with ${many(n(c.requirements), "requirement")} and ${many(n(c.acceptance), "acceptance scenario")}${n(c.interfaces) ? `, and ${many(n(c.interfaces), "interface")} (${n(c.interfaces_kept) === n(c.interfaces) ? "all kept exactly" : `${n(c.interfaces_kept)} kept exactly`})` : ""}${spec.source?.kind === "as-built-record" ? ", drawn from the as-built record" : ""}. It is in out/spec.json, and readable in out/spec.md.`;
+}
+
+/** One sentence on what a revision changed, and that the rest stands. */
+export function revisedLine(revised = null) {
+  if (!revised || typeof revised !== "object") return "";
+  const changed = Array.isArray(revised.changed) ? revised.changed : [];
+  if (!changed.length) return "Your words change nothing in the spec, so it is as it was.";
+  return `This revises the spec: ${changed.join(", ")} changed, as your words name; everything else is as it was, byte for byte.`;
 }
 
 /** One sentence on the files delivered, from builds.json's list. */
@@ -115,8 +142,11 @@ export function addressesLine(spec) {
  *  sentences has still read the part that needs them. */
 export function replyText({
   spec = null, blanks = [], notes = "", verdict = "", findings = [], wentWithout = "", answered = [], files = null, container = false,
+  theSpec = null, specInfo = null,
 } = {}) {
-  const lines = [draftLine(spec)];
+  const lines = theSpec ? [specLine(theSpec, specInfo?.counts)] : [draftLine(spec)];
+  const revised = revisedLine(specInfo?.revised);
+  if (theSpec && revised) lines.push(revised);
   const questions = questionsFor(blanks);
 
   if (questions.length) {
@@ -140,6 +170,12 @@ export function replyText({
 
   if (answered.length) {
     lines.push(`${cap(many(answered.length, "answer"))} from your last message went in: ${answered.join(", ")}.`);
+  }
+  if (theSpec) {
+    const sf = Array.isArray(specInfo?.findings) ? specInfo.findings : [];
+    if (sf.length) lines.push(`The spec was written twice and ${sf.length === 1 ? "this still stands" : "these still stand"}: ${sf.join("; ")}.`);
+    if (trim(specInfo?.notes)) { const s = trim(specInfo.notes); lines.push(`In the spec, read this part hardest: ${s}${/[.!?]$/.test(s) ? "" : "."}`); }
+    lines.push(`The agent's own files are made from the spec (the Design): ${draftLine(spec).replace(/^The draft /, "the draft ")}`);
   }
   if (trim(verdict)) lines.push(trim(verdict));
   // What is handed on. The agent's own files when the builder took the
@@ -171,7 +207,7 @@ export function stillOpen(blanks = []) {
 
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
 if (thisFile && import.meta.url.endsWith(thisFile)) {
-  const { DRAFT, BLANKS, BUILDS, RECORDS, ANSWERS } = process.env;
+  const { DRAFT, BLANKS, BUILDS, RECORDS, ANSWERS, SPEC } = process.env;
   if (!DRAFT || !BLANKS) { console.error("DRAFT and BLANKS are required"); process.exit(2); }
   const readJson = (p) => (p && existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null);
   try {
@@ -179,6 +215,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     const blanksDoc = readJson(BLANKS) ?? { blanks: [] };
     const buildsDoc = readJson(BUILDS);
     const answers = readJson(ANSWERS) ?? {};
+    const theSpec = readJson(SPEC || (RECORDS ? join(RECORDS, "spec.json") : ""));
     const reply = replyText({
       spec,
       blanks: blanksDoc.blanks ?? [],
@@ -191,8 +228,10 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       files: buildsDoc ? (buildsDoc.files?.list ?? []).map((f) => f.path) : null,
       container: buildsDoc?.container === true,
       wentWithout: RECORDS ? paragraph(RECORDS) : "",
+      theSpec, specInfo: blanksDoc.spec ?? null,
     });
-    console.log(JSON.stringify({ ok: true, code: 0, reply, still_open: stillOpen(blanksDoc.blanks ?? []) }));
+    console.log(JSON.stringify({ ok: true, code: 0, reply, still_open: stillOpen(blanksDoc.blanks ?? []),
+      ...(theSpec ? { spec: { product: theSpec.product ?? null, ...(blanksDoc.spec?.counts ?? {}), ...(blanksDoc.spec?.revised ? { changed: blanksDoc.spec.revised.changed ?? [] } : {}) } } : {}) }));
   } catch (e) {
     console.error(e.message);
     process.exitCode = 1;

@@ -1,16 +1,23 @@
-// Fill a job folder from a finished draft: every delivered piece under out/,
+// Fill a job folder from a finished job: every delivered piece under out/,
 // and pieces.json, the list the adapter reads when the reply is sent, one
 // entry per piece with the step that made it and a sentence saying what it is.
 // The adapter signs the job manifest from that list; a reply with no
 // pieces.json carries no job.
 //
-// The pieces are the agent's own files, the layout Common Agent 13.2 says a
-// package is authored in: agent-descriptor.json, agent-runtime-requirements.json,
-// plugin.json and one SKILL.md per skill, as builds.mjs took them from what
-// the builder made of the draft. Whoever takes them next (the test writer,
-// the code writer, the package maker) finds each one by its content, and the
-// package maker builds the folder they make. Nothing here delivers a spec.json:
-// the draft is this agent's working record, kept under its records.
+// The spec comes first (stages.json 1.6.0): out/spec.json, the spec-v1
+// document Requirements hands back, and out/spec.md, the same spec readable
+// by a person. Each is delivered only while it is byte for byte what the
+// drafting step wrote (its digest in calls.json).
+//
+// Then the agent's own files, made from the spec at Design, the layout Common
+// Agent 13.2 says a package is authored in: agent-descriptor.json,
+// agent-runtime-requirements.json, plugin.json and one SKILL.md per skill,
+// under out/agent/, as builds.mjs took them from what the builder made of the
+// draft. Whoever takes them next (the test writer, the code writer, the
+// package maker) finds each one by its content, and the package maker builds
+// the folder they make. The draft they are written from is this agent's
+// working record, kept under its records. A container agent makes no package:
+// its checked draft goes as out/agent/spec.json.
 //
 // What is still open goes as a file of its own rather than only as prose in
 // the reply, because a reply is read once and a file is still there next week
@@ -34,12 +41,16 @@ const copyBytes = (from, to) => writeFileSync(to, readFileSync(from));
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 
 export const STEP_OF = {
+  "the spec": "draft-the-spec",
+  "the spec, readable": "draft-the-spec",
   "files": "draft-the-spec",
   "the container spec": "draft-the-spec",
   "what is still open": "ask-what-is-missing",
 };
 
 const ABOUT = {
+  "the spec": "The spec (spec-v1): the analysis of what the agent must do. Each feature with its requirements (a shall statement, its kind, the exact words, patterns and numbers it fixes, its source and how it is verified) and its acceptance scenarios in Gherkin; the interfaces and which are kept exactly; the constraints, systems, settings, price and the open questions.",
+  "the spec, readable": "The same spec as Markdown a person reads: the purpose, each feature with each requirement's shall line and exact words and each Gherkin scenario, then the interfaces, constraints, systems, settings, price and open questions.",
   "agent-descriptor.json": "The draft Agent Descriptor: what the agent offers, what each job takes and produces, how each job is done, what it refuses and what it records. One of the agent's own files, with the runtime requirements, plugin.json and the skills; the scripts they name do not exist yet.",
   "agent-runtime-requirements.json": "The draft runtime requirements: what a host must have and do to run the agent, each system's binding, its directories and how each job runs. One of the agent's own files.",
   "plugin.json": "The agent's manifest, with the builder's own entry naming the files each skill carries. One of the agent's own files.",
@@ -57,7 +68,15 @@ export const KIND_OF = {
   "agent-runtime-requirements.json": "application/vnd.agentmesh.agent-runtime-requirements+json",
   "plugin.json": "application/vnd.agentmesh.agent-plugin+json",
   spec: "application/vnd.agentmesh.agent-spec+json",
+  "the spec": "application/vnd.agentmesh.spec+json",
 };
+
+/** Where the spec and its readable twin are delivered in the job folder. */
+export const SPEC_PATH = "out/spec.json";
+export const SPEC_MD_PATH = "out/spec.md";
+/** Where a container agent's checked draft is delivered: among the agent's
+ *  own files, since out/spec.json is the spec. */
+export const CONTAINER_PATH = "out/agent/spec.json";
 
 /** What is still open, as Markdown a person reads: a heading, then one bullet
  *  per question with its key. */
@@ -78,20 +97,30 @@ export const pieceNameOf = (rel) => {
  *  sha256}) and `filesDir` the folder it was written under. `container` is
  *  the container agent's checked spec, by its path, or true with the path as
  *  `specPath`. */
-export function plan({ files = [], filesDir = "", blanks = [], container = null, specPath = null } = {}) {
+export function plan({ files = [], filesDir = "", blanks = [], container = null, specPath = null, theSpec = null } = {}) {
   const entries = [];
   const copies = [];
   if (container === true && specPath) container = specPath;
+  // The spec first: it is what Requirements hands back, and the files after
+  // it are made from it. `theSpec` is { json, md, sha256, md_sha256 }.
+  if (theSpec?.json) {
+    entries.push({ name: "the spec", step: STEP_OF["the spec"], path: SPEC_PATH, media_type: KIND_OF["the spec"], about: ABOUT["the spec"], produced_from: ["what it should do"] });
+    copies.push({ from: theSpec.json, to: SPEC_PATH, what: "the spec", ...(theSpec.sha256 ? { sha256: theSpec.sha256 } : {}) });
+    if (theSpec.md) {
+      entries.push({ name: "the spec, readable", step: STEP_OF["the spec, readable"], path: SPEC_MD_PATH, media_type: "text/markdown", about: ABOUT["the spec, readable"], produced_from: ["what it should do"] });
+      copies.push({ from: theSpec.md, to: SPEC_MD_PATH, what: "the spec's Markdown", ...(theSpec.md_sha256 ? { sha256: theSpec.md_sha256 } : {}) });
+    }
+  }
   // A container agent's draft makes no package and has no files: what a
   // container deploy is filed with is the checked spec, until container
   // agents carry the two files (the plan's milestone 2). It is the one
   // spec.json this agent still delivers, as the output "the container spec".
   if (container) {
     entries.push({
-      name: "the container spec", step: STEP_OF["the container spec"], path: "out/spec.json", media_type: KIND_OF.spec,
+      name: "the container spec", step: STEP_OF["the container spec"], path: CONTAINER_PATH, media_type: KIND_OF.spec,
       about: ABOUT["the container spec"], produced_from: ["what it should do"],
     });
-    copies.push({ from: container, to: "out/spec.json", what: "the container agent's checked spec" });
+    copies.push({ from: container, to: CONTAINER_PATH, what: "the container agent's checked spec" });
   }
   for (const f of files) {
     const name = pieceNameOf(f.path);
@@ -140,7 +169,7 @@ export function fill(jobDir, { entries, copies }) {
     // The same rule as the draft's: only builds.mjs writes these, and a
     // file changed after it did is not delivered.
     if (c.from && c.sha256 && sha256(readFileSync(c.from)) !== c.sha256) {
-      throw new Error(`${c.what} was changed after the builder made it, so nothing is delivered: run the four commands again, and never edit the files by hand`);
+      throw new Error(`${c.what} was changed after ${/^the spec/.test(c.what) ? "the drafting step wrote it" : "the builder made it"}, so nothing is delivered: run the four commands again, and never edit the files by hand`);
     }
   }
   for (const c of copies) {
@@ -171,8 +200,11 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     }
     const buildsPath = join(RECORDS, "builds.json");
     const builds = existsSync(buildsPath) ? JSON.parse(readFileSync(buildsPath, "utf8")) : null;
+    const specJson = join(RECORDS, "spec.json");
+    const specMd = join(RECORDS, "spec.md");
+    const theSpec = existsSync(specJson) ? { json: specJson, md: existsSync(specMd) ? specMd : null, sha256: calls?.spec_sha256 ?? null, md_sha256: calls?.spec_md_sha256 ?? null } : null;
     const listed = fill(JOB_DIR, plan({ files: builds?.files?.list ?? [], filesDir: join(RECORDS, "agent"), blanks,
-      container: builds?.container ? draftPath : null }));
+      container: builds?.container ? draftPath : null, theSpec }));
     console.log(`${listed.length} piece${listed.length === 1 ? "" : "s"} listed at ${join(JOB_DIR, "pieces.json")}`);
   } catch (e) {
     // One JSON object whose reply says why, like the refusal above, so the
