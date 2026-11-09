@@ -63,9 +63,17 @@ export function namedTargets(words = "", spec = null) {
   if (settled.version || /\bversion\b/i.test(t)) out.add("product.version");
   if (settled.price || /\bprice\b|\bcosts?\b|\bfree\b/i.test(t)) out.add("price");
   if (/\bpurpose\b/i.test(t)) out.add("purpose");
+  // An interface by its name: a file or command by its path or file name, a
+  // function only where the words write it as one (`run`, run(), the
+  // function run), so "runs" or "run.command" names no function run.
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const i of list(spec?.interfaces)) {
-    const names = [trim(i?.name), trim(i?.name).split("/").pop()].filter((n) => n.length > 2);
-    if (names.some((n) => t.includes(n))) out.add(trim(i.id));
+    const name = trim(i?.name);
+    if (!name) continue;
+    const named = trim(i.kind) === "function"
+      ? new RegExp(`\`${esc(name)}\`|(?<![\\w$.])${esc(name)}\\s*\\(|\\b(?:function|export(?:s|ed)?)\\s+\`?${esc(name)}(?![\\w$])`).test(t)
+      : [name, name.split("/").pop()].filter((n) => n.length > 2 && /[./]/.test(n)).some((n) => new RegExp(`(?<![\\w$-])${esc(n)}(?![\\w$-])`).test(t));
+    if (named) out.add(trim(i.id));
   }
   for (const s of list(spec?.systems)) if (trim(s?.name).length > 2 && low.includes(trim(s.name).toLowerCase())) out.add(`system:${trim(s.name)}`);
   for (const s of list(spec?.settings)) if (trim(s?.name) && new RegExp(`(?<![\\w-])${trim(s.name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(t)) out.add(`setting:${trim(s.name)}`);

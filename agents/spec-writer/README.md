@@ -4,22 +4,62 @@ This agent holds the [spec writer](https://agentroles.ai/spec-writer.html) role
 for the Requirements and Design stages of the
 [Agent Development Lifecycle](https://agenticdevelopment.ai/stages.html).
 
-It takes what somebody wants an agent to do, in their own words, and writes
-the agent's own files the package maker will take, the layout a package is
-built from (`agent-descriptor.json`, `agent-runtime-requirements.json`,
-`plugin.json` and a `SKILL.md` per skill): what the agent offers, what each
-job takes and produces, what it refuses and what it records. It writes no
-`spec.json`: the draft is its own working record, and the files are taken
-from what the builder makes of it. It never invents the
-three things only the person can decide (the name, the price and access to any
-system), and it hands back the questions it could not settle instead of
-guessing. The package maker's own check runs over every draft, so a draft that
-will not build is caught here, and no files are delivered for it.
+It takes what somebody wants an agent to do, in their own words or as the
+as-built record of code that already exists, and writes the spec
+([standards/spec.schema.json](../../standards/spec.schema.json), spec-v1):
+the analysis of the agent's functional requirements and capabilities. Each
+feature has requirements in the attributes of ISO/IEC/IEEE 29148 (a statement
+with shall, its kind, the exact words, patterns and numbers it fixes, its
+source and how it is verified) and acceptance scenarios in Gherkin a test can
+be written from; then come the interfaces and which must be kept, the
+constraints, the systems it reaches or names, its settings, its price and the
+open questions. That is what Requirements hands back (stages.json 1.6.0).
 
-It holds the Design part of the Architecture and Design stage, after the
-[solution architect](../solution-architect). Given the architecture record,
-the draft declares exactly the systems the record names; a step that needs
-another goes back to the architect as a question instead of into the draft.
+Then, in the same job, it holds the Design part of the Architecture and
+Design stage: from the spec it writes the agent's own files the package maker
+will take, the layout a package is built from (`agent-descriptor.json`,
+`agent-runtime-requirements.json`, `plugin.json` and a `SKILL.md` per skill).
+It never invents the three things only the person can decide (the name, the
+price and access to any system), and it hands back the questions it could not
+settle instead of guessing. The package maker's own check runs over every
+draft of the files, so a draft that will not build is caught here, and no
+files are delivered for it. Given an architecture record (after the
+[solution architect](../solution-architect)), the files declare exactly the
+systems the record names; a step that needs another goes back to the
+architect as a question instead.
+
+## The spec
+
+One command does the job (`scripts/draft.mjs`, the second of the four the
+write-a-spec skill names), and it writes the spec first:
+
+- From an as-built record (agents/reverse-engineer 0.2.0: behaviors.json,
+  interfaces.json, architecture.json, tests-and-gaps.json and the schemas),
+  code seeds the spec with no model (`scripts/seed.mjs`): each behavior is a
+  feature unless the person dropped it, each quote a wording or pattern
+  requirement with the quote in `exact`, each rule a requirement of its kind
+  with its values in `exact`, each refusal and error handling a requirement in
+  its words, each interface kept (`keep: true`), each address the code reaches
+  a system with an address setting, and each address it only writes down a
+  system with reach `none`. The model answers with a fill by id: the shall
+  lines, the purpose, the Gherkin scenarios and the open questions. Code keeps
+  every value it seeded.
+- From the person's words alone, the model drafts the whole spec, and what it
+  cannot settle goes in `open`.
+- On Ask for changes or Send back to Requirements, the spec is revised by
+  edits addressed by id to what the person's words name
+  (`scripts/revise.mjs`); everything else stays byte for byte, checked by
+  rule, and a keyed name, version or price is set by code with no model.
+
+`scripts/spec-check.mjs` holds every spec to the schema (`scripts/spec-v1.mjs`
+validates it with no dependencies), to a scenario per feature that checks
+requirement ids it has and is Gherkin, to every quote, rule value and
+interface of the record byte for byte, to no value nobody gave, and to the
+person's name, price and access. What it finds goes back to the model once;
+then code fits what it can and says what still stands. The job delivers
+`out/spec.json` and `out/spec.md`, the same spec readable by a person.
+[references/what-a-good-spec-carries.md](references/what-a-good-spec-carries.md)
+says what goes in a spec, and then what goes in the agent's own files.
 
 ## Writing a process
 
@@ -49,8 +89,17 @@ says what goes in a document and why.
 
 ## What the given names, and what it reaches
 
-What the person sent (words, attachments, answers, or an as-built record of
-existing code) names some things exactly, and the draft keeps them:
+The agent's own files are made from the spec, so their given is the spec
+(`scripts/given.mjs`, `givenOfSpec`): its settings, runtime, price, the
+systems it reaches, its output schemas and the modules its interfaces name.
+Code then holds the draft to it (`scripts/design.mjs`): the name, version and
+price are the spec's, each address setting has the spec's name and default,
+each host the spec only writes down is named in a service's `needs`, and no
+address sits anywhere but a setting's default, because the package maker
+refuses a descriptor that carries one.
+
+Before 0.9.0 the given was what the person sent (words, attachments, answers,
+or an as-built record of existing code), and the same checks read it there:
 `scripts/given.mjs` checks, with no model, that every setting, runtime,
 price, address, JSON Schema, quoted word or pattern and exported function the
 given names is in the draft, and that an output of a JSON kind whose shape the
@@ -102,7 +151,7 @@ instructions are in `skills/<slug>/SKILL.md`, the scripts are in `scripts/`, and
 works under are in `rules.md` and `references/`.
 
 ```sh
-node --test test/*.test.mjs                                   # 262 tests
+node --test test/*.test.mjs                                   # 297 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
@@ -112,5 +161,6 @@ Install the package on any host that runs Agent Packages, bind
 ## Replacing it
 
 This is a reference implementation. Any agent that holds the spec writer role
-can take its place, and its output is checked the same way: files the package
-maker accepts, with the open questions named.
+can take its place, and its output is checked the same way: a spec valid
+against spec-v1 that carries what the as-built record fixes, files the package
+maker accepts, and the open questions named.
