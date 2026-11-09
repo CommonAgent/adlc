@@ -74,8 +74,8 @@ Under `out/as-built/`, one file per part, and `pieces.json`:
   did not run), the tests carried (`carried`, `support`), and every gap with
   its kind;
 - `strings.json` (0.3.0, `as-built-strings-v1`): every string a person
-  reads and every regular expression in the scripts, `{file, line, kind,
-  text}`, the text exactly as in the source, found by code;
+  reads, every key (such as `citation_title`, `dc.title`, `@graph`) and every
+  regular expression in the scripts, `{file, line, kind, text}`, the text exactly as in the source, found by code;
 - `tests/` and `support/` (0.3.0): the codebase's test files copied byte for
   byte at their paths, and the files they import from outside the codebase,
   with what those import in turn, at their paths from the repository's top.

@@ -57,7 +57,7 @@ export const PARTS = [
   { part: "interfaces", format: "as-built-interfaces-v1", file: "interfaces.json" },
   { part: "dependencies", format: "CycloneDX 1.5", file: "sbom.cdx.json" },
   { part: "existing tests and gaps", format: "as-built-tests-and-gaps-v1", file: "tests-and-gaps.json" },
-  // 0.3.0: every string a person reads and every pattern in the scripts.
+  // 0.3.0: every string a person reads, every key and every pattern in the scripts.
   { part: "strings", format: "as-built-strings-v1", file: "strings.json" },
 ];
 export const RECORD_FORMAT = "as-built-record-v1";

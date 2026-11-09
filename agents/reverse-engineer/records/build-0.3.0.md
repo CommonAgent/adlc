@@ -37,8 +37,10 @@ that it does.
   literals shaped like the one the field is in, following a const, a ternary,
   or a `let` that is only ever given literals.
 - **strings.json**, a new part (`as-built-strings-v1`): every string a person
-  reads and every regular expression in the scripts, exactly as written, by
-  the lexer, no model.
+  reads, every key other code or data depends on (no space, a letter, one of
+  `_ . : @`, no `/`: `citation_title`, `dc.title`, `og:title`, `@graph`) and
+  every regular expression in the scripts, exactly as written, by the lexer,
+  no model.
 - **The original tests, carried.** Each test file and each file in a test
   folder, byte for byte, under tests/; each file a test imports from outside
   the codebase, and every file those import in turn inside the repository,
@@ -67,7 +69,10 @@ required_flags, values), which a spec writer turns the record into.
 
 Run locally with no model over the original agent, the completeness check
 found nothing missing: 29 exports, 3 files written, 1 command, 86
-declarations and 93 strings, all held. Its one command has no required flag
+declarations and 144 strings, all held. The strings are 13 words, 35
+templates, 51 keys (the page metadata sources among them: `@graph`,
+`citation_title`, `dc.title`, `og:title`, `article:published_time` and the
+rest) and 45 patterns. Its one command has no required flag
 (each of its five flags is optional, with the line that shows it). Its test
 imports a file from beyond the copied repository's top, so that import is a
 gap and nothing is carried for it. With a stand-in draft that names the

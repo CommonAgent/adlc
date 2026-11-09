@@ -122,8 +122,9 @@ test("declarations: each thing named by what it is, each field of it with its va
 });
 
 test("strings: words a person reads, templates and patterns, exactly as written; not import paths or bare words", () => {
-  const got = stringsOf(scan("import { a } from \"./a b.mjs\";\nconst k = \"name\";\nconst s = 'It is done.';\nconst t = `Read ${n} of ${m}.`;\nconst p = /^\\s*x$/i;\nconst e = \"Done.\";\nconst u = `${a}/${b}`;\n"));
-  assert.deepEqual(got.map((x) => [x.line, x.kind, x.text]), [[3, "words", "It is done."], [4, "template", "Read ${n} of ${m}."], [5, "pattern", "/^\\s*x$/i"], [6, "words", "Done."]]);
+  const got = stringsOf(scan("import { a } from \"./a b.mjs\";\nconst k = \"name\";\nconst s = 'It is done.';\nconst t = `Read ${n} of ${m}.`;\nconst p = /^\\s*x$/i;\nconst e = \"Done.\";\nconst u = `${a}/${b}`;\nconst keys = [\"og:title\", \"citation_title\", \"@graph\", \"text/html\", \"a.b\", \"ab\", \"x y.z\", \"12.5\"];\n"));
+  assert.deepEqual(got.map((x) => [x.line, x.kind, x.text]), [[3, "words", "It is done."], [4, "template", "Read ${n} of ${m}."], [5, "pattern", "/^\\s*x$/i"], [6, "words", "Done."],
+    [8, "key", "og:title"], [8, "key", "citation_title"], [8, "key", "@graph"], [8, "key", "a.b"], [8, "words", "x y.z"]], "a key has no space, a letter and one of _ . : @, and no /");
 });
 
 test("the job on an agent in a repository: constants, declarations, required flags, allowed values, strings, carried tests, nothing missing", async () => {
@@ -152,7 +153,8 @@ test("the job on an agent in a repository: constants, declarations, required fla
 
   const strings = readPiece(j.jobDir, "strings.json");
   assert.equal(strings.format, "as-built-strings-v1");
-  assert.deepEqual(strings.strings.map((x) => [x.line, x.kind, x.text]), [[8, "pattern", "/^\\s*done\\s*:\\s*(\\d+)\\s*$/i"], [33, "words", "Name the job folder with --job."], [40, "template", "Read ${pages.length} pages for ${args.job}."], [43, "pattern", "/[\\/]/"]]);
+  assert.deepEqual(strings.strings.map((x) => [x.line, x.kind, x.text]), [[8, "pattern", "/^\\s*done\\s*:\\s*(\\d+)\\s*$/i"], [33, "words", "Name the job folder with --job."], [39, "key", "pages.json"], [40, "template", "Read ${pages.length} pages for ${args.job}."], [43, "pattern", "/[\\/]/"],
+    [47, "key", "og:title"], [47, "key", "dc.title"], [47, "key", "citation_title"], [47, "key", "@graph"], [47, "key", "a.b"], [47, "key", "ab_"]]);
   const lines = readFileSync(join(r.agent, "scripts", "read-pages.mjs"), "utf8").split("\n");
   for (const x of strings.strings) assert.ok(lines[x.line - 1].includes(x.text), `${x.text} is the code's, byte for byte`);
 
@@ -177,10 +179,10 @@ test("the job on an agent in a repository: constants, declarations, required fla
   assert.deepEqual(record.carried_files.map((c) => c.file), ["tests/test/fixtures/sample.txt", "tests/test/read-pages.test.mjs", "support/shared/fake-pages.mjs", "support/shared/lib/pages.mjs", "support/shared/lib/deep/words.mjs"]);
   assert.deepEqual(record.counts.completeness, {
     exports: { found: 5, covered: 5, missing: 0 }, files_written: { found: 1, covered: 1, missing: 0 }, commands_required_flags: { found: 1, covered: 1, missing: 0 },
-    declarations: { found: 20, covered: 20, missing: 0 }, strings: { found: 4, covered: 4, missing: 0 }, missing: 0,
+    declarations: { found: 20, covered: 20, missing: 0 }, strings: { found: 11, covered: 11, missing: 0 }, missing: 0,
   });
   assert.ok(!tg.gaps.some((g) => g.kind === "incomplete"));
-  assert.match(out.reply, /The completeness check found nothing a rebuild needs missing; 4 strings and patterns are in strings\.json, and 5 files of the original tests are carried/);
+  assert.match(out.reply, /The completeness check found nothing a rebuild needs missing; 11 strings and patterns are in strings\.json, and 5 files of the original tests are carried/);
   assert.deepEqual(checkDelivered(j.jobDir, { undeclared: true }), []);
 });
 
@@ -195,12 +197,12 @@ test("the completeness check names what the record misses, each as a gap", () =>
   const c = completeness({ surface: s, interfaces: [{ kind: "function", module: "a.mjs", export: "f" }, { kind: "command", command: "a.mjs", required_flags: [], flags_unsettled: [{ flag: "--x", why: "not followed" }] }], files: list, read, strings: [] });
   assert.deepEqual(c.counts, {
     exports: { found: 2, covered: 1, missing: 1 }, files_written: { found: 1, covered: 0, missing: 1 }, commands_required_flags: { found: 1, covered: 0, missing: 1 },
-    declarations: { found: 1, covered: 0, missing: 1 }, strings: { found: 1, covered: 0, missing: 1 }, missing: 5,
+    declarations: { found: 1, covered: 0, missing: 1 }, strings: { found: 2, covered: 0, missing: 2 }, missing: 6,
   });
   assert.deepEqual(c.gaps.map((g) => [g.kind, g.part, g.about]), [
     ["incomplete", "completeness", "the export A of a.mjs"], ["incomplete", "completeness", "the file o.txt written by a.mjs"],
     ["incomplete", "completeness", "the required flags of the command a.mjs"], ["incomplete", "completeness", "name of the descriptor (agent-descriptor.json name)"],
-    ["incomplete", "completeness", "the string \"Some words here.\" at a.mjs:5"],
+    ["incomplete", "completeness", "the string \"o.txt\" at a.mjs:5"], ["incomplete", "completeness", "the string \"Some words here.\" at a.mjs:5"],
   ]);
   assert.match(c.gaps[2].why, /not settled for --x \(not followed\)/);
 });

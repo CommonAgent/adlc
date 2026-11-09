@@ -356,10 +356,17 @@ export function constantsOf(s) {
  *  or a whole sentence (a capital first, a stop last). */
 export const isWords = (text) => (/[A-Za-z]/.test(text) && / /.test(text)) || /^[A-Z][\s\S]*[.!?]$/.test(text.trim());
 
-/** The strings a person reads and the regular expressions of one scanned
- *  file (0.3.0): [{line, end_line?, kind: words | template | pattern, text}],
- *  each `text` exactly as in the source (between the quotes or backticks, as
- *  written; a pattern with its slashes and flags). Import paths are left out. */
+/** Whether a string literal is a key other code or data depends on, such as
+ *  citation_title, dc.title, og:title, @graph: no space, at least three
+ *  characters, a letter, and one of _ . : @, and no / (so not a path, an
+ *  address or a media type). */
+export const isKey = (text) => text.length >= 3 && !/\s/.test(text) && /[A-Za-z]/.test(text) && /[_.:@]/.test(text) && !text.includes("/");
+
+/** The strings a person reads, the keys and the regular expressions of one
+ *  scanned file (0.3.0): [{line, end_line?, kind: words | template | key |
+ *  pattern, text}], each `text` exactly as in the source (between the quotes
+ *  or backticks, as written; a pattern with its slashes and flags). Import
+ *  paths are left out. */
 export function stringsOf(s) {
   const specs = new Set(importsOf(s).map((i) => i.at));
   const out = [];
@@ -369,8 +376,9 @@ export function stringsOf(s) {
       if (specs.has(t.start)) continue;
       text = s.text.slice(t.start + 1, t.end - 1);
       const plain = t.kind === "template" ? text.replace(/\$\{[\s\S]*?\}/g, "") : t.value;
-      if (!isWords(plain)) continue;
-      kind = t.kind === "template" ? "template" : "words";
+      if (isWords(plain)) kind = t.kind === "template" ? "template" : "words";
+      else if ((t.kind === "string" || !t.subst) && isKey(text)) kind = "key";
+      else continue;
     }
     const end = s.lineOf(Math.max(t.start, t.end - 1));
     out.push({ line: t.line, ...(end > t.line ? { end_line: end } : {}), kind, text });

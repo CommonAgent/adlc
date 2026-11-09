@@ -43,3 +43,5 @@ export function run(argv, texts = []) {
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split(/[\/]/).pop())) {
   console.log(JSON.stringify(run(process.argv.slice(2))));
 }
+
+const META = ["og:title", "dc.title", "citation_title", "@graph", "a.b", "text/html", "ab_"];

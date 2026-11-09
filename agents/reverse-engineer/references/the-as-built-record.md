@@ -143,7 +143,7 @@ missing}`, and `missing`, the sum:
   required flags are settled (no `flags_unsettled`);
 - `declarations`: every declaration in the agent's own files has a
   declaration interface;
-- `strings`: strings.json holds every string and pattern the scanner finds.
+- `strings`: strings.json holds every string, key and pattern the scanner finds.
 
 Zero missing is the goal. Each thing missing is a gap of kind `incomplete`,
 part `completeness`, saying what is missing and why. On drift the check
@@ -362,8 +362,8 @@ give the same document.
 
 `{format: "as-built-strings-v1", as_built, repository, commit, since?, strings}`.
 
-Every string a person reads and every regular expression in the code's
-scripts (not its tests), found by code (scripts/surface.mjs `stringsOf`, on
+Every string a person reads, every key and every regular expression in the
+code's scripts (not its tests), found by code (scripts/surface.mjs `stringsOf`, on
 the lexer in scripts/js-source.mjs), never by the model. Each is `{file,
 line, end_line?, kind, text}`:
 
@@ -371,12 +371,17 @@ line, end_line?, kind, text}`:
   sentence (a capital first and a stop last, such as `Done.`);
 - `template`: a template literal that does, read with its `${...}` parts
   left out (so `${a}/${b}` is not one);
+- `key`: a string literal with no space, at least three characters, a
+  letter, and one of `_ . : @`, and no `/` (so not a path, an address or a
+  media type): the names other code or data depends on, such as
+  `citation_title`, `dc.title`, `og:title`, `@graph`,
+  `article:published_time`;
 - `pattern`: a regular expression literal.
 
 `text` is exactly as in the source: between the quotes or backticks as
 written, escapes and `${...}` kept, and a pattern with its slashes and flags.
-An import path is not listed, and neither is a bare word such as a field
-name. `end_line` is there for a template that runs over more than one line.
+An import path is not listed, and neither is a bare word with none of
+`_ . : @`, such as a field name. `end_line` is there for a template that runs over more than one line.
 The behaviors still quote the words they depend on; strings.json is the
 whole inventory. On drift it holds the strings on changed lines.
 

@@ -105,7 +105,7 @@
           "name": "strings",
           "kind": "application/vnd.agentmesh.as-built-strings+json",
           "when": "per_task",
-          "about": "Every string a person reads and every regular expression in the code's scripts, strings.json: `{format, as_built, repository, commit, strings}`. Each is `{file, line, kind, text}`, kind being words, template or pattern, and text exactly as in the source. Found by code, never by the model."
+          "about": "Every string a person reads, every key other code or data depends on (such as citation_title, dc.title, @graph) and every regular expression in the code's scripts, strings.json: `{format, as_built, repository, commit, strings}`. Each is `{file, line, kind, text}`, kind being words, template, key or pattern, and text exactly as in the source. Found by code, never by the model."
         },
         {
           "name": "carried test",
