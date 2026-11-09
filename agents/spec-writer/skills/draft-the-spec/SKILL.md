@@ -27,6 +27,8 @@ draft.mjs builds one request carrying, in this order: the instruction, the reque
 
 The draft is held to the architecture record's systems both ways: a system the record does not name is taken out of the draft after the second go and asked of the solution architect under the key architecture, and a system the record names that the draft leaves out is a finding. Without a record, a new draft says it chose its systems itself, which is the Architecture stage's decision.
 
+The draft is also held to what the person sent (given.mjs): every setting, runtime, price, address, JSON Schema, quoted word and exported function it names is in the draft, and an output of a JSON kind whose shape it does not state is asked under shape of <output> rather than sketched. Every outside system reached over the network is declared the way the security reviewer reads it (reaches.mjs): an address setting whose default is the real address, its host named in needs, or a read service that fetches what it is handed. After the second go, code moves a job's run_config to the spec, adds the runtime and price the given names and asks each shape not given; what still stands goes into blanks.json as findings, and the reply says it.
+
 The blanks are checked against the draft itself rather than taken on the model's word: a model that forgets to report a blank produces a draft that looks complete, and an invented name would then reach the mesh. An empty systems list is an answer; an absent one is a blank.
 
 ## Scripts
@@ -43,6 +45,8 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/options.mjs
 - scripts/job-seconds.mjs
 - scripts/run-reply.mjs
+- scripts/reaches.mjs
+- scripts/given.mjs
 
 ## References
 

@@ -47,6 +47,22 @@ signing in to an account the person does not own, no spending money.
 [references/what-a-good-process-carries.md](references/what-a-good-process-carries.md)
 says what goes in a document and why.
 
+## What the given names, and what it reaches
+
+What the person sent (words, attachments, answers, or an as-built record of
+existing code) names some things exactly, and the draft keeps them:
+`scripts/given.mjs` checks, with no model, that every setting, runtime,
+price, address, JSON Schema, quoted word or pattern and exported function the
+given names is in the draft, and that an output of a JSON kind whose shape the
+given does not state is asked about (`shape of <output>`) rather than
+sketched. Every outside system a job reaches over the network is declared the
+way the security reviewer reads it (`scripts/reaches.mjs`): a public read
+with an address setting whose default is the real address and whose host its
+`needs` names, and pages handed at run time as a service that fetches them.
+What these find goes back with the second ask; then code keeps what it can
+without guessing, and the reply says what still stands and which address
+settings the install supplies.
+
 ## Standing assets
 
 Given an architecture record, the draft declares exactly the standing assets
@@ -86,7 +102,7 @@ instructions are in `skills/<slug>/SKILL.md`, the scripts are in `scripts/`, and
 works under are in `rules.md` and `references/`.
 
 ```sh
-node --test test/*.test.mjs                                   # 238 tests
+node --test test/*.test.mjs                                   # 262 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

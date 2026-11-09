@@ -45,6 +45,8 @@ const job = (reply) => ({
 });
 const specWith = (reply) => ({
   name: "vowel-scale", version: "0.1.0",
+  // Its command runs node, and a draft says so (given.mjs).
+  runtimes: [{ name: "node", version: ">=22" }],
   jobs: [job(reply)],
   refuses: Array.from({ length: 4 }, (_, i) => `refusing act ${i}, because it is not this agent's to do, and it says so instead`),
   records: [{ name: "the signed job manifest" }],

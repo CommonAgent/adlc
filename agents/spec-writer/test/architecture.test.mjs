@@ -32,6 +32,9 @@ const DRAFT = {
   records: [{ name: "the signed job manifest" }],
   price: { model: "free" },
   systems: [system("database", "read"), system("mail", "write"), system("text-reasoning", "trigger")],
+  // The record's one setting, which the draft keeps (given.mjs).
+  run_config: { settings: [{ name: "days-before", kind: "preference", label: "Days before renewal", about: "1 to 60. Leave blank for 14.",
+    default: 14, min: 1, max: 60, step: 1, job_may_set: true }] },
 };
 
 const askedWithRecord = () => {

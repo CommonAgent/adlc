@@ -47,6 +47,7 @@ import { checkDraft, earlierBareJson } from "./check-spec.mjs";
 import { fitJobSeconds } from "./job-seconds.mjs";
 import { fitRunReply } from "./run-reply.mjs";
 import { CAN_USE_RULE, canUseProblems, fitCanUse, loadSchemas } from "./can-use.mjs";
+import { fitToGiven, givenOf, givenProblems } from "./given.mjs";
 import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
 import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
@@ -211,12 +212,34 @@ places, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, so the
 install and a run config choose it. Never name a model or a version anywhere
 in the spec: not in a setting's default, an instruction or a sentence.
 
-No address goes anywhere in "systems": not in a setting, not in a purpose.
-A product somebody binds is named by its system and credential. A public read
-that needs no key is a system with access "read", kind "service", no
-credential and no settings, and its address is a constant in the script. An
-address the caller gives is an input of kind url. draft-host is brokered: its
-entry has no credential, env or settings.
+A script carries no address of its own: it reads where a system is from a
+setting the install places. So every outside system the job reaches over the
+network is a system in "systems", declared the way the security reviewer
+reads it:
+- A public read that needs no key (an open API, a public site) is access
+  "read", kind "service", no credential, and one setting for its address:
+  {"env": "<NAME>_ADDRESS", "purpose": "where <the service> answers, its base
+  address", "default": "<the real address, with https://>"}. The variable
+  ends in _ADDRESS, _URL, _BASE, _ENDPOINT or _HOST, and the job's
+  instructions name it as where the scripts read the address. Its "needs"
+  names the host the address is at, such as "reads the top story list from
+  the Hacker News API at hacker-news.firebaseio.com".
+- Pages or files at whatever address the job is handed at run time (each
+  page a story links to) are one more read service whose "needs" says it
+  fetches them, with the word "fetches", and has no address setting.
+- A product somebody binds is named by its system and credential.
+- An address the caller gives is an input of kind url.
+- draft-host is brokered: its entry has no credential, env or settings.
+An address goes only in an address setting's "default": never in a purpose,
+a needs, or anywhere else in "systems".
+
+Keep exactly what the request and its attachments name: every setting (in
+the spec's own "run_config", never inside a job), the runtime (node and its
+version), the price, each address the code reaches, each output shape, each
+exported function, and every word or pattern they quote, carried into the
+job's instructions as written. Where they do not say what an output of a
+JSON kind holds, do not sketch its shape: put "shape of <output name>" in
+"blanks" with the question.
 
 A refusal is something the agent will NOT do. If a refusal names an act one
 of the jobs performs, it is not a refusal; write the act it declines instead.
@@ -498,7 +521,10 @@ export async function askForSpec({
   // bare JSON is kept, and named in the notes.
   const earlier = earlierBareJson(opts.asked);
   const architecture = opts.asked?.architecture ?? null;
-  check ??= (spec) => checkDraft(spec, { earlier, architecture });
+  // What the person sent names some things exactly (settings, the runtime,
+  // the price, addresses, shapes, quoted words), and the draft keeps them.
+  const given = givenOf(opts.asked, opts.answers);
+  check ??= (spec) => checkDraft(spec, { earlier, architecture, given });
   let findings = [];
   let last = null;
   let calls = 0;
@@ -564,15 +590,26 @@ export async function askForSpec({
   // with reads, does and without (the architecture standard, section 10).
   const table = opts.table === undefined ? loadSchemas() : opts.table;
   const withAssets = fitCanUse(fitted.spec, architecture, table);
-  const blanks = blanksOf(withAssets.spec, last.blanks);
+  // What code can keep of the given without guessing: a job's run_config
+  // moved to the spec, the runtime and the price the given names, and a
+  // question for each output whose shape was not given.
+  const fitGiven = fitToGiven(withAssets.spec, given);
+  const blanks = blanksOf(fitGiven.spec, last.blanks);
   if (fitted.blank && !blanks.some((b) => b.key === "architecture")) blanks.push(fitted.blank);
+  for (const b of fitGiven.blanks) if (!blanks.some((x) => x.key === b.key)) blanks.push(b);
+  // The given's findings are read again on the fitted draft: what the fit
+  // settled is gone, and a shape now asked is not said twice.
+  const before = new Set(givenProblems(last.spec, given));
   const kept = (fitted.blank ? findings.filter((f) => !/which the architecture record does not name/.test(f)) : findings)
-    .filter((f) => !/^can_use |declare it in can_use$/.test(f));
+    .filter((f) => !/^can_use |declare it in can_use$/.test(f))
+    .filter((f) => !before.has(f));
+  const askedKeys = blanks.map((b) => b.key);
+  const still = givenProblems(fitGiven.spec, given).filter((f) => !askedKeys.some((k) => f.includes(`put "${k}" in blanks`)));
   return {
-    spec: withAssets.spec,
+    spec: fitGiven.spec,
     blanks,
-    notes: [last.notes, timedNote, ...withAssets.notes].filter(Boolean).join(" "),
-    findings: [...kept, ...canUseProblems(withAssets.spec, architecture, table)],
+    notes: [last.notes, timedNote, ...withAssets.notes, fitGiven.note].filter(Boolean).join(" "),
+    findings: [...kept, ...still, ...canUseProblems(fitGiven.spec, architecture, table)],
     calls,
     used,
     tried_again: calls > 1,
@@ -677,7 +714,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       answered_by: [...out.used].reverse().find((u) => u.model)?.model ?? null,
       each: out.used.map((u) => ({ answered_by: u.model, tokens_in: u.tokens_in, tokens_out: u.tokens_out, cost: u.cost })),
     }, null, 2) + "\n");
-    writeFileSync(join(RECORDS, "blanks.json"), JSON.stringify({ blanks: "v1", blanks: out.blanks, notes: out.notes }, null, 2) + "\n");
+    // The findings that still stand go beside the blanks, so the reply says
+    // them out loud rather than leaving them in this step's output.
+    writeFileSync(join(RECORDS, "blanks.json"), JSON.stringify({ blanks: "v1", blanks: out.blanks, notes: out.notes, ...(out.findings.length ? { findings: out.findings } : {}) }, null, 2) + "\n");
     console.log(JSON.stringify({
       ok: true, code: 0, draft: join(RECORDS, "draft.json"),
       blanks: out.blanks.map((b) => b.key), findings: out.findings, calls: out.calls, stopped: out.stopped, model,
