@@ -19,7 +19,7 @@ import { optionProblems } from "./options.mjs";
 import { jobSecondsProblem } from "./job-seconds.mjs";
 import { runReplyProblems, runReplyUnprinted } from "./run-reply.mjs";
 import { reachProblems } from "./reaches.mjs";
-import { givenProblems } from "./given.mjs";
+import { givenProblems, scriptOfWord } from "./given.mjs";
 export { PRINTED_MEMBER, RUN_REPLY_MEMBER, RUN_REPLY_STDOUT, fitRunReply, printedMembers, runReplyOk, runReplyProblems, runReplyUnprinted } from "./run-reply.mjs";
 export { JOB_SECONDS_MAX, JOB_SECONDS_MIN, fitJobSeconds, jobSecondsProblem } from "./job-seconds.mjs";
 
@@ -111,9 +111,15 @@ export function jobProblems(job) {
   }
   // A job whose command runs a script names its scripts: they are the files
   // Code writes, and a job that names none leaves Code nothing to write.
-  const runs = (Array.isArray(job?.run?.command) ? job.run.command : []).map((w) => trim(w).replace(/^\.\//, "")).filter((w) => /^scripts\/[\w./-]+\.(?:mjs|js|cjs)$/.test(w));
+  const command = Array.isArray(job?.run?.command) ? job.run.command : [];
+  const runs = command.map(scriptOfWord).filter(Boolean);
   const named = Array.isArray(job?.scripts) ? job.scripts.map((f) => trim(f).replace(/^\.\//, "")) : [];
   for (const f of runs) if (!named.includes(f)) out.push(`job ${slug}: its command runs ${f}, and scripts does not name it; name every script the job runs in scripts, because those are the files Code writes`);
+  // The host starts a command from its own home folder, so a script is named
+  // in the packaged form, never as a bare path.
+  for (const w of command) {
+    if (/^(?:\.\/)?scripts\/[\w./-]+\.(?:mjs|js|cjs)$/.test(trim(w))) out.push(`job ${slug}: its command names ${trim(w)} as a bare path, and the host runs a command from its own home folder, where that finds nothing; write {home}/{package}/skills/${slug}/${trim(w).replace(/^\.\//, "")}`);
+  }
   const how = job?.how;
   if (!how || typeof how !== "object") out.push(`job ${slug}: no how; every job says control, intelligence, cost and contract`);
   else {

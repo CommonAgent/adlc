@@ -41,6 +41,7 @@ const job = (reply) => ({
   does: "Counts the vowels in a sentence.",
   // Since 0.6.3 a json:<member> is kept only when the job prints it (debt 657).
   instructions: "It prints one JSON object with `reply` and `counts` members.",
+  scripts: ["scripts/count.mjs"],
   run: { command: ["node", "{home}/{package}/skills/count-vowels/scripts/count.mjs", "--job", "{job_dir}"], ...(reply === undefined ? {} : { reply }) },
 });
 const specWith = (reply) => ({
