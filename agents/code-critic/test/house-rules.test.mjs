@@ -1,7 +1,7 @@
 // The house rules, checked with no model.
 //   node --test test/house-rules.test.mjs
 //
-// What is worth pinning: each of the five rules finds what it is for, with a
+// What is worth pinning: each of the rules finds what it is for, with a
 // file, a line, a claim and a consequence; what is not a breach is left
 // alone (a comment that names a model, a public address the package exists
 // to read, a model provider's endpoint in the shared caller, a record built

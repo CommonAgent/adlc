@@ -14,7 +14,7 @@ With a diff, the change is what the diff adds or changes, and every declaration 
 
 ## The house rules come first
 
-Five rules agents keep breaking are checked by a program before any model reads the change (references/the-house-rules.md): no model named in code, no address where a bound system belongs, every piece its declared kind, no undeclared output, and refusals and records that match what the code does. A program finds these the same way every time, so the model is told what the program found and asked only for what a program cannot see.
+Six rules agents keep breaking are checked by a program before any model reads the change (references/the-house-rules.md): no model named in code, no address where a bound system belongs, every piece its declared kind, no undeclared output, refusals and records that match what the code does, and no environment variable read that the agent's own files do not declare. A program finds these the same way every time, so the model is told what the program found and asked only for what a program cannot see.
 
 ## What the model is for
 
