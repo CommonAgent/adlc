@@ -221,8 +221,11 @@ export function braceDepths(masked) {
  *  dot carrying the expression on. */
 export function statementEnd(masked, from) {
   let d = 0;
+  let inTemplate = false; // 0.3.0: a line break inside a template does not end the statement
   for (let k = from; k < masked.length; k++) {
     const ch = masked[k];
+    if (d === 0 && ch === "`") { inTemplate = !inTemplate; continue; }
+    if (inTemplate && d === 0 && !(ch === "{" && masked[k - 1] === "$")) continue;
     if (OPEN[ch]) d += 1;
     else if (CLOSE[ch]) { if (d === 0) return k; d -= 1; }
     else if (d === 0 && ch === ";") return k;
