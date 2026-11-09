@@ -1,4 +1,4 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.4.3) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.4.4) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
@@ -57,8 +57,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.3 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.3");
+test("the schema is version 0.4.4 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.4");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1033,4 +1033,105 @@ test("a round may report its results per feature, and a Requirements gate the fe
   ws.gate.features.backlog.push(f("F1"));
   assert.deepEqual(checkStageWorkspace(ws, IDS, "requirements"), ["body.gate.features: F1 is listed more than once"]);
   assert.deepEqual(checkStageWorkspace({ ...ws, stage: "code", gate: { ...ws.gate, features: { approved: [], to_approve: [], backlog: [] } } }, IDS, "code"), ["body.gate.features: a gate carries features only at Requirements, and this is code"]);
+});
+
+// ---------- 0.4.4: the guided setup and the when-needed actions ----------
+
+const twoVersions = () => ({ ...product(), builds: [{ id: "b2", version: "0.2.0", state: "done", at: { stage: "deploy", state: "done" }, created: AT }, { id: "b1", version: "0.1.0", state: "done", at: { stage: "deploy", state: "done" }, created: AT }] });
+const monitorForm = () => ({
+  ask: "Who should monitor word-tally?", reference_agent: "watcher",
+  fields: [
+    { name: "every_minutes", label: "Check every", kind: "number", unit: "minutes", default: 5, min: 1 },
+    { name: "alert_where", label: "Alert where", kind: "text", default: "the console" },
+    { name: "at_ceiling", label: "At the ceiling", kind: "choice", options: ["pause it", "warn only"], default: "pause it" },
+  ],
+  shares: "The watcher holds Monitor and Cost: one holder for both, each with its own settings.",
+});
+const rollback = () => ({
+  stage: "rollback", name: "Rollback", can_run: true,
+  action: { build: "b2", name: "rollback", label: "Roll back", needs: [{ name: "to_version", label: "Go back to", kind: "choice", options: ["0.1.0"], default: "0.1.0" }, { name: "why", label: "Why", kind: "words" }] },
+  confirm: {
+    title: "Roll back word-tally to 0.1.0?", will: "The agent back on that version, why, and what can't be undone.", done_when: "It answers on the old version, and the side effects are named.",
+    steps: ["Your runtime puts word-tally back on 0.1.0."], who_may: "Only Ana Lee (ana@example.com) may roll back word-tally.", you_may: false,
+    from_version: "0.2.0", to_version: "0.1.0", cannot_undo: ["What word-tally 0.2.0 did while it ran stays done."],
+  },
+  last: { at: AT, by: "ana@example.com", ok: false, words: "Your runtime refused the rollback: read-only today.", version: "0.2.0", build: "b2" },
+});
+const withActions = () => ({
+  ...twoVersions(),
+  running: { build: "b2", version: "0.2.0", words: "0.2.0 runs" },
+  setup: setupItems().map((x) => (x.stage === "monitor" ? { ...x, form: monitorForm() } : x)),
+  when_needed: whenNeeded().map((x) => (x.stage === "rollback" ? rollback() : x)),
+});
+
+test("the schema names the setup form, the confirm card, the last run, the result and which version runs", () => {
+  for (const d of ["SetupForm", "SetupField", "WhenNeededConfirm", "WhenNeededLast", "ActionResult"]) assert.ok(SCHEMA.$defs[d], d);
+  assert.ok(SCHEMA.$defs.SetupItem.properties.form);
+  for (const k of ["confirm", "last"]) assert.ok(SCHEMA.$defs.WhenNeededItem.properties[k], k);
+  assert.ok(SCHEMA.$defs.WhenNeededItem.properties.action.properties.needs);
+  for (const k of ["running", "retired"]) assert.ok(SCHEMA.$defs.ProductAnswer.properties[k], k);
+  assert.ok(SCHEMA.$defs.BuildAnswer.properties.result);
+  for (const k of ["options", "default"]) assert.ok(SCHEMA.$defs.Need.properties[k], k);
+  assert.deepEqual(SCHEMA.$defs.SetupField.properties.kind.enum, ["number", "text", "choice"]);
+  assert.match(SCHEMA.operations.find((o) => o.path === "/builds/{id}/actions/{name}").does, /when-needed action/);
+});
+
+test("a product with forms, confirm cards and a last run passes; one from 0.4.3 still does", () => {
+  assert.deepEqual(checkProduct(withActions(), "word-tally"), []);
+  assert.deepEqual(checkProduct({ ...twoVersions(), setup: setupItems(), when_needed: whenNeeded() }, "word-tally"), []);
+  const answer = { ...build("b2"), result: { stage: "rollback", ok: true, words: "word-tally is back on 0.1.0.", cannot_undo: ["What it did stays done."], files: [] } };
+  assert.deepEqual(validate("BuildAnswer", answer), []);
+  assert.ok(validate("BuildAnswer", { ...build("b2"), result: { stage: "rollback", words: "no ok" } }).length);
+});
+
+test("a form's choice lists its options and its default is one; a number's default is a number; each field once", () => {
+  const p = withActions();
+  const f = p.setup.find((x) => x.stage === "monitor").form.fields;
+  f[0].default = "five";
+  f[2].default = "stop it";
+  f.push({ name: "alert_where", label: "Again", kind: "choice" });
+  assert.deepEqual(checkProduct(p, "word-tally"), [
+    `body.setup[${p.setup.findIndex((x) => x.stage === "monitor")}].form.fields[0].default: is a number field, so its default is a number`,
+    `body.setup[${p.setup.findIndex((x) => x.stage === "monitor")}].form.fields[2].default: "stop it" is not one of its options`,
+    `body.setup[${p.setup.findIndex((x) => x.stage === "monitor")}].form.fields[3]: is a choice, so it lists its options`,
+    `body.setup[${p.setup.findIndex((x) => x.stage === "monitor")}].form.fields: "alert_where" appears more than once`,
+  ]);
+  const kind = withActions(); kind.setup.find((x) => x.stage === "monitor").form.fields[0].kind = "slider";
+  assert.ok(checkProduct(kind, "word-tally").some((x) => x.includes("form.fields[0].kind")));
+});
+
+test("a rollback's card names the version it goes back to and what can't be undone; only an item that can run has a card", () => {
+  const i = whenNeeded().findIndex((x) => x.stage === "rollback");
+  const p = withActions();
+  const rb = p.when_needed[i];
+  delete rb.confirm.to_version;
+  rb.confirm.cannot_undo = [];
+  rb.action.build = "b9";
+  rb.action.needs[0].default = "0.0.1";
+  rb.last.version = "9.9.9";
+  p.when_needed[0].confirm = rollback().confirm;
+  assert.deepEqual(checkProduct(p, "word-tally"), [
+    "body.when_needed[0]: cannot run, so it has no confirm card",
+    `body.when_needed[${i}].action.build: b9 is not one of the product's builds`,
+    `body.when_needed[${i}].action.needs[0].default: "0.0.1" is not one of its options`,
+    `body.when_needed[${i}].confirm: a rollback names the version it goes back to (to_version)`,
+    `body.when_needed[${i}].confirm.cannot_undo: a rollback names what can't be undone, as the stage's own words ask`,
+    `body.when_needed[${i}].last.version: 9.9.9 is not a version of the product's builds`,
+  ]);
+  const wrongTo = withActions(); wrongTo.when_needed[i].confirm.to_version = "0.0.1";
+  assert.deepEqual(checkProduct(wrongTo, "word-tally"), [`body.when_needed[${i}].confirm.to_version: 0.0.1 is not a version of the product's builds`]);
+  const noWho = withActions(); delete noWho.when_needed[i].confirm.who_may;
+  assert.ok(checkProduct(noWho, "word-tally").some((x) => x.includes("who_may")));
+});
+
+test("a retired product runs nothing and none of its when-needed actions can run; running names one of its builds", () => {
+  const retired = { at: AT, by: "ana@example.com", version: "0.2.0", why: "Replaced.", words: "Decommissioned at 0.2.0." };
+  const off = whenNeeded().map((x) => ({ stage: x.stage, can_run: false, why_not: "word-tally is decommissioned." }));
+  assert.deepEqual(checkProduct({ ...twoVersions(), running: null, retired, when_needed: off }, "word-tally"), []);
+  const i = whenNeeded().findIndex((x) => x.stage === "rollback");
+  assert.deepEqual(checkProduct({ ...withActions(), retired }, "word-tally"), [
+    "body.running: the product is retired, so nothing of it runs",
+    `body.when_needed[${i}]: the product is retired, so rollback cannot run`,
+  ]);
+  assert.deepEqual(checkProduct({ ...withActions(), running: { build: "b7", version: "0.7.0" } }, "word-tally"), ["body.running.build: b7 is not one of the product's builds"]);
 });

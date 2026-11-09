@@ -15,6 +15,12 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.4**: the guided setup and the when-needed actions. A setup item's
+  `form` (`fields`, `ask`, `reference_agent`, `shares`), saved with the roles
+  operations, each stage's settings under its id; a when-needed item's
+  `action.needs`, `confirm` card and `last` run; a `choice` need with
+  `options` and `default`; the actions operation's `result`; the product's
+  `running` and `retired`; and [runtime-verbs.md](runtime-verbs.md). Additive.
 - **0.4.3**: features. The statement's `features`; feature proposals on a
   stage's or the boss's reply, answered one at a time with `approve`,
   `not_now` or `ask`; a round's `by_feature`; the Requirements gate's `open`
