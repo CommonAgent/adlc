@@ -46,7 +46,7 @@ byte for byte.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 206 tests
+node --test test/*.test.mjs                                   # 218 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 

@@ -86,7 +86,17 @@ phrase that matters is pinned with a regex, `/does not publish one whatever it
 is called/`. `deepEqual` in 48 files, for records and lists. `assert.throws`
 in 30, for refusals the function throws. Exact equality for numbers, codes
 and paths. 17 files have async tests, for functions that take a handed-in
-async call.
+async call. A function that awaits anything, or is handed an async call,
+refuses by returning a rejected promise: its refusal is pinned with
+`await assert.rejects(...)` in an async test, and `assert.throws` around it
+can never pass, since it sees only a throw made before the function returns
+(a round trip on 2026-11-09 sent a suite back for exactly that).
+
+Every number and rule a feature states is pinned by a test of that feature:
+the limit, the count, the time limit, the order, the words or pattern it
+quotes, the exit code. A suite for a reader whose feature said "a 10-second
+timeout" and "up to 20 at a time" asserted neither, and the code written to
+it kept neither.
 
 ## What a suite pins, in the order it matters
 
