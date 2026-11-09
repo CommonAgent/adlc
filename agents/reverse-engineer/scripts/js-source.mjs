@@ -422,8 +422,182 @@ export function typeOfExpr(s, a0, b0, { depth = 0, before = a0 } = {}) {
   if (/^[A-Za-z_$][\w$]*$/.test(src) && depth < 5) {
     const d = constBefore(s, src, before);
     if (d) return typeOfExpr(s, d.start, d.end, { depth: depth + 1, before: d.start });
+    // 0.3.0: a let or var that is only ever given literals has those values.
+    const v = letValues(s, src, before, depth);
+    if (v) return v;
   }
   return unknownType(s, a, b);
+}
+
+/** The schema of a literal one: {type, const} for a string, number or
+ *  boolean, {type: "null"} for null, or null when it is not a literal. */
+const literalSchema = (t) => (t && (t.const !== undefined || t.type === "null") && !t.enum ? t : null);
+
+/** Where the block that holds offset `at` closes (masked text), or the end. */
+function blockEnd(s, at) {
+  s.depths ??= braceDepths(s.masked);
+  const d = s.depths[at];
+  for (let k = at; k < s.masked.length; k++) if (s.depths[k] < d) return k;
+  return s.masked.length;
+}
+
+/** Each value a let or var `name` (declared in scope at `before`) is given:
+ *  its initial value and every assignment to it in its block, as [start,
+ *  end) ranges; null when one is given in a way this reader does not follow
+ *  (a compound assignment, ++, a loop variable, a destructuring it cannot
+ *  match, a name declared again inside). */
+export function assignedRanges(s, name, before = s.masked.length) {
+  const decl = declarationBefore(s, name, before);
+  if (!decl || decl.kind === "const") return null;
+  const m = s.masked;
+  const esc = name.replace(/\$/g, "\\$");
+  const out = decl.end > decl.start ? [[decl.start, decl.end]] : [];
+  const end = blockEnd(s, decl.start);
+  const re = new RegExp(`(^|[^.\\w$])${esc}(?![\\w$])`, "g");
+  re.lastIndex = decl.end;
+  for (let h = re.exec(m); h && h.index < end; h = re.exec(m)) {
+    const at = h.index + h[1].length;
+    const after = m.slice(at + name.length, at + name.length + 6);
+    const pre = m.slice(Math.max(0, at - 12), at);
+    if (/(\+\+|--)\s*$/.test(pre) || /^\s*(\+\+|--|[-+*/%&|^]=|\*\*=|<<=|>>>?=|\?\?=|\|\|=|&&=)/.test(after)) return null;
+    if (/\b(const|let|var)\s+$/.test(pre) || /\bfor\s*\(\s*$/.test(pre)) return null;
+    if (/^\s*=(?![=>])/.test(after)) {
+      const eq = m.indexOf("=", at + name.length);
+      let a = eq + 1;
+      while (a < m.length && /\s/.test(m[a])) a += 1;
+      out.push([a, statementEnd(m, a)]);
+      continue;
+    }
+    // [x, name] = [a, b]: the value at the same place.
+    let k = at - 1; let d = 0;
+    for (; k >= 0; k--) {
+      const ch = m[k];
+      if (ch === "]" || ch === ")" || ch === "}") d += 1;
+      else if (ch === "[" || ch === "(" || ch === "{") { if (d === 0) break; d -= 1; } else if (ch === ";" && d === 0) { k = -1; break; }
+    }
+    if (k < 0 || m[k] !== "[") continue;
+    const close = matching(m, k);
+    const eq = /^\s*=(?![=>])\s*/.exec(m.slice(close + 1));
+    if (!eq) continue;
+    // An index (a[i] = x) or a read, not a pattern; after the ) of an if, a
+    // while or a for, or after else, it is a statement of its own.
+    const head = m.slice(0, k).trimEnd();
+    const prev = head.slice(-1);
+    if (prev === ")") {
+      const open = matchingBack(m, head.length - 1);
+      if (!/\b(if|while|for)\s*$/.test(m.slice(Math.max(0, open - 8), open))) continue;
+    } else if (/[\w$]/.test(prev) && !/\b(else|do)$/.test(head)) continue;
+    else if (prev === "]") continue;
+    const slots = splitTop(m, k + 1, close);
+    const idx = slots.findIndex(([x, y]) => x <= at && at < y);
+    const rhs = close + 1 + eq[0].length;
+    if (m[rhs] !== "[") return null;
+    const items = splitTop(m, rhs + 1, matching(m, rhs));
+    if (idx === -1 || !items[idx]) return null;
+    out.push(items[idx]);
+  }
+  return out;
+}
+
+/** The schema of a let or var that is only ever given literals: {type,
+ *  enum} in the order the code gives them, or null. */
+function letValues(s, name, before, depth) {
+  const ranges = assignedRanges(s, name, before);
+  if (!ranges || !ranges.length) return null;
+  const values = []; const types = [];
+  for (const [x, y] of ranges) {
+    const t = literalSchema(typeOfExpr(s, x, y, { depth: depth + 1, before: x }));
+    if (!t) return null;
+    const v = t.type === "null" ? null : t.const;
+    if (!values.some((w) => w === v)) values.push(v);
+    if (!types.includes(t.type)) types.push(t.type);
+  }
+  if (values.length === 1) return types[0] === "null" ? { type: "null" } : { type: types[0], const: values[0] };
+  return { type: types.length === 1 ? types[0] : types, enum: values };
+}
+
+/** The JSON value an expression [a, b) writes, when it is literals all the
+ *  way down: strings, numbers, true, false, null, arrays and objects of them,
+ *  templates whose parts are such constants, and names of consts declared
+ *  earlier with such values. Answers {ok: true, value} or {ok: false, why}. */
+export function literalValue(s, a0, b0, { depth = 0, before = a0 } = {}) {
+  const m = s.masked;
+  const [a, b] = trimRange(m, a0, b0);
+  const no = (why) => ({ ok: false, why });
+  if (a >= b) return no("it has no value written");
+  if (depth > 12) return no("it is nested too deep to read");
+  const src = s.text.slice(a, b);
+  const tok = tokenAt(s, a, b);
+  if (tok) {
+    if (tok.kind === "string") return { ok: true, value: tok.value };
+    if (tok.kind === "regex") return no(`it holds a regular expression (${tok.value}), which is not a JSON value`);
+    if (!tok.subst) return { ok: true, value: tok.value };
+    // A template whose ${...} parts are each a constant.
+    let out = ""; let k = a + 1;
+    const raw = s.text;
+    while (k < b - 1) {
+      if (raw[k] === "\\") { out += unescape(raw.slice(k, k + 2)); k += 2; continue; }
+      if (raw[k] === "$" && raw[k + 1] === "{") {
+        const close = matching(m, k + 1);
+        if (close === -1 || close >= b) return no("its template could not be read");
+        const v = literalValue(s, k + 2, close, { depth: depth + 1, before });
+        if (!v.ok || (v.value !== null && typeof v.value === "object")) return no(`its template part \${${collapse(raw.slice(k + 2, close))}} is not a constant`);
+        out += String(v.value); k = close + 1; continue;
+      }
+      out += raw[k]; k += 1;
+    }
+    return { ok: true, value: out };
+  }
+  if (/^-?\d[\d_]*(\.\d+)?([eE][+-]?\d+)?$/.test(src)) return { ok: true, value: Number(src.replace(/_/g, "")) };
+  if (/^-?0[xX][0-9a-fA-F_]+$/.test(src)) return { ok: true, value: Number(src.replace(/_/g, "")) };
+  if (src === "true" || src === "false") return { ok: true, value: src === "true" };
+  if (src === "null") return { ok: true, value: null };
+  if (m[a] === "[" && matching(m, a) === b - 1) {
+    const out = [];
+    for (const [x, y] of splitTop(m, a + 1, b - 1)) {
+      if (m.startsWith("...", x)) return no(`it spreads ${collapse(s.text.slice(x + 3, y))} into a list`);
+      const v = literalValue(s, x, y, { depth: depth + 1, before });
+      if (!v.ok) return v;
+      out.push(v.value);
+    }
+    return { ok: true, value: out };
+  }
+  if (m[a] === "{" && matching(m, a) === b - 1) {
+    const out = {};
+    for (const [x, y] of splitTop(m, a + 1, b - 1)) {
+      const piece = m.slice(x, y);
+      if (piece.startsWith("...")) return no(`it spreads ${collapse(s.text.slice(x + 3, y))} into an object`);
+      if (piece.startsWith("[")) return no("it has a field whose name is worked out");
+      if (/^(async\s+)?(get\s+|set\s+)?\*?\s*[A-Za-z_$][\w$]*\s*\(/.test(piece)) return no("it has a method");
+      let colon = -1; let d = 0;
+      for (let k = x; k < y; k++) {
+        if (OPEN[m[k]]) d += 1; else if (CLOSE[m[k]]) d -= 1;
+        else if (d === 0 && m[k] === ":") { colon = k; break; }
+      }
+      let key; let v;
+      if (colon === -1) {
+        key = s.text.slice(x, y).trim();
+        if (!/^[A-Za-z_$][\w$]*$/.test(key)) return no("it has a field this reader does not follow");
+        v = literalValue(s, x, y, { depth: depth + 1, before });
+      } else {
+        const [kx, ky] = trimRange(m, x, colon);
+        const kt = tokenAt(s, kx, ky);
+        key = kt && kt.kind === "string" ? kt.value : s.text.slice(kx, ky).trim();
+        v = literalValue(s, colon + 1, y, { depth: depth + 1, before });
+      }
+      if (!v.ok) return v;
+      out[key] = v.value;
+    }
+    return { ok: true, value: out };
+  }
+  const call = /^Object\s*\.\s*freeze\s*\(/.exec(m.slice(a, b));
+  if (call && m[b - 1] === ")") return literalValue(s, a + call[0].length, b - 1, { depth: depth + 1, before });
+  if (/^[A-Za-z_$][\w$]*$/.test(src)) {
+    const d = constBefore(s, src, before);
+    if (d) return literalValue(s, d.start, d.end, { depth: depth + 1, before: d.start });
+    return no(`it names ${src}, which is not a const with a literal value declared before it`);
+  }
+  return no(`its value is worked out by code (${collapse(src).slice(0, 80)}), not written as a literal`);
 }
 
 /** The fields of an object literal [a, b) (a on its {, b just past its }):

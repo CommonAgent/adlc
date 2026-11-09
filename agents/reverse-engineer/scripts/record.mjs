@@ -11,11 +11,13 @@
 //   needs: node >= 22. Nothing here reads or writes a file.
 //   import { buildRecord } from "./record.mjs"
 import { createHash } from "node:crypto";
-import { checkClaims, checkEvidence } from "./evidence.mjs";
+import { checkClaims, checkEvidence, touchesChange } from "./evidence.mjs";
 import { anchorsWithout, checkBehaviors, labelOf } from "./behaviors.mjs";
 import { buildInterfaces } from "./interfaces.mjs";
 import { KIND_NAMES } from "./kinds.mjs";
 import { CODE_EXT, isTestFile } from "./facts.mjs";
+import { exportsOf, stringsOf, writesOf } from "./surface.mjs";
+import { readDeclarations } from "./declarations.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -52,6 +54,8 @@ export const PARTS = [
   { part: "interfaces", format: "as-built-interfaces-v1", file: "interfaces.json" },
   { part: "dependencies", format: "CycloneDX 1.5", file: "sbom.cdx.json" },
   { part: "existing tests and gaps", format: "as-built-tests-and-gaps-v1", file: "tests-and-gaps.json" },
+  // 0.3.0: every string a person reads and every pattern in the scripts.
+  { part: "strings", format: "as-built-strings-v1", file: "strings.json" },
 ];
 export const RECORD_FORMAT = "as-built-record-v1";
 
@@ -127,8 +131,71 @@ function mergeByName(items, key = "name") {
 
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined && o[k] !== null && o[k] !== "").map((k) => [k, typeof o[k] === "string" ? trim(o[k]) : o[k]]));
 
+/** The completeness check (0.3.0), by code: what a rebuild needs, read again
+ *  from the code here, against what the record holds. Every export (function
+ *  and constant) has an interface; every file the code writes has a file
+ *  interface; every command has its required flags settled; every
+ *  declaration in the agent's own files has a declaration interface;
+ *  strings.json holds every string the scanner finds. `inScope(file, line)`
+ *  limits it to what the record covers (on drift, the changed lines).
+ *  Answers {counts, gaps}: counts by check `{found, covered, missing}`, and a
+ *  gap for each thing missing, with what and why. */
+export function completeness({ surface, interfaces, files = [], read = () => null, strings = [], inScope = () => true }) {
+  const gaps = []; const counts = {};
+  const tally = (name, expected, has, what, why) => {
+    const missing = expected.filter((x) => !has(x));
+    counts[name] = { found: expected.length, covered: expected.length - missing.length, missing: missing.length };
+    for (const x of missing) gaps.push({ kind: "incomplete", part: "completeness", about: what(x), why: why(x), ...(x.evidence ? { evidence: x.evidence } : {}) });
+  };
+  const code = surface?.code ?? [];
+  const scanned = surface?.scanned ?? new Map();
+  const ifs = (kind) => interfaces.filter((i) => i.kind === kind);
+
+  const exp = [];
+  for (const f of code) {
+    for (const e of exportsOf(scanned.get(f))) {
+      if (!inScope(f, e.line)) continue;
+      exp.push({ module: f, name: e.name, star: e.name.startsWith("* from ") ? e.from : null, evidence: [{ file: f, line: e.line }] });
+    }
+  }
+  const exported = [...ifs("function"), ...ifs("constant")];
+  tally("exports", exp,
+    (x) => (x.star ? exported.some((i) => i.module === x.module && i.from === x.star) || ifs("constant").some((i) => i.module === x.module && i.export === x.name) : exported.some((i) => i.module === x.module && i.export === x.name)),
+    (x) => `the export ${x.name} of ${x.module}`, () => "the code exports it and no interface in interfaces.json describes it, so a rebuild would not know to export it");
+
+  const writes = [];
+  for (const f of code) for (const w of writesOf(scanned.get(f))) if (inScope(f, w.line)) writes.push({ ...w, file: f, evidence: [{ file: f, line: w.line }] });
+  const fileIfs = ifs("file");
+  tally("files_written", writes,
+    (w) => fileIfs.some((i) => (w.path ? i.path === w.path : i.written_as === w.written_as) && i.evidence.some((e) => e.file === w.file)),
+    (w) => `the file ${w.path ?? `named by ${w.written_as}`} written by ${w.file}`, () => "the code writes it and no file interface in interfaces.json describes it");
+
+  const cmdIfs = ifs("command");
+  tally("commands_required_flags", (surface?.entries ?? []).map((e) => ({ file: e.file, evidence: e.evidence })),
+    (c) => cmdIfs.some((i) => i.command === c.file && Array.isArray(i.required_flags) && !i.flags_unsettled),
+    (c) => `the required flags of the command ${c.file}`,
+    (c) => {
+      const i = cmdIfs.find((x) => x.command === c.file);
+      if (!i) return "the code starts it as a command and no command interface describes it";
+      return `which flags it cannot run without is not settled for ${i.flags_unsettled.map((x) => `${x.flag} (${x.why})`).join("; ")}, and the draft did not settle them with evidence that checks`;
+    });
+
+  const decls = readDeclarations(files, read).filter((d) => d.evidence.some((e) => inScope(e.file, e.line)));
+  const declIfs = new Set(ifs("declaration").map((i) => i.declared_in));
+  tally("declarations", decls, (d) => declIfs.has(d.declared_in), (d) => `${d.name} (${d.declared_in})`, () => "the agent declares it in its own files and no declaration interface in interfaces.json holds it");
+
+  const key = (x) => `${x.file}\n${x.line}\n${x.kind}\n${x.text}`;
+  const have = new Set(strings.map(key));
+  const found = [];
+  for (const f of code) for (const t of stringsOf(scanned.get(f))) if (inScope(f, t.line)) found.push({ file: f, ...t, evidence: [{ file: f, line: t.line }] });
+  tally("strings", found, (x) => have.has(key(x)), (x) => `the ${x.kind === "pattern" ? "pattern" : "string"} ${JSON.stringify(x.text.slice(0, 60))} at ${x.file}:${x.line}`, () => "the scanner finds it in the code and strings.json does not hold it");
+
+  counts.missing = Object.values(counts).reduce((n, c) => n + c.missing, 0);
+  return { counts, gaps };
+}
+
 /** The whole record. `draft` is null when no model drafted. */
-export function buildRecord({ source, facts, draft, draftProblem = "", sbom, baseline, notSent = [], seen = null, ctx, read = () => null, drift = null, previous = null, tool }) {
+export function buildRecord({ source, facts, draft, draftProblem = "", sbom, baseline, notSent = [], seen = null, ctx, read = () => null, drift = null, previous = null, tool, carried = null }) {
   const gaps = [];
   const add = (g) => gaps.push(g);
   const d = draft ?? { behaviors: [], architecture: { kind: null, parts: [], entry_points: [], data_stores: [], systems: [], networks: [], settings: [], starts_and_runs: [], dependencies: [], formats: [] }, interfaces: [], tests: [], gaps: [] };
@@ -222,7 +289,7 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
   // Interfaces, with the schemas found and derived.
   const checkedI = checkClaims(d.interfaces, ctx, { part: "interfaces", label: (c) => `${trim(c.kind)} ${trim(c.name)}`.trim(), fields: ["name", "does", "returns"], drift });
   checkedI.gaps.forEach(add);
-  const built = buildInterfaces({ surface, checked: checkedI.kept, settingsRead: settings.filter((x) => facts.settings.some((f) => f.name === x.name)), declared: facts.declared_settings ?? [], known: knownIn(ctx.files, read, surface), gap: add });
+  const built = buildInterfaces({ surface, checked: checkedI.kept, settingsRead: settings.filter((x) => facts.settings.some((f) => f.name === x.name)), declared: facts.declared_settings ?? [], declarations: facts.declarations ?? [], requiredFlags: facts.required_flags ?? new Map(), checkEv: (list) => checkEvidence(list, ctx).kept, known: knownIn(ctx.files, read, surface), gap: add });
   const { interfaces } = built;
   const schemaFiles = [...built.schemaFiles];
   const found = [];
@@ -278,6 +345,20 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
   if (baseline && !baseline.ran) add({ kind: "run-time-only", part: "existing tests and gaps", about: "what the code does when it runs, and what its tests report", why: baseline.why });
   if (baseline?.ran && baseline.passed === undefined) add({ kind: "unclear", part: "existing tests and gaps", about: "how many tests passed and failed in the baseline run", why: "what the run printed has no summary this agent reads; its exit code stands" });
 
+  // 0.3.0: the original tests carried, and what they import from outside.
+  for (const g of carried?.gaps ?? []) add(g);
+
+  // 0.3.0: every string a person reads and every pattern, as written.
+  const stringsDoc = {
+    format: "as-built-strings-v1", as_built: true, repository: source.repository, commit: source.commit, ...(drift ? { since: drift.since } : {}),
+    strings: (surface?.texts ?? []).map((x) => ({ file: x.file, line: x.line, ...(x.end_line ? { end_line: x.end_line } : {}), kind: x.kind, text: x.text })),
+  };
+
+  // 0.3.0: the completeness check, by code.
+  const scope = drift ? (file, line) => touchesChange([{ file, line }], "new", drift) : () => true;
+  const complete = completeness({ surface, interfaces, files: ctx.files ? [...ctx.files] : [], read, strings: stringsDoc.strings, inScope: scope });
+  complete.gaps.forEach(add);
+
   const numbered = gaps.map((g, i) => ({ id: `G${i + 1}`, ...g }));
   const testsDoc = {
     format: "as-built-tests-and-gaps-v1",
@@ -289,6 +370,8 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
     test_command: facts.test_command.command ? { command: facts.test_command.command, evidence: facts.test_command.evidence, ...(facts.test_command.found_by ? { found_by: facts.test_command.found_by } : {}), ...(facts.test_command.not_run ? { not_run: facts.test_command.not_run } : {}) } : { none: facts.test_command.none, ...(facts.test_command.evidence ? { evidence: facts.test_command.evidence } : {}) },
     baseline: baseline ?? { ran: false, why: "not asked" },
     ...(drift ? { in_scope: "only the test files that changed since the last record; what the unchanged tests cover is in the last record" } : { behaviors_without_tests: withoutTests }),
+    carried: carried?.carried ?? [],
+    support: carried?.support ?? [],
     gaps: numbered,
   };
 
@@ -298,7 +381,9 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
     { ...PARTS[2], doc: interfacesDoc },
     ...(sbom?.bom ? [{ ...PARTS[3], doc: sbom.bom }] : []),
     { ...PARTS[4], doc: testsDoc },
+    { ...PARTS[5], doc: stringsDoc },
   ].map((p) => ({ ...p, text: `${JSON.stringify(p.doc, null, 2)}\n` }));
+  const carriedFiles = (carried?.pieces ?? []).map((c) => ({ file: c.at, bytes: c.bytes, sha256: sha(c.bytes), support: c.at.startsWith("support/") }));
 
   const record = {
     format: RECORD_FORMAT,
@@ -315,6 +400,7 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
     ...(drift && !sbom?.bom ? { dependencies: { unchanged_since: drift.since } } : {}),
     ...(drift && sbom?.changes ? { dependencies_changed: sbom.changes } : {}),
     schemas: schemaFiles.map((s) => ({ file: s.file, format: s.format, sha256: sha(s.text) })),
+    carried_files: carriedFiles.map((c) => ({ file: c.file, sha256: c.sha256 })),
     behaviors_index: behaviorsDoc.behaviors.map((b) => ({ id: b.id, name: b.name, files: [...new Set(b.evidence.filter((e) => e.file && !e.at).map((e) => e.file))].sort(), ...(b.change ? { change: b.change } : {}) })),
     counts: {
       behaviors: behaviors.length,
@@ -325,10 +411,13 @@ export function buildRecord({ source, facts, draft, draftProblem = "", sbom, bas
       gaps: numbered.length,
       held_back: numbered.filter((g) => ["claim-without-evidence", "held-back", "outside-the-change"].includes(g.kind)).length,
       behavior_kinds: Object.fromEntries(KIND_NAMES.map((k) => [k, behaviors.filter((b) => b.kind === k).length]).filter(([, n]) => n)),
+      strings: stringsDoc.strings.length,
+      carried: carriedFiles.length,
+      completeness: complete.counts,
     },
     done: true,
     done_means: "every claim delivered names evidence that was checked against the code at this commit (or the observed run), every gap is listed in tests-and-gaps.json, and claims that went beyond the evidence were held back as gaps",
     made_by: { agent: tool.name, version: tool.version },
   };
-  return { record, docs, schemaFiles, gaps: numbered, behaviors: behaviorsDoc.behaviors, withoutTests };
+  return { record, docs, schemaFiles, carriedFiles, gaps: numbered, behaviors: behaviorsDoc.behaviors, withoutTests };
 }

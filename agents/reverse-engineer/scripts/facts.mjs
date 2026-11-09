@@ -18,6 +18,8 @@ import { createHash } from "node:crypto";
 import { basename, extname } from "node:path";
 import { LOCKFILES, linesOf } from "./codebase.mjs";
 import { readSurface } from "./surface.mjs";
+import { readDeclarations } from "./declarations.mjs";
+import { flagsOf } from "./flags.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -291,6 +293,7 @@ const sha = (t) => createHash("sha256").update(t).digest("hex");
 /** Every fact at once. */
 export function readFacts(files, read, { keep } = {}) {
   const entries = entryPoints(files, read);
+  const surface = readSurface(files, read, { isTest: isTestFile, entryHints: entryHints(files, read, entries.entry_points), keep });
   return {
     settings: settingsRead(files, read, keep),
     ...entries,
@@ -298,6 +301,10 @@ export function readFacts(files, read, { keep } = {}) {
     test_command: testCommand(files, read),
     schemas: foundSchemas(files, read),
     declared_settings: declaredSettings(files, read),
-    surface: readSurface(files, read, { isTest: isTestFile, entryHints: entryHints(files, read, entries.entry_points), keep }),
+    // 0.3.0: what the agent declares in its own files, and each command's
+    // required and optional flags.
+    declarations: readDeclarations(files, read),
+    required_flags: flagsOf(surface),
+    surface,
   };
 }

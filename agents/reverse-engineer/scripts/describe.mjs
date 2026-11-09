@@ -4,7 +4,8 @@
 //   one) for the drafted parts
 //   node describe.mjs --job <job folder> --records <records folder> --work <work folder>
 //        [--text-file <message>] [--codebase <folder>] [--repository <address>]
-//        [--commit <digest>] [--may-run yes|no] [--file <path>[::<media type>]]...
+//        [--commit <digest>] [--may-run yes|no] [--repository-root <folder>]
+//        [--file <path>[::<media type>]]...
 //
 // This is the command the runtime requirements start (run.reverse-engineer).
 // The steps, in order:
@@ -30,8 +31,8 @@
 // record was written; 2 usage; 3 the job stops and the reply says what is
 // needed; 1 failed.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fromArgv, readRequest } from "./read-request.mjs";
 import { changedSince, diffText, filesAt, linesOf, openCodebase, readAt, readInside, resolveCommit } from "./codebase.mjs";
@@ -41,6 +42,7 @@ import { runBaseline, tailOf } from "./baseline.mjs";
 import { callFor, chooseFiles, declaredProtocols, draftInPasses, draftRecord, promptOf, whyNoCall } from "./draft.mjs";
 import { contextFor, touchesChange } from "./evidence.mjs";
 import { buildRecord } from "./record.mjs";
+import { carryTests } from "./carried.mjs";
 import { fill, plan } from "./pieces.mjs";
 import { unpack } from "./archive.mjs";
 import { declineText, declinesFor } from "./declines.mjs";
@@ -82,6 +84,7 @@ export function replyText({ declined, source, record, drift, baseline, went, dra
     L.push(`The baseline run of \`${baseline.command}\` ${baseline.timed_out ? `was stopped at its ${baseline.time_limit_seconds} second limit` : `ended with exit code ${baseline.exit_code}`}: ${counts}. The network was ${baseline.network.startsWith("cut off") ? "cut off" : "not cut off on this host"}.`);
   }
   if (!record.drafted) L.push(`No model drafted from the code (${draftProblem}), so the behaviors, the architecture's drafted parts and the interfaces are empty, and each is listed as a gap.`);
+  if (c.completeness) L.push(`The completeness check ${c.completeness.missing ? `found ${many(c.completeness.missing, "thing")} the record does not hold, each listed as a gap` : "found nothing a rebuild needs missing"}; ${many(c.strings ?? 0, "string and pattern", "strings and patterns")} are in strings.json${c.carried ? `, and ${many(c.carried, "file")} of the original tests are carried under tests/ and support/` : ""}.`);
   L.push(`${many(c.gaps, "gap is", "gaps are")} marked in tests-and-gaps.json${c.held_back ? `, ${c.held_back} of them claims held back because their evidence did not check, they judged or inferred, or they were outside the change` : ""}.`);
   if (went) L.push(went);
   L.push(source.commit_checked ? `Every claim names a file and line at ${short(source.commit)}, checked against the code.` : `The folder was not a git checkout, so the commit ${short(source.commit)} was taken as given; every claim names a file and line checked against the folder as read.`);
@@ -174,6 +177,7 @@ export async function runJob(argv = [], env = process.env, { call = null, cutNet
     s.entries = s.entries.filter((e) => drift.byNewFile.has(e.file));
     s.anchors = s.anchors.filter((a) => drift.byNewFile.has(a.module));
     s.flags = s.flags.filter((f) => touched(f.evidence));
+    facts.declarations = facts.declarations.filter((x) => touched(x.evidence));
   }
   const tool = toolOf();
 
@@ -234,9 +238,18 @@ export async function runJob(argv = [], env = process.env, { call = null, cutNet
   }
   writeFileSync(join(RECORDS, "calls.json"), `${JSON.stringify(calls, null, 2)}\n`);
 
+  // The original tests, carried byte for byte, and what they import from outside the codebase.
+  const top = resolve(cb.dir);
+  const bytesOf = (f) => {
+    const full = resolve(top, f);
+    if (!full.startsWith(top + sep)) return null;
+    try { return lstatSync(full).isFile() ? readFileSync(full) : null; } catch { return null; }
+  };
+  const carried = carryTests({ files: cb.files, bytesOf, dir: cb.dir, prefix: cb.prefix ?? "", checkout: Boolean(cb.checkout), commit: cb.commit, repositoryRoot: args.repositoryRoot ?? "", inScope: drift ? (f) => drift.byNewFile.has(f) : () => true });
+
   // check-the-evidence and write-the-record
   const ctx = contextFor({ files: cb.files, read, ran: Boolean(baseline?.ran), previous });
-  const built = buildRecord({ source, facts, draft, draftProblem: draftProblem || "no model was reached", sbom, baseline, notSent, seen, ctx, read, drift, previous, tool });
+  const built = buildRecord({ source, facts, draft, draftProblem: draftProblem || "no model was reached", sbom, baseline, notSent, seen, ctx, read, drift, previous, tool, carried });
   if (nothingToDraft) built.record.nothing_changed = true;
   const listed = fill(args.job, plan(built)).map((e) => e.name);
   const went = sentence(wentWithout(RECORDS));

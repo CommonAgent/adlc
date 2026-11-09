@@ -33,7 +33,7 @@ test("adoption: the node-app described at its commit, read and run, every claim 
   const record = readPiece(j.jobDir, "record.json");
   assert.deepEqual([record.format, record.repository, record.commit, record.commit_checked, record.read_mode, record.trigger, record.drafted, record.done],
     ["as-built-record-v1", REPOSITORY, cb.commit, true, "read and run", "adoption", true, true]);
-  assert.deepEqual(record.parts.map((p) => p.file), ["behaviors.json", "architecture.json", "interfaces.json", "sbom.cdx.json", "tests-and-gaps.json"]);
+  assert.deepEqual(record.parts.map((p) => p.file), ["behaviors.json", "architecture.json", "interfaces.json", "sbom.cdx.json", "tests-and-gaps.json", "strings.json"]);
 
   // Behaviors: one per anchor (the command, greet, farewell) with evidence
   // that checks, in the feature list's shape, each with its kind.
@@ -100,7 +100,7 @@ test("adoption: the node-app described at its commit, read and run, every claim 
   // The prompt showed the code with line numbers, and the delivery is in its declared formats.
   assert.match(model.prompts[0], /=== src\/index\.js\n\s+1\| \/\/ Greets people by name\./);
   assert.deepEqual(checkDelivered(j.jobDir), []);
-  assert.deepEqual(out.listed, ["as-built record", "behaviors", "architecture as built", "interfaces", "dependencies", "existing tests and gaps", "json schema (schemas/I1.schema.json)"]);
+  assert.deepEqual(out.listed, ["as-built record", "behaviors", "architecture as built", "interfaces", "dependencies", "existing tests and gaps", "strings", "json schema (schemas/I1.schema.json)", "carried test (tests/test/greet.test.js)"]);
   // Three passes, each recorded: architecture and interfaces, behaviors, test coverage.
   const calls = JSON.parse(readFileSync(join(j.recordsDir, "calls.json"), "utf8"));
   assert.deepEqual(calls.passes.map((p) => [p.pass, p.ok]), [["architecture and interfaces", true], ["behaviors 1 of 1", true], ["what each test covers", true]]);

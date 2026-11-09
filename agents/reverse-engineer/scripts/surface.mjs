@@ -18,7 +18,7 @@
 //   needs: node >= 22. Nothing here reads or writes a file: `read` does.
 //   import { readSurface } from "./surface.mjs"
 import { posix } from "node:path";
-import { constBefore, declarationBefore, matching, objectFields, scan, splitTop, statementEnd, tokenAt, typeOfExpr } from "./js-source.mjs";
+import { assignedRanges, constBefore, declarationBefore, either, matching, objectFields, scan, splitTop, statementEnd, tokenAt, typeOfExpr } from "./js-source.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const collapse = (t) => String(t ?? "").replace(/\s+/g, " ").trim();
@@ -113,7 +113,7 @@ function localValue(s, name) {
   const cls = new RegExp(`(^|[^.\\w$])class\\s+${esc}\\b`).exec(s.masked);
   if (cls) return { kind: "class", line: s.lineOf(cls.index + cls[1].length) };
   const d = declarationBefore(s, name);
-  if (d) return { ...valueAt(s, d.start, d.end), line: d.line };
+  if (d) return { ...valueAt(s, d.start, d.end), line: d.line, range: [d.start, d.end] };
   return null;
 }
 
@@ -132,6 +132,8 @@ export function exportsOf(s) {
     }
     if (e.kind === "pattern") e.value = info.value;
     if (info?.from) e.from = info.from;
+    // 0.3.0: where a value is written, so it can be read as JSON.
+    if (info?.range && e.kind !== "function" && e.kind !== "class") e.range = info.range;
     out.push(e);
   };
   for (const h of m.matchAll(/(^|[^.\w$])export\s+(default\s+)?(async\s+)?(function\b\s*\*?|class\b|const\b|let\b|var\b)\s*([A-Za-z_$][\w$]*)?/g)) {
@@ -149,12 +151,12 @@ export function exportsOf(s) {
       let a = eq + 1;
       while (a < m.length && /\s/.test(m[a])) a += 1;
       const end = m[a] === "{" || m[a] === "[" ? matching(m, a) + 1 : statementEnd(m, a);
-      add(name, { ...valueAt(s, a, end), line }, line);
+      add(name, { ...valueAt(s, a, end), line, range: [a, end] }, line);
     }
   }
   for (const h of m.matchAll(/(^|[^.\w$])export\s+default\s+(?!async\b|function\b|class\b)/g)) {
     const at = h.index + h[0].length;
-    add("default", { ...valueAt(s, at, statementEnd(m, at)), line: s.lineOf(at) }, s.lineOf(at));
+    add("default", { ...valueAt(s, at, statementEnd(m, at)), line: s.lineOf(at), range: [at, statementEnd(m, at)] }, s.lineOf(at));
   }
   for (const h of m.matchAll(/(^|[^.\w$])export\s*(\*\s*(?:as\s+([A-Za-z_$][\w$]*)\s*)?|\{([^}]*)\})\s*(from\b)?/g)) {
     const line = s.lineOf(h.index + h[1].length);
@@ -175,7 +177,7 @@ export function exportsOf(s) {
       for (const f of objectFields(s, at, end).fields) {
         const expr = s.text.slice(f.start, f.end).trim();
         if (f.shorthand || /^[A-Za-z_$][\w$]*$/.test(expr)) add(f.key, localValue(s, f.shorthand ? f.key : expr) ?? { kind: "value", line: s.lineOf(f.start) }, s.lineOf(f.start));
-        else add(f.key, { ...valueAt(s, f.start, f.end), line: s.lineOf(f.start) }, s.lineOf(f.start));
+        else add(f.key, { ...valueAt(s, f.start, f.end), line: s.lineOf(f.start), range: [f.start, f.end] }, s.lineOf(f.start));
       }
     } else {
       const end = statementEnd(m, at);
@@ -188,7 +190,7 @@ export function exportsOf(s) {
     const line = s.lineOf(at);
     const end = statementEnd(m, at);
     const expr = s.text.slice(at, end).trim();
-    add(h[2], /^[A-Za-z_$][\w$]*$/.test(expr) ? localValue(s, expr) ?? { kind: "value", line } : { ...valueAt(s, at, end), line }, line);
+    add(h[2], /^[A-Za-z_$][\w$]*$/.test(expr) ? localValue(s, expr) ?? { kind: "value", line } : { ...valueAt(s, at, end), line, range: [at, end] }, line);
   }
   return out.sort((x, y) => x.line - y.line || x.name.localeCompare(y.name));
 }
@@ -227,7 +229,7 @@ export function importsOf(s) {
       else if (member) names = [member[1]];
       else names = ["*"];
     }
-    if (names) out.push({ spec: t.value, line: t.line, names });
+    if (names) out.push({ spec: t.value, line: t.line, names, at: t.start });
   }
   return out;
 }
@@ -346,6 +348,110 @@ export function constantsOf(s) {
   return out;
 }
 
+/** Whether a string's words are ones a person reads: a letter and a space,
+ *  or a whole sentence (a capital first, a stop last). */
+export const isWords = (text) => (/[A-Za-z]/.test(text) && / /.test(text)) || /^[A-Z][\s\S]*[.!?]$/.test(text.trim());
+
+/** The strings a person reads and the regular expressions of one scanned
+ *  file (0.3.0): [{line, end_line?, kind: words | template | pattern, text}],
+ *  each `text` exactly as in the source (between the quotes or backticks, as
+ *  written; a pattern with its slashes and flags). Import paths are left out. */
+export function stringsOf(s) {
+  const specs = new Set(importsOf(s).map((i) => i.at));
+  const out = [];
+  for (const t of s.tokens) {
+    let kind; let text;
+    if (t.kind === "regex") { kind = "pattern"; text = t.value; } else {
+      if (specs.has(t.start)) continue;
+      text = s.text.slice(t.start + 1, t.end - 1);
+      const plain = t.kind === "template" ? text.replace(/\$\{[\s\S]*?\}/g, "") : t.value;
+      if (!isWords(plain)) continue;
+      kind = t.kind === "template" ? "template" : "words";
+    }
+    const end = s.lineOf(Math.max(t.start, t.end - 1));
+    out.push({ line: t.line, ...(end > t.line ? { end_line: end } : {}), kind, text });
+  }
+  return out;
+}
+
+/** Two schemas read for the same file, as one: a field in both keeps what
+ *  both allow, a field in one is no longer always there. */
+export function unionSchema(x, y) {
+  if (!x) return y;
+  if (!y) return x;
+  if (JSON.stringify(x) === JSON.stringify(y)) return x;
+  if (x.type === "object" && y.type === "object" && x.properties && y.properties) {
+    const properties = {};
+    for (const k of new Set([...Object.keys(x.properties), ...Object.keys(y.properties)])) {
+      properties[k] = x.properties[k] && y.properties[k] ? unionSchema(x.properties[k], y.properties[k]) : (x.properties[k] ?? y.properties[k]);
+    }
+    const required = (x.required ?? []).filter((k) => (y.required ?? []).includes(k));
+    const comment = [x.$comment, y.$comment].filter(Boolean).join("; ");
+    const out = { ...(x.$schema ? { $schema: x.$schema } : {}), type: "object", properties };
+    if (required.length) out.required = required;
+    if (comment) out.$comment = comment;
+    return out;
+  }
+  return either(x, y);
+}
+
+/** The object literals of one scanned file: [{start, end, keys, fields}].
+ *  A brace that opens a block is not one. */
+export function objectLiteralsOf(s) {
+  if (s.objects) return s.objects;
+  const m = s.masked;
+  const out = [];
+  for (let k = 0; k < m.length; k++) {
+    if (m[k] !== "{") continue;
+    const before = m.slice(Math.max(0, k - 12), k).trimEnd();
+    const last = before.slice(-1);
+    const isObject = (last && "=(,:[?".includes(last) && !before.endsWith("=>")) || /(\|\||&&|\?\?|\breturn)$/.test(before);
+    if (!isObject) continue;
+    const end = matching(m, k);
+    if (end === -1) continue;
+    const { fields } = objectFields(s, k, end + 1);
+    out.push({ start: k, end: end + 1, keys: new Set(fields.map((f) => f.key)), fields });
+  }
+  s.objects = out;
+  return out;
+}
+
+/** The literal values a field `key` is written with, in the object literals
+ *  of `files` shaped like the one it belongs to (they share at least half of
+ *  `siblings`, the field names beside it): {values, evidence} when every such
+ *  literal gives it a literal (a string, number, boolean or null, or a const,
+ *  ternary or let of them), else null. */
+export function fieldValuesIn(scanned, files, key, siblings) {
+  const want = Math.min(siblings.length, Math.max(2, Math.ceil(siblings.length / 2)));
+  const values = []; const evidence = [];
+  let seen = 0;
+  for (const f of files) {
+    const s = scanned.get(f);
+    if (!s) continue;
+    for (const o of objectLiteralsOf(s)) {
+      if (!o.keys.has(key)) continue;
+      if (siblings.filter((k) => o.keys.has(k)).length < want) continue;
+      const field = o.fields.find((x) => x.key === key);
+      const t = typeOfExpr(s, field.start, field.end, { before: field.start });
+      const vals = t.const !== undefined ? [t.const] : Array.isArray(t.enum) ? t.enum : t.type === "null" ? [null] : null;
+      if (!vals) return null;
+      seen += 1;
+      for (const v of vals) if (!values.some((w) => w === v)) values.push(v);
+      // The line the field is written on, and where a name it is written
+      // from is given its values.
+      const lines = [s.lineOf(field.start)];
+      const name = s.text.slice(field.start, field.end).trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) {
+        const c = constBefore(s, name, field.start);
+        if (c) lines.push(c.line);
+        else for (const [x] of assignedRanges(s, name, field.start) ?? []) lines.push(s.lineOf(x));
+      }
+      for (const line of lines) if (!evidence.some((e) => e.file === f && e.line === line)) evidence.push({ file: f, line });
+    }
+  }
+  return seen ? { values, evidence } : null;
+}
+
 /** The whole surface. `isTest(file)` says which files are tests (their
  *  imports count, their exports, writes and flags do not); `entryHints` are
  *  files the manifests name as commands or main modules, with evidence. */
@@ -392,11 +498,24 @@ export function readSurface(files, read, { isTest = () => false, entryHints = []
   entries.sort((a, b) => a.file.localeCompare(b.file));
   const mains = new Set(entryHints.filter((h) => h.main).map((h) => h.file));
 
-  // Exports of the modules something imports, or that are main or a command.
-  const offered = (f) => imports.some((i) => i.resolved === f && i.file !== f) || mains.has(f) || entries.some((e) => e.file === f);
+  // Exports of every module of the code (0.3.0; 0.2.0 listed only the modules
+  // something imports, the main module and the commands). A re-export takes
+  // what the module it names exports, where that module is in the codebase.
+  const own = new Map(code.map((f) => [f, exportsOf(scanned.get(f))]));
   const exportsList = [];
-  for (const f of code.filter(offered)) {
-    for (const e of exportsOf(scanned.get(f))) {
+  for (const f of code) {
+    const list = [];
+    for (const e of own.get(f)) {
+      const target = e.kind === "re-export" && e.from ? resolveImport(f, e.from, fileSet).resolved : null;
+      const theirs = target ? own.get(target) : null;
+      if (theirs && e.name.startsWith("* from ")) {
+        for (const t of theirs.filter((x) => x.name !== "default" && x.kind !== "re-export")) if (!list.some((x) => x.name === t.name)) list.push({ ...t, line: e.line, from: e.from, value_in: target });
+        continue;
+      }
+      const t = theirs?.find((x) => x.name === e.name) ?? null;
+      list.push(t && t.kind !== "re-export" ? { ...t, name: e.name, line: e.line, from: e.from, value_in: target } : e);
+    }
+    for (const e of list) {
       const by = new Set([...(byName.get(`${f}#${e.name}`) ?? []), ...(whole.get(f) ?? [])]);
       if (e.name === "default") for (const x of byName.get(`${f}#default`) ?? []) by.add(x);
       exportsList.push({ module: f, ...e, imported_by: [...by].sort(), ...(mains.has(f) ? { main: true } : {}) });
@@ -446,21 +565,30 @@ export function readSurface(files, read, { isTest = () => false, entryHints = []
     for (const w of writesOf(scanned.get(f))) {
       const key = w.path ?? `${f}:${w.written_as}`;
       const have = writes.find((x) => (x.path ?? `${x.evidence[0].file}:${x.written_as}`) === key);
-      if (have) { have.evidence.push(ev(f, w.line)); if (!have.schema && w.schema) have.schema = w.schema; continue; }
+      // 0.3.0: two places that write the same file give one schema that allows both.
+      if (have) { have.evidence.push(ev(f, w.line)); if (w.schema) have.schema = unionSchema(have.schema, w.schema); continue; }
       const { line, ...rest } = w;
       writes.push({ ...rest, evidence: [ev(f, line)] });
     }
   }
 
-  const patterns = []; const constants = []; const strings = new Set();
+  const patterns = []; const constants = []; const strings = new Set(); const texts = [];
   for (const f of code) {
     const s = scanned.get(f);
     for (const p of patternsOf(s)) patterns.push({ file: f, ...p });
     for (const c of constantsOf(s)) constants.push({ file: f, ...c });
     for (const t of s.tokens) if (t.kind === "string" || (t.kind === "template" && !t.subst)) strings.add(t.value);
+    for (const t of stringsOf(s)) if (keep(f, t.line)) texts.push({ file: f, ...t });
   }
 
-  return { scanned, imports, outside, entries, exports: exportsList, anchors, flags, writes, patterns, constants, strings };
+  // The files a writer reads its values from: it and what it imports.
+  const fieldValues = (writers, key, siblings) => {
+    const files = new Set();
+    for (const w of writers) for (const f of closureOf(w)) files.add(f);
+    return fieldValuesIn(scanned, [...files].sort(), key, siblings);
+  };
+
+  return { scanned, imports, outside, entries, exports: exportsList, anchors, flags, writes, patterns, constants, strings, texts, code, closureOf, fieldValues };
 }
 
 /** Whether `name` is written as a word in the masked lines [from, to] of a
