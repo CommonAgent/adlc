@@ -1,0 +1,17 @@
+{
+  "format": "as-built-architecture-v1",
+  "record": "architecture-record-v1",
+  "as_built": true,
+  "repository": "https://github.com/example/tide-reader",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "kind": { "kind": "plugin-on-harness" },
+  "systems": [
+    { "name": "http-api", "product": "Tide service", "access": "read", "why": "Reads the tide table.", "evidence": [{ "file": "scripts/tides.mjs", "line": 6 }] }
+  ],
+  "egress": [
+    { "destination": "https://tides.example.org/api", "why": "The tide service.", "evidence": [{ "file": "scripts/tides.mjs", "line": 6 }] }
+  ],
+  "formats": [{ "direction": "out", "piece": "tides", "kind": "application/vnd.example.tides+json" }],
+  "settings": [{ "name": "harbor", "credential": false }],
+  "entry_points": [{ "name": "tides.mjs", "how": "Executed as a command-line script by Node." }]
+}

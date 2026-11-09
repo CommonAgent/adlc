@@ -169,7 +169,10 @@ test("good case for container spec: checked spec is delivered as spec.json match
     const planned = plan({ container: true, specPath, blanks: [] });
     fill(job, planned);
 
-    assert.ok(existsSync(join(job, "out", "spec.json")));
+    // From 0.9.0 out/spec.json is the spec (spec-v1); a container agent's
+    // checked draft is one of the agent's own files.
+    assert.ok(existsSync(join(job, "out", "agent", "spec.json")));
+    assert.equal(existsSync(join(job, "out", "spec.json")), false);
     assert.deepEqual(checkDelivered(job), []);
   });
 });

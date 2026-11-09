@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "format": { "type": "string", "const": "tides-v1" },
+    "harbor": { "type": "string" },
+    "chart": { "type": "string", "const": "https://charts.example.net/" },
+    "tides": { "type": "array", "items": { "type": "object", "properties": { "at": { "type": "string" }, "height": { "type": "number" } } } }
+  },
+  "required": ["format", "harbor", "chart", "tides"]
+}

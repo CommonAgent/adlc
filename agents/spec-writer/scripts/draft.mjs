@@ -41,16 +41,20 @@
 //   [ANSWERS=<answers.json>] node draft.mjs
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkDraft, earlierBareJson, jobProblems } from "./check-spec.mjs";
 import { fitJobSeconds } from "./job-seconds.mjs";
 import { fitRunReply } from "./run-reply.mjs";
 import { CAN_USE_RULE, canUseProblems, fitCanUse, loadSchemas } from "./can-use.mjs";
-import { fitCommands, fitToGiven, givenOf, givenProblems } from "./given.mjs";
+import { fitCommands, fitToGiven, givenOf, givenOfSpec, givenProblems } from "./given.mjs";
+import { reachProblems } from "./reaches.mjs";
 import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
 import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
+import { jsonCandidates, jsonIn } from "./json-in.mjs";
+import { THE_SPEC, addressProblems, designView, fitToSpec, specPart } from "./design.mjs";
+import { NoSpec, keepSpec, referenceParts, specCounts, specSecondsOf, writeTheSpec } from "./spec.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -288,8 +292,12 @@ export function requestParts({ asked = null, reference = "", worked = "", answer
   // The architecture record is handed over on its own below, with what the
   // Design owes it, rather than as one more document.
   const record = attached.find((a) => a.kind === "an architecture record" && typeof a.text === "string") ?? null;
+  // The spec Requirements handed back is what the Design starts from
+  // (stages.json 1.6.0), handed over on its own with what the files owe it.
+  const theSpec = attached.find((a) => a.kind === THE_SPEC && typeof a.text === "string") ?? null;
+  if (theSpec) parts.push(specPart(theSpec.text));
   for (const a of attached) {
-    if (a === sentBack || a === record || typeof a.text !== "string" || !trim(a.text)) continue;
+    if (a === sentBack || a === record || a === theSpec || typeof a.text !== "string" || !trim(a.text)) continue;
     parts.push(`--- ${a.name.toUpperCase()}, ${a.kind.toUpperCase()}, AS ATTACHED ---\n${trim(a.text)}${a.cut ? `\n(cut here; the whole file is ${a.text_chars} characters)` : ""}`);
   }
   if ((asked?.missing_files ?? []).length) {
@@ -430,57 +438,9 @@ export function answerFrom(text) {
   return { spec: doc.spec, blanks, notes: trim(doc.notes) };
 }
 
-/** The places a JSON value may sit in an answer, most likely first: the
- *  whole answer, each fenced block, and each balanced {...} in the prose
- *  (read with strings and escapes respected, so a brace inside a string does
- *  not end it). Pure. */
-export function jsonCandidates(raw) {
-  const out = [raw];
-  for (const m of raw.matchAll(/```[a-zA-Z]*[ \t]*\r?\n?([\s\S]*?)```/g)) out.push(m[1].trim());
-  for (let i = raw.indexOf("{"); i !== -1; i = raw.indexOf("{", i + 1)) {
-    const end = objectEnd(raw, i);
-    if (end !== -1) {
-      out.push(raw.slice(i, end + 1));
-      i = end; // the next candidate starts after this object, not inside it
-    }
-  }
-  return [...new Set(out.filter(Boolean))];
-}
-
-/** Where the object opened at `start` closes, or -1 when it never does. */
-function objectEnd(s, start) {
-  let depth = 0, inString = false, escaped = false;
-  for (let i = start; i < s.length; i += 1) {
-    const c = s[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (c === "\\") escaped = true;
-      else if (c === "\"") inString = false;
-      continue;
-    }
-    if (c === "\"") inString = true;
-    else if (c === "{" || c === "[") depth += 1;
-    else if (c === "}" || c === "]") {
-      depth -= 1;
-      if (depth === 0) return c === "}" ? i : -1;
-      if (depth < 0) return -1;
-    }
-  }
-  return -1;
-}
-
-/** The first candidate that parses: an object when there is one, else the
- *  first value of any other kind, else undefined. */
-export function jsonIn(raw) {
-  let other;
-  for (const c of jsonCandidates(raw)) {
-    let v;
-    try { v = JSON.parse(c); } catch { continue; }
-    if (v && typeof v === "object" && !Array.isArray(v)) return v;
-    if (other === undefined) other = v;
-  }
-  return other;
-}
+// jsonCandidates and jsonIn moved to json-in.mjs in 0.9.0, where the spec
+// step reads its answers too; they are still exported from here.
+export { jsonCandidates, jsonIn };
 
 /** The blanks, with the three that are never the model's to fill added back
  *  whenever the draft did not settle them.
@@ -523,8 +483,11 @@ export async function askForSpec({
   const architecture = opts.asked?.architecture ?? null;
   // What the person sent names some things exactly (settings, the runtime,
   // the price, addresses, shapes, quoted words), and the draft keeps them.
-  const given = givenOf(opts.asked, opts.answers);
-  check ??= (spec) => checkDraft(spec, { earlier, architecture, given });
+  // From 0.9.0 the Design's given is the spec (given.mjs, givenOfSpec), handed
+  // in as opts.given with the spec as opts.specV1.
+  const given = opts.given ?? givenOf(opts.asked, opts.answers);
+  const specV1 = opts.specV1 ?? null;
+  check ??= (spec) => [...checkDraft(spec, { earlier, architecture, given }), ...(specV1 ? addressProblems(spec) : [])];
   let findings = [];
   let last = null;
   let calls = 0;
@@ -595,7 +558,12 @@ export async function askForSpec({
   // question for each output whose shape was not given.
   // A bare script path in a job's command is written in the form the host runs.
   const fitCmd = fitCommands(withAssets.spec);
-  const fitGiven = fitToGiven(fitCmd.spec, given);
+  const fitGivenRaw = fitToGiven(fitCmd.spec, given);
+  // The name, version and price are the spec's; its address settings and
+  // the hosts it only writes down are where the files need them; and no
+  // address is left outside a setting's default.
+  const toSpec = specV1 ? fitToSpec(fitGivenRaw.spec, specV1) : { spec: fitGivenRaw.spec, notes: [] };
+  const fitGiven = { ...fitGivenRaw, spec: toSpec.spec };
   const blanks = blanksOf(fitGiven.spec, last.blanks);
   if (fitted.blank && !blanks.some((b) => b.key === "architecture")) blanks.push(fitted.blank);
   for (const b of fitGiven.blanks) if (!blanks.some((x) => x.key === b.key)) blanks.push(b);
@@ -603,17 +571,24 @@ export async function askForSpec({
   // settled is gone, and a shape now asked is not said twice.
   const before = new Set(givenProblems(last.spec, given));
   const nowJob = new Set((Array.isArray(fitGiven.spec?.jobs) ? fitGiven.spec.jobs : []).flatMap((j) => jobProblems(j)));
+  const reachSet = new Set(reachProblems(last.spec));
+  const addrSet = new Set(addressProblems(last.spec));
+  const nowReach = new Set(reachProblems(fitGiven.spec));
+  const nowAddr = new Set(addressProblems(fitGiven.spec));
   const kept = (fitted.blank ? findings.filter((f) => !/which the architecture record does not name/.test(f)) : findings)
     .filter((f) => !/^can_use |declare it in can_use$/.test(f))
     .filter((f) => !before.has(f))
     // What the command and scripts fits settled is not said again.
-    .filter((f) => !/^job .*(?:as a bare path, and the host runs|and scripts does not name it)/.test(f) || nowJob.has(f));
+    .filter((f) => !/^job .*(?:as a bare path, and the host runs|and scripts does not name it)/.test(f) || nowJob.has(f))
+    // What the spec's fits settled (an address outside a setting's default,
+    // a service with no address setting) is not said again.
+    .filter((f) => !specV1 || !(reachSet.has(f) || addrSet.has(f)) || nowReach.has(f) || nowAddr.has(f));
   const askedKeys = blanks.map((b) => b.key);
   const still = givenProblems(fitGiven.spec, given).filter((f) => !askedKeys.some((k) => f.includes(`put "${k}" in blanks`)));
   return {
     spec: fitGiven.spec,
     blanks,
-    notes: [last.notes, timedNote, ...withAssets.notes, fitCmd.note, fitGiven.note].filter(Boolean).join(" "),
+    notes: [last.notes, timedNote, ...withAssets.notes, fitCmd.note, fitGiven.note, ...toSpec.notes].filter(Boolean).join(" "),
     findings: [...kept, ...still, ...canUseProblems(fitGiven.spec, architecture, table)],
     calls,
     used,
@@ -697,12 +672,29 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // The prompt goes as plain text, each call cut at the seconds the step
     // has left, so no call outlives the step.
     const call = callFor(env, { protocols });
+    const reference = read(referenceAt(env));
+    const parts = referenceParts(reference);
+    // First the spec (spec.mjs): what Requirements hands back. It is kept
+    // before the Design starts, so a Design that fails still leaves it.
+    const written = await writeTheSpec({ asked, answers, call, reference, recordsRoot: dirname(resolve(RECORDS)), seconds: specSecondsOf(env) });
+    const kept = keepSpec(RECORDS, written.spec);
+    const specText = readFileSync(kept.json, "utf8");
+    // Then the Design: the agent's own files, made from the spec. Its given
+    // is the spec, not the raw request.
+    const designAsked = designView(asked, specText);
     const out = await askForSpec({
-      call, asked, answers,
-      reference: read(referenceAt(env)),
+      call, asked: designAsked, answers,
+      reference: parts.design,
       worked: read(workedAt(env)),
       env,
+      given: givenOfSpec(written.spec, designAsked, answers),
+      specV1: written.spec,
     });
+    // What is still open: the spec's own questions first, then any the
+    // Design adds (the same key is asked once).
+    const blanks = (written.spec.open ?? []).map((o) => ({ key: o.key, question: o.question }));
+    for (const b of out.blanks) if (!blanks.some((x) => x.key === b.key)) blanks.push(b);
+    out.blanks = blanks;
     mkdirSync(RECORDS, { recursive: true });
     // Written before the draft, so a run that dies between the two still
     // says what it was short of.
@@ -716,24 +708,31 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       // after this step (a harness's file tool cuts lines over 2000
       // characters, debt 43) is refused rather than delivered cut.
       draft_sha256: digestOf(draftText),
+      // The spec's digests, held by pieces.mjs the same way.
+      spec_sha256: kept.sha256, spec_md_sha256: kept.md_sha256,
+      spec: { mode: written.mode, made: written.calls, each: written.used.map((u) => ({ answered_by: u.model, tokens_in: u.tokens_in, tokens_out: u.tokens_out, cost: u.cost })) },
       answered_by: [...out.used].reverse().find((u) => u.model)?.model ?? null,
       each: out.used.map((u) => ({ answered_by: u.model, tokens_in: u.tokens_in, tokens_out: u.tokens_out, cost: u.cost })),
     }, null, 2) + "\n");
     // The findings that still stand go beside the blanks, so the reply says
     // them out loud rather than leaving them in this step's output.
-    writeFileSync(join(RECORDS, "blanks.json"), JSON.stringify({ blanks: "v1", blanks: out.blanks, notes: out.notes, ...(out.findings.length ? { findings: out.findings } : {}) }, null, 2) + "\n");
+    writeFileSync(join(RECORDS, "blanks.json"), JSON.stringify({
+      blanks: "v1", blanks: out.blanks, notes: out.notes, ...(out.findings.length ? { findings: out.findings } : {}),
+      spec: { mode: written.mode, counts: specCounts(written.spec), notes: written.notes, ...(written.findings.length ? { findings: written.findings } : {}), ...(written.revised ? { revised: written.revised } : {}) },
+    }, null, 2) + "\n");
     console.log(JSON.stringify({
-      ok: true, code: 0, draft: join(RECORDS, "draft.json"),
-      blanks: out.blanks.map((b) => b.key), findings: out.findings, calls: out.calls, stopped: out.stopped, model,
+      ok: true, code: 0, spec: kept.json, spec_md: kept.md, draft: join(RECORDS, "draft.json"),
+      blanks: out.blanks.map((b) => b.key), spec_findings: written.findings, findings: out.findings,
+      calls: written.calls + out.calls, stopped: written.stopped ?? out.stopped, model,
     }));
   } catch (e) {
     console.error(e.message);
-    if (e instanceof NoDraft) {
+    if (e instanceof NoDraft || e instanceof NoSpec) {
       // The job ends here, in words. Running this step again will not do
       // better inside the same job, so the reply says to ask again later.
       console.log(JSON.stringify({
         ok: false, code: NO_DRAFT_EXIT,
-        reply: `The spec was not drafted: ${e.message}. Nothing was delivered. You can ask again.`,
+        reply: `${e instanceof NoSpec ? "The spec was not written" : "The agent's own files were not drafted from the spec"}: ${e.message}. Nothing was delivered. You can ask again.`,
       }));
       process.exitCode = NO_DRAFT_EXIT;
     } else {

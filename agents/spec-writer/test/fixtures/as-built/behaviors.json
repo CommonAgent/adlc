@@ -1,0 +1,68 @@
+{
+  "format": "as-built-behaviors-v1",
+  "as_built": true,
+  "repository": "https://github.com/example/tide-reader",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "behaviors": [
+    {
+      "id": "B1",
+      "name": "read the tide table",
+      "does": "Reads the tide table for a harbor from the tide service and writes the next tides as JSON.",
+      "inputs": ["harbor"],
+      "outputs": ["tides"],
+      "refusals": ["I cannot read the tides for ${harbor}: the tide service did not answer. Nothing was written."],
+      "error_handling": ["Returns { reply: e.message } when the error is a Refusal, and rethrows any other."],
+      "kind": "entry",
+      "anchor": "scripts/tides.mjs#readTides",
+      "quotes": [
+        { "what": "the harbor code pattern", "text": "/^[A-Z]{4}$/", "evidence": [{ "file": "scripts/tides.mjs", "line": 8 }], "by_rule": true },
+        { "what": "the reply when done", "text": "Read ${count} tides for ${harbor}.", "evidence": [{ "file": "scripts/tides.mjs", "line": 41 }] }
+      ],
+      "rules": [
+        { "kind": "limit", "rule": "Reads at most 12 tides.", "evidence": [{ "file": "scripts/tides.mjs", "line": 10 }] },
+        { "kind": "order", "rule": "Tries the 'local' table first, then the 'national' one.", "evidence": [{ "file": "scripts/tides.mjs", "line": 20, "end_line": 24 }] }
+      ],
+      "constants": [
+        { "name": "MOST", "value": 12, "evidence": [{ "file": "scripts/tides.mjs", "line": 10 }] },
+        { "name": "SERVICE", "value": "https://tides.example.org/api", "evidence": [{ "file": "scripts/tides.mjs", "line": 6 }] }
+      ],
+      "evidence": [{ "file": "scripts/tides.mjs", "line": 30, "end_line": 45 }],
+      "as_built": true
+    },
+    {
+      "id": "B2",
+      "name": "say the stop reply",
+      "does": "Recognizes a stop notice and answers with the stopped reply.",
+      "inputs": ["text"],
+      "outputs": ["reply"],
+      "refusals": [],
+      "error_handling": [],
+      "kind": "check",
+      "anchor": "scripts/stop.mjs#stopReply",
+      "quotes": [
+        { "what": "stop notice pattern", "text": "^\\s*stop that\\b", "evidence": [{ "file": "scripts/stop.mjs", "line": 3 }] },
+        { "what": "stopped reply", "text": "Nothing was in progress, so nothing was done.", "evidence": [{ "file": "scripts/stop.mjs", "line": 9 }] }
+      ],
+      "rules": [],
+      "constants": [],
+      "evidence": [{ "file": "scripts/stop.mjs", "line": 5, "end_line": 12 }],
+      "as_built": true
+    },
+    {
+      "id": "B3",
+      "name": "format the old banner",
+      "does": "Writes a banner line nobody reads any more.",
+      "inputs": [],
+      "outputs": ["banner"],
+      "refusals": [],
+      "error_handling": [],
+      "kind": "compose",
+      "anchor": "scripts/banner.mjs#banner",
+      "quotes": [{ "what": "the banner", "text": "~~ tides ~~", "evidence": [{ "file": "scripts/banner.mjs", "line": 2 }] }],
+      "rules": [],
+      "constants": [],
+      "evidence": [{ "file": "scripts/banner.mjs", "line": 1, "end_line": 3 }],
+      "as_built": true
+    }
+  ]
+}

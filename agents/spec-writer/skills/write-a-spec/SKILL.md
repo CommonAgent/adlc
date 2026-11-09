@@ -21,17 +21,19 @@ when somebody wants an agent built and has said what it should do, in their own 
 
 ## What a good result looks like
 
-The agent's own files, the layout a package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), the same bytes the builder writes for the draft, carrying the four sentences on every job, a how declaration on each, a specific kind on every input and output (Markdown with a convention for what agents hand each other or a person reviews, a vendor JSON kind for typed data only code reads, never a bare application/json), who gives each input, a model reached only as a bound system and never named, exactly the systems the architecture record names when one came with the request, at least four refusals written as acts, and the records an agent is audited by. Beside it, the questions it could not answer itself, each one something nobody else could have answered.
+The spec (spec-v1), valid against standards/spec.schema.json, as out/spec.json and readable as out/spec.md: every feature with requirements, each a statement with shall, its kind, the exact words, patterns and numbers it fixes and its source, and at least one Gherkin acceptance scenario that checks them; the interfaces, with every one an as-built record gives kept exactly; the constraints, systems, settings, price and the open questions. Every quote, rule value and interface of an as-built record is in it byte for byte, and nothing it fixes is a value nobody gave. Then the agent's own files made from it, the layout a package is built from, carrying the four sentences on every job, a specific kind on every input and output, a model reached only as a bound system, no address outside a setting's default, and at least four refusals written as acts. Beside them, the questions it could not answer itself, each one something nobody else could have answered.
 
 ## What it produces
 
+- the spec (application/vnd.agentmesh.spec+json, per task)
+- the spec, readable (text/markdown, per task)
 - the agent's own files (document, per task)
 - what is still open (text/markdown, per task)
 - the container spec (application/vnd.agentmesh.agent-spec+json, per task)
 
 ## When it comes back empty
 
-If nothing arrived to write a spec from, nothing is drafted and no model is woken: the reply says so and names what would be enough. If the request settles the name, the price or what the agent may reach, those are asked rather than invented, and the draft is delivered with them still open.
+If nothing arrived to write a spec from, nothing is drafted and no model is woken: the reply says so and names what would be enough. If the request settles the name, the price or what the agent may reach, those are asked rather than invented, and the spec is delivered with them still open. A revision whose words name nothing in the spec leaves the spec as it was, byte for byte, and the words go to the agent's own files.
 
 ## How to do it
 
@@ -55,9 +57,11 @@ Attached files arrive as local paths in an `attached: N files, already downloade
 
 A message that answers questions from an earlier round, sends a draft back with changes, or relays an owner's answer ("here is your answer") is a REVISION of that draft and never a new request: run the same four commands with the same variables and nothing else. The first command reads the answers out of the message itself, writes <records folder>/answers.json, and takes the draft from FILES when one was attached or from this agent's newest earlier draft when none was; it exits 3 when there is no draft to revise, and then its reply is your whole answer. Never write answers.json yourself, never write a spec yourself, and never draft an agent from the words of an answer.
 
-Never write a spec yourself. Never fill in a name, a price or an access grant the person did not state, whatever the draft says: the script checks the draft for those three and puts back any the model quietly settled.
+The second command writes the spec first (records/<job>/spec.json and spec.md) and then the draft of the agent's own files from it; the last command files out/spec.json, out/spec.md, the agent's own files under out/agent/ and out/still-open.md.
 
-Never open draft.json, an attached spec or any other spec with your own file tools, and never edit one: your read tool cuts every line over 2000 characters, and a spec's instructions are longer than that. The scripts read and write every spec whole. pieces.mjs delivers the draft only while it is byte for byte what draft.mjs wrote; when it refuses, it prints one JSON object whose `reply` says so, and that reply is your whole answer.
+Never write a spec yourself. Never fill in a name, a price or an access grant the person did not state, whatever the spec or the draft says: the scripts check both for those three and put back any the model quietly settled.
+
+Never open spec.json, draft.json, an attached spec or any other spec with your own file tools, and never edit one: your read tool cuts every line over 2000 characters, and a spec's patterns and instructions are longer than that. The scripts read and write every spec whole. pieces.mjs delivers the spec and the draft only while each is byte for byte what draft.mjs wrote; when it refuses, it prints one JSON object whose `reply` says so, and that reply is your whole answer.
 
 ## Scripts
 
@@ -65,6 +69,13 @@ Run these from this skill's folder; each one says what it needs at the top.
 
 - scripts/asked.mjs
 - scripts/draft.mjs
+- scripts/spec.mjs
+- scripts/seed.mjs
+- scripts/spec-check.mjs
+- scripts/spec-v1.mjs
+- scripts/revise.mjs
+- scripts/design.mjs
+- scripts/json-in.mjs
 - scripts/model-caller.mjs
 - scripts/check-spec.mjs
 - scripts/builds.mjs
@@ -87,4 +98,5 @@ Run these from this skill's folder; each one says what it needs at the top.
 - references/a-spec-that-works.json
 - references/rules.md
 - references/standing-asset-schemas.json
+- references/spec.schema.json
 - references/plugin-manifest-schema.json

@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "spec-writer",
-  "version": "0.8.2",
-  "description": "Turns what somebody wants an agent to do into the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill), or work that passes between several agents and people into an Agent Processes 0.9.0 document, checked against the specification, and says plainly what it could not settle without them.",
+  "version": "0.9.0",
+  "description": "Turns what somebody wants an agent to do into the spec (spec-v1): the analysis of its functional requirements, each feature with requirements in the attributes of ISO/IEC/IEEE 29148 and acceptance scenarios in Gherkin, its interfaces, constraints, systems and settings, seeded by code from an as-built record when one comes; then makes the agent's own files the builder will take (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill) from that spec. Or it writes work that passes between several agents and people as an Agent Processes 0.9.0 document, checked against the specification. Either way it says plainly what it could not settle without them.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
@@ -27,6 +27,13 @@
             "scripts": [
               "scripts/asked.mjs",
               "scripts/draft.mjs",
+              "scripts/spec.mjs",
+              "scripts/seed.mjs",
+              "scripts/spec-check.mjs",
+              "scripts/spec-v1.mjs",
+              "scripts/revise.mjs",
+              "scripts/design.mjs",
+              "scripts/json-in.mjs",
               "scripts/model-caller.mjs",
               "scripts/check-spec.mjs",
               "scripts/builds.mjs",
@@ -48,6 +55,7 @@
               "references/a-spec-that-works.json",
               "rules.md",
               "../../standards/standing-asset-schemas.json",
+              "../../standards/spec.schema.json",
               "references/plugin-manifest-schema.json"
             ]
           },
@@ -61,6 +69,13 @@
           "draft-the-spec": {
             "scripts": [
               "scripts/draft.mjs",
+              "scripts/spec.mjs",
+              "scripts/seed.mjs",
+              "scripts/spec-check.mjs",
+              "scripts/spec-v1.mjs",
+              "scripts/revise.mjs",
+              "scripts/design.mjs",
+              "scripts/json-in.mjs",
               "scripts/model-caller.mjs",
               "scripts/check-spec.mjs",
               "scripts/asked.mjs",
@@ -76,7 +91,8 @@
             "references": [
               "references/what-a-good-spec-carries.md",
               "references/a-spec-that-works.json",
-              "../../standards/standing-asset-schemas.json"
+              "../../standards/standing-asset-schemas.json",
+              "../../standards/spec.schema.json"
             ]
           },
           "check-it-builds": {

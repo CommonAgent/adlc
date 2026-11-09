@@ -287,8 +287,9 @@ test("the agent's own files, sent back with answers, are a revision of the draft
   assert.match(summary(reading), /the agent's own files came with it/);
   const parts = requestParts({ asked: reading });
   assert.ok(parts.some((p) => p.includes("The agent's own files above, the ones this agent delivered, are the draft.")));
-  assert.match(NO_DRAFT_TO_REVISE, /Attach the draft's files/);
-  assert.doesNotMatch(NO_DRAFT_TO_REVISE, /spec\.json/);
+  assert.match(NO_DRAFT_TO_REVISE, /Attach the spec \(spec\.json\) with the answers, or the agent's files/);
+  // From 0.9.0 the spec (spec.json, spec-v1) is what a revision changes.
+  assert.match(NO_DRAFT_TO_REVISE, /agent-descriptor\.json/);
 });
 
 test("run as the harness runs it, the agent's files sent back are read as the spec they state, and that is the draft revised", async () => {

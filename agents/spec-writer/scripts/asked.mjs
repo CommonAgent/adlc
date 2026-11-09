@@ -55,7 +55,7 @@ export const ASKED_OF_PERSON = NEEDS.filter((n) => n.settled_by === "the person"
  *  drafting step. The one kind worth telling apart with real care is a spec:
  *  somebody who attaches one is revising or copying it, and that changes what
  *  the draft should be far more than any other attachment. */
-export const KINDS = ["a spec", "an agent's own file", "an architecture record", "a descriptor", "a script", "a document", "data", "an image", "something else"];
+export const KINDS = ["the spec", "a spec", "an agent's own file", "an architecture record", "a descriptor", "a script", "a document", "data", "an image", "something else"];
 
 /** One of the files this agent delivers, the layout a package is authored in:
  *  a draft descriptor or runtime requirements (told by their format), a
@@ -118,6 +118,9 @@ export function kindOf(path, mediaType = "", body = null) {
     if (body != null) {
       let doc = null;
       try { doc = JSON.parse(body); } catch { return "data"; }
+      // The spec Requirements hands back (spec-v1): somebody who attaches one
+      // is revising it, or the Design is being made from it.
+      if (doc && typeof doc === "object" && doc.format === "spec-v1") return "the spec";
       if (looksLikeSpec(doc)) return "a spec";
       if (looksLikeAgentFile(doc)) return "an agent's own file";
       if (looksLikeDescriptor(doc)) return "a descriptor";
@@ -255,6 +258,9 @@ export function readingOf({ text = "", files = [], io = {} } = {}) {
     // request, so it is named at the top level rather than left for a reader
     // to find by scanning kinds.
     spec_attached: attached.filter((a) => a.kind === "a spec").map((a) => a.name),
+    // The spec (spec-v1) an earlier round handed back, when it came: a
+    // revision changes it by the person's words (scripts/revise.mjs).
+    the_spec_attached: attached.filter((a) => a.kind === "the spec").map((a) => a.name),
     // The files this agent delivers, sent back: a revision of the draft they
     // describe, read whole by the drafting step like any other attachment.
     files_attached: attached.filter((a) => a.kind === "an agent's own file").map((a) => a.name),
@@ -286,15 +292,33 @@ export function summary(reading) {
   else bits.push("nothing attached");
   if (reading.missing_files.length) bits.push(`${reading.missing_files.length} named and not there: ${reading.missing_files.join(", ")}`);
   if (reading.spec_attached.length) bits.push(`a spec came with it: ${reading.spec_attached.join(", ")}`);
+  if (reading.the_spec_attached?.length) bits.push(`the spec came with it: ${reading.the_spec_attached.join(", ")}`);
   if (reading.architecture) bits.push(`an architecture record came with it: ${reading.architecture.from} (${reading.architecture.systems.join(", ") || "no systems"}${reading.architecture.done ? "" : ", not finished"})`);
   if (reading.files_attached?.length) bits.push(`the agent's own files came with it: ${reading.files_attached.join(", ")}`);
   return bits.join("; ");
 }
 
 export const NO_DRAFT_TO_REVISE =
-  "This answers questions about a draft I do not have. Attach the draft's files (agent-descriptor.json, "
-  + "agent-runtime-requirements.json, plugin.json and the SKILL.md files) with the answers and I will "
-  + "revise it; I do not write a new draft from an answer.";
+  "This answers questions about a spec I do not have. Attach the spec (spec.json) with the answers, or the agent's files "
+  + "(agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files), and I will "
+  + "revise it; I do not write a new spec from an answer.";
+
+/** The newest spec (spec-v1) an earlier job of this agent wrote, under the
+ *  records root that holds one folder per job. Null when there is none. */
+export function earlierSpecFile(recordsRoot, io = {}) {
+  const list = io.list ?? ((d) => readdirSync(d));
+  const mtime = io.mtime ?? ((p) => statSync(p).mtimeMs);
+  const exists = io.exists ?? existsSync;
+  if (!recordsRoot || !exists(recordsRoot)) return null;
+  let best = null;
+  for (const name of list(recordsRoot)) {
+    const p = join(recordsRoot, name, "spec.json");
+    if (!exists(p)) continue;
+    const t = mtime(p);
+    if (!best || t > best.t) best = { path: p, t };
+  }
+  return best?.path ?? null;
+}
 
 export const NOTHING_ASKED =
   "There is nothing here to write a spec from. Say what you want the agent to do, in your own words, "
@@ -328,10 +352,21 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
         if (seed && seed.kind !== "a spec") { seed.kind = "a spec"; reading.spec_attached.push(seed.name); }
       }
     }
+    // A revision changes the spec an earlier round handed back: the one
+    // attached, or else the newest one an earlier job of this agent wrote.
+    if (reading.revision && !reading.the_spec_attached.length) {
+      const spec = earlierSpecFile(dirname(resolve(RECORDS)));
+      if (spec) {
+        const draftFrom = reading.revision.draft_from;
+        reading = readingOf({ text, files: [...reading.attached.map((a) => ({ path: a.path, media_type: a.media_type ?? "" })), { path: spec, media_type: "application/vnd.agentmesh.spec+json" }] });
+        reading.revision.spec_from = spec;
+        if (draftFrom) reading.revision.draft_from = draftFrom;
+      }
+    }
     // A revision with no draft attached takes the newest draft an earlier
     // job of this agent wrote; the harness used to be asked to find it and
     // did not. Still none, and this step stops before any model is woken.
-    if (reading.revision && !reading.spec_attached.length && !reading.files_attached.length) {
+    if (reading.revision && !reading.spec_attached.length && !reading.files_attached.length && !reading.the_spec_attached.length) {
       const earlier = earlierDraft(dirname(resolve(RECORDS)));
       if (earlier) {
         reading = readingOf({ text, files: [...files, { path: earlier, media_type: "application/json" }] });
@@ -346,7 +381,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       // used to write this file itself and wrote it wrong or not at all.
       writeFileSync(join(RECORDS, "answers.json"), JSON.stringify(reading.revision.answers, null, 2) + "\n");
     }
-    if (reading.revision && !reading.spec_attached.length && !reading.files_attached.length) {
+    if (reading.revision && !reading.spec_attached.length && !reading.files_attached.length && !reading.the_spec_attached.length) {
       console.log(JSON.stringify({ ok: false, code: 3, reply: NO_DRAFT_TO_REVISE, asked: out }));
       process.exitCode = 3;
     } else if (!reading.words && !reading.attached.some((a) => !a.missing)) {

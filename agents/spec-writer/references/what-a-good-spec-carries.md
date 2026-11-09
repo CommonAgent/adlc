@@ -1,5 +1,173 @@
 # What a good spec carries
 
+The spec is what Requirements hands back (stages.json 1.6.0): the analysis of
+the product's functional requirements and capabilities, in the shape of
+standards/spec.schema.json (spec-v1). It says what the product must do and how
+anyone can tell that it does, in a form a test writer can write tests from
+without guessing. It is not the agent's descriptor. The descriptor, the
+runtime requirements, the plugin manifest and the skills are the agent's own
+files, made from the spec at Design; the second part of this reference, from
+the heading "The agent's own files, made from the spec", says what they carry.
+
+Until 0.9.0 this agent handed back those files as the spec. A descriptor has
+no place for a stop pattern, a page reader's sources, the words of a refusal
+or an output's schema, so in a round trip on a real agent on 2026-11-09 the
+as-built record captured all four exactly, and none of them reached the tests
+or the code. The spec is where they now go.
+
+## Features
+
+A feature is one capability of the product, with an id that stays the same
+across versions (`F1`, `F2`, ...), a name of a few words, one sentence saying
+what it does, and the offering it belongs to when there is more than one. A
+feature built from an as-built record says which behavior it is (`as_built:
+B3`). A feature the person approved earlier keeps the id it was approved
+under, because tests, findings and history name it.
+
+Every feature has requirements and at least one acceptance scenario. A
+feature with neither cannot be tested, and a feature that cannot be tested is
+a wish.
+
+## Requirements
+
+Each requirement carries the attributes ISO/IEC/IEEE 29148:2018 (section 5.2)
+names: an id (`F3.R2` under a feature, `C2` for a constraint), one statement
+written with shall, its kind, a rationale where one helps, a priority (must,
+should or may), its source, and how it is verified (inspection, analysis,
+demonstration or test).
+
+The statement is one sentence: "The agent shall refuse a harbor code that is
+not four capital letters." Write it so somebody who was not there can tell
+whether the product does it. "The agent shall be careful with harbor codes"
+is not a requirement.
+
+The kind says what sort of rule it is: `behavior`, `input`, `output`,
+`refusal` (what it declines, and the words it says), `error` (what it does
+when something fails), `limit` (a number it holds to), `order` (which source
+first), `wording` (words it must say exactly), `pattern` (a pattern it must
+recognize exactly), `default`, `interface`, `security`, `performance` or
+`runtime`.
+
+The source says where the requirement came from: the person's words (`said`)
+or a behavior of the as-built record (`behavior`, with `evidence`, each a file
+and a line). A requirement with no source is one somebody made up.
+
+## Exact words, patterns and numbers
+
+`exact` holds what a requirement fixes, each value as it must appear, so a
+check can find it byte for byte in the tests and the code: a regular
+expression as written, slashes and flags included; a reply sentence or a
+refusal, a template with its `${...}` as written; a format id; a number. The
+test writer checks each one, and the code writer is held to it. A value goes
+in `exact` only when the given states it. A value nobody gave is asked in
+`open`, never fixed: a fixed value is built and tested as though it were
+decided.
+
+## Acceptance scenarios
+
+Each acceptance criterion is one Gherkin scenario, kept as Gherkin text: a
+`Scenario:` line, then `Given`, `When` and `Then` steps (`And` and `But`
+allowed), with `checks` naming the requirement ids it checks. The test that
+checks it carries its id in its name, `[F1.A1]`. A scenario that checks a
+requirement with exact values says them in its Then steps as they are written
+in exact.
+
+    Scenario: a stop notice is answered and nothing is done
+      Given a message that reads "stop that"
+      When the agent reads it
+      Then it answers "Nothing was in progress, so nothing was done."
+      And it writes no file
+
+## Interfaces
+
+The interfaces are what the product presents to other code and people:
+commands and their flags, files it reads and writes (each with its JSON
+Schema), messages, functions other code calls (each with its module and
+signature), and settings. `keep: true` means the interface must stay exactly
+as given, because a rebuild keeps it or a dependent relies on it; `keep:
+false` means it describes today's shape and may change with the person's
+approval. A rebuild from an as-built record keeps every interface the record
+gives, and the person can loosen one.
+
+## Constraints, systems and settings
+
+Constraints are requirements on the whole product rather than one feature:
+time, size, cost, the runtime and platform, security and data. They have the
+same shape as a feature's requirements, ids `C1`, `C2`, ...
+
+The systems are every outside system the product reaches or names: what it
+does with it (`reach`: read, write, read-write or none), the address when one
+is fixed, and why. An address the product only writes down and never calls,
+such as a link it puts in what it hands back, is a system with reach `none`,
+so whoever reviews its security can match it. The settings are what a person
+or an install can set: name, kind, default, range and what it changes. The
+address of a system it reaches is a setting too, with the address as its
+default; it is the one place the files will carry one.
+
+## The name, the price and access
+
+The name, the price and access to any system are the person's. A name they
+did not give is `agent-not-named-yet` with `name` asked in `open`; a price
+they did not set is absent with `price` asked; a system nothing given names
+is not reached, and `systems` is asked. The checks put back any the model
+settled.
+
+## From an as-built record
+
+When the record of code that already exists comes with the request, code
+seeds the spec from it before the model is asked anything (scripts/seed.mjs):
+
+- each behavior is a feature (`as_built: B<n>`), unless the person dropped it
+  or called it a bug;
+- each quote is a requirement of kind wording, or pattern for a regular
+  expression, with the quote in exact and the behavior and its evidence as
+  source;
+- each rule is a requirement of its kind (order, limit, default; a header is
+  an interface), with its values in exact: its quote, and every number,
+  quoted word, tag and file name its words name;
+- each refusal is a refusal requirement with its words in exact, and each
+  error handling an error requirement in its words;
+- each constant a behavior uses is a requirement with its value, and an
+  exported one no behavior lists is a constraint;
+- each interface is kept, a function with its module and signature, a command
+  with its flags, a file with its schema;
+- each address the code reaches is a system with an address setting, and
+  each one it only writes down is a system with reach none;
+- the record's settings are the spec's, with an open question for each
+  default the record withholds.
+
+The model then writes what code cannot: a clear shall statement for each
+requirement, the purpose, a Gherkin scenario for every feature that checks
+its requirements, and the open questions. Code keeps every value it seeded,
+and the check holds every quote, rule value, refusal and interface of the
+record to the spec byte for byte.
+
+## A revision
+
+On Ask for changes or Send back to Requirements, the person's words name what
+changes: an id, the name, the price, the purpose, a setting, a system or an
+interface by its name, an open question by its key. Only those change, by
+edits addressed by id, and every other part of the spec stays byte for byte.
+A revision is never a fresh draft: in the round trip of 2026-11-09 the old
+writer redrafted on every round and ignored the words that named a change
+five times out of eight. Words that name nothing in the spec, such as a
+change to how a job's command is written, leave it as it was and go to the
+agent's own files.
+
+## The open questions
+
+`open` holds what only the person can settle, each with its key and the
+question. A spec with an open question is not approved until it is answered
+or the person says it stays open. Ask the question you would ask a colleague,
+in a sentence, and never answer it yourself.
+
+# The agent's own files, made from the spec
+
+This part is what the Design drafts the agent's own files from, and in it
+"the spec" and "the draft" mean that draft: the one JSON document files.mjs
+writes the descriptor, the runtime requirements, the manifest and the skills
+from. Its given is the approved spec above, not the raw request.
+
 Read off the eight specs that already exist and the packages built from them,
 not invented. Every number here was counted on 2026-09-13 across brand-reader,
 brief-writer, explainer-critic, explainer-maker, process-runner, publisher,
@@ -210,12 +378,37 @@ value. There are four cases, and each has its own place:
 check-spec.mjs holds a new draft to this (scripts/reaches.mjs), and the
 reply names each address setting the install supplies, with its default.
 
+Nowhere else in the draft does an address go: not in an output's `about`, a
+job's `does` or instructions, a system's `needs` or a refusal. The package
+maker refuses a descriptor that carries one, and on 2026-11-09 a round trip
+stopped at Package because an output's about wrote out the address of the
+source it names. Name the host in words. scripts/design.mjs finds an address
+anywhere else while the model has the draft, and after the second go writes
+each as its host; the spec's systems keep the address.
+
+An address the spec says the agent only writes down (reach none) gets no
+system and no setting of its own. Its host is named in the needs of the
+service that writes it down, "writes down links to news.example.com, which it
+never calls", because the security reviewer matches every host a program
+writes down to a system whose reason names it.
+
 ## What the given names, the draft keeps
 
-What the person sent, words, attachments and answers, is the given. It may be
-notes or an as-built record the reverse engineer wrote from code. Whatever it
-names exactly, the draft carries exactly, and scripts/given.mjs checks it by
-rule, with no model:
+From 0.9.0 the given is the approved spec (scripts/given.mjs, givenOfSpec):
+its settings, its runtime constraint, its price, the systems it reaches at an
+address and those it reaches with none, the schemas of its outputs and file
+interfaces (each constant that is an address left to the spec), and the
+modules its interfaces name. The exact words, patterns and numbers, and the
+functions it keeps, are the spec's; Test and Code read them there, and the
+files are not held to copying every one. Code then fits the draft to the
+spec: the name, the version and the price are the spec's, each address
+setting has the spec's name and default, and each host only written down is
+named in a service's needs.
+
+Before 0.9.0 the given was what the person sent, words, attachments and
+answers. It may be notes or an as-built record the reverse engineer wrote
+from code. Whatever it names exactly, the draft carries exactly, and
+scripts/given.mjs checks it by rule, with no model:
 
 - every setting it names, as a setting in the spec's own `run_config` (a
   `run_config` inside a job is dropped by the files) or a system setting;

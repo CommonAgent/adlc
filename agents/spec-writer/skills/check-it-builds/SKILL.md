@@ -13,7 +13,7 @@ once a draft exists, to find out whether the builder will take it
 
 ## What a good result looks like
 
-The builder's own verdict on the draft, in the builder's own words, with the caveat that what was checked is the declaration and not the package, because the files the spec names do not exist yet. When it takes the draft, the agent's own files from what it built, which are what is delivered.
+The builder's own verdict on the draft of the agent's own files made from the spec, in the builder's own words, with the caveat that what was checked is the declaration and not the package, because the files the draft names do not exist yet. When it takes the draft, the agent's own files from what it built, which are what is delivered.
 
 ## When it comes back empty
 

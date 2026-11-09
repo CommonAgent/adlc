@@ -13,7 +13,7 @@ last, to write the reply and put the open questions to the person
 
 ## What a good result looks like
 
-A reply that opens with what the draft is, then the open questions on their own lines, then what the builder said, then anything the job went without. A reader who stops after two sentences has read the part that needs them.
+A reply that opens with what the spec is (its product, how many features, requirements and acceptance scenarios, and how many interfaces it keeps) and, on a revision, what changed, then the open questions on their own lines, then the agent's own files made from it and what the builder said, then anything the job went without. A reader who stops after two sentences has read the part that needs them.
 
 ## When it comes back empty
 
