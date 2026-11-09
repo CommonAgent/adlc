@@ -21,7 +21,7 @@ When an existing codebase is taken on, or its code changed outside the lifecycle
 
 ## What a good result looks like
 
-An as-built record tied to the repository, the commit digest and the read mode, in five parts: behaviors, architecture as built, interfaces (with schemas where they can be derived), a CycloneDX bill of materials, and the existing tests and gaps. Every claim names a file and line at the commit, or the observed run, and every one was checked against the code. Nothing judges the code and nothing is inferred beyond the evidence: a drafted claim that did either, or whose evidence did not check, is listed as a gap with the reason. Every gap is marked. On drift, nothing that did not change is described again.
+An as-built record tied to the repository, the commit digest and the read mode, in five parts: behaviors (one per anchor, each with a kind from the fixed list, its exact quotes and its rules), architecture as built, interfaces (the files written with their schemas, the exported functions, the commands and flags, read by rule, with the model's descriptions), a CycloneDX bill of materials, and the existing tests and gaps. Every claim names a file and line at the commit, or the observed run, and every one was checked against the code. Nothing judges the code and nothing is inferred beyond the evidence: a drafted claim that did either, or whose evidence did not check, is listed as a gap with the reason. Every gap is marked. On drift, nothing that did not change is described again.
 
 ## What it produces
 
@@ -52,11 +52,16 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/archive.mjs
 - scripts/codebase.mjs
 - scripts/facts.mjs
+- scripts/surface.mjs
+- scripts/js-source.mjs
 - scripts/sbom.mjs
 - scripts/baseline.mjs
 - scripts/draft.mjs
+- scripts/kinds.mjs
 - scripts/model-caller.mjs
 - scripts/evidence.mjs
+- scripts/behaviors.mjs
+- scripts/interfaces.mjs
 - scripts/record.mjs
 - scripts/pieces.mjs
 - scripts/declines.mjs

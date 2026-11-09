@@ -51,6 +51,7 @@ function functionFrom(s, from) {
 export function valueAt(s, a, b) {
   const m = s.masked;
   let at = a;
+  while (at < b && /\s/.test(m[at])) at += 1;
   let isAsync = false;
   const asyncHit = /^async\b\s*/.exec(m.slice(at, b));
   if (asyncHit) { isAsync = true; at += asyncHit[0].length; }
