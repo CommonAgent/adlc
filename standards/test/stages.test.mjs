@@ -194,15 +194,18 @@ test("from 1.3.0 the file says what a cadence is", () => {
 const byId = (id) => data.stages.find((s) => s.id === id);
 const AS_BUILT_PARTS = ["behaviors", "architecture as built", "interfaces", "dependencies", "existing tests and gaps"];
 
+// From 1.4.1 the reverse engineer role names its reference agent,
+// agents/reverse-engineer. The stage's own reference_holder stays null until
+// the stage card on the site names it, as the Impact stage's does.
 test("Reverse engineering is stage 0, in Define before Requirements, run when needed, held by the reverse engineer", () => {
   const s = byId("reverse-engineering");
   assert.deepEqual([s.number, s.phase, s.name, s.cadence], [0, "define", "Reverse engineering", "when_needed"]);
   assert.equal(data.stages[0], s, "it comes first");
   assert.equal(byId("requirements").number, 1, "Requirements keeps its number");
   assert.deepEqual(s.role_ids, ["reverse-engineer"]);
-  assert.equal(s.reference_holder, null, "no reference agent holds it yet");
+  assert.equal(s.reference_holder, null, "the stage card names no reference holder yet");
   const role = data.roles.find((r) => r.id === "reverse-engineer");
-  assert.deepEqual([role.name, role.stages, role.reference_agent], ["Reverse engineer", ["reverse-engineering"], null]);
+  assert.deepEqual([role.name, role.stages, role.reference_agent], ["Reverse engineer", ["reverse-engineering"], "reverse-engineer"]);
 });
 
 test("it runs on adoption or on drift, never by routine, and on drift covers only what changed", () => {
