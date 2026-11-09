@@ -1,11 +1,11 @@
 ---
 name: draft-from-the-code
-description: After the codebase is read, to draft the behaviors, the architecture as built and the interfaces.
+description: On adoption, with the whole codebase. On drift, with the changed files, the diff and the last record's behaviors.
 ---
 
 # Draft from the code
 
-Part of reverse-engineer. After the codebase is read, to draft the behaviors, the architecture as built and the interfaces.
+Part of reverse-engineer. On adoption, with the whole codebase. On drift, with the changed files, the diff and the last record's behaviors.
 
 ## When to use this
 

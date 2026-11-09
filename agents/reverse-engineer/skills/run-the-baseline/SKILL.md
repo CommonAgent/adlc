@@ -1,11 +1,11 @@
 ---
 name: run-the-baseline
-description: When the job may run things and the project names its own test command.
+description: When `may_run` is yes and package.json names a test script that is not npm's placeholder.
 ---
 
 # Run the baseline
 
-Part of reverse-engineer. When the job may run things and the project names its own test command.
+Part of reverse-engineer. When `may_run` is yes and package.json names a test script that is not npm's placeholder.
 
 ## When to use this
 

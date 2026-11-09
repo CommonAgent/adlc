@@ -1,11 +1,11 @@
 ---
 name: check-the-evidence
-description: After the draft comes back, before anything in it is delivered.
+description: On every claim the draft makes.
 ---
 
 # Check the evidence
 
-Part of reverse-engineer. After the draft comes back, before anything in it is delivered.
+Part of reverse-engineer. On every claim the draft makes.
 
 ## When to use this
 

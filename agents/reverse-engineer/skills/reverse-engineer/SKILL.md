@@ -1,24 +1,23 @@
 ---
 name: reverse-engineer
-description: When an existing codebase is taken on, or when its code changed outside the lifecycle: somebody has to say what the code is before anybody decides what to keep. This is the Reverse engineering stage (00) of the Agent Development Lifecycle.
+description: When an existing codebase is taken on, or its code changed outside the lifecycle: somebody has to say what the code is before anybody decides what to keep. This is the Reverse engineering stage (00) of the Agent Development Lifecycle. On drift, give it the last as-built record too, and it covers only what changed since that record's commit.
 ---
 
 # Describe a codebase
 
-Part of reverse-engineer. When an existing codebase is taken on, or when its code changed outside the lifecycle: somebody has to say what the code is before anybody decides what to keep. This is the Reverse engineering stage (00) of the Agent Development Lifecycle.
+Part of reverse-engineer. When an existing codebase is taken on, or its code changed outside the lifecycle: somebody has to say what the code is before anybody decides what to keep. This is the Reverse engineering stage (00) of the Agent Development Lifecycle. On drift, give it the last as-built record too, and it covers only what changed since that record's commit.
 
 ## When to use this
 
-On adoption, when an existing codebase is taken on at a named commit. On drift, when the code's commit differs from the last one any build knew: give it the last as-built record too, and it covers only what changed since that record's commit. A codebase that lives fully inside the lifecycle does not need it again.
+When an existing codebase is taken on, or its code changed outside the lifecycle: somebody has to say what the code is before anybody decides what to keep. This is the Reverse engineering stage (00) of the Agent Development Lifecycle. On drift, give it the last as-built record too, and it covers only what changed since that record's commit.
 
 ## What this needs
 
-- codebase (application/gzip, required; run as a command, `--codebase <folder>` instead)
-- repository (url, required: a `repository:` line)
-- commit (identifier, required: a `commit:` line)
-- last as-built record (application/vnd.agentmesh.as-built-record+json, optional: makes the job drift)
+- codebase (application/gzip, required)
+- repository (url, required)
+- commit (identifier, required)
+- last as-built record (application/vnd.agentmesh.as-built-record+json, optional)
 - last behaviors (application/vnd.agentmesh.as-built-behaviors+json, optional)
-- the settings `may_run` (no or yes, default no) and `baseline_seconds` (30 to 600, default 300)
 
 ## What a good result looks like
 
@@ -30,8 +29,8 @@ An as-built record tied to the repository, the commit digest and the read mode, 
 - behaviors (application/vnd.agentmesh.as-built-behaviors+json, per task)
 - architecture as built (application/vnd.agentmesh.as-built-architecture+json, per task)
 - interfaces (application/vnd.agentmesh.as-built-interfaces+json, per task)
-- openapi (application/vnd.oai.openapi+json, per task, when one is found or derived)
-- json schema (application/schema+json, per task, when one is found or derived)
+- openapi (application/vnd.oai.openapi+json, per task)
+- json schema (application/schema+json, per task)
 - dependencies (application/vnd.cyclonedx+json, per task)
 - existing tests and gaps (application/vnd.agentmesh.as-built-tests-and-gaps+json, per task)
 
@@ -41,7 +40,7 @@ Without the repository, the commit or the codebase, it writes nothing and replie
 
 ## How to do it
 
-Run `node scripts/describe.mjs --job <job folder> --records <records folder> --work <work folder> --text-file <message file> [--codebase <folder>] [--repository <address>] [--commit <digest>] [--may-run yes|no] [--file <path>::<media type>]...`. It runs the six steps in order and prints one JSON object with a `reply` field. The model is reached through the shared caller with the four model settings (MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY, MODEL_PROTOCOL). Read rules.md and references/the-as-built-record.md.
+Run `node scripts/describe.mjs --job <job folder> --records <records folder> --work <work folder> --text-file <message file> [--codebase <folder>] [--repository <address>] [--commit <digest>] [--may-run yes|no] [--file <path>::<media type>]...`. It runs the six steps in order and prints one JSON object with a `reply` field. On a host, the codebase comes as an attached gzip tar with its .git folder, and `repository:` and `commit:` come as lines in the message. The settings `may_run` (no or yes, default no) and `baseline_seconds` (30 to 600, default 300) say whether the tests run once, and for how long. The model is reached through the shared caller with the four model settings (MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY, MODEL_PROTOCOL). Read rules.md and references/the-as-built-record.md.
 
 ## Scripts
 

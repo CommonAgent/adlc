@@ -1,11 +1,11 @@
 ---
 name: list-the-dependencies
-description: After the codebase is read, to make the dependencies part of the record.
+description: On every adoption. On drift, only when a manifest or lockfile changed.
 ---
 
 # List the dependencies
 
-Part of reverse-engineer. After the codebase is read, to make the dependencies part of the record.
+Part of reverse-engineer. On every adoption. On drift, only when a manifest or lockfile changed.
 
 ## When to use this
 
