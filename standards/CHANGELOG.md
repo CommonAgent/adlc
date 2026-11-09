@@ -4,6 +4,15 @@ Changes to the standards in this folder, newest first.
 
 ## stages.json
 
+- **1.5.0**: the starting point `as-built-record`: someone brings the as-built
+  record of code kept elsewhere, to build it again without taking that code
+  on (a rewrite, a port or a clean-room rebuild). It enters at Requirements,
+  because the record already says what the code does and Requirements is
+  where the person decides what to keep; nothing is adopted, so Code writes
+  the code fresh. The givens of Requirements and Test, where they say "where
+  code already exists", now also cover a build that starts from an as-built
+  record (Test is also given the interfaces, part 3). Additive: no field
+  changed or removed, and no stage's id or number changed.
 - **1.4.1**: the reverse engineer role names its reference agent,
   `reverse-engineer` (agents/reverse-engineer), which holds Reverse
   engineering and hands back the as-built record. The stage's
@@ -35,6 +44,17 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.7**: starting from an as-built record (stages.json 1.5.0), and
+  sending a build back to Requirements. The start request's `starting_point`
+  may be `as-built-record`, with `source` naming the record (a `folder`, or a
+  `repository`, `commit` and the new `path`); the build enters at
+  Requirements and its behaviors reach it as proposed features marked as
+  built, with no adoption. `AsBuiltSummary` gains `brought`, and
+  `BuildSource` gains `record`. The action names gain `back_to_requirements`,
+  offered at Code wherever `back_to_test` is and also when Code was refused,
+  with the person's words, recorded as a deviation. The check holds that a
+  build started from a record says where it was read, and that
+  `back_to_requirements` acts at Code and asks for words. Additive.
 - **0.4.6**: starting from existing code (stages.json 1.4.0). The start
   request's `starting_point` and `source`; the artifact kind `as_built` with
   `AsBuiltSummary` and `AsBuiltPart`; `as_built` (`AsBuilt`) on a feature, a

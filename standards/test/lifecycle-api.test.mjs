@@ -1,4 +1,4 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.4.6) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.4.7) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.6 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.6");
+test("the schema is version 0.4.7 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.7");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1291,4 +1291,37 @@ test("a build and a product say the commit they knew; drift is true exactly when
   assert.deepEqual(checkProduct(src({ current: null, drift: false, words: "The repository could not be read." }), "word-tally"), []);
   assert.deepEqual(checkProduct(src({ drift: false }), "word-tally"), ["body.source.drift: is false, but the repository is at 9b1c2d4e5f and the last build knew 3f2a9c1d0e"]);
   assert.deepEqual(checkProduct(src({ current: "3f2a9c1d0e", build: "b7" }), "word-tally"), ["body.source.drift: is true, but the commit read now is not a different one", "body.source.build: b7 is not one of the product's builds"]);
+});
+
+// ---------- 0.4.7: starting from an as-built record, and back_to_requirements ----------
+
+test("a start request may bring an as-built record: a folder, or a repository, commit and path", () => {
+  assert.deepEqual(validate("StartRequest", { does: "Rebuild word-tally from its as-built record", name: "word-tally", starting_point: "as-built-record", source: { folder: "/work/records/word-tally" } }), []);
+  assert.deepEqual(validate("StartRequest", { does: "Rebuild word-tally from its as-built record", name: "word-tally", starting_point: "as-built-record", source: { repository: "acme/records", commit: "9b1c2d4", path: "word-tally/as-built" } }), []);
+  assert.deepEqual(validate("StartRequest", { does: "x", starting_point: "as-built-record", source: { folder: "/r", path: 3 } }), ["body.source.path: is integer, not string"]);
+  assert.match(SCHEMA.$defs.StartRequest.properties.starting_point.description, /as-built-record/);
+  assert.match(SCHEMA.description, /Version 0\.4\.7 adds starting from an as-built record/);
+});
+
+test("a build started from an as-built record says where the record was read, and its as_built artifact says it was brought", () => {
+  const b = withArtifacts();
+  b.build.source = { starting_point: "as-built-record", repository: "https://github.com/acme/word-tally", commit: "3f2a9c1d0e", record: { folder: "/work/records/word-tally" }, at: AT, words: "Rebuilt from the as-built record of https://github.com/acme/word-tally at 3f2a9c1. The code is not taken on." };
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  delete b.build.source.record;
+  assert.deepEqual(checkBuild(b, IDS, "b1"), ["body.build.source: the build started from an as-built record, and does not say where the record was read (record)"]);
+  const brought = asBuilt({ brought: { from: "/work/records/word-tally", words: "Brought from /work/records/word-tally. The code it describes is not taken on; Code writes the code fresh." } });
+  assert.deepEqual(checkArtifacts([brought], IDS), []);
+  assert.deepEqual(checkArtifacts([asBuilt({ brought: { from: "/r" } })], IDS), ["body.artifacts[0].summary.brought: has no words"]);
+});
+
+test("back_to_requirements is an action name, acts at Code, and asks for the person's words", () => {
+  assert.match(SCHEMA.$defs.Action.properties.name.description, /back_to_requirements/);
+  const words = { name: "changes", label: "What should change in the spec", kind: "words" };
+  const b = build();
+  b.build.actions.splice(1, 0, { stage: "code", name: "back_to_requirements", label: "Send back to Requirements", needs: [words] });
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  b.build.actions[1] = { stage: "code", name: "back_to_requirements", label: "Send back to Requirements", needs: [{ ...words, optional: true }] };
+  assert.deepEqual(checkBuild(b, IDS, "b1"), ["body.build.actions[1]: back_to_requirements asks for the person's words (a need of kind words that is not optional)"]);
+  b.build.actions[1] = { stage: "requirements", name: "back_to_requirements", label: "Send back to Requirements", needs: [words] };
+  assert.deepEqual(checkBuild(b, IDS, "b1"), ["body.build.actions[1]: back_to_requirements acts at Code, not at requirements"]);
 });

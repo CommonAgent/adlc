@@ -298,3 +298,20 @@ test("from 1.4.0 the file says what Reverse engineering and a starting point are
   assert.match(data.about, /Reverse engineering/);
   assert.match(data.about, /starting_points/);
 });
+
+// Version 1.5.0 adds the starting point as-built-record: the as-built record of
+// code kept elsewhere, built again without taking that code on.
+test("from 1.5.0 an as-built record of code kept elsewhere is a starting point, entering at Requirements, with nothing adopted", () => {
+  const [major, minor] = data.version.split(".").map(Number);
+  assert.ok(major > 1 || (major === 1 && minor >= 5), `version ${data.version} carries as-built-record, so it is 1.5.0 or later`);
+  const p = data.starting_points.find((x) => x.id === "as-built-record");
+  assert.ok(p, "as-built-record is a starting point");
+  assert.deepEqual([p.enters, p.then], ["requirements", []]);
+  assert.match(p.brings, /as-built record of code kept elsewhere/);
+  assert.match(p.brings, /a rewrite, a port, or a clean-room rebuild/);
+  assert.match(p.why, /nothing is adopted, so Code writes the code fresh/);
+  assert.match(data.about, /as-built-record/);
+  // The givens of Requirements and Test cover a build that starts from the record too.
+  assert.match(byId("requirements").given, /where code already exists, or where a build starts from the as-built record of code kept elsewhere, the as-built record/);
+  assert.match(byId("test").given, /where a build starts from the as-built record of code kept elsewhere, the same parts and the interfaces \(part 3\)/);
+});
