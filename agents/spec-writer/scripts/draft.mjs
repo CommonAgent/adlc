@@ -43,11 +43,11 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkDraft, earlierBareJson } from "./check-spec.mjs";
+import { checkDraft, earlierBareJson, jobProblems } from "./check-spec.mjs";
 import { fitJobSeconds } from "./job-seconds.mjs";
 import { fitRunReply } from "./run-reply.mjs";
 import { CAN_USE_RULE, canUseProblems, fitCanUse, loadSchemas } from "./can-use.mjs";
-import { fitToGiven, givenOf, givenProblems } from "./given.mjs";
+import { fitCommands, fitToGiven, givenOf, givenProblems } from "./given.mjs";
 import { NEEDS, TEXT_CAP } from "./asked.mjs";
 import { note } from "./went-without.mjs";
 import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
@@ -593,22 +593,27 @@ export async function askForSpec({
   // What code can keep of the given without guessing: a job's run_config
   // moved to the spec, the runtime and the price the given names, and a
   // question for each output whose shape was not given.
-  const fitGiven = fitToGiven(withAssets.spec, given);
+  // A bare script path in a job's command is written in the form the host runs.
+  const fitCmd = fitCommands(withAssets.spec);
+  const fitGiven = fitToGiven(fitCmd.spec, given);
   const blanks = blanksOf(fitGiven.spec, last.blanks);
   if (fitted.blank && !blanks.some((b) => b.key === "architecture")) blanks.push(fitted.blank);
   for (const b of fitGiven.blanks) if (!blanks.some((x) => x.key === b.key)) blanks.push(b);
   // The given's findings are read again on the fitted draft: what the fit
   // settled is gone, and a shape now asked is not said twice.
   const before = new Set(givenProblems(last.spec, given));
+  const nowJob = new Set((Array.isArray(fitGiven.spec?.jobs) ? fitGiven.spec.jobs : []).flatMap((j) => jobProblems(j)));
   const kept = (fitted.blank ? findings.filter((f) => !/which the architecture record does not name/.test(f)) : findings)
     .filter((f) => !/^can_use |declare it in can_use$/.test(f))
-    .filter((f) => !before.has(f));
+    .filter((f) => !before.has(f))
+    // What the command and scripts fits settled is not said again.
+    .filter((f) => !/^job .*(?:as a bare path, and the host runs|and scripts does not name it)/.test(f) || nowJob.has(f));
   const askedKeys = blanks.map((b) => b.key);
   const still = givenProblems(fitGiven.spec, given).filter((f) => !askedKeys.some((k) => f.includes(`put "${k}" in blanks`)));
   return {
     spec: fitGiven.spec,
     blanks,
-    notes: [last.notes, timedNote, ...withAssets.notes, fitGiven.note].filter(Boolean).join(" "),
+    notes: [last.notes, timedNote, ...withAssets.notes, fitCmd.note, fitGiven.note].filter(Boolean).join(" "),
     findings: [...kept, ...still, ...canUseProblems(fitGiven.spec, architecture, table)],
     calls,
     used,

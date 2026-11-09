@@ -297,9 +297,39 @@ export function modulesNamed(texts) {
   return [...out].map(([file, from]) => ({ file, from }));
 }
 
-/** The scripts a job's command runs: each scripts/... path in run.command. */
+const BARE_SCRIPT = /^(?:\.\/)?scripts\/[\w./-]+\.(?:mjs|js|cjs)$/;
+
+/** A word of a command as the script it names, scripts/<file>: a bare
+ *  scripts/... path, or the packaged {home}/{package}/skills/<job>/scripts/...
+ *  form; null for any other word. */
+export function scriptOfWord(w) {
+  const v = trim(w).replace(/^\.\//, "").replace(/^\{home\}\/\{package\}\/skills\/[^/]+\//, "");
+  return /^scripts\/[\w./-]+\.(?:mjs|js|cjs)$/.test(v) && !v.split("/").includes("..") ? v : null;
+}
+
+/** The scripts a job's command runs, each as scripts/<file>. */
 export function commandScripts(job) {
-  return list(job?.run?.command).map((w) => trim(w).replace(/^\.\//, "")).filter((w) => /^scripts\/[\w./-]+\.(?:mjs|js|cjs)$/.test(w));
+  return list(job?.run?.command).map(scriptOfWord).filter(Boolean);
+}
+
+/** The draft with every bare scripts/... path in a job's command written in
+ *  the packaged form the host runs, {home}/{package}/skills/<job>/scripts/...:
+ *  the host starts a command from its own home folder, so a bare path finds
+ *  nothing. Returns { spec, note }. */
+export function fitCommands(spec) {
+  if (!isObj(spec)) return { spec, note: "" };
+  const said = [];
+  const jobs = jobsOf(spec).map((j) => {
+    const cmd = list(j?.run?.command);
+    const slug = trim(j?.slug);
+    if (!cmd.length || !slug) return j;
+    const fixed = cmd.map((w) => (BARE_SCRIPT.test(trim(w)) ? `{home}/{package}/skills/${slug}/${trim(w).replace(/^\.\//, "")}` : w));
+    const changed = fixed.filter((w, i) => w !== cmd[i]);
+    if (!changed.length) return j;
+    said.push(`The job ${slug}'s command named its script as a bare path; it now names ${changed.join(", ")}, the form the host runs.`);
+    return { ...j, run: { ...j.run, command: fixed } };
+  });
+  return said.length ? { spec: { ...spec, jobs }, note: said.join(" ") } : { spec, note: "" };
 }
 
 const runsScripts = (j) => trim(j?.how?.control) === "script" || commandScripts(j).length > 0;

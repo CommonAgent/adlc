@@ -32,6 +32,7 @@ const job = (reply, instructions) => ({
   empty: "With no sentence it says there was nothing to count.",
   does: "Counts the consonants in a sentence.",
   ...(instructions ? { instructions } : {}),
+  scripts: ["scripts/count-consonants.mjs"],
   run: { command: ["node", "{home}/{package}/skills/count-consonants/scripts/count-consonants.mjs", "--job", "{job_dir}"], ...(reply === undefined ? {} : { reply }) },
 });
 const specWith = (reply, instructions) => ({

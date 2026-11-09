@@ -48,3 +48,17 @@ test("the check says when a job's command runs a script that scripts does not na
   assert.ok(!jobProblems(job({ scripts: ["scripts/read-tides.mjs"] })).some((p) => /scripts does not name it/.test(p)));
   assert.ok(!jobProblems(job({ run: undefined })).some((p) => /scripts does not name it/.test(p)), "a job with no command is not asked for scripts");
 });
+
+test("a bare script path in a job's command is written in the packaged form the host runs, and the check says why", async () => {
+  const { fitCommands, scriptOfWord } = await import("../scripts/given.mjs");
+  const bare = job();
+  const fit = fitCommands({ name: "tides", jobs: [bare, job({ slug: "kept", run: { command: ["node", "{home}/{package}/skills/kept/scripts/kept.mjs"], reply: "stdout" } })] });
+  assert.deepEqual(fit.spec.jobs[0].run.command, ["node", "{home}/{package}/skills/read-the-tides/scripts/read-tides.mjs", "--job", "{job_dir}"]);
+  assert.deepEqual(fit.spec.jobs[1].run.command, ["node", "{home}/{package}/skills/kept/scripts/kept.mjs"], "the packaged form is left alone");
+  assert.match(fit.note, /named its script as a bare path/);
+  assert.equal(fitCommands({ name: "tides", jobs: [fit.spec.jobs[1]] }).note, "");
+  assert.equal(scriptOfWord("{home}/{package}/skills/x/scripts/a.mjs"), "scripts/a.mjs");
+  assert.equal(scriptOfWord("{job_dir}"), null);
+  assert.ok(jobProblems(bare).some((p) => /names scripts\/read-tides\.mjs as a bare path/.test(p)));
+  assert.ok(!jobProblems({ ...fit.spec.jobs[0], scripts: ["scripts/read-tides.mjs"] }).some((p) => /bare path|scripts does not name it/.test(p)));
+});

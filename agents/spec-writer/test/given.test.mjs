@@ -42,6 +42,7 @@ const job = (extra = {}) => ({
   empty: "If the tide service cannot be read, nothing is written and the reply says why, in the service's own words.",
   does: "Reads today's tide table and writes it to a file.",
   outputs: [{ name: "tides", kind: "application/vnd.agentmesh.tides+json", about: "The tides, as `{harbor, tides}`." }],
+  scripts: ["scripts/read-tides.mjs"],
   run: { command: ["node", "{home}/{package}/skills/read-tides/scripts/read-tides.mjs"], reply: "json:reply" },
   ...extra,
 });
