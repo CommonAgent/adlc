@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "test-writer",
-  "version": "0.8.0",
-  "description": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something; and writes Agent Processes 0.9.0 test cases for a process document that answer every approval each way and take every way back.",
+  "version": "0.9.0",
+  "description": "Writes the test suite a package's scripts will have to pass, from the spec (a test for every acceptance scenario, named by its id) and the agent's own files, before the scripts exist, and runs it against nothing to prove it asserts something; and writes Agent Processes 0.9.0 test cases for a process document that answer every approval each way and take every way back.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
@@ -30,6 +30,8 @@
               "scripts/declared.mjs",
               "scripts/write-suite.mjs",
               "scripts/suite-rules.mjs",
+              "scripts/spec-rules.mjs",
+              "scripts/kept-interfaces.mjs",
               "scripts/model-caller.mjs",
               "scripts/check-suite.mjs",
               "scripts/reply.mjs",
@@ -48,6 +50,7 @@
               "references/records-per-job.test.mjs",
               "references/worked-values.test.mjs",
               "references/printed-reply.test.mjs",
+              "references/kept-interfaces.test.mjs",
               "rules.md"
             ]
           },
@@ -73,6 +76,8 @@
             "scripts": [
               "scripts/write-suite.mjs",
               "scripts/suite-rules.mjs",
+              "scripts/spec-rules.mjs",
+              "scripts/kept-interfaces.mjs",
               "scripts/model-caller.mjs",
               "scripts/check-suite.mjs",
               "scripts/declared.mjs",
@@ -86,7 +91,8 @@
               "references/delivered-formats.test.mjs",
               "references/records-per-job.test.mjs",
               "references/worked-values.test.mjs",
-              "references/printed-reply.test.mjs"
+              "references/printed-reply.test.mjs",
+              "references/kept-interfaces.test.mjs"
             ]
           },
           "check-the-suite": {

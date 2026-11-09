@@ -1,5 +1,6 @@
-// The whole job as one command: the spec found among the attached files, the
-// four steps run in order, the pieces filed, and one reply printed.
+// The whole job as one command: the spec and the agent's own files found
+// among the attached files, the four steps run in order, the pieces filed,
+// and one reply printed.
 //
 // WHY THIS EXISTS. The instructions used to hand the harness five commands to
 // run in order and one to file the pieces. On 2026-09-15 the harness ran the
@@ -21,6 +22,16 @@
 // under scripts/ by its bytes and handed to the writer whole (DEPENDS), so the
 // suite is written against what those files really export.
 //
+// The spec itself (spec-v1, what Requirements hands back since stages.json
+// 1.6.0) is found the same way, by its format, and handed to the writer whole
+// as SPEC_V1 (test-writer 0.9.0). Before it, a round trip attached the
+// as-built record's own JSON files beside the agent's files, and every one of
+// them was dropped here without a word, because nothing picked out anything
+// but the agent's files, tests and scripts: the stop pattern, the refusal's
+// words and the output's schema they carried never reached the suite. The
+// agent's own files still come too, and are still the folder the command,
+// format and records checks read.
+//
 //   needs: node >= 22; the model settings the writing step reads (MODEL_NAME,
 //   MODEL_ENDPOINT, MODEL_PROTOCOL, and MODEL_KEY where the endpoint asks for
 //   one), placed in the environment by the install
@@ -31,6 +42,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { agentFilesAmong, layOutAgentFiles } from "./agent-folder.mjs";
+import { specV1Among } from "./spec-rules.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -209,14 +221,22 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
   const SPEC = agent
     ? layOutAgentFiles(agent, join(RECORDS, "agent"), read ? (p) => read(p) : undefined)
     : findSpec(files, read);
+  // The spec (spec-v1), found by its format, the one whose product version
+  // is the agent's own when more than one came (test-writer 0.9.0).
+  let version = null;
+  if (agent) { try { version = JSON.parse(readFileSync(join(SPEC, "plugin.json"), "utf8")).version ?? null; } catch { version = null; } }
+  const specV1 = specV1Among(files, read, { version });
   if (!SPEC) {
-    return { ok: false, code: 3, reply: "Nothing attached is the agent's files or a spec: a suite is written from the files the package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files), and none of the files that came with this message is one. Attach them and ask again." };
+    if (specV1) {
+      return { ok: false, code: 3, reply: "The spec came and the agent's own files did not: a suite is written from the spec and from the files Design makes from it (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files), which name the scripts, the command lines and the records the tests run. Attach those files with the spec and ask again." };
+    }
+    return { ok: false, code: 3, reply: "Nothing attached is the agent's files or a spec: a suite is written from the spec and the files the package is built from (agent-descriptor.json, agent-runtime-requirements.json, plugin.json and the SKILL.md files), and none of the files that came with this message is one. Attach them and ask again." };
   }
   const declared = step("declared.mjs", { SPEC, RECORDS }, { spawn });
   if (declared.code === 3 || !declared.ok) return { ok: false, code: declared.code, reply: declared.reply ?? "The spec could not be read." };
   // An existing suite is laid out by its bytes, beside the work folder and
   // never on the job folder's mount, and handed to the writer to add to.
-  const used = new Set(agent?.used ?? []);
+  const used = new Set([...(agent?.used ?? []), ...(specV1 ? [specV1] : [])]);
   const suite = findSuite(files.filter((f) => !used.has(f?.path)), SPEC, read);
   const extra = {};
   // A revision rewrites only the files it names, of the suite that came
@@ -248,6 +268,13 @@ export function runJob({ job, records, work, files = [], textFile = "", spawn = 
       writeFileSync(at, d.text);
     }
     extra.DEPENDS = DEPENDS;
+  }
+  // The spec, laid out by its bytes beside the work folder and handed to the
+  // writer whole.
+  if (specV1) {
+    const at = `${WORK}.spec.json`;
+    writeFileSync(at, read ? read(specV1) : readFileSync(specV1));
+    extra.SPEC_V1 = at;
   }
   if (textFile && existsSync(textFile)) extra.ASKED_TEXT = textFile;
   // A revision the process runner sent is read from the deviation's words

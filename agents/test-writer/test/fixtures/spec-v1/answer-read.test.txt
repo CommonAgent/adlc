@@ -1,0 +1,40 @@
+// read.mjs: titles and their points, written from the spec.
+//   node --test test/read.test.mjs
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readPoints, runJob } from "../scripts/read.mjs";
+import { checkKept } from "./kept-interfaces.test.mjs";
+import { checkDelivered } from "./delivered-formats.test.mjs";
+import { checkRecordsPerJob } from "./records-per-job.test.mjs";
+
+const POINTS_LINE = /^(\d+) points?$/;
+const LIMIT = 30;
+
+test("[F1.A1] two titles are read with their points, and the reply ends in its fixed words", async () => {
+  const got = await runJob({ text: "Alpha\n12 points\nBeta\n1 point" });
+  assert.ok(POINTS_LINE.test("12 points"));
+  assert.ok(got.reply.endsWith("Read by points-reader."));
+  assert.deepEqual(checkKept(got.jobDir, { expect: ["I2"] }), []);
+  assert.deepEqual(checkDelivered(got.jobDir), []);
+});
+
+test("[F1.A2] a list longer than the limit is read only to the limit", async () => {
+  const got = await readPoints("x\n1 point\n".repeat(31), { limit: LIMIT });
+  assert.equal(got.items.length, LIMIT);
+});
+
+test("[F2.A1] a list with no points line is refused in its fixed words", async () => {
+  await assert.rejects(readPoints("Alpha\nBeta", {}), /^Error: No points lines were found\.$/);
+});
+
+test("[C1] one list is read within 10 seconds", async () => {
+  const t = Date.now();
+  await readPoints("a\n1 point", {});
+  assert.ok(Date.now() - t < 10000);
+});
+
+test("two jobs keep their records apart in the one records folder", async () => {
+  const a = await runJob({ text: "a\n1 point" });
+  const b = await runJob({ text: "b\n2 points", records: a.records });
+  assert.deepEqual(checkRecordsPerJob(a.records, [a.jobDir, b.jobDir]), []);
+});

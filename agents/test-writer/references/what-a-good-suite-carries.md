@@ -98,6 +98,50 @@ quotes, the exit code. A suite for a reader whose feature said "a 10-second
 timeout" and "up to 20 at a time" asserted neither, and the code written to
 it kept neither.
 
+## A test for every acceptance scenario, named by its id
+
+Since test-writer 0.9.0 the suite is written from the spec (spec-v1), the
+analysis Requirements hands back, and not from the agent's descriptor alone.
+Each feature there has requirements, each a statement with shall, its kind and
+the exact words, patterns and numbers it fixes, and acceptance scenarios in
+Gherkin, each naming the requirements it checks. So:
+
+- every scenario has at least one test, named with its id in square brackets
+  and then a sentence: `test("[F1.A1] a points line is read by its pattern",
+  ...)`; a test for two carries both, `[F1.A1, F1.A2]`. Keep the F number in
+  the name: the build maps each test to its feature by it;
+- that test follows the scenario's Given, When and Then, and checks every
+  requirement its `checks` lists;
+- every entry of a tested requirement's `exact` is written in a test of its
+  feature as it stands: a refusal's words and a reply's wording byte for
+  byte, a pattern as the same pattern (`/^(\d+) points?$/` for
+  `^(\d+) points?$`), a limit as the number. A paraphrase (`/no points/i`
+  for "No points lines were found.") is sent back;
+- a constraint is tested by a test named for it, `[C1] ...`;
+- inputs are built to fit their JSON Schemas, and outputs asserted against
+  theirs.
+
+The round trip that made this a rule rebuilt a news reader from its as-built
+record. The record carried the runner's stop pattern, where page metadata is
+read from, the refusal's words and the output's schema exactly; none of it
+reached the suite, and the gate passed code the original's own tests fail.
+
+## Every interface the spec keeps is kept
+
+An interface with `keep: true` is one a dependent relies on. The test writer
+adds `test/kept-interfaces.test.mjs` itself, made from the spec with no model:
+a kept function is exported under its name from its module, async as its
+signature says; a kept command accepts its flags; the job folders kept as
+examples hold kept files that fit their schemas. Import a kept function by its
+own name from its own module, and call it as its signature says. In each test
+that runs a job writing a kept file, end with:
+
+    import { checkKept } from "./kept-interfaces.test.mjs";
+    // ... the job runs into jobDir ...
+    assert.deepEqual(checkKept(jobDir, { expect: ["I2"] }), []);
+
+and for a kept message, `assert.deepEqual(keptProblems("I6", value), [])`.
+
 ## What a suite pins, in the order it matters
 
 1. Each refusal the spec lists, as a case that tries the thing and is

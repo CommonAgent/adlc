@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.8.0",
+  "agent_version": "0.9.0",
   "name": "Test writer",
   "summary": "Writes the tests an agent's scripts must pass before the scripts exist, and the test cases that exercise every approval and way back of a process.",
   "will_not": [
@@ -11,15 +11,25 @@
     "It will not repeat a credential written into your message.",
     "It will not hand over test cases for a process that leave an approval or a way back untested as if they covered it."
   ],
-  "does": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something; and writes Agent Processes 0.9.0 test cases for a process document that answer every approval each way and take every way back.",
+  "does": "Writes the test suite a package's scripts will have to pass, from the spec (a test for every acceptance scenario, named by its id) and the agent's own files, before the scripts exist, and runs it against nothing to prove it asserts something; and writes Agent Processes 0.9.0 test cases for a process document that answer every approval each way and take every way back.",
   "offerings": [
     {
       "id": "write-a-suite",
       "name": "Write a suite",
-      "does": "Writes the test suite a spec's scripts will have to pass, before those scripts exist, and runs it against nothing to prove it asserts something.",
+      "does": "Writes the test suite a spec's scripts will have to pass, before those scripts exist, with a test for every acceptance scenario of the spec named by its id and a check on every interface it keeps, and runs it against nothing to prove it asserts something.",
       "inputs": [
         {
           "name": "the spec",
+          "kind": "document",
+          "required": false,
+          "given_by": "either",
+          "accepts": [
+            "application/json"
+          ],
+          "about": "The spec (spec-v1, standards/spec.schema.json) that Requirements hands back: each feature with its requirements, the exact words, patterns and numbers each fixes, and acceptance scenarios in Gherkin; the interfaces that must be kept; the constraints. Found by its format among the attached files. The suite has a test for every acceptance scenario, named \"[F1.A1] ...\". A build before stages.json 1.6.0 sends none, and then the suite is written from the agent's own files alone and the reply says it went without the spec."
+        },
+        {
+          "name": "the agent's own files",
           "kind": "document",
           "required": true,
           "given_by": "either",
@@ -30,7 +40,7 @@
             "text/markdown",
             "application/vnd.agentmesh.agent-spec+json"
           ],
-          "about": "The agent's own files as the spec writer delivers them: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill; or, for an agent written before them, its spec.json."
+          "about": "The agent's own files as Design makes them from the spec: agent-descriptor.json, agent-runtime-requirements.json, plugin.json and a SKILL.md per skill; or, for an agent written before them, its spec.json. They name the scripts, the command lines and the records the tests run."
         },
         {
           "name": "the suite it already has",
@@ -93,7 +103,7 @@
         {
           "id": "write-the-suite",
           "name": "Write the suite",
-          "does": "Calls the text-reasoning service once, twice at most, to write the suite from the spec and the agent's own files as they are, and runs it against nothing before taking it, refusing a test that touches no script and still fails.",
+          "does": "Calls the text-reasoning service once, twice at most, to write the suite from the spec and the agent's own files as they are, checks that every acceptance scenario has a test and every exact word, pattern and number is carried by a test of its feature, adds the check on every interface the spec keeps, made from the spec with no model, and runs it against nothing before taking it, refusing a test that touches no script and still fails.",
           "how": {
             "control": "script",
             "intelligence": "called",
@@ -303,7 +313,7 @@
       "file": "*/declared.json"
     },
     {
-      "name": "the suite as written: each file, how many tests it carries and their names, what could not be tested, and what the stand-in run said",
+      "name": "the suite as written: each file, how many tests it carries and their names, the spec it was written from (its scenarios, the requirements a test verifies and the interfaces it keeps), what could not be tested, and what the stand-in run said",
       "when": "per_task",
       "file": "*/suite.json"
     },

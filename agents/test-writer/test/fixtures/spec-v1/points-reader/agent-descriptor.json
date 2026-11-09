@@ -1,0 +1,20 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "1.0.0",
+  "summary": "Reads titles and their points lines.",
+  "does": "Reads a pasted list of titles and points lines, and answers with each title and its points.",
+  "offerings": [
+    {
+      "id": "read-points",
+      "name": "Read points",
+      "does": "Reads each title and its points line.",
+      "inputs": [{ "name": "the list", "kind": "text", "required": true, "given_by": "person" }],
+      "outputs": [{ "name": "the points", "kind": "application/json", "when": "per_task", "about": "out/points.json, `{items, total}`" }],
+      "how": { "control": "script", "intelligence": "none", "cost": "none", "contract": "full" }
+    }
+  ],
+  "refusals": "A list with no points line in it, refused in fixed words.",
+  "records": [
+    { "name": "what this job did not have and did anyway", "when": "per_task", "file": "*/went-without.json" }
+  ]
+}

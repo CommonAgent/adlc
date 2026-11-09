@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "points-reader",
+  "version": "1.0.0",
+  "description": "A made-up agent for the test writer's own tests: reads titles and their points lines.",
+  "extensions": {
+    "net.agentdoc.package": {
+      "build": {
+        "skills": {
+          "read-points": { "scripts": ["scripts/read.mjs"] }
+        }
+      }
+    }
+  }
+}

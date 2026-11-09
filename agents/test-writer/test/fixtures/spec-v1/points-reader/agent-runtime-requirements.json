@@ -1,0 +1,10 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "runtimes": [{ "name": "node", "version": ">=22" }],
+  "run": {
+    "read-points": {
+      "command": ["node", "{package}/skills/read-points/scripts/read.mjs", "--job", "{job_dir}", "--records", "{records}"],
+      "reply": "stdout"
+    }
+  }
+}
