@@ -9,7 +9,7 @@ version each Builder pins.
 | [architecture-standard.md](architecture-standard.md) | `https://schemas.agentmesh.ai/architecture-standard/v1` | the solution architect, which applies it; the spec writer, which designs within it |
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [stages.json](stages.json) | the lifecycle's stages, in order, in seven phases: Reverse engineering, numbered 0, and the 24 after it; each stage's cadence (every build, set up once, or when needed); the roles that hold them; the evidence formats an outside holder hands back in; and the starting points, each with the stage it enters at (`version` in the file; changes in [CHANGELOG.md](CHANGELOG.md)) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
-| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.5: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
+| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.6: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [runtime-verbs.md](runtime-verbs.md) | how a lifecycle service hands a finished product to the runtime it is given: install, and from lifecycle API 0.4.4 rollback, reconfigure and retire, as one command with a package and a run plan and the verb in the environment | a runtime's author; a service that runs Rollback, Reconfigure and Decommission |
 | [lifecycle-document.schema.json](lifecycle-document.schema.json) | a lifecycle document, version 0.1: one JSON file holding which stages an organization uses, who holds each role (and with what settings), and the stages it adds of its own, for the organization and each project; no service needed | a person or team defining its lifecycle as a file; the console (`npx adlc-console --lifecycle <path>`), which reads, checks and writes it |
 | [process-check.mjs](process-check.mjs) | the check of a process document against Agent Processes 0.9.0: its §17.1 conformance items and the four tests of §20.1 (see [The process check](#the-process-check)) | the spec writer, which runs it over every process document before handing it back; the test writer, which reads a document's phases, deviations and digest through it; review and conformance |
@@ -135,7 +135,7 @@ actions the person may take now, and a client draws one button for each
 action and nothing else, so every judgment stays with the service. The page
 that explains it is https://agenticdevelopment.ai/api.html.
 
-The schema is version 0.4.5, served at `/v1/lifecycle` on the service. It
+The schema is version 0.4.6, served at `/v1/lifecycle` on the service. It
 changes only by adding: a client ignores a field it does not know, and a
 service never removes a field or changes its type. Version 0.2 also added
 values to two lists, the holder's kinds and the stage's states, and a client
@@ -146,7 +146,8 @@ artifacts; a 0.3 client ignores them. Version 0.4.1 adds the product's boss. Ver
 cadence and a product's setup and when-needed lists; a 0.4.1 client ignores
 them. Version 0.4.3 adds features. Version 0.4.4 adds the guided setup and
 the when-needed actions. Version 0.4.5 shows features at every stage and
-lists the features of a product made before them. Its `operations` list names the
+lists the features of a product made before them. Version 0.4.6 starts a build from
+existing code. Its `operations` list names the
 definition each request and answer must match.
 
 **Lifecycle stages.** An organization chooses which of the stages its
@@ -336,6 +337,25 @@ decision as in a chat, together one new version of the statement.
 `checkBuild`, `checkStageWorkspace`, `checkFeatures` and
 `checkFeatureApproveAll` hold these to the schema and to the rules it cannot
 say.
+
+**Starting from existing code.** Version 0.4.6 adds the starting point
+`existing-code` of stages.json 1.4.0. A start request names it as
+`starting_point`, with `source`: a repository and commit, or a local folder
+for a service that runs locally. The build enters at Reverse engineering,
+whose as-built record is one artifact of kind `as_built`; its summary
+(`AsBuiltSummary`) names the repository, the commit and whether the code was
+run, and gives the five parts in order (behaviors, architecture, interfaces,
+dependencies, existing tests and gaps), each in words with one line per item.
+Each behavior reaches Requirements as a proposed feature carrying `as_built`
+(its behavior id and evidence), and the person answers it with Approve
+feature (it is intended), `POST /builds/{id}/features/{feature}/bug` (what
+the code does is not what is wanted: a `FixItem` is kept, linked to the
+behavior, and nothing approves it silently) or `.../drop` (it is not kept).
+The build's `source` says which commit it knew, and the product's `source`
+says the last commit any build knew and whether the repository has moved
+since (`drift`), so the when-needed Reverse engineering action can run on
+drift. `checkArtifacts`, `checkFeatures`, `checkFeatureDecision` and
+`checkProduct` hold these to the schema and to the rules it cannot say.
 
 **Role bindings.** An organization chooses who holds each role in
 stages.json's `roles`: the service's reference agent, its own agent, a
