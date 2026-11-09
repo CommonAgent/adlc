@@ -82,6 +82,37 @@ writes that is not declared, a credential read that no system binds, and a
 model's to read: find the code that would have to refuse, and say whether it
 does.
 
+## 6. Every setting a script reads is declared (`undeclared-setting`)
+
+A script reads from its environment only what the install places there: a
+system's credential and settings, the model system's four settings, the
+ceilings and binaries it declares, and what the host places for every job.
+A variable nobody declared is set by nobody, so once deployed the script
+reads nothing, and a service address read from it reaches nothing.
+
+Why: a rebuilt reader read the Hacker News address from
+`HACKER_NEWS_API`, which none of its files declared. Every test passed with
+the variable set by hand, and the deployed agent reached nothing. This
+review said nothing, because only a credential's name was checked.
+
+The program finds every variable a script reads (`process.env.X`,
+`process.env["X"]`, `env.X` where a function is handed process.env, names
+taken apart from either, and Python's `os.environ` and `os.getenv`) that
+none of these declares: a system's `env` or `settings` in
+agent-runtime-requirements.json; the model system's settings when one is
+declared; a run config setting in agent-descriptor.json, by its name or in
+capitals; a spec.json handed over with the package; a `NAME=` on a command
+line in a SKILL.md; a name a script of the package hands a program it
+starts; and what the host places: the job folder, message and reply files,
+the image's own facts, AGENT_DEPS, MESH_API_BASE, the job's mesh credential,
+the process's own environment, and AGENT_DIRECTORY_, BINARY_ and CEILING_
+for each declared directory, binary and system (scripts/house-rules.mjs,
+HOST_PLACED, says where each is set). A script's own entry point runs only
+when that script is started, so the entry point of a script no run command
+and no SKILL.md starts (the shared caller's, say) is left out. A credential
+no system binds stays a `claims-match-code` finding and is not said twice.
+A name built at run time is not seen.
+
 ## A declaration is part of the change (`declaration-change`)
 
 With a diff, an access of write, admin or trigger added to a declaration is

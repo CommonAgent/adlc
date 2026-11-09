@@ -31,7 +31,11 @@ First, with a program and no model, the house architecture rules
 - no undeclared outputs;
 - refusals and records match what the code really does: declared records
   are written, written records are declared, credentials are bound, and
-  each step's `how` is what its scripts do.
+  each step's `how` is what its scripts do;
+- every environment variable a script reads is declared by the agent's own
+  files (a system's credential or setting, a run config setting, the spec
+  when one comes, or a SKILL.md command line) or placed by the host, so a
+  script never reads an address nothing places.
 
 With a diff, an access a declaration adds is a finding too. A credential
 value carried in the package is a finding, and is left out of the records,
@@ -59,7 +63,7 @@ reason kept in the job's records.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # the suite
+node --test test/*.test.mjs                                   # 100 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 node scripts/job.mjs --job <job> --records <records> --work <work> \
   --text-file <message> --file <package.tgz>::application/gzip

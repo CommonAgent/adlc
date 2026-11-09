@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.1",
+  "agent_version": "0.4.0",
   "name": "Code critic",
   "summary": "Reviews a change to an agent package and hands back findings, each naming a place, a claim and its consequence, for you to answer.",
   "will_not": [
@@ -90,7 +90,7 @@
         {
           "id": "check-the-house-rules",
           "name": "Check the house rules",
-          "does": "Checks the five house architecture rules by reading the files, before the model is asked: no model named in code and no model reached except through the four model settings, every address a script carries listed as a warning, every piece its declared kind, no undeclared output, and records, credentials and how claims that match the code.",
+          "does": "Checks the six house architecture rules by reading the files, before the model is asked: no model named in code and no model reached except through the four model settings, every address a script carries listed as a warning, every piece its declared kind, no undeclared output, records, credentials and how claims that match the code, and no environment variable read that the agent's own files do not declare.",
           "how": {
             "control": "script",
             "intelligence": "none",

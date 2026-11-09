@@ -1,4 +1,4 @@
-// Check the house rules: the five architecture rules agents keep breaking,
+// Check the house rules: the six architecture rules agents keep breaking,
 // each checked by reading the package's own files, with no model.
 //
 // These are the rules the reference names (references/the-house-rules.md),
@@ -19,7 +19,10 @@
 //   undeclared-output   a piece delivered under a name no output declares;
 //   claims-match-code   a record, a credential or a `how` the declarations
 //                       state and the code does not do, or the other way
-//                       round.
+//                       round;
+//   undeclared-setting  an environment variable a script reads that the
+//                       agent's own files do not declare and the host does
+//                       not place, so once deployed nothing sets it.
 //
 // Besides the findings, every address literal (Common Agent 12.10: http,
 // https, ws or wss, then :// and a letter, a digit or [, or an IPv4 address in
@@ -52,6 +55,7 @@ export const RULES = {
   "claims-match-code": "refusals and records match what the code really does",
   "declaration-change": "a package's declarations are part of the change",
   "credential-in-package": "a credential is named, never carried",
+  "undeclared-setting": "every environment variable a script reads is declared, or placed by the host",
 };
 
 // The families of models agents here have named, with a version or size
@@ -542,6 +546,191 @@ export function claimFindings(files, texts, descriptor, runtime, manifest) {
   return out;
 }
 
+// ── Undeclared settings ──────────────────────────────────────────────────
+//
+// What the host places in a job's environment besides what the package
+// declares, by exact name, each from where it is set:
+//   - the job runner (agents/image/one-message.mjs, composite.mjs): the job
+//     folder and its out folder, the message and reply files, and the image's
+//     own facts;
+//   - the deployment manager: AGENT_DEPS where a lockfile was installed
+//     (install.py, env_file) and the platform's address, MESH_API_BASE
+//     (steps.py, API_BASE);
+//   - the job's own mesh credential, MESH_JOB_JWT and MESH_JOB_NKEY_SEED,
+//     which the security reviewer takes as placed for every job
+//     (trace-programs.mjs, meshKeys);
+//   - what the security reviewer's PLACED_VARS takes as placed:
+//     AGENTMESH_ENV and the process's own environment (HOME, PATH, TMPDIR
+//     and the rest every host sets), but not its two model replay
+//     switches, which no install places for a package.
+// Three more are per declaration and checked against it: AGENT_DIRECTORY_<NAME>
+// for each declared directory, BINARY_<NAME> for each declared binary
+// (install.py, binary_var), and CEILING_<SYSTEM>, with _PER and _UNIT, for
+// each declared system (install.py, env_file).
+export const HOST_PLACED = [
+  "MESH_JOB_DIR", "MESH_JOB_OUT", "MESH_MESSAGE_FILE", "MESH_REPLY_FILE", "MESH_JOB_ANSWER", "MESH_SENDS_VIA_HOST", "MESH_SELF_HANDLE",
+  "AGENT_NAME", "AGENT_HOME", "AGENT_PACKAGE", "AGENT_HARNESS_BIN", "AGENT_INSTRUCTIONS_FILE", "AGENT_JOB_SECONDS",
+  "AGENT_RUN_SPEC", "AGENT_BINDING_DIR", "AGENT_DEPS", "MESH_API_BASE", "MESH_JOB_JWT", "MESH_JOB_NKEY_SEED",
+  "AGENTMESH_ENV",
+  "PATH", "HOME", "TMPDIR", "TEMP", "TMP", "USER", "LANG", "TZ", "PWD", "SHELL", "CI", "NODE_ENV", "NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "DEBUG",
+];
+// The model system's settings, and the names the shared caller reads beside
+// them: placed for a package that declares a system of kind model.
+const MODEL_PLACED = [...MODEL_SETTINGS, "MODEL_MAX_OUTPUT_TOKENS"];
+const upperName = (s) => trim(s).toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+/** Every name the agent's own files declare or the host places for it: the
+ *  install file's credentials and settings, the model system's settings, the
+ *  descriptor's run config settings (by name and in capitals), a spec's
+ *  systems and run config when one came, the per-declaration families, every
+ *  NAME= a SKILL.md tells whoever runs a step to set, and the names the host
+ *  places. */
+export function declaredSettings({ runtime = null, descriptor = null, spec = null, skills = [] } = {}) {
+  const out = new Set(HOST_PLACED);
+  const systems = [...(runtime?.systems ?? []), ...(spec?.systems ?? [])];
+  for (const s of systems) {
+    if (trim(s?.env)) out.add(trim(s.env));
+    for (const st of Array.isArray(s?.settings) ? s.settings : []) if (trim(st?.env)) out.add(trim(st.env));
+    const sys = upperName(s?.name ?? s?.role);
+    if (sys) for (const k of ["", "_PER", "_UNIT"]) out.add(`CEILING_${sys}${k}`);
+  }
+  for (const st of Array.isArray(runtime?.settings) ? runtime.settings : []) if (trim(st?.env)) out.add(trim(st.env));
+  if (systems.some((s) => s?.kind === "model")) for (const n of MODEL_PLACED) out.add(n);
+  for (const d of runtime?.directories ?? []) if (upperName(d?.name)) out.add(`AGENT_DIRECTORY_${upperName(d.name)}`);
+  for (const b of runtime?.binaries ?? []) if (upperName(b?.name)) out.add(`BINARY_${upperName(b.name)}`);
+  for (const rc of [descriptor?.run_config, spec?.run_config]) {
+    for (const st of Array.isArray(rc?.settings) ? rc.settings : []) {
+      if (trim(st?.name)) { out.add(trim(st.name)); out.add(upperName(st.name)); }
+    }
+  }
+  for (const text of skills) for (const m of String(text ?? "").matchAll(/(?<![\w$])([A-Z][A-Z0-9_]*)=/g)) out.add(m[1]);
+  return out;
+}
+
+/** Where a script's own entry point is, as [first line, last line]: the
+ *  block guarded by import.meta.url, import.meta.main, process.argv[1] or
+ *  require.main, or Python's __main__, to the brace that closes it (or the
+ *  end of the file). Null when the script has none. */
+export function mainBlock(text) {
+  const lines = lineList(text);
+  const at = lines.findIndex((l) => /^\s*if\s*\(.*(?:import\.meta\.(?:url|main)|process\.argv\[1\]|require\.main\s*===\s*module)/.test(l) || /^\s*if\s+__name__\s*==\s*["']__main__["']\s*:/.test(l));
+  if (at < 0) return null;
+  if (/__main__/.test(lines[at])) return [at + 1, lines.length];
+  let depth = 0, opened = false;
+  for (let i = at; i < lines.length; i++) {
+    for (const c of lines[i].replace(/(["'`])(?:\\.|(?!\1).)*\1/g, "")) {
+      if (c === "{") { depth += 1; opened = true; } else if (c === "}") depth -= 1;
+    }
+    if (opened && depth <= 0) return [at + 1, i + 1];
+  }
+  return [at + 1, lines.length];
+}
+
+/** Every environment variable a script reads, by name, with the line it is
+ *  first read on: process.env.X, process.env?.X, process.env["X"], env.X and
+ *  env["X"] (env being what a function was handed as process.env), names
+ *  taken apart from process.env or env, and Python's os.environ and os.getenv.
+ *  Comment lines are not read. A name built at run time is not seen. */
+export function envReads(text, path = "") {
+  const names = new Map();
+  const add = (n, line) => { if (/^[A-Z][A-Z0-9_]*$/.test(n) && !names.has(n)) names.set(n, line); };
+  const ONE_LINE = [
+    /\benv\??\.([A-Z][A-Z0-9_]*)\b(?!\s*=[^=>])/g,
+    /\benv\??\.?\[\s*["'`]([A-Z][A-Z0-9_]*)["'`]\s*\](?!\s*=[^=>])/g,
+    /\bos\.environ(?:\.get\(\s*|\[\s*)["']([A-Z][A-Z0-9_]*)["']/g,
+    /\bos\.getenv\(\s*["']([A-Z][A-Z0-9_]*)["']/g,
+  ];
+  for (const [n, l] of codeLines(text, path)) for (const re of ONE_LINE) for (const m of l.matchAll(re)) add(m[1], n);
+  const comments = new Set(lineList(text).map((l, i) => (COMMENT_LINE_RE.test(l) ? i + 1 : 0)).filter(Boolean));
+  for (const m of String(text ?? "").matchAll(/(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:process\.)?env\b/g)) {
+    const line = text.slice(0, m.index).split("\n").length;
+    if (comments.has(line)) continue;
+    for (const part of m[1].split(",")) add(trim(part.split(":")[0].split("=")[0]), line);
+  }
+  return names;
+}
+
+/** Names a script sets for itself or hands a program it starts: process.env.X
+ *  assigned; a key of an object that spreads process.env or env; and, in a
+ *  script that starts a program (spawn, execFile, fork, exec), every name in
+ *  capitals it sets as a key (X: ...) or a member (extra.X = ...), the way a
+ *  job hands each step what it reads. */
+export function envSets(text) {
+  const t = String(text ?? "");
+  const out = new Set();
+  for (const m of t.matchAll(/\bprocess\.env\.([A-Z][A-Z0-9_]*)\s*=(?!=)/g)) out.add(m[1]);
+  for (const m of t.matchAll(/\{[^{}]*\.\.\.\s*(?:process\.)?env\b[^{}]*\}/g)) {
+    for (const k of m[0].matchAll(/(?<![\w$.])([A-Z][A-Z0-9_]*)\s*:/g)) out.add(k[1]);
+  }
+  if (/\b(?:spawn|spawnSync|execFile|execFileSync|fork|exec|execSync)\s*\(/.test(t)) {
+    for (const m of t.matchAll(/(?<![\w$.?])([A-Z][A-Z0-9_]*)\s*:(?!:)/g)) out.add(m[1]);
+    for (const m of t.matchAll(/[\w$\])]\.([A-Z][A-Z0-9_]*)\s*=(?![=>])/g)) out.add(m[1]);
+  }
+  return out;
+}
+
+/** A spec among the package's files, when one came: spec.json, or a
+ *  *.spec.json, holding jobs. */
+export function specOf(files, texts) {
+  for (const f of files) {
+    if (!/(^|\/)(?:[\w.-]+\.)?spec\.json$/.test(f.path) || texts[f.path] == null) continue;
+    try { const doc = JSON.parse(texts[f.path]); if (Array.isArray(doc?.jobs)) return { path: f.path, doc }; } catch { /* not a spec */ }
+  }
+  return null;
+}
+
+/** The scripts a job starts: each file a run command names, and each script
+ *  a SKILL.md tells whoever runs the step to start (`node <path>/<name>.mjs`),
+ *  matched to the package's scripts by name. */
+export function entryScripts(files, texts, runtime, manifest) {
+  const out = runCommandFiles(files, runtime, manifest);
+  const scripts = files.filter(isScript).map((f) => f.path);
+  for (const f of files.filter((x) => /^skills\/[^/]+\/SKILL\.md$/.test(x.path))) {
+    for (const m of String(texts[f.path] ?? "").matchAll(/\b(?:node|python3?|bash|sh)\s+(\S+\.(?:mjs|cjs|js|py|sh))\b/g)) {
+      const name = m[1].split("/").pop();
+      for (const p of scripts) if (p.split("/").pop() === name) out.add(p);
+    }
+  }
+  return out;
+}
+
+/** Every environment variable a script reads that the agent's own files do
+ *  not declare and the host does not place. A script's own entry point runs
+ *  only when the script is started itself, so the entry point of a script no
+ *  run command and no SKILL.md starts is left out (the shared caller's, say);
+ *  every other line is the job at work. A
+ *  credential no system binds is claims-match-code's finding, and a provider
+ *  key or a retired model variable is model-in-code's, so neither is said
+ *  twice. Nothing is said without the declarations to hold it to. */
+export function undeclaredSettingFindings(files, texts, { descriptor = null, runtime = null, manifest = null } = {}) {
+  if (!descriptor && !runtime) return [];
+  const spec = specOf(files, texts);
+  const skills = files.filter((f) => /^skills\/[^/]+\/SKILL\.md$/.test(f.path)).map((f) => texts[f.path]);
+  const declared = declaredSettings({ runtime, descriptor, spec: spec?.doc ?? null, skills });
+  const scripts = files.filter(isScript).filter((f) => texts[f.path] != null);
+  for (const f of scripts) for (const n of envSets(texts[f.path])) declared.add(n);
+  const run = entryScripts(files, texts, runtime, manifest);
+  const said = (n) => (descriptor && CREDENTIAL_ENV.test(n) && !/^(MESH|AGENT)_/.test(n) && !PROVIDER_KEY_RE.test(n))
+    || PROVIDER_KEY_RE.test(n) || OLD_MODEL_VARS_RE.test(n);
+  const where = ["a system's credential or setting in agent-runtime-requirements.json", "a run config setting in agent-descriptor.json"];
+  if (spec) where.push(`anything in ${spec.path}`);
+  where.push("a name the host places");
+  const out = [];
+  for (const f of scripts) {
+    const text = texts[f.path];
+    const main = run.has(f.path) ? null : mainBlock(text);
+    for (const [n, line] of envReads(text, f.path)) {
+      if (declared.has(n) || said(n)) continue;
+      if (main && line >= main[0] && line <= main[1]) continue;
+      const address = /(_API|_URL|_URI|_ENDPOINT|_BASE|_HOST|_ADDRESS|_ORIGIN)$/.test(n);
+      out.push(finding("undeclared-setting", f.path, line,
+        `${f.path} reads ${n}, and nothing declares it: not ${where.slice(0, -1).join(", not ")}, and not ${where.at(-1)}.`,
+        `No install places ${n}, so once deployed the script reads nothing there${address ? " and reaches no service at that address" : ""}; the job works only on a host somebody set it on by hand, and the declarations do not tell the owner it is needed. Declare it as a setting of the system it belongs to, or stop reading it.`));
+    }
+  }
+  return out;
+}
+
 /** New access in a declaration, read off the diff. */
 export function declarationChangeFindings(read, texts) {
   const out = [];
@@ -606,6 +795,7 @@ export function checkHouseRules(read, texts) {
     ...addressFindings(files, texts),
     ...pieceFindings(files, texts, descriptor),
     ...claimFindings(files, texts, descriptor, runtime, manifest),
+    ...undeclaredSettingFindings(files, texts, { descriptor, runtime, manifest }),
     ...declarationChangeFindings(read, texts),
   ];
   const inside = [], outside = [];
