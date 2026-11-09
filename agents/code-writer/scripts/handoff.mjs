@@ -3,7 +3,8 @@
 //
 // The person or coding agent who takes the folder needs everything in one
 // place and needs to know what they may not touch. So the folder holds the
-// agent's files as they came, the suite under test/ byte for byte (binary
+// spec (spec.json, and spec.md when it came: what Requirements hands back
+// since stages.json 1.6.0) and the agent's files as they came, the suite under test/ byte for byte (binary
 // fixtures too), every script the spec names under scripts/ (the released
 // script where the released package carries one at that path, otherwise a stub
 // exporting what the suite imports), every other file the released package
@@ -15,6 +16,18 @@
 // stubbed. Nothing here calls a model or reaches a network, and the archive is
 // written by archive.mjs in node alone, deterministically, so the same inputs
 // give the same bytes.
+//
+// The spec comes the way everything else does, as a --file, and is found by
+// what is in it (code-writer 0.4.0): spec.json is the JSON whose format is
+// spec-v1; spec.md is its rendering for a person, a Markdown file named
+// spec.md (once the process runner's prefixes are off) or one that carries the
+// product's name and every acceptance scenario's id. Both go at the folder's
+// top, read-only, pinned in build.lock.json like the agent's files, and
+// AGENTS.md tells whoever writes the scripts to read the spec first. Before
+// this a spec that came went under prototype/ as a loose file, and nothing
+// said to read it: the stop pattern, the refusal's words and the output's
+// schema it carried reached no one. A hand-off with no spec is laid out as
+// before, and AGENTS.md is the same as before.
 //
 //   needs: node >= 22
 //   node handoff.mjs --job <job folder> --records <records folder> --work <work folder> --file <path>::<media type> ...
@@ -32,6 +45,48 @@ const bytesOf = (v) => (Buffer.isBuffer(v) ? v : v instanceof Uint8Array ? Buffe
 const norm = (p) => trim(p).replace(/\\/g, "/").replace(/^(\.\/)+/, "");
 const readOnly = (p) => { try { chmodSync(p, 0o444); } catch { /* a hint; the lock is the fence */ } };
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** Where the spec goes in the build folder: the data, and its rendering for
+ *  a person. */
+export const SPEC_FILE = "spec.json";
+export const SPEC_MD_FILE = "spec.md";
+
+/** Whether a text is the spec (spec-v1): JSON whose format says so, with
+ *  features. */
+export function isSpecV1Text(text) {
+  try {
+    const d = JSON.parse(String(text ?? ""));
+    return Boolean(d && typeof d === "object" && !Array.isArray(d) && d.format === "spec-v1" && Array.isArray(d.features) && d.features.length);
+  } catch { return false; }
+}
+
+/** The acceptance scenario ids a spec carries. */
+const scenarioIds = (doc) => (doc?.features ?? []).flatMap((f) => (f?.acceptance ?? []).map((a) => trim(a?.id))).filter(Boolean);
+
+/** Whether a text is the spec's rendering for a person: Markdown, not JSON and
+ *  not a skill, named spec.md, or carrying the product's name and every
+ *  acceptance scenario id the spec gives (a rendering lists them all). */
+export function looksLikeSpecMd(text, name = "", doc = null) {
+  const t = String(text ?? "");
+  if (!trim(t) || /^\s*[{[]/.test(t) || /^---\r?\n/.test(t)) return false;
+  if (/(^|[-_.])spec\.md$/i.test(plainName(name))) return true;
+  const ids = scenarioIds(doc);
+  const product = trim(doc?.product?.name);
+  const has = (id) => new RegExp(`(?<![\\w.])${id.replace(/\./g, "\\.")}(?![\\w])`).test(t);
+  return ids.length > 0 && ids.every(has) && (!product || t.includes(product));
+}
+
+/** The spec among files that arrived loose, as {path, bytes}: spec.json, the
+ *  last JSON whose format is spec-v1, and spec.md, its rendering, each null
+ *  when it did not come. Found by content, the way the agent's files and the
+ *  suite are. */
+export function specAmong(files = []) {
+  const text = (f) => Buffer.from(f.bytes).toString("utf8");
+  const json = [...files].reverse().find((f) => isSpecV1Text(text(f))) ?? null;
+  const doc = json ? JSON.parse(text(json)) : null;
+  const md = files.find((f) => f !== json && looksLikeSpecMd(text(f), f.path, doc)) ?? null;
+  return { json, md };
+}
 
 /** What `check.mjs` needs beside it in .adlc/, so the folder checks itself. */
 export const ADLC_FILES = ["check.mjs", "workspace.mjs", "agent-folder.mjs", "archive.mjs"];
@@ -65,11 +120,12 @@ const isPackage = (paths) => paths.some((p) => p.startsWith("scripts/") || p ===
 /** The paths a released package may not put at their own place in the build
  *  folder: the agent's files and skills, the suite, and what this step writes. */
 const taken = (p) => p.startsWith("scripts/") || p.startsWith("test/") || p.startsWith("skills/") || p.startsWith("records/") || p.startsWith("prototype/")
-  || p.startsWith(".adlc/") || [DESCRIPTOR_FILE, RUNTIME_FILE, MANIFEST_FILE, "spec.json", "AGENTS.md", "CLAUDE.md", LOCK_FILE].includes(p);
+  || p.startsWith(".adlc/") || [DESCRIPTOR_FILE, RUNTIME_FILE, MANIFEST_FILE, SPEC_FILE, SPEC_MD_FILE, "AGENTS.md", "CLAUDE.md", LOCK_FILE].includes(p);
 
 /** Lay out the build folder in `dir`. `agent`, `suite` and `prototype` are
- *  maps from a path to its bytes (or text). Returns what was laid out. */
-export function layOutBuildFolder({ dir, agent = {}, suite = {}, prototype = {}, scriptsDir = here } = {}) {
+ *  maps from a path to its bytes (or text); `spec` holds spec.json and
+ *  spec.md, either or both, when the spec came. Returns what was laid out. */
+export function layOutBuildFolder({ dir, agent = {}, suite = {}, prototype = {}, spec: specFiles = {}, scriptsDir = here } = {}) {
   if (!dir) throw new Error("no build folder to lay out");
   mkdirSync(dir, { recursive: true });
   const put = (rel, bytes, ro = true) => {
@@ -83,6 +139,14 @@ export function layOutBuildFolder({ dir, agent = {}, suite = {}, prototype = {},
     const p = norm(rel);
     if (!staysInside(p)) throw new Error(`an agent file must stay inside the folder, not ${rel}`);
     put(p, bytesOf(v));
+  }
+  // The spec, at the folder's top beside the agent's files, read-only and
+  // pinned by the lock like them.
+  const specLaid = [];
+  for (const [rel, v] of Object.entries(specFiles ?? {})) {
+    if (![SPEC_FILE, SPEC_MD_FILE].includes(rel) || v == null) continue;
+    put(rel, bytesOf(v));
+    specLaid.push(rel);
   }
   const tests = {};
   for (const [rel, v] of Object.entries(suite)) {
@@ -145,7 +209,7 @@ export function layOutBuildFolder({ dir, agent = {}, suite = {}, prototype = {},
     if (!existsSync(from)) throw new Error(`the check needs ${f} beside handoff.mjs and it is not there`);
     put(join(".adlc", f), readFileSync(from));
   }
-  return { scripts, prototype: prototypeFiles, laid, stood_in: stoodIn, unnamed: [...wanted.keys()].filter((s) => !scriptsOf(spec).includes(s)) };
+  return { scripts, prototype: prototypeFiles, laid, stood_in: stoodIn, spec: specLaid, unnamed: [...wanted.keys()].filter((s) => !scriptsOf(spec).includes(s)) };
 }
 
 /** The lock: the digest of every pinned file, which is every file outside
@@ -159,10 +223,35 @@ export function buildLock(dir, { scripts = [] } = {}) {
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
 
+/** The template's part on reading the spec first, between these two lines:
+ *  kept, with its markers taken out, when the folder holds the spec, and
+ *  taken out whole when it does not, so a hand-off with no spec gets the
+ *  AGENTS.md it got before. */
+export const SPEC_START = "<!-- when the spec came -->";
+export const SPEC_END = "<!-- end when the spec came -->";
+
+/** The template with its spec part kept or taken out, for the spec files the
+ *  folder holds: {{spec_file}} is the one to read (spec.md when it came, for
+ *  a person, else spec.json) and {{spec_also}} says spec.json holds the same
+ *  as data when both came. */
+export function withSpecPart(templateText, spec = []) {
+  const text = String(templateText ?? "");
+  const at = text.indexOf(SPEC_START);
+  const end = text.indexOf(SPEC_END);
+  if (at < 0 || end < at) return text;
+  const after = end + SPEC_END.length;
+  if (!spec.length) return text.slice(0, at) + text.slice(after).replace(/^\r?\n(\r?\n)?/, "");
+  const read = spec.includes(SPEC_MD_FILE) ? SPEC_MD_FILE : SPEC_FILE;
+  const also = spec.includes(SPEC_MD_FILE) && spec.includes(SPEC_FILE) ? ` ${SPEC_FILE} holds the same, as data.` : "";
+  const part = text.slice(at + SPEC_START.length, end).replace(/^\r?\n/, "").replace(/\{\{spec_file\}\}/g, read).replace(/\{\{spec_also\}\}/g, also);
+  return text.slice(0, at) + part + text.slice(after).replace(/^\r?\n/, "");
+}
+
 /** AGENTS.md from the template, CLAUDE.md pointing to it, and build.lock.json.
  *  {{name}}, {{version}} and {{scripts}} in the template are filled in when
- *  the folder holds an agent to say them about. */
-export function writeHouseRules(dir, { templateText = "", scripts = [] } = {}) {
+ *  the folder holds an agent to say them about, and the part on reading the
+ *  spec is kept when `spec` names the spec files the folder holds. */
+export function writeHouseRules(dir, { templateText = "", scripts = [], spec = [] } = {}) {
   if (!trim(templateText)) throw new Error("the house rules template is missing, so no rules can be written");
   const plugin = readJson(join(dir, MANIFEST_FILE));
   const descriptor = readJson(join(dir, DESCRIPTOR_FILE));
@@ -172,7 +261,7 @@ export function writeHouseRules(dir, { templateText = "", scripts = [] } = {}) {
   const list = scripts.length
     ? scripts.map((s) => `- ${s.path} (${s.from === "prototype" ? "the released script" : "a stub"})`).join("\n")
     : named.map((p) => `- ${p}`).join("\n");
-  let text = String(templateText);
+  let text = withSpecPart(templateText, spec);
   if (name) text = text.replace(/\{\{name\}\}/g, name);
   if (version) text = text.replace(/\{\{version\}\}/g, version);
   if (named.length) text = text.replace(/\{\{scripts\}\}/g, list);
@@ -210,8 +299,14 @@ function sortArrivals(files, read) {
   }
   const sorted = sortAttachments(loose, (p) => bytes.get(p));
   for (const f of sorted.suite) suite[f.path] = Buffer.from(f.text, "utf8");
-  for (const f of sorted.code) if (!(f.path in prototype)) prototype[f.path] = f.bytes;
-  return { agent: sorted.agent, suite, prototype };
+  // The spec is among what would otherwise be loose prototype files: taken
+  // out of them and kept for the folder's top (code-writer 0.4.0).
+  const found = specAmong(sorted.code);
+  const spec = {};
+  if (found.json) spec[SPEC_FILE] = found.json.bytes;
+  if (found.md) spec[SPEC_MD_FILE] = found.md.bytes;
+  for (const f of sorted.code) if (f !== found.json && f !== found.md && !(f.path in prototype)) prototype[f.path] = f.bytes;
+  return { agent: sorted.agent, suite, prototype, spec };
 }
 
 /** Whether a message asks for the hand-off: its first line begins with
@@ -252,9 +347,10 @@ export function handoff({ jobDir, recordsDir, workDir, files = [], message = nul
     agent: Object.fromEntries(Object.entries(agentFilesByPath(got.agent))),
     suite: got.suite,
     prototype: got.prototype,
+    spec: got.spec,
     scriptsDir,
   });
-  const lock = writeHouseRules(dir, { templateText: template, scripts: laid.scripts });
+  const lock = writeHouseRules(dir, { templateText: template, scripts: laid.scripts, spec: laid.spec });
 
   const archive = join(jobDir, "out", ARCHIVE_NAME);
   const packed = pack(dir, archive);
@@ -264,25 +360,26 @@ export function handoff({ jobDir, recordsDir, workDir, files = [], message = nul
   const wrong = Object.entries(there).filter(([p, d]) => back.get(p) !== d).map(([p]) => p);
   if (wrong.length || back.size !== Object.keys(there).length) throw new Error(`the archive does not unpack to the folder: ${wrong.slice(0, 5).join(", ") || "file counts differ"}`);
   const archiveDigest = sha(readFileSync(archive));
+  const specSaid = laid.spec.length ? `the spec (${laid.spec.map((f) => `\`${f}\``).join(" and ")}), ` : "";
 
   writeFileSync(join(jobDir, "pieces.json"), JSON.stringify([{
     name: "the build folder", step: "pack-the-build-folder", path: `out/${ARCHIVE_NAME}`, media_type: "application/gzip",
-    about: "One gzip tar archive holding the build folder: the agent's files, `test/`, `scripts/`, the released package files, `AGENTS.md`, `CLAUDE.md`, `.adlc/` and `build.lock.json`.",
-    produced_from: ["the agent's files", "the suite"],
+    about: `One gzip tar archive holding the build folder: ${specSaid}the agent's files, \`test/\`, \`scripts/\`, the released package files, \`AGENTS.md\`, \`CLAUDE.md\`, \`.adlc/\` and \`build.lock.json\`.`,
+    produced_from: [...(laid.spec.length ? ["the spec"] : []), "the agent's files", "the suite"],
   }], null, 2) + "\n");
 
   mkdirSync(recordsDir, { recursive: true });
   writeFileSync(join(recordsDir, "workspace.json"), JSON.stringify({
     workspace: "v1", at: new Date().toISOString(), folder: dir, from_attachments: true, build_folder: true,
     prototype_given: Object.keys(got.prototype).length > 0, prototype_found: Object.keys(got.prototype).length > 0,
-    scripts: laid.scripts, prototype: laid.prototype, extras: laid.laid, stood_in: laid.stood_in, unnamed: laid.unnamed,
+    scripts: laid.scripts, prototype: laid.prototype, extras: laid.laid, stood_in: laid.stood_in, unnamed: laid.unnamed, spec: laid.spec,
     digests: lock.digests, listing: there, archive: { path: `out/${ARCHIVE_NAME}`, digest: archiveDigest, files: packed.files, bytes: packed.bytes },
   }, null, 2) + "\n");
 
   const stubbed = laid.scripts.filter((s) => s.from !== "prototype").length;
   const bits = [
     `Laid out the build folder and packed it as one gzip tar archive, ${plural(packed.files, "file")}, ${packed.bytes} bytes, ${archiveDigest}.`,
-    `It holds ${plural(laid.scripts.length, "script")} to write (${laid.scripts.length - stubbed} released, ${stubbed} stubbed), ${plural(Object.keys(got.suite).filter((p) => p.endsWith(".test.mjs")).length, "test file")}, AGENTS.md, CLAUDE.md, .adlc/ and build.lock.json pinning ${plural(Object.keys(lock.digests).length, "file")}.`,
+    `It holds ${plural(laid.scripts.length, "script")} to write (${laid.scripts.length - stubbed} released, ${stubbed} stubbed), ${plural(Object.keys(got.suite).filter((p) => p.endsWith(".test.mjs")).length, "test file")}, ${laid.spec.length ? `the spec (${laid.spec.join(" and ")}), which AGENTS.md says to read first, ` : ""}AGENTS.md, CLAUDE.md, .adlc/ and build.lock.json pinning ${plural(Object.keys(lock.digests).length, "file")}.`,
   ];
   if (laid.prototype.length) bits.push(`${plural(laid.prototype.length, "prototype file")} went under prototype/ to be read.`);
   if (!Object.keys(got.prototype).length) bits.push("No released package came, so every script is a stub.");
