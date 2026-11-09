@@ -56,6 +56,14 @@ Changes to the standards in this folder, newest first.
 - **1.1.0**: the roles that hold the stages, and the evidence formats.
 - **1.0.0**: the 24 stages as data.
 
+## spec.schema.json
+
+- **1.1.0**: interface kinds constant (an exported value, kept with its value) and
+  declaration (a name or value the agent declares to the platform: offering and
+  step ids, output names, labels, settings, kept with where they are declared);
+  required_flags for a command; values, the allowed values of a field. Additive.
+- **1.0.0**: the spec (spec-v1), with stages.json 1.6.0.
+
 ## The lifecycle API
 
 - **0.4.8**: the spec artifact (kind `spec`, `SpecSummary`): what
