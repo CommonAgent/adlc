@@ -44,12 +44,53 @@ write-a-spec skill names), and it writes the spec first:
   system with reach `none`. The model answers with a fill by id: the shall
   lines, the purpose, the Gherkin scenarios and the open questions. Code keeps
   every value it seeded.
+- From the reverse engineer 0.3.0 the record adds, and code carries
+  (spec-v1 1.1.0): every constant and every declaration (a name or value the
+  agent declares to the platform, with `declared_in`, such as
+  `agent-descriptor.json offerings[0].outputs[1].name`) as a kept interface
+  with its `value`; a command's `required_flags`; a file's allowed `values`;
+  a declared setting's default and range; and every entry of strings.json,
+  the inventory of the strings a person reads and the patterns the code
+  matches, byte for byte in some requirement's `exact`, under the feature
+  whose behavior's evidence covers its line, else the one anchored to its
+  file, else as a constraint. The check finds any of them lost.
 - From the person's words alone, the model drafts the whole spec, and what it
   cannot settle goes in `open`.
 - On Ask for changes or Send back to Requirements, the spec is revised by
   edits addressed by id to what the person's words name
   (`scripts/revise.mjs`); everything else stays byte for byte, checked by
-  rule, and a keyed name, version or price is set by code with no model.
+  rule, and a keyed name, version or price is set by code with no model. A
+  rename names a declared value or a piece as a whole word, and opens that
+  declaration and the pieces of the features that carry it, never their
+  offering. Words that name nothing in the spec leave it byte for byte, with
+  no model asked.
+
+## The agent's own files: structure by code, words by the model
+
+From 0.10.0 the Design is written the way the spec is: code copies facts and
+the model only describes. `scripts/structure.mjs` writes every structural
+field of the files from the spec: the offering ids, step ids and skill
+folders (from its declarations, else from its features' offerings), each
+input's and output's name, kind and schema, the labels it keeps, the
+run-config settings, the systems with their address settings, each run
+command in the packaged form `{home}/{package}/skills/<slug>/scripts/...` with
+the flags its command interface keeps, the scripts, runtimes, records and
+price, and then every declaration the spec keeps at its place. The model is
+asked only for the prose, by key (`designFromSpec` in `scripts/draft.mjs`):
+the description, the refusals, each job's does, when, good, empty and
+instructions, each piece's about and each system's needs; anything else it
+answers is not read. `scripts/declared.mjs` checks every kept declaration's
+value at its place in the files, and the package maker's check runs as
+before.
+
+A revision of the files is an edit. The structure is written again from the
+spec, so it changes only when the spec does. The earlier files' prose is
+carried over (the files sent back, or else the newest draft an earlier job
+wrote), the model is asked only for the prose the person's words name and any
+the new structure adds, and every other field stays byte for byte, checked by
+code. On the round trip of 2026-11-09 a request to rename one output renamed
+the offering, its step and its skill folder too; now it changes that output's
+name and its about, and nothing else.
 
 `scripts/spec-check.mjs` holds every spec to the schema (`scripts/spec-v1.mjs`
 validates it with no dependencies), to a scenario per feature that checks
@@ -151,7 +192,7 @@ instructions are in `skills/<slug>/SKILL.md`, the scripts are in `scripts/`, and
 works under are in `rules.md` and `references/`.
 
 ```sh
-node --test test/*.test.mjs                                   # 297 tests
+node --test test/*.test.mjs                                   # 315 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
