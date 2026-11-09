@@ -12,7 +12,11 @@
 //   - optionally the last as-built record, attached (its record.json, and its
 //     behaviors.json if it is at hand), which makes the job drift;
 //   - optionally whether it may run things: the run config's `may_run`
-//     setting, a `may run: yes` line, or --may-run yes.
+//     setting, a `may run: yes` line, or --may-run yes;
+//   - optionally, on the command line, --repository-root <folder>: the top of
+//     the repository the codebase sits in, where the files its tests import
+//     from outside the codebase are read (0.3.0). Without it, the top of the
+//     codebase's git checkout is used.
 // A path or an address written in the message is never followed: the folder
 // comes from the command line or an attached archive, and the repository line
 // is words that tie the record to its source, never fetched.
@@ -37,6 +41,7 @@ export function fromArgv(args = []) {
     else if (a === "--repository") parsed.repository = args[++i];
     else if (a === "--commit") parsed.commit = args[++i];
     else if (a === "--may-run") parsed.mayRun = args[++i];
+    else if (a === "--repository-root") parsed.repositoryRoot = args[++i];
     else if (a === "--previous") parsed.files.push({ path: String(args[++i] ?? ""), declared: "" });
     else if (a === "--file") {
       const v = String(args[++i] ?? "");

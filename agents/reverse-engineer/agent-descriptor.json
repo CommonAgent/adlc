@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.2.0",
+  "agent_version": "0.3.0",
   "name": "Reverse engineer",
   "summary": "Writes down what an existing codebase is, at a named commit: its behaviors, architecture, interfaces, dependencies and tests, each claim with its file and line.",
   "will_not": [
@@ -14,7 +14,7 @@
     {
       "id": "reverse-engineer",
       "name": "Describe a codebase",
-      "does": "Writes the as-built record of a codebase at a named commit, tied to the repository, the commit digest and whether the code was only read or also run, in five parts, each claim with its evidence and each gap marked; on drift, only what changed since the last record.",
+      "does": "Writes the as-built record of a codebase at a named commit, tied to the repository, the commit digest and whether the code was only read or also run, in six parts, each claim with its evidence and each gap marked, with the original tests carried byte for byte and a completeness check by code; on drift, only what changed since the last record.",
       "inputs": [
         {
           "name": "codebase",
@@ -57,7 +57,7 @@
           "name": "as-built record",
           "kind": "application/vnd.agentmesh.as-built-record+json",
           "when": "per_task",
-          "about": "The record that ties the parts to their source, out/as-built/record.json: `{format, as_built, repository, commit, commit_checked, read_mode, trigger, drafted, parts, behaviors_index, counts, done}`. read_mode is `read` or `read and run`; trigger is `adoption` or `drift`, and on drift `since` and `changed_files` say what it covers."
+          "about": "The record that ties the parts to their source, out/as-built/record.json: `{format, as_built, repository, commit, commit_checked, read_mode, trigger, drafted, parts, behaviors_index, counts, done}`. read_mode is `read` or `read and run`; trigger is `adoption` or `drift`, and on drift `since` and `changed_files` say what it covers. counts.completeness says, check by check, what a rebuild needs that the record holds and what it misses; carried_files gives each carried file's digest."
         },
         {
           "name": "behaviors",
@@ -75,7 +75,7 @@
           "name": "interfaces",
           "kind": "application/vnd.agentmesh.as-built-interfaces+json",
           "when": "per_task",
-          "about": "The APIs, commands, messages and file formats, interfaces.json: `{format, as_built, interfaces, constants, flags, environment, settings, schemas_found, schemas_derived}`, each with its evidence and, where one was derived, the schema file it points at. Read by rule: each file the code writes with the JSON Schema its value shows, each exported function with its parameters, whether it is async and what it throws or rejects with, each command with its flags, the exported constants with their values, the environment variables and the declared settings."
+          "about": "The APIs, commands, messages, file formats, constants and declarations, interfaces.json: `{format, as_built, interfaces, constants, flags, environment, settings, schemas_found, schemas_derived}`, each with its evidence and, where one was derived, the schema file it points at. Read by rule: each file the code writes with the JSON Schema its value shows and the allowed values of each field the code writes from fixed literals, each exported function with its parameters, whether it is async and what it throws or rejects with, each command with its flags and the flags it cannot run without, each exported constant with its value as JSON, each name and value the agent declares in its own files (offerings, steps, inputs, outputs, labels, settings, run commands) with where it is declared, the environment variables and the declared settings."
         },
         {
           "name": "openapi",
@@ -99,7 +99,25 @@
           "name": "existing tests and gaps",
           "kind": "application/vnd.agentmesh.as-built-tests-and-gaps+json",
           "when": "per_task",
-          "about": "The tests the code has, tests-and-gaps.json: `{format, as_built, tests, test_command, baseline, gaps}`. Each test file with its cases and the behaviors it covers, the project's own test command, one baseline run's results when it may run things (or why it did not run), and every gap, each marked with its kind."
+          "about": "The tests the code has, tests-and-gaps.json: `{format, as_built, tests, test_command, baseline, carried, support, gaps}`. Each test file with its cases and the behaviors it covers, the project's own test command, one baseline run's results when it may run things (or why it did not run), the test files carried and the files they import from outside the codebase, and every gap, each marked with its kind."
+        },
+        {
+          "name": "strings",
+          "kind": "application/vnd.agentmesh.as-built-strings+json",
+          "when": "per_task",
+          "about": "Every string a person reads, every key other code or data depends on (such as citation_title, dc.title, @graph) and every regular expression in the code's scripts, strings.json: `{format, as_built, repository, commit, strings}`. Each is `{file, line, kind, text}`, kind being words, template, key or pattern, and text exactly as in the source. Found by code, never by the model."
+        },
+        {
+          "name": "carried test",
+          "kind": "application/octet-stream",
+          "when": "per_task",
+          "about": "Each test file of the codebase, and each file in its test folders, copied byte for byte under out/as-built/tests/ at its path in the codebase, so the original tests can be run against a rebuild."
+        },
+        {
+          "name": "carried support file",
+          "kind": "application/octet-stream",
+          "when": "per_task",
+          "about": "Each file a carried test imports from outside the codebase's folder, and each file those import in turn, copied byte for byte at the record's commit under out/as-built/support/ at its path from the repository's top."
         }
       ],
       "how": {
@@ -112,7 +130,7 @@
         {
           "id": "read-the-codebase",
           "name": "Read the codebase",
-          "does": "Opens the codebase at the named commit, checks the commit in a checkout, lists its files, and reads off by rule the settings it reads, its entry points, how it starts, its test files and test command, the schemas it carries, and the surface of its JavaScript: exports and who imports them, commands and their flags, files written with the shape of each JSON one, patterns, constants, and imports that leave the codebase.",
+          "does": "Opens the codebase at the named commit, checks the commit in a checkout, lists its files, and reads off by rule the settings it reads, its entry points, how it starts, its test files and test command, the schemas it carries, what the agent declares in its own files, and the surface of its JavaScript: exports and who imports them, commands with their flags and the flags they cannot run without, files written with the shape of each JSON one, every string a person reads, patterns, constants, and imports that leave the codebase. It carries the original tests byte for byte, with the files they import from outside the codebase.",
           "how": {
             "control": "script",
             "intelligence": "none",
@@ -167,7 +185,7 @@
         {
           "id": "write-the-record",
           "name": "Write the record",
-          "does": "Writes the five parts, the record that ties them to the repository, the commit and the read mode, pieces.json and the reply, which declines any request to judge the code or write tests.",
+          "does": "Writes the six parts, the record that ties them to the repository, the commit and the read mode, the carried tests, pieces.json and the reply, which declines any request to judge the code or write tests; checks by code that the record holds every export, every file written, every command's required flags, every declaration and every string, and lists what it misses as gaps.",
           "how": {
             "control": "script",
             "intelligence": "none",

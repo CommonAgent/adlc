@@ -57,9 +57,13 @@ Under `out/as-built/`, one file per part, and `pieces.json`:
   how the code starts; settings and credentials by name only;
 - `interfaces.json`, and any OpenAPI or JSON Schema found or derived, under
   `schemas/`: read by rule, each file the code writes with the JSON Schema
-  its value shows (a format id as a constant), each exported function with
-  its parameters, whether it is async and what it throws or rejects with,
-  each command with its flags, and the exported constants, the environment
+  its value shows (a format id as a constant) and the allowed values of each
+  field the code only writes from fixed literals (`values`), each exported
+  function with its parameters, whether it is async and what it throws or
+  rejects with, each command with its flags and the ones it cannot run
+  without (`required_flags`), each exported constant with its value as JSON
+  (kind `constant`), each name and value the agent declares in its own files
+  with where it is declared (kind `declaration`), and the environment
   variables and the declared settings by name; the model's descriptions laid
   onto them;
 - `sbom.cdx.json`: a CycloneDX 1.5 bill of materials, made by rule from
@@ -67,7 +71,19 @@ Under `out/as-built/`, one file per part, and `pieces.json`:
   lockfile, `requirements.txt`, `go.mod` and `Cargo.lock`, never by the model;
 - `tests-and-gaps.json`: the test files with their cases and what each
   covers, the project's test command, one baseline run's results (or why it
-  did not run), and every gap with its kind.
+  did not run), the tests carried (`carried`, `support`), and every gap with
+  its kind;
+- `strings.json` (0.3.0, `as-built-strings-v1`): every string a person
+  reads, every key (such as `citation_title`, `dc.title`, `@graph`) and every
+  regular expression in the scripts, `{file, line, kind, text}`, the text exactly as in the source, found by code;
+- `tests/` and `support/` (0.3.0): the codebase's test files copied byte for
+  byte at their paths, and the files they import from outside the codebase,
+  with what those import in turn, at their paths from the repository's top.
+
+record.json's `counts.completeness` is the completeness check, by code: every
+export, file written, command's required flags, declaration and string is in
+the record, and each one missing is a gap of kind `incomplete`. Every change
+since 0.1.0 is additive and every format id is still `v1`.
 
 [references/the-as-built-record.md](references/the-as-built-record.md) gives
 every field. [rules.md](rules.md) gives every rule.
@@ -86,6 +102,12 @@ Six steps, one command (`scripts/describe.mjs`):
    `scripts/js-source.mjs`): exports and who imports them, commands and their
    flags, files written and the shape of each JSON one, regular expressions,
    constants, and imports that leave the codebase's folder (each a gap).
+   Since 0.3.0 also each constant's value as JSON, what the agent declares in
+   its own files (`scripts/declarations.mjs`), the flags each command cannot
+   run without (`scripts/flags.mjs`), the allowed values of each field
+   written from fixed literals, and every string and pattern. The tests are
+   carried byte for byte, with what they import from outside the codebase
+   (`scripts/carried.mjs`).
 2. **List the dependencies.** The CycloneDX bill of materials, by rule. The
    same files give the same bytes.
 3. **Run the baseline**, only when the job may run things: the project's own
@@ -109,7 +131,7 @@ Six steps, one command (`scripts/describe.mjs`):
    to the fixed kinds and to one behavior per anchor, each quote is found in
    the code byte for byte or dropped, each rule needs its kind and evidence,
    and each drafted schema keeps only the fields and constants the code has.
-6. **Write the record.**
+6. **Write the record**, and check it for completeness by code.
 
 The model is reached through the shared caller (`scripts/model-caller.mjs`,
 copied byte for byte from `agents/package-maker/shared/`), with the four model
@@ -123,8 +145,12 @@ the drafted parts are listed as gaps.
 MODEL_NAME=<model> MODEL_ENDPOINT=<endpoint> MODEL_KEY=<key> MODEL_PROTOCOL=<protocol> \
 node scripts/describe.mjs --job ./job --records ./records --work ./work \
   --codebase <folder> --repository <its address> --commit <digest> [--may-run yes] \
-  [--previous <last record.json>]
+  [--previous <last record.json>] [--repository-root <folder>]
 ```
+
+`--repository-root` names the top of the repository the codebase sits in,
+where the files its tests import from outside the codebase are read; without
+it, the top of the codebase's git checkout is used.
 
 It prints one JSON object with a `reply` field. Exit codes: 0 the record was
 written; 2 usage; 3 the job stops and the reply says what is needed; 1 failed.
@@ -139,7 +165,7 @@ written; 2 usage; 3 the job stops and the reply says what is needed; 1 failed.
 ## Tests
 
 ```sh
-node --test test/*.test.mjs                                   # 63 tests, and one skipped that reads kept examples
+node --test test/*.test.mjs                                   # 71 tests, and one skipped that reads kept examples
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
@@ -149,14 +175,22 @@ package-lock and a test script (`node-app`), one with no tests and no lockfile
 `drift/v2`), and a small agent with no package.json (`news-agent`): an output
 file with a format id, an exported async function its test imports, a
 stop-notice pattern, a fallback order, a cap, request headers and a test that
-imports `../../shared`. The model is stood in by the answers under `test/fixtures/answers/`,
+imports `../../shared`; and a small repository (`repo-agent`) holding an
+agent folder, `agents/page-reader`, and a shared helper outside it that the
+agent's test imports, which imports two more files, one three levels down
+that imports a package: exported constants, a descriptor with an offering,
+an output, a label and a run-config setting, a command with a required and
+an optional flag, a field written only from fixed literals, a reply sentence
+and a regular expression. The model is stood in by the answers under `test/fixtures/answers/`,
 which mix claims that check with ones that cite missing files, lines past the
 end, nothing, or a judgment. `describe.test.mjs` is the role's own check
 (section 40.4); `drift.test.mjs` the drift case; `evidence.test.mjs`,
 `sbom.test.mjs` and `baseline.test.mjs` each step's rules; `surface.test.mjs`
 what is read by rule; `behaviors.test.mjs` the kinds, anchors, quotes, rules
 and drafted schemas; `news-agent.test.mjs` the interfaces, quotes, passes,
-baseline and granularity on the news agent; `run.test.mjs`
+baseline and granularity on the news agent; `complete.test.mjs` the
+constants, declarations, required flags, allowed values, strings, carried
+tests and the completeness check on the repo agent; `run.test.mjs`
 starts the job as the runtime requirements say, from a package laid out the way
 the builder lays it out, against a model stand-in on the machine.
 
@@ -171,6 +205,15 @@ the builder lays it out, against a model stand-in on the machine.
   language the exports, commands, files written and patterns come from the
   model's draft alone, still evidence-checked and quote-checked.
 - A function's throws are read from its own body, not from what it calls.
+- The allowed values of a field are read where the object the field is in is
+  built from literals in the writing file or what it imports; a field whose
+  value comes through another function's return, or from input, has none
+  unless the draft gives them (still checked as literals in the code).
+- A command's required flags are read where its argument loop sets a field
+  and an `if` refuses without it; other ways of reading arguments leave the
+  flags to the draft, and a gap when the draft does not settle them.
+- A support file is read inside the repository the codebase sits in; one a
+  test imports from beyond the repository's top is a gap.
 - The running form of a codebase (a deployed service to observe) is not read;
   behavior seen only at run time is a gap.
 - The bill of materials does not read yarn.lock, pnpm-lock.yaml or the Python

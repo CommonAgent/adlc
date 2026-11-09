@@ -142,7 +142,9 @@ test("the surface of a small codebase: anchors, commands and their flags, outsid
   assert.deepEqual(s.anchors.map((a) => [a.id, a.kind]), [["bin/run.mjs", "command"], ["lib/work.mjs#work", "function"], ["lib/work.mjs#unused", "function"]]);
   assert.deepEqual(s.entries.map((e) => [e.file, e.flags]), [["bin/run.mjs", ["--dry-run", "--loud"]]]);
   assert.ok(!s.flags.some((f) => f.name === "--never"), "a file no command reaches gives no flags");
-  assert.ok(!s.exports.some((e) => e.module === "lib/other.mjs"), "a module nothing imports offers no exports");
+  // 0.3.0: every module's exports are listed (a rebuild exports them too); one nothing imports is no anchor.
+  assert.deepEqual(s.exports.filter((e) => e.module === "lib/other.mjs").map((e) => [e.name, e.imported_by]), [["lonely", []]]);
+  assert.ok(!s.anchors.some((a) => a.module === "lib/other.mjs"), "a module nothing imports has no anchor");
   assert.deepEqual(s.outside, [{ file: "test/work.test.mjs", line: 3, spec: "../../outside/fixture.mjs", resolved: "../outside/fixture.mjs" }]);
   assert.deepEqual(s.exports.find((e) => e.name === "unused").imported_by, ["test/work.test.mjs"]);
 });

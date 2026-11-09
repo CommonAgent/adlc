@@ -118,7 +118,7 @@ test("baseline: with no package.json the node:test files run, the record says it
   assert.equal(tg.test_command.command, "node --test test/read-news.test.mjs test/stop.test.mjs");
   assert.match(tg.test_command.found_by, /no package\.json/);
   assert.deepEqual([tg.baseline.ran, tg.baseline.passed, tg.baseline.failed], [true, 1, 1], tg.baseline.output_tail);
-  const outside = tg.gaps.filter((g) => g.kind === "outside-the-codebase");
+  const outside = tg.gaps.filter((g) => g.kind === "outside-the-codebase" && g.part === "dependencies");
   assert.deepEqual(outside.map((g) => [g.part, g.about, g.evidence]), [["dependencies", "test/read-news.test.mjs imports ../../shared/fake-feed.mjs", [{ file: "test/read-news.test.mjs", line: 3 }]]]);
   assert.match(outside[0].why, /depends on a file outside the codebase's folder/);
 });

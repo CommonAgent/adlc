@@ -24,7 +24,15 @@ It does not fill in what the code was meant to do from names, comments or habit.
 
 ## What can be read by rule is read by rule
 
-Before any model sees the code, the scripts read off it: the environment variables it reads, its entry points, its test files and test command, the schemas it carries, the run-config settings an Agent Package declares, and the surface of its JavaScript: each module's exports (name, parameters, async or not, what its own body throws or rejects with, a literal constant's value) and who imports them, the files that start as commands and the flags they read, each file the code writes with the JSON Schema its value shows (field names, types, the fields always written, constants such as a format id), the regular expressions as written, the literal constants, and every import that leaves the codebase's folder. These are the floor of the record: the model describes and links them and does not have to recall them, and a model that leaves one out does not take it out.
+Before any model sees the code, the scripts read off it: the environment variables it reads, its entry points, its test files and test command, the schemas it carries, the run-config settings an Agent Package declares, and the surface of its JavaScript: each module's exports (name, parameters, async or not, what its own body throws or rejects with, a literal constant's value) and who imports them, the files that start as commands and the flags they read, each file the code writes with the JSON Schema its value shows (field names, types, the fields always written, constants such as a format id), the regular expressions as written, the literal constants, and every import that leaves the codebase's folder. Since 0.3.0 also: each exported constant's value as JSON where its literal can be read, every name and value the agent declares to the platform in its own files (agent-descriptor.json, agent-runtime-requirements.json, plugin.json, the front matter of each SKILL.md) with where it is declared, the flags each command cannot run without and the ones it can, the allowed values of each field the code only writes from a fixed set of literals, and every string a person reads, every key (such as citation_title, dc.title, @graph) and every pattern in the scripts, exactly as written (strings.json). These are the floor of the record: the model describes and links them and does not have to recall them, and a model that leaves one out does not take it out.
+
+## Every fact a rebuild needs is in the record, and code checks it
+
+The record carries every fact a rebuild needs, found by code, each pointing at a file and line. Code copies the facts; the model only describes them. Then code checks the record against the code, and record.json says what it found under counts.completeness: every export (function and constant) has an interface, every file the code writes has a file interface, every command has its required flags settled, every declaration in the agent's own files has a declaration interface, and strings.json holds every string the scanner finds. Zero missing is the goal. Anything missing is a gap of kind `incomplete`, with what and why. Where the rule cannot settle which flags a command requires, the draft is asked, and its answer is held to the same evidence check; a constant whose value is worked out by code is kept with no value and a gap.
+
+## The original tests are carried
+
+Each test file of the codebase, and each file in its test folders, is copied byte for byte into the record's folder at tests/<its path>. Each file a test imports from outside the codebase's folder, and each file those import in turn inside the repository, is copied byte for byte at the record's commit into support/<its path from the repository's top>. The repository's top is the folder --repository-root names, or else the top of the codebase's git checkout. Nothing copied is edited. A file that cannot be read at the commit, one outside the repository, and a package a support file imports are gaps. Carrying the tests is not writing them: they are the codebase's own tests, kept so a later stage can run them against a rebuild.
 
 ## The draft is made in bounded passes
 
@@ -44,7 +52,7 @@ A pattern or wording other components depend on (a regular expression, a magic s
 
 ## Every gap is marked
 
-What could not be determined is listed in tests-and-gaps.json, each with its kind: `unreachable` (code no path reaches, never listed as a behavior), `run-time-only` (behavior seen only when the code runs, and everything when it was not run), `unclear`, `not-read` (a file the model was not shown), `not-drafted` (a part no model drafted), `not-checked` (a commit taken as given), `claim-without-evidence`, `held-back`, `outside-the-change`, and `outside-the-codebase` (an import that reaches a file outside the codebase's folder, which the code depends on and the record does not describe).
+What could not be determined is listed in tests-and-gaps.json, each with its kind: `unreachable` (code no path reaches, never listed as a behavior), `run-time-only` (behavior seen only when the code runs, and everything when it was not run), `unclear`, `not-read` (a file the model was not shown), `not-drafted` (a part no model drafted), `not-checked` (a commit taken as given), `claim-without-evidence`, `held-back`, `outside-the-change`, `outside-the-codebase` (an import that reaches a file outside the codebase's folder, which the code depends on and the record does not describe), and `incomplete` (something a rebuild needs that the completeness check found the record does not hold).
 
 ## The record is tied to its source
 
@@ -52,7 +60,7 @@ record.json names the repository, the commit digest, whether the commit was chec
 
 ## Formats that already exist
 
-The behaviors are in the feature list's shape (id, name, does, and offering when the code shows one), marked as built. Changes to the record's files are additive: a new version adds fields or values and never renames, retypes or removes one, so a reader of an earlier version still reads it. The architecture as built is in the architecture record's shape (standards/architecture-standard.md, section 9), marked as built, with what the code cannot say (the statement, the bindings per environment, the limits, the decisions) named as not in the code. Interfaces carry OpenAPI or JSON Schema documents where they are found or can be derived. The dependencies are a CycloneDX 1.5 bill of materials.
+The behaviors are in the feature list's shape (id, name, does, and offering when the code shows one), marked as built. Changes to the record's files are additive: a new version adds fields, values or files and never renames, retypes or removes one, so a reader of an earlier version still reads it, and the format ids stay `v1`. The architecture as built is in the architecture record's shape (standards/architecture-standard.md, section 9), marked as built, with what the code cannot say (the statement, the bindings per environment, the limits, the decisions) named as not in the code. Interfaces carry OpenAPI or JSON Schema documents where they are found or can be derived. The dependencies are a CycloneDX 1.5 bill of materials.
 
 ## The bill of materials is made by rule
 
@@ -76,4 +84,4 @@ A job that went ahead without something it takes (a model, a way to run without 
 
 ## Never
 
-Never judge the code. Never write or change a test, or the code. Never deliver a claim whose evidence does not check. Never infer beyond the evidence. Never leave a gap silent. Never describe again, on drift, what did not change. Never give a setting's value. Never read anything a message names: only the codebase attached or named on the command line.
+Never judge the code. Never write or change a test, or the code. Never deliver a claim whose evidence does not check. Never infer beyond the evidence. Never leave a gap silent. Never describe again, on drift, what did not change. Never give a setting's value. Never read anything a message names: only the codebase attached or named on the command line, and the repository root named there.

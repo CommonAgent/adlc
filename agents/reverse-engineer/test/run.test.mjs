@@ -113,7 +113,8 @@ test("the run command, from a laid-out package, describes an attached codebase t
     assert.deepEqual([record.commit, record.commit_checked, record.counts.behaviors, record.made_by.version], [cb.commit, true, 3, PLUGIN.version]);
     assert.deepEqual(checkDelivered(r.jobDir), []);
     const pieces = json(join(r.jobDir, "pieces.json"));
-    assert.deepEqual(pieces.map((p) => p.step), ["write-the-record", "draft-from-the-code", "draft-from-the-code", "draft-from-the-code", "list-the-dependencies", "check-the-evidence", "draft-from-the-code"]);
+    assert.deepEqual(pieces.map((p) => p.step), ["write-the-record", "draft-from-the-code", "draft-from-the-code", "draft-from-the-code", "list-the-dependencies", "check-the-evidence", "read-the-codebase", "draft-from-the-code", "read-the-codebase"]);
+    assert.deepEqual(checkDelivered(r.jobDir, { undeclared: true }), [], "the strings and the carried tests are declared outputs too");
     const calls = json(join(r.recordsDir, "calls.json"));
     assert.deepEqual([calls.model, calls.service, calls.made, calls.passes.length], ["stand-in-model", "openai-chat", 3, 3]);
   } finally { await model.close(); }

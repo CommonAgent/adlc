@@ -2,7 +2,47 @@
 
 The record the reverse engineer hands back, file by file. Every file is JSON,
 written with two-space indents and a final newline. The parts are listed in
-the order stages.json (1.4.0) gives them.
+the order stages.json (1.4.0) gives them, and strings.json (0.3.0) after them.
+
+## Changes in 0.3.0, all additive
+
+A round trip on a real agent showed what a rebuild still lost: the reply
+sentence it prints, extra page metadata sources in its code, the label a
+person reads in its descriptor, two exported constants recorded only as
+constants, which command flags are required, and the only values a field
+may take. 0.3.0 makes the record carry every fact a rebuild needs, found by
+code, each pointing at a file and line, and checks that it does.
+
+Every change adds a file, a field or a value. No field was renamed, retyped
+or removed, and every format id stays `v1` (`as-built-record-v1`,
+`as-built-interfaces-v1`, `as-built-tests-and-gaps-v1` and the rest), so a
+reader of 0.2.0's files reads 0.3.0's unchanged and may ignore what it does
+not know. The new part is new, so it starts at `as-built-strings-v1`.
+
+- interfaces.json:
+  - interfaces of kind `constant`: one for every exported constant,
+    `{id, kind: "constant", name, does, module, export, value, imported_by,
+    evidence, read_by_rule: true}`, with `withheld`, `pattern`,
+    `value_made_as` or `from` where they apply (below);
+  - interfaces of kind `declaration`: one for every name and value the agent
+    declares to the platform in its own files, `{id, kind: "declaration",
+    name, does, declared_in, value, evidence, read_by_rule: true}` (below);
+  - a command interface adds `required_flags`, `required_flags_by`,
+    `required_flags_evidence`, `optional_flags` and, while some are not
+    settled, `flags_unsettled`;
+  - a file interface adds `values` and `values_evidence`, and its schema
+    carries `enum` (or `const`) on each field the code only writes from a
+    fixed set of literals;
+  - function interfaces are now made for the exports of every module of the
+    code, not only the ones something imports (the anchors are unchanged);
+    a function re-exported from another module adds `from`.
+- strings.json: a new part, `as-built-strings-v1`.
+- tests-and-gaps.json: adds `carried` and `support`; the gap kinds add
+  `incomplete`. The gap fields are unchanged.
+- record.json: `parts` adds the strings part, `carried_files` is added, and
+  `counts` adds `strings`, `carried` and `completeness`.
+- The record's folder adds `tests/` and `support/`, the carried files.
+- The command line adds `--repository-root <folder>`.
 
 ## Changes in 0.2.0, all additive
 
@@ -86,8 +126,28 @@ The record that ties the parts to their source.
 | `dependencies_changed` | drift, when one did: `{added, removed, changed}` |
 | `schemas` | each schema file delivered, with its digest |
 | `behaviors_index` | each behavior's id, name and the files its evidence names, for the next drift |
-| `counts` | behaviors, interfaces, settings, components, tests, gaps, claims held back, and (0.2.0) `behavior_kinds`: how many behaviors of each kind |
+| `counts` | behaviors, interfaces, settings, components, tests, gaps, claims held back, and (0.2.0) `behavior_kinds`: how many behaviors of each kind; (0.3.0) `strings` (how many strings.json holds), `carried` (how many files are carried) and `completeness` (below) |
+| `carried_files` | 0.3.0: each carried file, `{file, sha256}`, `file` being its path in the record's folder (`tests/...` or `support/...`) |
 | `done` | `true`: every claim delivered was checked, every gap is listed |
+
+### The completeness check (0.3.0)
+
+record.mjs reads the code again, by code, and checks the record against it.
+`counts.completeness` holds one entry per check, each `{found, covered,
+missing}`, and `missing`, the sum:
+
+- `exports`: every export of every module of the code (function, class and
+  constant) has an interface in interfaces.json;
+- `files_written`: every file the code writes has a file interface;
+- `commands_required_flags`: every command has a command interface whose
+  required flags are settled (no `flags_unsettled`);
+- `declarations`: every declaration in the agent's own files has a
+  declaration interface;
+- `strings`: strings.json holds every string, key and pattern the scanner finds.
+
+Zero missing is the goal. Each thing missing is a gap of kind `incomplete`,
+part `completeness`, saying what is missing and why. On drift the check
+covers only what changed.
 
 ## behaviors.json
 
@@ -127,11 +187,13 @@ the environments and bindings, the limits and the decisions.
 `{format: "as-built-interfaces-v1", as_built, interfaces, constants, flags, environment, settings, schemas_found, schemas_derived}`.
 
 Each interface: `{id, kind, name, does, evidence, schema?}`, where kind is
-`http`, `command`, `message`, `file` or `function`, and `schema` names a file
-under `schemas/`. The interfaces read by rule come first, in a fixed order
-(the files written, then the exported functions and classes, then the
-commands), each with `read_by_rule: true`; a drafted interface that matches
-one of them is laid onto it (its `does` and, for a function, `returns`), and
+`http`, `command`, `message`, `file`, `function`, and (0.3.0) `constant` or
+`declaration`, and `schema` names a file under `schemas/`. The interfaces
+read by rule come first, in a fixed order (the files written, then the
+exported functions and classes, then the commands, then the constants, then
+the declarations), each with `read_by_rule: true`; a drafted interface that
+matches one of them is laid onto it (its `does` and, for a function,
+`returns`; for a command, the required flags the rule left unsettled), and
 the other drafted ones follow.
 
 - A file the code writes (0.2.0, kind `file`): `path` (from the literals of
@@ -143,16 +205,78 @@ the other drafted ones follow.
   for a literal such as a format id, `enum` for a choice of literals, and
   `$comment: "value: <expression>"` where the code builds the value elsewhere),
   with the drafted schema filling only those `$comment` parts. A JSON file
-  whose fields neither the rule nor the draft shows is a gap.
+  whose fields neither the rule nor the draft shows is a gap. 0.3.0: a field
+  the code only writes from a fixed set of literals carries `enum` (or
+  `const` for one), and the interface adds `values`, `{"/json/pointer":
+  [allowed values]}` (`*` stands for the items of a list, as in
+  `/stories/*/text_from`), and `values_evidence`, the same pointers to the
+  lines that write them. The values are read by rule from the object literals
+  of the writing file and the files it imports that are shaped like the
+  object the field is in (they share at least half its fields): a literal, a
+  ternary of literals, a const, or a `let` that is only ever given literals
+  (through an `if` and a destructuring such as `[text, from] = [x, "post"]`
+  too). When every such literal gives the field a literal, those are its
+  values. A drafted `enum` the rule cannot read stands, already checked as
+  literals in the code; where the rule reads other values, the rule's stand
+  and the drafted ones it does not read are a gap. A field that is a constant
+  (`const`, such as a format id) is listed in `values` with its one value.
 - An exported function or class (0.2.0, kind `function`): `module`, `export`,
   `params` (as written), `async`, `throws` (sync) or `rejects` (async), each
   `{error, evidence}` for a `throw new X` or `reject(new X)` in its own body,
   `rethrows` for a `throw e`, `imported_by` (the files that import it), and
-  `returns` when the draft says it with evidence. Exports are listed for each
-  module another file imports, the main module, and each command.
+  `returns` when the draft says it with evidence. Exports are listed for
+  every module of the code (0.3.0; 0.2.0 listed them for each module another
+  file imports, the main module, and each command). A re-export takes what
+  the module it names exports, with `from`.
 - A command (0.2.0, kind `command`): `command` (its file) and `flags` (every
   string that is a flag on its own, `--name`, in it and in the files it
-  imports).
+  imports). 0.3.0 adds, read by rule (scripts/flags.mjs):
+  - `required_flags`: the flags it cannot run without: an `if` whose
+    condition has `!args.<field>` as one of its `||` parts, the field being
+    the one the flag's branch of the argument loop sets, and whose branch
+    refuses (throws, exits, sets an exit code, returns `ok: false` or a
+    non-zero `code`);
+  - `optional_flags`: `[{flag, why, evidence}]`, the others the code shows it
+    can do without: the field starts with a value, is a list the flag adds
+    to, falls back (`||`, `??`, `? :`, `&&`), is tested by an `if` that does
+    not refuse, the flag is read and passed over, or the code never reads
+    the flag from its arguments (a word it passes on, such as to git);
+  - `required_flags_evidence`: `[{flag, evidence, drafted?}]`;
+  - `required_flags_by`: `rule`, `draft` or `rule and draft`;
+  - `flags_unsettled`: `[{flag, why}]`, present only while some flag is
+    neither. The draft is then asked, `"required_flags": {"flags": [...],
+    "evidence": [...]}`; with evidence that checks, the drafted flags the
+    command reads become required and the other unsettled ones optional, and
+    `flags_unsettled` goes. A drafted flag the command does not read, or one
+    the rule read as optional, is a gap and does not count. A command whose
+    flags stay unsettled is an `incomplete` gap.
+- A constant (0.3.0, kind `constant`): `module`, `export`, `value` (its
+  value as JSON, read by rule from the literal: strings, numbers, booleans,
+  null, lists and objects of them, templates whose parts are constants,
+  arithmetic on number constants such as `2 * 1024 * 1024`, and names of
+  consts with such values; `new Set([...])` gives the list, with
+  `value_made_as: "new Set"`), `imported_by`, and `pattern: true` for a
+  regular expression (its value is its text, slashes and flags included).
+  Where the value is worked out by code, `value` is `null` and a gap of kind
+  `unclear` says why. A name that says credential gets `value: null` and
+  `withheld` instead, and no gap.
+- A declaration (0.3.0, kind `declaration`): each name and value the agent
+  declares to the platform in its own files at the codebase's top
+  (agent-descriptor.json, agent-runtime-requirements.json, plugin.json) and
+  in the front matter of each `skills/<name>/SKILL.md`: `name`, `declared_in`
+  (the file and the place in it, `agent-descriptor.json
+  offerings[0].outputs[1].name`, or `skills/x/SKILL.md front matter name`),
+  `value` (as JSON) and `evidence` (the line). A list of things that each
+  have an `id`, a `name` with no space, or a `file` (offerings, inputs,
+  outputs, steps, settings, records), and an object keyed by names with a
+  dash or a dot (run commands, skills), give one declaration per thing,
+  named by what it is (`offering read-the-top-stories`, `output stories of
+  read-the-top-stories`, `step read-the-stories of read-the-top-stories`,
+  `setting count`, `run read-the-top-stories`), and one per field of it
+  (`label of setting count`, `kind of output stories of
+  read-the-top-stories`, `command of run read-the-top-stories`). A field
+  whose value holds no object inside an object is one declaration with its
+  value whole (a list of words, `how`, a `range`).
 - `constants`: each exported constant or value of those modules, `{module,
   name, kind, value?, imported_by, evidence}`; a literal's value is given,
   except where the name says credential.
@@ -185,7 +309,7 @@ give the same document.
 
 ## tests-and-gaps.json
 
-`{format: "as-built-tests-and-gaps-v1", as_built, repository, commit, tests, test_command, baseline, gaps}`.
+`{format: "as-built-tests-and-gaps-v1", as_built, repository, commit, tests, test_command, baseline, carried, support, gaps}`.
 
 - `tests`: each test file with its cases (each with its line), the behaviors
   it covers (`covers`), and the evidence for what it covers.
@@ -200,12 +324,74 @@ give the same document.
   `timed_out`, `time_limit_seconds`, `seconds`, `network` (cut off or not,
   in words), `passed`, `failed`, `skipped`, `read_from`, `output_tail`.
 - `behaviors_without_tests` (adoption): the ids no test covers.
+- `carried` (0.3.0): the original tests, copied byte for byte into the
+  record's folder, never edited: `[{file, at, imports}]`. `file` is the test
+  file's path in the codebase and `at` its copy, `tests/<that path>`. Every
+  test file is carried, and every other file in a test folder (`test`,
+  `tests`, `__tests__`, `spec`), the fixtures the tests read. `imports` lists
+  each import of the file that leaves the codebase's folder: `{from, support}`,
+  `from` being the import as written and `support` where its copy is, or
+  `{from, support: null, why}` when it could not be copied (a gap says the
+  same).
+- `support` (0.3.0): each file a carried test imports from outside the
+  codebase's folder, and each file those import in turn, as far as their
+  relative imports go inside the repository: `[{file, at, imported_by,
+  imports}]`. `file` is its path from the repository's top and `at` its
+  copy, `support/<that path>`, so a test placed at `tests/<its path>` beside
+  the codebase finds it where it did. `imports` lists the support file's own
+  imports: `{from, support}` for one copied, `{from, codebase}` for one that
+  lands back in the codebase, `{from, package}` for a package (not node's
+  own, which are not listed), and `{from, support: null, why}` for one that
+  could not be read. The repository's top is the folder `--repository-root`
+  names, or else the top of the git checkout the codebase is in; in a
+  checkout each file is read at the record's commit (`git show`). A file
+  outside the repository, a file that cannot be read, a package a support
+  file imports, and a repository whose top is not known are gaps of kind
+  `outside-the-codebase`; a support file read from a folder with no history
+  is a gap of kind `not-checked`.
 - `gaps`: each `{id, kind, part, about, why, evidence?}`, `G1`, `G2`, ...
   The kinds: `unreachable`, `run-time-only`, `unclear`, `not-read`,
   `not-drafted`, `not-checked`, `claim-without-evidence`, `held-back`,
-  `outside-the-change`, and (0.2.0) `outside-the-codebase`: an import that
+  `outside-the-change`, (0.2.0) `outside-the-codebase`: an import that
   reaches a file outside the codebase's folder (such as `../../shared/x.mjs`),
-  which the code depends on and a copy of the folder alone does not carry.
+  which the code depends on and a copy of the folder alone does not carry,
+  and (0.3.0) `incomplete`: something a rebuild needs that the completeness
+  check found the record does not hold.
+
+## strings.json (0.3.0)
+
+`{format: "as-built-strings-v1", as_built, repository, commit, since?, strings}`.
+
+Every string a person reads, every key and every regular expression in the
+code's scripts (not its tests), found by code (scripts/surface.mjs `stringsOf`, on
+the lexer in scripts/js-source.mjs), never by the model. Each is `{file,
+line, end_line?, kind, text}`:
+
+- `words`: a string literal that has a letter and a space, or is a whole
+  sentence (a capital first and a stop last, such as `Done.`);
+- `template`: a template literal that does, read with its `${...}` parts
+  left out (so `${a}/${b}` is not one);
+- `key`: a string literal with no space, at least three characters, a
+  letter, and one of `_ . : @`, and no `/` (so not a path, an address or a
+  media type): the names other code or data depends on, such as
+  `citation_title`, `dc.title`, `og:title`, `@graph`,
+  `article:published_time`;
+- `pattern`: a regular expression literal.
+
+`text` is exactly as in the source: between the quotes or backticks as
+written, escapes and `${...}` kept, and a pattern with its slashes and flags.
+An import path is not listed, and neither is a bare word with none of
+`_ . : @`, such as a field name. `end_line` is there for a template that runs over more than one line.
+The behaviors still quote the words they depend on; strings.json is the
+whole inventory. On drift it holds the strings on changed lines.
+
+## The carried files (0.3.0)
+
+`tests/<path>` and `support/<path>` in the record's folder, beside the
+parts, each listed in pieces.json (`carried test (tests/...)`, `carried
+support file (support/...)`, kind `application/octet-stream`) and in
+record.json `carried_files` with its digest. On drift only the test files
+that changed are carried.
 
 ## The job's records
 

@@ -1,0 +1,9 @@
+{
+  "format": "agent-runtime-requirements-v1",
+  "run": {
+    "read-the-pages": {
+      "command": ["node", "{home}/{package}/skills/read-the-pages/scripts/read-pages.mjs", "--job", "{job_dir}"],
+      "message_file": "{job_dir}/message.txt"
+    }
+  }
+}
