@@ -1,4 +1,4 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.4.7) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.4.8) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.7 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.7");
+test("the schema is version 0.4.8 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.8");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1324,4 +1324,23 @@ test("back_to_requirements is an action name, acts at Code, and asks for the per
   assert.deepEqual(checkBuild(b, IDS, "b1"), ["body.build.actions[1]: back_to_requirements asks for the person's words (a need of kind words that is not optional)"]);
   b.build.actions[1] = { stage: "requirements", name: "back_to_requirements", label: "Send back to Requirements", needs: [words] };
   assert.deepEqual(checkBuild(b, IDS, "b1"), ["body.build.actions[1]: back_to_requirements acts at Code, not at requirements"]);
+});
+
+// ---------- 0.4.8: the spec ----------
+
+test("0.4.8: a spec artifact carries a SpecSummary, and one without its features is refused", () => {
+  const spec = { id: "spec", stage: "requirements", name: "Spec", by: "spec writer", state: "made", kind: "spec", version: "v1", at: AT,
+    summary: { product: "counter 0.1.0", purpose: "Counts the words in a passage.", features: [{ id: "F1", name: "count words", does: "Counts the words.", requirements: [{ id: "F1.R1", shall: "The agent shall count words split on whitespace.", kind: "behavior" }], acceptance: [{ id: "F1.A1", gherkin: "Scenario: three words\n  Given the passage \"a b c\"\n  When it is counted\n  Then the count is 3" }] }], interfaces: [], constraints: [], open: [] },
+    files: [] };
+  assert.deepEqual(checkArtifacts([spec], IDS), []);
+  const { features, ...bare } = spec.summary;
+  assert.ok(checkArtifacts([{ ...spec, summary: bare }], IDS).length > 0);
+});
+
+test("0.4.8: the spec schema (spec-v1) reuses ISO/IEC/IEEE 29148's verification methods and Gherkin scenarios", () => {
+  const s = JSON.parse(readFileSync(new URL("../spec.schema.json", import.meta.url), "utf8"));
+  assert.equal(s.properties.format.const, "spec-v1");
+  assert.deepEqual(s.$defs.Requirement.properties.verify.enum, ["inspection", "analysis", "demonstration", "test"]);
+  assert.match(s.$defs.Acceptance.properties.gherkin.pattern, /Scenario:/);
+  assert.deepEqual(s.$defs.Feature.required, ["id", "name", "does", "requirements", "acceptance"]);
 });

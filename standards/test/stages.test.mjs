@@ -244,9 +244,9 @@ test("it hands back the as-built record in five parts, tied to its source, and i
 test("the stages after it may be given parts of the record, and each keeps the words it had", () => {
   const given = {
     requirements: ["somebody's account of what they want, with whatever they have", /the as-built record/],
-    architecture: ["the statement of the job, and the organization's stack", /part 2 of the as-built record/],
+    architecture: ["the spec, and the organization's stack", /part 2 of the as-built record/],
     impact: ["the change, the running version, and what depends on it", /parts 2 and 4 of the as-built record/],
-    test: ["the statement of the job", /parts 1 and 5 of the as-built record\), from which it writes characterization tests that pin today's behavior until Requirements says otherwise/],
+    test: ["the spec, and the agent's own files from Design", /parts 1 and 5 of the as-built record\), from which it writes characterization tests that pin today's behavior until Requirements says otherwise/],
     security: ["the architecture record and the design, the programs, and everything the package will ask for", /parts 2 and 4 of the as-built record/],
   };
   for (const [id, [before, added]] of Object.entries(given)) {
