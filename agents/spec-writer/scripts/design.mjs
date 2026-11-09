@@ -287,6 +287,7 @@ export const PROSE_FINDING = /\bno (?:when|good|empty|does)\b|\b(?:when|good|emp
  *  the person sent back (asked.mjs reads the files as a draft), or an
  *  earlier job's draft.json. Null when none came. */
 export function earlierDraftOf(asked = null) {
+  if (!asked?.revision) return null;
   for (const a of list(asked?.attached)) {
     if (a?.missing || typeof a?.text !== "string" || !["a spec", "an agent's own file", "data"].includes(a.kind)) continue;
     try { const d = JSON.parse(a.text); if (isObj(d) && Array.isArray(d.jobs) && d.jobs.length && d.jobs.every((j) => isObj(j) && trim(j.slug))) return d; } catch { /* not a draft */ }
