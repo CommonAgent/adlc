@@ -1,4 +1,4 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.4.4) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.4.5) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments, stageCadences, checkFeatures, checkFeature, checkFeatureDecision, featuresOfTest, FEATURE_COLUMNS } from "../lifecycle-api-check.mjs";
+import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments, stageCadences, checkFeatures, checkFeature, checkFeatureDecision, featuresOfTest, FEATURE_COLUMNS, checkFeatureApproveAll } from "../lifecycle-api-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
@@ -57,8 +57,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.4 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.4");
+test("the schema is version 0.4.5 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.5");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1134,4 +1134,77 @@ test("a retired product runs nothing and none of its when-needed actions can run
     `body.when_needed[${i}]: the product is retired, so rollback cannot run`,
   ]);
   assert.deepEqual(checkProduct({ ...withActions(), running: { build: "b7", version: "0.7.0" } }, "word-tally"), ["body.running.build: b7 is not one of the product's builds"]);
+});
+
+// ---------- 0.4.5: features at every stage, and features listed after the build ----------
+
+test("the schema names backfill and approve_all, and the shapes of a stage's features", () => {
+  const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
+  for (const o of ["POST /builds/{id}/features/backfill", "POST /builds/{id}/features/approve_all"]) assert.ok(ops.includes(o), o);
+  assert.deepEqual(SCHEMA.$defs.FeatureSliceItem.properties.state.enum, ["done", "to_do", "failing", "stale", "findings"]);
+  assert.deepEqual(validate("FeatureApproveAllRequest", { proposals: [] }), ["body.proposals: has 0 items, fewer than 1"]);
+  assert.deepEqual(validate("FeatureApproveAllRequest", { proposals: ["fp1"], message: "t2" }), []);
+});
+
+const slice = (stage, items, extra = {}) => ({ stage, covered: items.filter((x) => x.state === "done").length, total: items.length, words: `${items.filter((x) => x.state === "done").length} of ${items.length} features`, items, ...extra });
+
+test("a build's stage counts its features, and its workspace lists them, one line each", () => {
+  const b = withArtifacts();
+  const test0 = b.build.stages.find((s) => s.stage === "code");
+  const at = b.build.stages.indexOf(test0);
+  test0.features = { covered: 1, total: 2, words: "1 of 2 features pass" };
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  test0.features = { covered: 3, total: 2, words: "3 of 2" };
+  assert.deepEqual(checkBuild(b, IDS, "b1"), [`body.build.stages[${at}].features: covers 3 of 2 features, more than it has`]);
+
+  const ws = (features) => ({ stage: "test", state: "done", holder: null, given: [], outputs: [], done_when: "x", features });
+  const good = slice("test", [{ id: "F1", name: "Count words", state: "done", words: "2 tests", tests: ["counts", "[F1] count"] }, { id: "F2", name: "Refuse images", state: "to_do", words: "No test yet: to do", tests: [] }], { untied: { words: "1 test not tied to a feature", items: ["the process contract requires --job"] } });
+  assert.deepEqual(checkStageWorkspace(ws(good), IDS, "test"), []);
+  const bad = slice("code", [{ id: "F1", name: "x", state: "to_do", words: "x", tests: ["a"] }, { id: "F1", name: "x", state: "done", words: "x", tests: [] }]);
+  bad.stage = "test";
+  assert.deepEqual(checkStageWorkspace(ws(bad), IDS, "test"), [
+    "body.features.items: F1 is listed more than once",
+    "body.features.items[0]: F1 has tests, so it is not to do",
+    "body.features.items[1]: F1 has no test, so it is to do",
+  ]);
+  assert.deepEqual(checkStageWorkspace({ ...ws(good), stage: "code" }, IDS, "code"), ['body.features.stage: is "test", not code']);
+  const code = slice("code", [{ id: "F1", name: "x", state: "done", words: "1 of 2 passing", passed: 1, of: 2 }, { id: "F2", name: "y", state: "failing", words: "3 of 2", passed: 3, of: 2 }]);
+  assert.deepEqual(checkStageWorkspace({ ...ws(code), stage: "code" }, IDS, "code"), [
+    "body.features.items[0]: is done, but 1 of its tests failed",
+    "body.features.items[1]: F2 passed 3 of 2 tests, more than it has",
+    "body.features.items[1]: is failing, but every test checking F2 passed",
+  ]);
+  const review = slice("review", [{ id: "F1", name: "x", state: "findings", words: "1 finding open", findings: [{ place: "test/count.test.mjs:12", claim: "x", open: false }] }]);
+  assert.deepEqual(checkStageWorkspace({ ...ws(review), stage: "review" }, IDS, "review"), ["body.features.items[0]: has findings open, and names none"]);
+  // The workspace's count is the build's stage's.
+  const build1 = withArtifacts();
+  build1.build.stages.find((s) => s.stage === "test").features = { covered: 2, total: 2, words: "2 of 2 features" };
+  assert.deepEqual(checkStageWorkspace(ws(good), IDS, "test", build1), ['body.features.words: is "1 of 2 features", but the build\'s stage says "2 of 2 features"']);
+});
+
+test("a matrix row carries its pending proposal, where it came from and its tests; unmapped tests check no feature; backfill only with no features", () => {
+  const m = matrix([row("F1", { tests: ["[F1] count"], from: { build: "b1", stage: "requirements", message: "t2" } }), row("F2", { state: "proposed", cells: { ...row("F2").cells, spec: cell("missing", "Proposed, not approved") }, pending: proposal() })]);
+  m.unmapped = ["the process contract requires --job"];
+  assert.deepEqual(checkFeatures(m, "b1"), []);
+  m.unmapped.push("[F1] count");
+  m.features[1].pending = proposal({ feature: "F3" });
+  m.backfill = { offered: true, words: "The spec writer lists them." };
+  assert.deepEqual(checkFeatures(m, "b1"), [
+    'body.unmapped: "[F1] count" checks F1, so it is not unmapped',
+    "body.features[1].pending: is a proposal of F3, not F2",
+    "body.backfill: is offered, but the product has features already",
+  ]);
+  assert.deepEqual(checkFeatures({ ...matrix([]), backfill: { offered: true, words: "The spec writer lists the features of the statement of the job v4." }, words: "No features yet." }), []);
+});
+
+test("approve_all lists every proposal approved, each approved, and names the statement's one new version", () => {
+  const entry = (id) => ({ id, name: id, does: "x", offering: "Count", state: "approved", backlog: false });
+  const done = (id, f) => proposal({ proposal: id, feature: f, state: "approved", answered: { decision: "approved", by: "You", at: T2 }, tests: ["counts"] });
+  assert.deepEqual(checkFeatureApproveAll({ approved: [done("fp1", "F1"), done("fp2", "F2")], features: [entry("F1"), entry("F2")], statement: "v5" }, ["fp1", "fp2"]), []);
+  assert.deepEqual(checkFeatureApproveAll({ approved: [done("fp1", "F1"), proposal({ proposal: "fp3", feature: "F3" })], features: [{ ...entry("F1"), state: "proposed" }] }, ["fp1", "fp2"]), [
+    "body.approved[1].state: is open, after approve_all",
+    "body.approved: does not list the proposal fp2 it was asked to approve",
+    "body.features[0].state: F1 was approved, and is not",
+    "body.statement: approving gives the statement of the job a new version, and the answer does not name it",
+  ]);
 });
