@@ -23,7 +23,7 @@
 // before the next statement there, with any comment lines just above it.
 //
 //   needs: node >= 22
-//   import { pinFindings, asyncThrowsFindings, namedTestsIn, restoreUnnamed } from "./suite-rules.mjs"
+//   import { pinFindings, asyncThrowsFindings, namedTestsIn, restoreUnnamed, scenarioIdsIn } from "./suite-rules.mjs"
 
 const trim = (s) => String(s ?? "").trim();
 const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
@@ -173,23 +173,27 @@ export function citedLines(words, path) {
 /** Which tests of one file the person's words name, given that the words
  *  name the file (by its name or a test's name; see namedForRevision). A test
  *  is named by its own name written out (12 characters or more), by a line
- *  of it the words cite, or by a phrase the words quote that appears in that
+ *  of it the words cite, by a phrase the words quote that appears in that
  *  test and in no other test of the file (an assertion copied into the
- *  words). When the words name the file and none of its tests, every test in
- *  it is named: the whole file was sent back. Returns { all, names }. */
+ *  words), or by the spec's id for an acceptance scenario its name opens
+ *  with ("F1.A2" names "[F1.A2] ...", test-writer 0.9.0). When the words name
+ *  the file and none of its tests, every test in it is named: the whole file
+ *  was sent back. Returns { all, names }. */
 export function namedTestsIn(file, words = "") {
   const text = String(words ?? "");
   const chunks = chunksOf(file?.text);
   const tests = chunks.filter((c) => c.test);
   const lines = citedLines(text, file?.path ?? "");
   const phrases = quotedPhrases(text);
+  const scenarios = scenarioIdsIn(text);
   const names = new Set();
   for (const c of tests) {
     const byName = c.names.some((n) => n.length >= 12 && text.includes(n));
     let byLine = false;
     for (const n of lines) if (n >= c.start && n <= c.end) byLine = true;
     const byPhrase = phrases.some((p) => c.text.includes(p) && tests.filter((o) => o.text.includes(p)).length === 1);
-    if (byName || byLine || byPhrase) c.names.forEach((n) => names.add(n));
+    const byScenario = c.names.some((n) => namedByScenario(n, scenarios));
+    if (byName || byLine || byPhrase || byScenario) c.names.forEach((n) => names.add(n));
   }
   return { all: names.size === 0, names };
 }
@@ -442,10 +446,26 @@ export function numbersWritten(code = "") {
 const carriesPhrase = (code, phrase) => code.includes(phrase) || code.includes(escapeRe(phrase))
   || code.includes(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
-/** The ids a test's name opens with, "[F3, F5] ..." giving F3 and F5. */
+/** The feature ids a test's name opens with, "[F3, F5] ..." giving F3 and
+ *  F5. A spec's scenario or requirement id counts for its feature
+ *  (test-writer 0.9.0): "[F1.A2] ..." gives F1. */
 export const featureIdsOf = (name) => {
   const m = /^\s*\[([^\]]+)\]/.exec(String(name ?? ""));
-  return m ? m[1].split(/[,\s]+/).filter((x) => /^F\d+$/.test(x)) : [];
+  if (!m) return [];
+  return [...new Set(m[1].split(/[,\s]+/).map((x) => /^(F\d+)(?:\.[AR]\d+)?$/.exec(x)?.[1]).filter(Boolean))];
+};
+
+/** The acceptance scenario ids a person's words name, "F1.A2" (test-writer
+ *  0.9.0). An id is whole: F1.A1 is not named by F1.A10. */
+export const scenarioIdsIn = (words) => [...new Set([...String(words ?? "").matchAll(/(?<![\w.])F\d+\.A\d+(?![\w])/g)].map((m) => m[0]))];
+
+/** Whether a test name opens with one of these scenario ids in square
+ *  brackets. */
+export const namedByScenario = (name, ids) => {
+  if (!ids.length) return false;
+  const m = /^\s*((?:\[[^\]]+\]\s*)+)/.exec(String(name ?? ""));
+  if (!m) return false;
+  return [...m[1].matchAll(/\[([^\]]+)\]/g)].flatMap((x) => x[1].split(/[,\s]+/)).some((x) => ids.includes(x));
 };
 
 /** Each number, and each word or pattern quoted, that a feature the message

@@ -59,6 +59,23 @@
 // command line (technical debt 657). It runs on its own; the model's tests
 // call nothing in it.
 //
+// The spec (spec-v1, stages.json 1.6.0) is what the suite is written from
+// (test-writer 0.9.0). SPEC_V1 names it: the analysis Requirements hands
+// back, with each feature's requirements (the exact words, patterns and
+// numbers each fixes), its acceptance scenarios in Gherkin, and the
+// interfaces that must be kept. It goes to the model whole, in a section of
+// its own, ahead of what the agent's own files declare. The suite is then
+// held to it by code (spec-rules.mjs): every acceptance scenario has a test
+// named with its id, "[F1.A1] ...", every exact entry of a requirement
+// verified by test is carried by a test named for its feature, and every kept
+// file or message with a schema is held by some test. A fifth standard file
+// is made from it with no model, test/kept-interfaces.test.mjs
+// (kept-interfaces.mjs): a kept function is exported under its name from its
+// module, async as its signature says; a kept command accepts its flags; and
+// what a job writes to a kept file is held to its schema. Without SPEC_V1 the
+// suite is written from the agent's files alone, as before, and the job says
+// it went without the spec.
+//
 // Two things change the ask. EXISTING names a folder holding the suite the
 // package already has (test/*.test.mjs): it goes to the model whole, the
 // answer may only add new files, and the kept files are never rewritten. And
@@ -70,8 +87,8 @@
 //   where the endpoint asks for one, for the text-reasoning model
 //   DECLARED=<declared.json> SPEC=<the agent's folder, or a spec.json> RECORDS=<records folder> WORK=<work folder>
 //   [EXISTING=<folder holding test/>] [ASKED_TEXT=<the message, as a file>] [REVISE=1]
-//   [DEPENDS=<folder holding scripts/ the change depends on>]
-//   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] node write-suite.mjs
+//   [DEPENDS=<folder holding scripts/ the change depends on>] [SPEC_V1=<the spec, spec-v1 JSON>]
+//   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] [KEPT_TEST=<master copy>] node write-suite.mjs
 //
 // The model is reached through the shared model caller (model-caller.mjs,
 // Common Agent 12.4.1) and nothing else: which model, where it is, the
@@ -97,7 +114,9 @@ import { standInChecks, suiteFiles } from "./check-suite.mjs";
 import { note } from "./went-without.mjs";
 import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, loadSpec } from "./agent-folder.mjs";
 import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
-import { asyncThrowsFindings, namedTestsIn, pinFindings, restoreNotes, restoreUnnamed } from "./suite-rules.mjs";
+import { asyncThrowsFindings, namedByScenario, namedTestsIn, pinFindings, restoreNotes, restoreUnnamed, scenarioIdsIn } from "./suite-rules.mjs";
+import { isSpecV1, keptOf, scenariosOf, specFindings, testedRequirements } from "./spec-rules.mjs";
+import { keptInterfacesTest } from "./kept-interfaces.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -374,20 +393,24 @@ export function keepUnnamed(files = [], existing = [], revise = [], asked = "") 
 }
 
 /** The standard checks the test writer adds itself: never revised by the model. */
-const STANDARD_NAMES = ["delivered-formats.test.mjs", "records-per-job.test.mjs", "worked-values.test.mjs", "printed-reply.test.mjs"];
+const STANDARD_NAMES = ["delivered-formats.test.mjs", "records-per-job.test.mjs", "worked-values.test.mjs", "printed-reply.test.mjs", "kept-interfaces.test.mjs"];
 
 /** The files of a suite a revision names, by file name (with or without
- *  test/) or by the name of a test in them. The standard checks are the test
- *  writer's own and never named. A word that is part of a name is not one. */
+ *  test/), by the name of a test in them, or by the spec's id for an
+ *  acceptance scenario a test in them is named with ("F1.A2", test-writer
+ *  0.9.0). The standard checks are the test writer's own and never named. A
+ *  word that is part of a name is not one. */
 export function namedForRevision(existing = [], asked = "") {
   const text = String(asked ?? "");
+  const scenarios = scenarioIdsIn(text);
   const out = [];
   for (const f of existing) {
     const name = String(f.path).split("/").pop();
     if (STANDARD_NAMES.includes(name)) continue;
     const byName = new RegExp(`(^|[^A-Za-z0-9._-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9_-])`).test(text);
     const byTest = testNamesOf(f.text).some((n) => n.length >= 12 && text.includes(n));
-    if (byName || byTest) out.push(f.path);
+    const byScenario = testNamesOf(f.text).some((n) => namedByScenario(n, scenarios));
+    if (byName || byTest || byScenario) out.push(f.path);
   }
   return out;
 }
@@ -527,6 +550,62 @@ every offering listed is offered, and the descriptor has no \`offered\`,
 against these files before any script exists, and the suite goes back if one
 does not.`;
 
+/** What is said with the spec (spec-v1), the analysis the suite is written
+ *  from (test-writer 0.9.0). The kept-interfaces paragraph is said only when
+ *  the spec keeps an interface, since only then does the file exist. */
+export function specInstruction(spec = null) {
+  const kept = keptOf(spec).length > 0;
+  return `This is the spec (spec-v1), given whole: what the product must do and how
+anyone can tell that it does. Write the suite from it. The agent's own files,
+further down, say how the package is laid out (its scripts, the command
+lines, its records and declared outputs); the spec says what those scripts
+must do, and where the two differ, the spec governs what a test asserts.
+
+Write at least one test for every acceptance scenario (features[].acceptance),
+named with the scenario's id in square brackets at the start and then a
+lowercase sentence: "[F1.A1] a points line is read by its pattern". A test
+for two scenarios carries both ids: "[F1.A1, F1.A2] ...". Keep the F number in
+the name: the build maps each test to its feature by it. Each scenario's test
+follows its Given, When and Then in that order and checks every requirement
+its checks list names, as that requirement's shall says.
+
+Every requirement whose verify is test is checked by a test named for its
+feature, and each entry of its exact is written in that test as it stands:
+words byte for byte, a pattern as the same pattern (a regular expression
+literal or a string with the same characters), a number as the number (a
+time limit in seconds may be written in milliseconds). A refusal's words, a
+reply's wording and a pattern the product must recognize are asserted
+exactly, never paraphrased. A constraint (C1, C2, ...) whose verify is test
+is checked by a test named "[C1] ...". The test writer sends back each
+scenario no test is named for and each exact entry no test of its feature
+carries. A requirement verified by inspection, analysis or demonstration
+needs no test.
+
+The inputs and outputs of a feature carry JSON Schemas: build each test's
+input to fit its schema, and assert what comes out against its schema. Never
+invent a name, an address, a number or a word the spec does not give; where
+the spec leaves a question open (open), test around it and say so in NOTES.${kept ? `
+
+An interface with keep true must be kept exactly as the spec gives it: import
+a kept function under its name from its module and call it as its signature
+says (await it when it is async), and run a kept command with its flags as
+given. The test writer adds one more file itself, made from the spec:
+test/kept-interfaces.test.mjs. It checks that each kept function is exported
+as its signature says and that each kept command accepts its flags, and it
+exports checkKept(jobDir, { expect: [ids] }) and keptProblems(id, value). Do
+not write it and do not answer with it. In each test that runs a job that
+writes a kept file, import { checkKept } from "./kept-interfaces.test.mjs" and
+assert checkKept(jobDir, { expect: ["<the file's id>"] }) deep-equals []; for
+a kept message, assert keptProblems("<its id>", value) deep-equals [].` : ""}`;
+}
+
+/** What is said of the reading of the agent's files when the spec came too:
+ *  the same words as AGENT_FILES_INSTRUCTION, naming that reading for what it
+ *  is. */
+export const agentFilesInstruction = (withSpec = false) => (withSpec
+  ? AGENT_FILES_INSTRUCTION.replace("The spec above is a reading of these files", "WHAT THE AGENT'S FILES DECLARE, above, is a reading of these files")
+  : AGENT_FILES_INSTRUCTION);
+
 /** The agent's own files a declaration test reads, as {path, text}: the
  *  ones its folder has, and none made up. */
 export function agentFilesOf(folder) {
@@ -537,12 +616,16 @@ export function agentFilesOf(folder) {
 
 /** The parts of the request, in order, as text. Pure and exported so the
  *  whole prompt can be read in a test rather than inferred from a fixture. */
-export function requestParts({ spec = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], revise = [], part = null, dependencies = [], agentFiles = [] } = {}) {
+export function requestParts({ spec = null, specV1 = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], revise = [], part = null, dependencies = [], agentFiles = [] } = {}) {
   const parts = [INSTRUCTION];
   if (trim(asked)) parts.push(`--- WHAT THEY ASKED FOR ---\n${trim(asked)}`);
-  parts.push(`--- THE SPEC ---\n${spec ? JSON.stringify(spec, null, 2) : "(no spec)"}`);
+  // The spec (spec-v1), whole and in its own section, ahead of the reading of
+  // the agent's files, which is then named for what it is (test-writer 0.9.0).
+  const withSpec = isSpecV1(specV1);
+  if (withSpec) parts.push(`--- THE SPEC ---\n${specInstruction(specV1)}\n\n${JSON.stringify(specV1, null, 2)}`);
+  parts.push(`--- ${withSpec ? "WHAT THE AGENT'S FILES DECLARE" : "THE SPEC"} ---\n${spec ? JSON.stringify(spec, null, 2) : "(no spec)"}`);
   if (agentFiles.length) {
-    parts.push(`--- THE AGENT'S OWN FILES ---\n${AGENT_FILES_INSTRUCTION}\n\n${agentFiles.map((f) =>
+    parts.push(`--- THE AGENT'S OWN FILES ---\n${agentFilesInstruction(withSpec)}\n\n${agentFiles.map((f) =>
       `=== ${f.path} ===\n${f.text}${String(f.text).endsWith("\n") ? "" : "\n"}=== end of ${f.path} ===`).join("\n\n")}`);
   }
   const commands = (declared?.jobs ?? []).flatMap((j) => (j.commands ?? []).map((c) => ({ job: j.slug, ...c })));
@@ -678,14 +761,26 @@ export function replyTestAt(env = {}, here = HERE) {
   ]);
 }
 
+/** The standard check that each interface the spec keeps is kept (test-writer
+ *  0.9.0), and where the master copy it is made from is kept, the same way as
+ *  the others'. Unlike them it is made per spec: kept-interfaces.mjs fills in
+ *  the spec's kept interfaces, so a spec that keeps none gives no file. */
+export const KEPT_TEST = "test/kept-interfaces.test.mjs";
+export function keptTestAt(env = {}, here = HERE) {
+  return firstOf(trim(env.KEPT_TEST) ? [trim(env.KEPT_TEST)] : [
+    join(here, "..", "references", "kept-interfaces.test.mjs"),
+    join(here, "..", "..", "test-writer", "references", "kept-interfaces.test.mjs"),
+  ]);
+}
+
 /** The files the test writer adds to every suite, by path. */
-export const STANDARD_TESTS = [FORMAT_TEST, RECORDS_TEST, WORKED_TEST, REPLY_TEST];
+export const STANDARD_TESTS = [FORMAT_TEST, RECORDS_TEST, WORKED_TEST, REPLY_TEST, KEPT_TEST];
 
 /** The suite with the standard checks in it: each added unless the suite
  *  has a file at its path already, and none added whose text is empty. */
-export function withStandardTests(files = [], { formatTest = "", recordsTest = "", workedTest = "", replyTest = "" } = {}) {
+export function withStandardTests(files = [], { formatTest = "", recordsTest = "", workedTest = "", replyTest = "", keptTest = "" } = {}) {
   let out = files;
-  for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest], [REPLY_TEST, replyTest]]) {
+  for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest], [REPLY_TEST, replyTest], [KEPT_TEST, keptTest]]) {
     if (trim(text) && !out.some((f) => f.path === path)) out = [...out, { path, text }];
   }
   return out;
@@ -921,7 +1016,7 @@ export function importFindings(files = [], dependencies = []) {
   return out;
 }
 
-export function staticFindings(files = [], declared = null, { existing = [], revise = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [], fresh = null, pins = null } = {}) {
+export function staticFindings(files = [], declared = null, { existing = [], revise = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [], fresh = null, pins = null, specV1 = null, specCheck = false } = {}) {
   const out = [];
   if (!files.length) return [revise.length ? `the answer changes none of the tests the words name in the files it was sent back for: ${revise.join(", ")}; the answer rewrites none of the files it was sent back for, so change those tests, and only those, and answer with each file whole under its own name` : "no test file came back"];
   // The format check and the records check are the test writer's own files,
@@ -980,6 +1075,11 @@ export function staticFindings(files = [], declared = null, { existing = [], rev
   // Every number and quoted word a feature or a refusal states, over a
   // whole new suite: a suite added to or revised keeps what it had.
   if (pins) out.push(...pinFindings(whole, { words: pins.words, declared, skip: STANDARD_TESTS }));
+  // Written from the spec (test-writer 0.9.0): every acceptance scenario has
+  // a test named with its id, every exact entry of a requirement verified by
+  // test is carried by a test of its feature, and every kept file or message
+  // with a schema is held by some test. Over the suite as it will stand.
+  if (specCheck) out.push(...specFindings(whole, specV1, { skip: STANDARD_TESTS }));
   const all = whole.map((f) => f.text).join("\n");
   for (const s of named) {
     const name = String(s).split("/").pop();
@@ -1056,6 +1156,11 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
       literalCheck: Boolean(trim(opts.workedTest)),
       notes: last.notes,
       dependencies: dependenciesFor(opts),
+      // Held to the spec when one came: a new suite and a suite being added
+      // to, whole in one ask (a suite in parts once all its parts are in);
+      // never a revision, which changes only the tests it names.
+      specV1: opts.specV1 ?? null,
+      specCheck: isSpecV1(opts.specV1) && !opts.part && !(opts.revise ?? []).length,
     });
     standIns = null;
     if (!findings.length && run) {
@@ -1123,6 +1228,7 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
   if (declaresPerJobRecords(opts.declared) && !callsRecordsCheck(files)) findings.push(`the whole suite: ${NO_RECORDS_CHECK}`);
   if (trim(opts.workedTest) && !callsWorked(files) && !saysNoWorkedValues(notes.join("\n"))) findings.push(`the whole suite: ${NO_WORKED_VALUES}`);
   for (const f of pinFindings(files, { words: opts.asked ?? "", declared: opts.declared, skip: STANDARD_TESTS })) findings.push(`the whole suite: ${f}`);
+  for (const f of specFindings(files, opts.specV1, { skip: STANDARD_TESTS })) findings.push(`the whole suite: ${f}`);
   const standIns = run ? await run(withStandardTests(files, opts)) : null;
   if (standIns) for (const f of standInFindings(standIns)) findings.push(`the whole suite: ${f}`);
   return { files, could_not: couldNot, notes: notes.join("\n"), findings, stand_ins: standIns, calls, tried_again: triedAgain, parts };
@@ -1198,6 +1304,30 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     for (const [what, at] of wanted) {
       if (!at) note(RECORDS, { wanted: what, did: "asked for the suite without it, from the spec and the instruction alone" });
     }
+    // The spec (spec-v1) the suite is written from (test-writer 0.9.0). A
+    // build before stages.json 1.6.0 sends none, and then the suite is
+    // written from the agent's own files alone, said as what the job went
+    // without.
+    let specV1 = null;
+    if (trim(env.SPEC_V1)) {
+      try { specV1 = JSON.parse(readFileSync(trim(env.SPEC_V1), "utf8")); } catch { specV1 = null; }
+      if (!isSpecV1(specV1)) {
+        specV1 = null;
+        note(RECORDS, { wanted: "the spec (spec-v1)", did: "wrote the suite from the agent's own files alone", why: `${trim(env.SPEC_V1)} is not a spec-v1 document with features` });
+      }
+    } else {
+      note(RECORDS, { wanted: "the spec (spec-v1), which Requirements hands back", did: "wrote the suite from the agent's own files alone, with no acceptance scenario, exact requirement or kept interface to hold it to" });
+    }
+    // The kept-interfaces check, made from the spec by code: no file when the
+    // spec keeps no interface, and no suite when the master copy is missing
+    // and the spec keeps one.
+    let kept = null;
+    if (specV1 && keptOf(specV1).length) {
+      const master = read(keptTestAt(env));
+      if (!trim(master)) throw new Error(`the standard kept-interfaces check ${KEPT_TEST} is not among this package's references, so no suite is written without it`);
+      kept = keptInterfacesTest(specV1, master);
+    }
+    const keptTest = kept?.text ?? "";
     // What each call used, kept as the calls are made so the record can say
     // which model answered. The service reports tokens and not money, and a
     // price table would name models, so no cost is stated.
@@ -1218,8 +1348,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       process.exit(0);
     }
     const out = await askInParts({
-      call, declared, spec, existing, dependencies, revise,
+      call, declared, spec, specV1, existing, dependencies, revise,
       asked,
+      keptTest,
       run: async (files) => standInChecks({ spec, files, folder: statSync(SPEC).isDirectory() ? SPEC : null }),
       agentFiles: statSync(SPEC).isDirectory() ? agentFilesOf(SPEC) : [],
       reference: read(referenceAt(env)),
@@ -1236,12 +1367,17 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // older copy gets the current one; a copy that is the same bytes is left
     // as it is.
     const generated = [];
-    for (const [path, text] of [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest], [REPLY_TEST, replyTest]]) {
+    const standard = [[FORMAT_TEST, formatTest], [RECORDS_TEST, recordsTest], [WORKED_TEST, workedTest], [REPLY_TEST, replyTest]];
+    if (trim(keptTest)) standard.push([KEPT_TEST, keptTest]);
+    for (const [path, text] of standard) {
       const refreshed = refreshStandardTest(existing, path, text);
       existing.splice(0, existing.length, ...refreshed.existing);
       generated.push(...refreshed.generated);
     }
     out.files = [...out.files.filter((f) => !STANDARD_TESTS.includes(f.path)), ...generated];
+    // What the kept-interfaces check could not hold is said beside the suite,
+    // with what the model could not test.
+    if (kept?.could_not?.length) out.could_not = [...(out.could_not ?? []), ...kept.could_not];
     // A revision delivers the named files changed in place and nothing under
     // a new name; one that changed none of them is refused (AgentMesh debt 665).
     if (revise.length) {
@@ -1272,6 +1408,14 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       ...(generated.length ? { generated: generated.map((f) => f.path) } : {}),
       ...(out.parts ? { parts: out.parts } : {}),
       ...(out.restored?.length ? { restored: out.restored } : {}),
+      // The spec the suite was written from (test-writer 0.9.0).
+      ...(specV1 ? { spec: {
+        product: specV1.product?.name ?? null, version: specV1.product?.version ?? null,
+        scenarios: scenariosOf(specV1).map((s) => s.id),
+        tested_requirements: testedRequirements(specV1).map((r) => r.id),
+        kept: keptOf(specV1).map((i) => i.id),
+        ...(kept ? { kept_tests: kept.tests } : {}),
+      } } : {}),
       could_not: out.could_not, notes: out.notes, findings: out.findings, stand_ins: out.stand_ins,
     }, null, 2) + "\n");
     writeFileSync(join(RECORDS, "calls.json"), JSON.stringify({

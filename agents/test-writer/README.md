@@ -14,6 +14,42 @@ Writing the suite first, by something that will not write the code, is what
 turns the Code stage into a stage with an input, an output and a check the code
 writer does not control.
 
+## Written from the spec
+
+The spec is what Requirements hands back (spec-v1,
+[standards/spec.schema.json](../../standards/spec.schema.json)): each feature
+with its requirements and the exact words, patterns and numbers each fixes,
+acceptance scenarios in Gherkin, the interfaces that must be kept, and the
+constraints. The job command finds it among the attachments by its format,
+under whatever name it came, and the writing step gives it to the model whole,
+in a section of its own, ahead of what the agent's own files declare. The
+agent's own files still come (from Design): they name the scripts, the command
+lines and the records the tests run.
+
+Three checks hold the suite to the spec, with no model, and go back to the
+model once, as findings (`scripts/spec-rules.mjs`):
+
+- every acceptance scenario has a test named with its id in square brackets,
+  `[F1.A1] ...` (Product Factory maps tests to features by the F number);
+- every entry of `exact` of a requirement whose verify is `test` is carried
+  by a test named for its feature: words and patterns byte for byte, a number
+  as the number;
+- every kept file or message with a schema is held by a test, with
+  `checkKept` or `keptProblems`.
+
+A fifth standard file, `test/kept-interfaces.test.mjs`, is made from the spec
+by code (`scripts/kept-interfaces.mjs`, from the master copy in references/),
+for every interface with `keep: true`: a function is exported under that name
+from that module, async as its signature says; a command accepts its flags;
+and what a job writes to a kept file is held to its JSON Schema. Its tests are
+named by interface id, `[I4] ...`. What it cannot check (an http interface, a
+function with no module) is said beside the suite. In a revision, the spec's
+id for a scenario names a test the way its name does.
+
+A build before stages.json 1.6.0 sends no spec. The suite is then written from
+the agent's own files alone, as before, and the reply says the job went without
+the spec.
+
 ## Test cases for a process
 
 Its third offering, `write-test-cases`, is for a build whose artifact is a
@@ -46,7 +82,7 @@ byte for byte.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 218 tests
+node --test test/*.test.mjs                                   # 246 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
@@ -79,6 +115,11 @@ object printed. A reply that is empty there is a job the host records as
 stopped and tells the sender was cut short, so the suite fails at the code
 step instead of at Conformance (technical debt 657). Its reading is held to
 the host's (agents/image/one-message.mjs) by test/printed-reply.test.mjs.
+
+`kept-interfaces.test.mjs` is the master copy of the fifth, which is not
+copied whole: its `KEPT` line is filled with the spec's kept interfaces, so
+the same spec always gives the same file, and a spec that keeps none gives
+none.
 
 ## Replacing it
 
