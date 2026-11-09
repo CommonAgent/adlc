@@ -1,10 +1,12 @@
-// stages.json holds the lifecycle's 24 stages as data: the site checks its
+// stages.json holds the lifecycle's stages as data: the site checks its
 // stages page against it (agenticdevelopment.ai, tools/check-stages.mjs), and
-// the auditor and the console read it. This checks its shape, that the 24 are
-// there once each, numbered 1 to 24 in order, and that every stage the
+// the auditor and the console read it. This checks its shape, that the stages are
+// there once each, numbered 0 to 24 in order, and that every stage the
 // auditor checks a record for is one of them. From 1.1.0 it also checks the
 // roles that hold the stages and the evidence formats, and from 1.3.0 each
-// stage's cadence.
+// stage's cadence. From 1.4.0 it checks Reverse engineering (number 0, before
+// Requirements, so the 24 after it keep their numbers), the as-built record it
+// hands back, the stages that may be given parts of it, and the starting points.
 //   node --test standards/test/*.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,24 +21,24 @@ const data = json("standards", "stages.json");
 
 const PHASES = ["define", "make", "ship", "prove", "use", "run", "change"];
 // Other agents key on these ids; a change to one is a change to them.
-const IDS = ["requirements", "architecture", "impact", "source", "test", "code", "review", "security", "package", "release", "deploy", "conformance", "acceptance", "docs", "publish", "retract", "monitor", "eval", "incident", "cost", "update", "reconfigure", "rollback", "decommission"];
+const IDS = ["reverse-engineering", "requirements", "architecture", "impact", "source", "test", "code", "review", "security", "package", "release", "deploy", "conformance", "acceptance", "docs", "publish", "retract", "monitor", "eval", "incident", "cost", "update", "reconfigure", "rollback", "decommission"];
 const TEXT = ["name", "role", "given", "hands_back", "done_when", "why"];
 
 const nonEmpty = (v) => typeof v === "string" && v.trim().length > 0;
 
-test("the file has a version, the seven phases in order, and 24 stages", () => {
+test("the file has a version, the seven phases in order, and 25 stages", () => {
   assert.match(data.version, /^\d+\.\d+\.\d+$/);
   assert.ok(nonEmpty(data.about));
   assert.deepEqual(data.phases.map((p) => p.id), PHASES);
   for (const p of data.phases) assert.ok(nonEmpty(p.name), `phase ${p.id} has no name`);
-  assert.equal(data.stages.length, 24);
+  assert.equal(data.stages.length, 25);
 });
 
-test("the ids are the 24 named ones, once each, in order, numbered 1 to 24", () => {
+test("the ids are the 25 named ones, once each, in order, numbered 0 to 24", () => {
   const ids = data.stages.map((s) => s.id);
   assert.equal(new Set(ids).size, ids.length, "an id is listed twice");
   assert.deepEqual(ids, IDS);
-  assert.deepEqual(data.stages.map((s) => s.number), IDS.map((_, i) => i + 1));
+  assert.deepEqual(data.stages.map((s) => s.number), IDS.map((_, i) => i));
   const names = data.stages.map((s) => s.name);
   assert.equal(new Set(names).size, names.length, "a name is listed twice");
 });
@@ -162,7 +164,7 @@ test("the evidence formats are listed once each, with a name and what each is re
 // product and carried forward, and the actions run when something happens.
 const CADENCES = ["every_build", "setup", "when_needed"];
 const EVERY_BUILD = ["requirements", "test", "code", "review", "security", "package", "release", "deploy", "conformance", "acceptance", "docs"];
-const SETUP = ["architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"];
+const SETUP = ["reverse-engineering", "architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"];
 const WHEN_NEEDED = ["impact", "retract", "reconfigure", "rollback", "decommission"];
 
 test("the three cadences are listed once each, in order, with a name and what each means", () => {
@@ -183,4 +185,99 @@ test("from 1.3.0 the file says what a cadence is", () => {
   const [major, minor] = data.version.split(".").map(Number);
   assert.ok(major > 1 || (major === 1 && minor >= 3), `version ${data.version} carries cadences, so it is 1.3.0 or later`);
   assert.match(data.about, /cadence/);
+});
+
+// Version 1.4.0 adds Reverse engineering, which runs once when a codebase that
+// already exists is adopted. It is numbered 0 so that the 24 stages after it,
+// whose numbers the site and the console show, keep them.
+const byId = (id) => data.stages.find((s) => s.id === id);
+const AS_BUILT_PARTS = ["behaviors", "architecture as built", "interfaces", "dependencies", "existing tests and gaps"];
+
+test("Reverse engineering is stage 0, in Define before Requirements, set up once, held by the reverse engineer", () => {
+  const s = byId("reverse-engineering");
+  assert.deepEqual([s.number, s.phase, s.name, s.cadence], [0, "define", "Reverse engineering", "setup"]);
+  assert.equal(data.stages[0], s, "it comes first");
+  assert.equal(byId("requirements").number, 1, "Requirements keeps its number");
+  assert.deepEqual(s.role_ids, ["reverse-engineer"]);
+  assert.equal(s.reference_holder, null, "no reference agent holds it yet");
+  const role = data.roles.find((r) => r.id === "reverse-engineer");
+  assert.deepEqual([role.name, role.stages, role.reference_agent], ["Reverse engineer", ["reverse-engineering"], null]);
+});
+
+test("it has no gate of its own: the person decides at Requirements", () => {
+  assert.equal(byId("reverse-engineering").person_gate, false);
+  assert.match(byId("requirements").given, /as-built record/);
+  assert.match(byId("requirements").given, /approves, flags as a bug for the backlog, or drops/);
+});
+
+test("it hands back the as-built record in five parts, tied to its source, and is done when nothing goes past the evidence", () => {
+  const s = byId("reverse-engineering");
+  assert.deepEqual(s.assets, ["As-built record"]);
+  assert.match(s.given, /named commit/);
+  assert.match(s.hands_back, /^the as-built record, tied to its source \(the repository, the commit digest, and whether the code was only read or also run\)/);
+  const parts = s.hands_back.split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).split(":")[0]);
+  assert.deepEqual(parts, AS_BUILT_PARTS);
+  assert.match(s.hands_back, /CycloneDX or SPDX/);
+  for (const f of ["cyclonedx", "spdx"]) assert.ok(data.evidence_formats.some((e) => e.id === f), `${f} is an evidence format`);
+  assert.match(s.done_when, /every claim names its evidence/);
+  assert.match(s.done_when, /every gap is marked/);
+  assert.match(s.done_when, /nothing is inferred beyond the evidence/);
+});
+
+test("the stages after it may be given parts of the record, and each keeps the words it had", () => {
+  const given = {
+    requirements: ["somebody's account of what they want, with whatever they have", /the as-built record/],
+    architecture: ["the statement of the job, and the organization's stack", /part 2 of the as-built record/],
+    impact: ["the change, the running version, and what depends on it", /parts 2 and 4 of the as-built record/],
+    test: ["the statement of the job", /parts 1 and 5 of the as-built record\), from which it writes characterization tests that pin today's behavior until Requirements says otherwise/],
+    security: ["the architecture record and the design, the programs, and everything the package will ask for", /parts 2 and 4 of the as-built record/],
+  };
+  for (const [id, [before, added]] of Object.entries(given)) {
+    const s = byId(id);
+    assert.ok(s.given.startsWith(`${before}; where code already exists, `), `${id}: the given starts with its old words`);
+    assert.match(s.given, added, id);
+  }
+  assert.equal(byId("architecture").parts[0].given, byId("architecture").given, "the Architecture part is given the same");
+});
+
+// The starting points: what someone brings, and the stage it enters at.
+test("every starting point names what it brings, the stage it enters at, the stages it skips ahead to, and why", () => {
+  const points = data.starting_points;
+  assert.ok(Array.isArray(points) && points.length > 0, "the file lists no starting points");
+  const ids = points.map((p) => p.id);
+  assert.equal(new Set(ids).size, ids.length, "a starting point is listed twice");
+  const num = (id) => byId(id).number;
+  for (const p of points) {
+    assert.match(p.id, ROLE_ID, `starting point ${p.id}`);
+    assert.ok(nonEmpty(p.brings) && nonEmpty(p.why), `${p.id}: brings or why is empty`);
+    assert.ok(IDS.includes(p.enters), `${p.id}: enters "${p.enters}", which is not a stage`);
+    assert.ok(Array.isArray(p.then), `${p.id}: then is not a list`);
+    const path = [p.enters, ...p.then];
+    for (const s of p.then) assert.ok(IDS.includes(s), `${p.id}: then names "${s}", which is not a stage`);
+    for (let i = 1; i < path.length; i++) assert.ok(num(path[i]) > num(path[i - 1]), `${p.id}: ${path[i]} comes before ${path[i - 1]}`);
+  }
+  for (const [id, enters] of Object.entries({ "existing-code": "reverse-engineering", skill: "security", "business-process": "source", "working-code": "security", package: "security" })) {
+    assert.equal(points.find((p) => p.id === id)?.enters, enters, `${id} enters at ${enters}`);
+  }
+});
+
+test("every starting point that gets credentials passes Security review first, and every one ends in a valid package", () => {
+  const num = (id) => byId(id).number;
+  for (const p of data.starting_points) {
+    // The named stages come first; after the last one the lifecycle runs in
+    // its order, so a path that stops before Security review still reaches it.
+    const path = [p.enters, ...p.then];
+    const last = num(path[path.length - 1]);
+    assert.ok(path.includes("security") || last < num("security"), `${p.id} skips Security review`);
+  }
+  assert.ok(Array.isArray(data.starting_point_rules) && data.starting_point_rules.every(nonEmpty));
+  assert.match(data.starting_point_rules.join("\n"), /gets credentials passes Security review first/);
+  assert.match(data.starting_point_rules.join("\n"), /ends in a valid package/);
+});
+
+test("from 1.4.0 the file says what Reverse engineering and a starting point are", () => {
+  const [major, minor] = data.version.split(".").map(Number);
+  assert.ok(major > 1 || (major === 1 && minor >= 4), `version ${data.version} carries Reverse engineering, so it is 1.4.0 or later`);
+  assert.match(data.about, /Reverse engineering/);
+  assert.match(data.about, /starting_points/);
 });

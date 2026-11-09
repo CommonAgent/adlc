@@ -74,8 +74,9 @@ the stage's standard, in
 The [`standards/`](standards) folder holds the standing assets every Builder
 reads at a version it pins: the architecture standard, the audit checklist
 and the known kinds of standing asset. It also holds
-[standards/stages.json](standards/stages.json): the 24 stages, the roles that
-hold them, which an organization may bind to the reference agent, its own
+[standards/stages.json](standards/stages.json): the stages (Reverse
+engineering, numbered 0, for code that already exists, and the 24 after it),
+the starting points and the stage each enters at, the roles that hold them, which an organization may bind to the reference agent, its own
 agent, a contracted supplier, a person or an outside tool, and the open
 evidence formats (such as SARIF and CycloneDX) in which a holder outside the
 service hands its evidence back.

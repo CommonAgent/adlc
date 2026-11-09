@@ -4,6 +4,17 @@ Changes to the standards in this folder, newest first.
 
 ## stages.json
 
+- **1.4.0**: Reverse engineering, held by the new reverse engineer role, for
+  code that already exists. It is in Define, before Requirements, set up once
+  (when a codebase is adopted), and numbered 0 so that the 24 stages keep
+  their numbers. It hands back the as-built record (behaviors, architecture
+  as built, interfaces, dependencies, existing tests and gaps), and has no
+  gate of its own: the person decides at Requirements. Requirements,
+  Architecture and Design, Impact, Test and Security review may be given
+  parts of the record, each said in words added to its `given`. The file
+  also lists `starting_points` (what someone brings and the stage it enters
+  at) and `starting_point_rules`. Additive: no field changed or removed, and
+  no stage's id or number changed.
 - **1.3.0**: each stage has a `cadence`, and the file lists the three
   `cadences`: `every_build` (the routine, run on every build), `setup` (set
   up once per product and carried forward to later versions until changed)

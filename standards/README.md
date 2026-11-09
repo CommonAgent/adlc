@@ -8,7 +8,7 @@ version each Builder pins.
 |---|---|---|
 | [architecture-standard.md](architecture-standard.md) | `https://schemas.agentmesh.ai/architecture-standard/v1` | the solution architect, which applies it; the spec writer, which designs within it |
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
-| [stages.json](stages.json) | the lifecycle's 24 stages, in order, in seven phases; each stage's cadence (every build, set up once, or when needed); the roles that hold them; and the evidence formats an outside holder hands back in (`version` in the file; changes in [CHANGELOG.md](CHANGELOG.md)) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
+| [stages.json](stages.json) | the lifecycle's stages, in order, in seven phases: Reverse engineering, numbered 0, and the 24 after it; each stage's cadence (every build, set up once, or when needed); the roles that hold them; the evidence formats an outside holder hands back in; and the starting points, each with the stage it enters at (`version` in the file; changes in [CHANGELOG.md](CHANGELOG.md)) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
 | [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.5: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [runtime-verbs.md](runtime-verbs.md) | how a lifecycle service hands a finished product to the runtime it is given: install, and from lifecycle API 0.4.4 rollback, reconfigure and retire, as one command with a package and a run plan and the verb in the environment | a runtime's author; a service that runs Rollback, Reconfigure and Decommission |
 | [lifecycle-document.schema.json](lifecycle-document.schema.json) | a lifecycle document, version 0.1: one JSON file holding which stages an organization uses, who holds each role (and with what settings), and the stages it adds of its own, for the organization and each project; no service needed | a person or team defining its lifecycle as a file; the console (`npx adlc-console --lifecycle <path>`), which reads, checks and writes it |
@@ -129,7 +129,7 @@ README says where its pins are), run their tests, and release them.
 [lifecycle-api.schema.json](lifecycle-api.schema.json) is what any service
 implementing this lifecycle answers, so that one client can show a person's
 builds from more than one service. It sits beside [stages.json](stages.json):
-a build lists the 24 stages by their ids there, one entry each, and a stage
+a build lists every stage by its id there, one entry each, and a stage
 the service does not run is listed as `not_offered`. Each build carries the
 actions the person may take now, and a client draws one button for each
 action and nothing else, so every judgment stays with the service. The page
@@ -149,7 +149,7 @@ the when-needed actions. Version 0.4.5 shows features at every stage and
 lists the features of a product made before them. Its `operations` list names the
 definition each request and answer must match.
 
-**Lifecycle stages.** An organization chooses which of the 24 stages its
+**Lifecycle stages.** An organization chooses which of the stages its
 lifecycle uses, for the whole organization or for one project, beside who
 holds each role. `GET /stages` lists every stage in stages.json's order, each
 with whether it is used, where that choice comes from (`project`, `org` or
@@ -200,8 +200,8 @@ answers to the schema and to the rules it cannot say.
 **Cadence.** stages.json 1.3.0 gives each stage a cadence. `every_build`
 stages are the routine: Requirements, Test, Code, Review, Security review,
 Package, Release, Deploy, Conformance, Acceptance and Docs run on every build.
-`setup` stages are set up once per product: Source, Architecture and
-Design, Publish, Monitor, Eval, Incident response, Cost and Update are given a
+`setup` stages are set up once per product: Reverse engineering (from
+stages.json 1.4.0), Source, Architecture and Design, Publish, Monitor, Eval, Incident response, Cost and Update are given a
 holder and settings once, and each later version carries them forward until
 someone changes them. `when_needed` stages are actions on the product, run
 when something happens: Impact, Retract, Reconfigure, Rollback and
@@ -218,6 +218,32 @@ false, `why_not` in words. A client shows a build's steps from its
 each when-needed action as a button that is enabled only when the service
 says it can run it. `checkBuild`, `checkStageWorkspace` and `checkProduct`
 hold these to stages.json.
+
+**Reverse engineering.** stages.json 1.4.0 adds a stage for code that already
+exists. It runs once, when a codebase is adopted, before Requirements, and is
+numbered 0 so that the 24 stages after it keep the numbers the site and the
+console show. The reverse engineer is given the codebase at a named commit,
+and its running form if there is one, and hands back the as-built record:
+the behaviors, the architecture as built, the interfaces, the dependencies
+and the existing tests and gaps, each claim naming its evidence (a file and
+line, or an observed run) and each gap marked. It describes what the code
+is. It never judges whether that is right, and it writes no tests, because
+deciding what to keep is the person's, at Requirements: each behavior in the
+record is approved, flagged as a bug for the backlog, or dropped. So the
+stage has no gate of its own. Architecture and Design may be given the
+architecture as built, Test the behaviors and the existing tests (for
+characterization tests that pin today's behavior until Requirements says
+otherwise), and Security review and Impact the architecture as built and
+the dependencies.
+
+**Starting points.** stages.json 1.4.0 lists `starting_points`: each names
+what someone brings, the stage it enters at, the stages it skips ahead to
+(`then`), and why. Existing code being adopted enters at Reverse
+engineering; a skill, working code shipped as it is, and a package or an
+image enter at Security review; a written business process enters at
+Source. `starting_point_rules` holds the two rules every starting point
+keeps: one that gets credentials passes Security review first, and however
+a build starts, it ends in a valid package.
 
 **Features.** Version 0.4.3 gives the statement of the job a feature list:
 each feature has a stable id (such as `F3`), a name, what it does, and the

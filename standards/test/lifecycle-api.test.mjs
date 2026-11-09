@@ -16,6 +16,10 @@ import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState,
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
 const IDS = stageIds();
+// Where the fixtures put their work: Requirements and Code, by index, since
+// stages.json 1.4.0 puts Reverse engineering (number 0) before Requirements.
+const R = IDS.indexOf("requirements");
+const C = IDS.indexOf("code");
 const SR = stageRoles();
 const SF = stageFacts();
 const AT = "2026-10-31T09:15:00Z";
@@ -121,15 +125,15 @@ test("a build's end state, its pause and archive are optional fields of the list
 
 test("the schema catches a wrong shape", () => {
   const b = build();
-  b.build.stages[0].state = "finished";
-  b.build.stages[0].handed_back.files[0].size = "2 KB";
+  b.build.stages[R].state = "finished";
+  b.build.stages[R].handed_back.files[0].size = "2 KB";
   delete b.build.actions[0].needs;
-  b.build.stages[5].holder = { kind: "robot", name: "x" };
+  b.build.stages[C].holder = { kind: "robot", name: "x" };
   b.build.log[0].at = "yesterday";
-  b.build.stages[5].where.check.passed = "yes";
+  b.build.stages[C].where.check.passed = "yes";
   delete b.build.can_try;
   const p = checkBuild(b, IDS, "b1").join("\n");
-  assert.match(p, /stages\[0\]\.state: is "finished", not one of/);
+  assert.match(p, new RegExp(`stages\\[${R}\\]\\.state: is "finished", not one of`));
   assert.match(p, /files\[0\]\.size: is string, not integer/);
   assert.match(p, /actions\[0\]: has no needs/);
   assert.match(p, /holder.*kind: is "robot"/);
@@ -141,7 +145,7 @@ test("the schema catches a wrong shape", () => {
 test("a time must carry a zone and be a real date", () => {
   const b = build();
   b.build.log[0].at = "2026-10-31T09:15:00";
-  b.build.stages[0].log[0].at = "2026-13-45T09:15:00Z";
+  b.build.stages[R].log[0].at = "2026-13-45T09:15:00Z";
   const p = checkBuild(b, IDS, "b1");
   assert.equal(p.length, 2, p.join("\n"));
 });
@@ -160,8 +164,8 @@ test("a build lists every stage of stages.json once, and no other", () => {
 
 test("rounds are newest first", () => {
   const b = build();
-  b.build.stages[0].rounds.reverse();
-  assert.match(checkBuild(b, IDS).join("\n"), /stages\[0\]\.rounds\[1\]: rounds are newest first/);
+  b.build.stages[R].rounds.reverse();
+  assert.match(checkBuild(b, IDS).join("\n"), new RegExp(`stages\\[${R}\\]\\.rounds\\[1\\]: rounds are newest first`));
 });
 
 test("an action acts only at a stage the build offers", () => {
@@ -200,8 +204,8 @@ function service({ broken = false, echo = false } = {}) {
     if (p === "builds") return answer(200, list());
     if (p === "builds/b1") {
       const b = build();
-      if (broken) b.build.stages[0].rounds.reverse();
-      b.build.stages[0].handed_back.files.push({ path: "elsewhere.txt", size: 1, link: "https://other.example/elsewhere.txt" });
+      if (broken) b.build.stages[R].rounds.reverse();
+      b.build.stages[R].handed_back.files.push({ path: "elsewhere.txt", size: 1, link: "https://other.example/elsewhere.txt" });
       return answer(200, b);
     }
     if (p === "builds/b1/tries") return answer(200, tries());
@@ -827,7 +831,7 @@ test("the boss's commitments: oldest first, each kind carrying what checks it ag
 // ---------- 0.4.2: each stage's cadence, carried, and a product's setup and when_needed ----------
 
 const CAD = stageCadences();
-const setupItems = () => ["architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"].map((stage) => {
+const setupItems = () => ["reverse-engineering", "architecture", "source", "publish", "monitor", "eval", "incident", "cost", "update"].map((stage) => {
   const role = SR.byStage[stage][0];
   return stage === "monitor"
     ? { stage, name: "Monitor", role, project: null, state: "chosen", holder: { kind: "your_agent", name: "Our watcher", handle: "watcher.you@example.com" }, settings: { every: "5 minutes" }, since: "0.1.0", words: "Unchanged since 0.1.0" }
@@ -882,19 +886,19 @@ test("a product's setup lists every setup stage once, in order, with its own rol
   // A product without the lists, as a 0.4.1 service answers, still passes.
   assert.deepEqual(checkProduct(p, "word-tally"), []);
   const short = setupItems().slice(1);
-  assert.deepEqual(checkProduct({ ...p, setup: short }, "word-tally"), ["body.setup: lists source, publish, monitor, eval, incident, cost, update, not stages.json's setup stages in order (architecture, source, publish, monitor, eval, incident, cost, update)"]);
+  assert.deepEqual(checkProduct({ ...p, setup: short }, "word-tally"), ["body.setup: lists architecture, source, publish, monitor, eval, incident, cost, update, not stages.json's setup stages in order (reverse-engineering, architecture, source, publish, monitor, eval, incident, cost, update)"]);
   const bad = setupItems();
-  bad[0].role = "code-writer";
-  bad[1].state = "chosen";
-  bad[2].holder = { kind: "person", name: "Ana" };
-  bad[4].since = "0.1.0";
-  bad[3].since = "9.9.9";
+  bad[1].role = "code-writer";
+  bad[2].state = "chosen";
+  bad[3].holder = { kind: "person", name: "Ana" };
+  bad[5].since = "0.1.0";
+  bad[4].since = "9.9.9";
   assert.deepEqual(checkProduct({ ...p, setup: bad }, "word-tally"), [
-    "body.setup[0].role: code-writer does not hold architecture in stages.json",
-    "body.setup[1]: is chosen, so it names its holder",
-    "body.setup[2]: is not_chosen, so nobody holds it, but it names a holder",
-    "body.setup[3].since: 9.9.9 is not a version of the product's builds",
-    'body.setup[4].since: is "0.1.0", but a stage not_chosen has held nothing since a version',
+    "body.setup[1].role: code-writer does not hold architecture in stages.json",
+    "body.setup[2]: is chosen, so it names its holder",
+    "body.setup[3]: is not_chosen, so nobody holds it, but it names a holder",
+    "body.setup[4].since: 9.9.9 is not a version of the product's builds",
+    'body.setup[5].since: is "0.1.0", but a stage not_chosen has held nothing since a version',
   ]);
   const state = setupItems(); state[0].state = "maybe";
   assert.ok(checkProduct({ ...p, setup: state }, "word-tally").some((x) => x.startsWith("body.setup[0].state")));
