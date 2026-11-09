@@ -58,6 +58,9 @@ export function replyText({ declared = null, suite = null, checked = null, wentW
       ? `Against empty stand-ins for the ${plural(s.scripts, "script")} it names, the suite fails (${s.pass} of ${s.tests} pass), which is what a suite written before the scripts must do.`
       : `Against empty stand-ins the suite passes (${s.pass} of ${s.tests}), so it asserts nothing about the scripts. It is not a suite yet.`);
   }
+  // What a revision put back because the person's words did not name it.
+  const restored = suite?.restored ?? [];
+  if (restored.length) lines.push(`Only the tests the words named were changed: ${restored.join("; ")}.`);
   const findings = suite?.findings ?? [];
   if (findings.length) {
     lines.push(`After two goes the suite still has ${plural(findings.length, "thing")} wrong with it, and it goes with ${findings.length === 1 ? "that" : "those"} said: ${findings.join("; ")}.`);

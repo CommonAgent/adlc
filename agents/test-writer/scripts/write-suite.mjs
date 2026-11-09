@@ -97,6 +97,7 @@ import { standInChecks, suiteFiles } from "./check-suite.mjs";
 import { note } from "./went-without.mjs";
 import { DESCRIPTOR_FILE, MANIFEST_FILE, RUNTIME_FILE, loadSpec } from "./agent-folder.mjs";
 import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
+import { asyncThrowsFindings, namedTestsIn, pinFindings, restoreNotes, restoreUnnamed } from "./suite-rules.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -251,6 +252,24 @@ itself, test/printed-reply.test.mjs: with an empty message, it checks that
 what the command prints gives the reply run.reply names. Do not write it,
 do not answer with it, and do not run the command lines for that yourself.
 
+Pin every number and rule each feature and each refusal states: a limit,
+a count, a time limit, an order, the exact words or pattern it quotes, an
+exit code. A test of the feature asserts each one as the feature gives it:
+"a 10-second timeout" is a test that the call is given a 10 second limit
+(10 or 10000 written in the test), "up to 20 at a time" is a test that no
+batch is bigger than 20, and words in quotes are asserted exactly as
+quoted. The test writer reads each feature the message lists and each
+refusal the spec declares, and sends back every number and quoted word no
+test of it carries, naming the feature.
+
+A function that awaits anything, or is handed an async stand-in (a fetch
+written async () => ...), refuses by returning a rejected promise, not by
+throwing. Test it with an async test and await assert.rejects(promise, ...),
+never assert.throws, which sees only a throw made before the function
+returns; and await assert.doesNotReject, never assert.doesNotThrow. The test
+writer sends back every assert.throws whose callback is async, awaits, or
+reaches a function declared async or handed an async stand-in.
+
 Read a delivered piece by whole lines. Find a line by a pattern for the
 whole line (assert.match(text, /^- a: 1$/m)), or by the text after its
 heading line, and never by a single letter or a short word searched anywhere
@@ -297,7 +316,15 @@ A new file must still fail against empty stand-ins on its own.`;
  *  a test it could not pass without breaking what the spec says, and a
  *  person who decided the test is the one that is wrong. Only the files the
  *  message names are written again; the rest are kept, as when adding. */
-export function reviseInstruction(files = []) {
+export function reviseInstruction(files = [], tests = {}) {
+  const listed = files.filter((f) => Array.isArray(tests[f]) && tests[f].length);
+  const only = listed.length ? `
+The words name these tests, and only these may change:
+${listed.flatMap((f) => tests[f].map((n) => `- "${n}" in ${f}`)).join("\n")}
+Every other test in those files, and every line outside the named tests,
+stays byte for byte as it is; the test writer puts back any test the words
+did not name, whatever the answer did to it, and takes out a test the answer
+adds.` : "";
   return `This suite came back from the code step, given below whole under THE SUITE IT
 ALREADY HAS. What they asked for above says which test cannot pass without
 breaking what the spec says, and a person has decided the test is the one that
@@ -308,7 +335,42 @@ Change only what is wrong in them, and keep every other test in them as it was.
 Every other file of the suite is kept exactly as it is, and a file you answer
 with under one of their names is refused. Work each value a rule decides again
 from the spec's own words. A rewritten file must still fail against empty
-stand-ins on its own.`;
+stand-ins on its own.${only}`;
+}
+
+/** The tests a revision may change in each file it names (test-writer
+ *  0.8.0): those the person's words name, by name, by a line they cite or
+ *  by a phrase they quote from one test; null for a file the words name
+ *  without naming a test in it, whose every test may change. */
+export function namedTestsFor(existing = [], revise = [], asked = "") {
+  const out = {};
+  for (const p of revise) {
+    const f = existing.find((x) => x.path === p);
+    if (!f) continue;
+    const n = namedTestsIn(f, asked);
+    out[p] = n.all ? null : [...n.names];
+  }
+  return out;
+}
+
+/** The answer's revised files with every test the words did not name put
+ *  back as it was (suite-rules.mjs, restoreUnnamed). A file that comes out
+ *  the same as before is not revised and is left out, so the answer is
+ *  asked for again or refused as one that changed nothing. Returns
+ *  { files, notes, fresh }: fresh maps each revised path to the lines that
+ *  are the answer's own, which are the only lines the line checks read. */
+export function keepUnnamed(files = [], existing = [], revise = [], asked = "") {
+  const notes = []; const fresh = new Map(); const out = [];
+  for (const f of files) {
+    const before = revise.includes(f.path) ? existing.find((x) => x.path === f.path) : null;
+    if (!before) { out.push(f); continue; }
+    const r = restoreUnnamed(before.text, f.text, namedTestsIn(before, asked));
+    notes.push(...restoreNotes(f.path, r));
+    if (r.text === before.text) continue;
+    fresh.set(f.path, r.fresh);
+    out.push({ ...f, text: r.text });
+  }
+  return { files: out, notes, fresh };
 }
 
 /** The standard checks the test writer adds itself: never revised by the model. */
@@ -498,7 +560,7 @@ export function requestParts({ spec = null, declared = null, reference = "", wor
   }
   if (existing.length) {
     parts.push(`--- THE SUITE IT ALREADY HAS ---\n${existing.map((f) => `<<<FILE ${f.path}>>>\n${f.text}<<<END>>>`).join("\n")}`);
-    parts.push(revise.length ? reviseInstruction(revise) : ADD_INSTRUCTION);
+    parts.push(revise.length ? reviseInstruction(revise, namedTestsFor(existing, revise, asked)) : ADD_INSTRUCTION);
   }
   if (part) parts.push(`--- THIS PART ---\n${partInstruction(part)}`);
   if (findings.length) {
@@ -680,9 +742,10 @@ const LETTER_LIST = /^\s*\[\s*(?:(["'`])[A-Za-z\u00C0-\u024F]\1\s*,\s*)+(["'`])[
  *  heading or a word of prose holds letters too ("## Counts" holds o and u),
  *  so such a test cannot tell a piece that keeps the spec from one that does
  *  not, and may fail every piece that does (build ab_6d0a79ba51025b1beb). */
-export function letterSearchFindings(files = []) {
+export function letterSearchFindings(files = [], { fresh = null } = {}) {
   const out = [];
   for (const f of files) {
+    const only = fresh?.get?.(f.path) ?? null;
     if (STANDARD_TESTS.includes(f.path)) continue;
     const text = String(f.text ?? "");
     const lists = new Set();
@@ -702,7 +765,7 @@ export function letterSearchFindings(files = []) {
     text.split("\n").forEach((line, i) => {
       for (const m of line.matchAll(/\.\s*(indexOf|lastIndexOf|includes|search)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)) {
         const args = m[2].split(",");
-        if (!isLetter(args[0])) continue;
+        if (!isLetter(args[0]) || (only && !only.has(i + 1))) continue;
         out.push(`${f.path}:${i + 1} searches the text for a single letter with ${m[1]}(${args[0].trim()}); a heading or a word of prose holds letters too ("## Counts" holds o and u), so no piece that keeps the spec can be told apart. Find the whole line instead, by a pattern for the line (/^- a: \\d+$/m) or the text after its heading line`);
       }
     });
@@ -749,15 +812,17 @@ function argumentsAt(text, open) {
  *  in a worked constant, where it is checked against its own computation
  *  (build ab_481ac696b24d8cf8fd pinned a 3, e 1, total 4 for "Café façade
  *  rôle naïve" in a suite that worked 23 other values). */
-export function bareLiteralFindings(files = []) {
+export function bareLiteralFindings(files = [], { fresh = null } = {}) {
   const out = [];
   for (const f of files) {
     if (STANDARD_TESTS.includes(f.path)) continue;
     const text = String(f.text ?? "");
+    const only = fresh?.get?.(f.path) ?? null;
     const lines = [];
     for (const m of text.matchAll(/\bassert\s*\.\s*(equal|strictEqual|deepEqual|deepStrictEqual|match)\s*\(/g)) {
       const [got = "", want = ""] = argumentsAt(text, m.index + m[0].length);
       const line = text.slice(0, m.index).split("\n").length;
+      if (only && !only.has(line)) continue;
       if (m[1] === "match") {
         const re = /^\s*\/((?:[^/\\\n]|\\.)+)\/[a-z]*\s*$/.exec(want);
         if (re && NUMBER.test(re[1])) lines.push(line);
@@ -779,21 +844,23 @@ export function bareLiteralFindings(files = []) {
  *  from ever being checked, and a computation that is only a literal, which
  *  checks nothing. A test runs from its line at the left margin to the next
  *  statement there. */
-export function workedFindings(files = []) {
+export function workedFindings(files = [], { fresh = null } = {}) {
   const out = [];
   for (const f of files) {
     if (STANDARD_TESTS.includes(f.path)) continue;
+    const only = fresh?.get?.(f.path) ?? null;
     const lines = codeLines(f.text);
     let inTest = false;
     lines.forEach((l, i) => {
       if (/^(?:test|it|describe|suite)(?:\.\w+)?\s*\(/.test(l)) inTest = true;
       else if (/^\S/.test(l) && !/^[}\])]/.test(l)) inTest = false;
-      if (inTest && /(?<![\w$.])worked\s*\(/.test(l)) {
+      if (inTest && /(?<![\w$.])worked\s*\(/.test(l) && (!only || only.has(i + 1))) {
         out.push(`${f.path}:${i + 1} calls worked() inside a test; put each worked value in a constant at the top of the file, after the imports and before any test, where it is checked before any script is reached`);
       }
     });
     const raw = String(f.text ?? "").split("\n");
     raw.forEach((l, i) => {
+      if (only && !only.has(i + 1)) return;
       if (/(?<![\w$.])worked\s*\([^,]+,\s*\(\s*\)\s*=>\s*(?:-?\d+(?:\.\d+)?|"[^"]*"|'[^']*'|true|false|null)\s*[,)]/.test(l)) {
         out.push(`${f.path}:${i + 1} works a value whose computation is only a literal, which checks nothing; compute it from the test's input by the spec's rule`);
       }
@@ -854,9 +921,9 @@ export function importFindings(files = [], dependencies = []) {
   return out;
 }
 
-export function staticFindings(files = [], declared = null, { existing = [], revise = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [] } = {}) {
+export function staticFindings(files = [], declared = null, { existing = [], revise = [], taken = [], scripts = null, formatCheck = false, recordsCheck = false, workedCheck = false, literalCheck = false, notes = "", dependencies = [], fresh = null, pins = null } = {}) {
   const out = [];
-  if (!files.length) return ["no test file came back"];
+  if (!files.length) return [revise.length ? `the answer changes none of the tests the words name in the files it was sent back for: ${revise.join(", ")}; the answer rewrites none of the files it was sent back for, so change those tests, and only those, and answer with each file whole under its own name` : "no test file came back"];
   // The format check and the records check are the test writer's own files,
   // added after the answer.
   for (const path of STANDARD_TESTS) {
@@ -905,9 +972,14 @@ export function staticFindings(files = [], declared = null, { existing = [], rev
     if (/from\s+["'](?!node:|\.\.?\/)/.test(f.text)) out.push(`${f.path} imports a package that is not node's own; a suite depends on nothing outside node`);
   }
   out.push(...importFindings(files, dependencies));
-  out.push(...workedFindings(files));
-  out.push(...letterSearchFindings(files));
-  if (workedCheck || literalCheck) out.push(...bareLiteralFindings(files));
+  out.push(...workedFindings(files, { fresh }));
+  out.push(...letterSearchFindings(files, { fresh }));
+  if (workedCheck || literalCheck) out.push(...bareLiteralFindings(files, { fresh }));
+  // An async function refuses with a rejected promise (test-writer 0.8.0).
+  out.push(...asyncThrowsFindings(files, { dependencies, skip: STANDARD_TESTS, fresh }));
+  // Every number and quoted word a feature or a refusal states, over a
+  // whole new suite: a suite added to or revised keeps what it had.
+  if (pins) out.push(...pinFindings(whole, { words: pins.words, declared, skip: STANDARD_TESTS }));
   const all = whole.map((f) => f.text).join("\n");
   for (const s of named) {
     const name = String(s).split("/").pop();
@@ -954,11 +1026,25 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
   let last = null;
   let standIns = null;
   let calls = 0;
+  let restored = [];
   for (let go = 0; go < tries; go += 1) {
     const request = suiteRequest({ ...opts, findings });
     calls += 1;
     last = answerFrom(await call(request));
+    // A revision changes only the tests the words name: every other test is
+    // put back byte for byte before anything is checked (test-writer 0.8.0).
+    let fresh = null;
+    if ((opts.revise ?? []).length) {
+      const kept = keepUnnamed(last.files, opts.existing ?? [], opts.revise, opts.asked ?? "");
+      last = { ...last, files: kept.files };
+      restored = kept.notes;
+      fresh = kept.fresh;
+    }
     findings = staticFindings(last.files, opts.declared, {
+      fresh,
+      // A new suite, written whole in one ask: every number and quoted word a
+      // feature or a refusal states is pinned by a test of it.
+      pins: !opts.part && !(opts.existing ?? []).length ? { words: opts.asked ?? "" } : null,
       existing: opts.existing ?? [], revise: opts.revise ?? [], taken: opts.part?.taken ?? [], scripts: opts.part?.scripts ?? null,
       // Over the whole suite when it is one ask; a suite in parts is held to
       // it once all its parts are in (askInParts).
@@ -986,6 +1072,7 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
     stand_ins: standIns,
     calls,
     tried_again: calls > 1,
+    restored,
   };
 }
 
@@ -1035,6 +1122,7 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
   if (declaresOutputs(opts.declared) && !callsFormatCheck(files)) findings.push(`the whole suite: ${NO_FORMAT_CHECK}`);
   if (declaresPerJobRecords(opts.declared) && !callsRecordsCheck(files)) findings.push(`the whole suite: ${NO_RECORDS_CHECK}`);
   if (trim(opts.workedTest) && !callsWorked(files) && !saysNoWorkedValues(notes.join("\n"))) findings.push(`the whole suite: ${NO_WORKED_VALUES}`);
+  for (const f of pinFindings(files, { words: opts.asked ?? "", declared: opts.declared, skip: STANDARD_TESTS })) findings.push(`the whole suite: ${f}`);
   const standIns = run ? await run(withStandardTests(files, opts)) : null;
   if (standIns) for (const f of standInFindings(standIns)) findings.push(`the whole suite: ${f}`);
   return { files, could_not: couldNot, notes: notes.join("\n"), findings, stand_ins: standIns, calls, tried_again: triedAgain, parts };
@@ -1183,6 +1271,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       ...(revise.length ? { revised } : {}),
       ...(generated.length ? { generated: generated.map((f) => f.path) } : {}),
       ...(out.parts ? { parts: out.parts } : {}),
+      ...(out.restored?.length ? { restored: out.restored } : {}),
       could_not: out.could_not, notes: out.notes, findings: out.findings, stand_ins: out.stand_ins,
     }, null, 2) + "\n");
     writeFileSync(join(RECORDS, "calls.json"), JSON.stringify({
