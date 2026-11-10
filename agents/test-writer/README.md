@@ -87,6 +87,24 @@ ReferenceError before reaching any script). A new file that fails goes back to
 the model as a finding; a carried or kept one is said in the reply and never
 edited.
 
+## One feature's tests
+
+Product Factory can make each feature of a version in a run of its own, at the
+same time as the others, each with its own pull request (lifecycle API
+0.4.10). Each run asks for that feature's tests alone, with a line of its own
+in the message, `feature: F2`, and attaches the tests of the features already
+accepted, when there are any, to add to (0.11.0). The spec goes to the model
+and to the spec rules with that feature alone among its features, its
+interfaces, constraints, systems and settings kept, so the scenarios and exact
+entries the suite is held to are that feature's and no other's. A feature the
+spec does not hold yet, approved after it, is described in the message, and no
+spec rule asks for a scenario. The model is told so under ONE FEATURE, and each
+new file is named for the feature, `test/f2-<what it checks>.test.mjs`,
+renamed so by code when the model names it otherwise, so two features' suites
+never write the same file. The standard checks keep their names, and are the
+same bytes in every feature's suite. A message that names no feature is asked
+as before.
+
 A build before stages.json 1.6.0 sends no spec. The suite is then written from
 the agent's own files alone, as before, and the reply says the job went without
 the spec.
@@ -123,7 +141,7 @@ byte for byte.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 260 tests
+node --test test/*.test.mjs                                   # 265 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 ```
 
