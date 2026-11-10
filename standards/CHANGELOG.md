@@ -66,6 +66,17 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.11**: a product's documents. `GET /products/{name}/documents` answers
+  one `Document` per stage of stages.json that names an asset, in its order:
+  the stage, the asset's name, the stage's cadence, a state (`made`,
+  `not_made`, `not_used`), the copy that stands for the product now
+  (`current`: the build and version that made it, the artifact itself, and
+  `carried` when a newer version did not remake it) and the versions that made
+  one (`history`, newest first). It is the product's view of its standing
+  documents across versions; a build still answers its own artifacts. The
+  check holds the list to stages.json, each document to its stage's asset and
+  cadence, and a made one to a current copy made at its stage that heads its
+  history. Additive.
 - **0.4.10**: each feature in a run of its own. Once a version's spec is
   approved, a service may make each approved feature in a run of its own (its
   suite, its code and the person's OK), at the same time as the others, each
