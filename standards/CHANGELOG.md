@@ -66,6 +66,13 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.9**: the holder's skills. `Holder` gains `skills`, a list of
+  `Skill` (`name`, `description` and `text`, the SKILL.md as written, in
+  full), given on a stage workspace's holder, and `skills_note`, one sentence
+  in its place when the service cannot see them, such as a coding harness the
+  person runs. An empty list says the holder has none of its own. The check
+  holds that a holder lists each skill once, and lists its skills or the note,
+  not both. Additive.
 - **0.4.8**: the spec artifact (kind `spec`, `SpecSummary`): what
   Requirements hands back (stages.json 1.6.0). The `statement` artifact is the
   agent's own files, made at Design. Additive.
