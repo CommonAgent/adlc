@@ -66,6 +66,18 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.10**: each feature in a run of its own. Once a version's spec is
+  approved, a service may make each approved feature in a run of its own (its
+  suite, its code and the person's OK), at the same time as the others, each
+  with its own pull request, the version waiting for every run before
+  Package. The build gains `feature_runs`, each a `FeatureRun` (its card,
+  its own stages, actions, pull request, log and timeline); a build list item
+  gains `feature_runs`, one `FeatureRunCard` per run, for a board; an
+  `Action` gains `run`, sent back in the action's request; a `TimelineBar`
+  gains `run`. The build's own stages, actions and timeline read across the
+  runs. The check holds that each run is named once and holds each stage
+  once, that its actions name it and stop once it ended, and that an action
+  or a bar naming a run names one the build has. Additive.
 - **0.4.9**: the holder's skills. `Holder` gains `skills`, a list of
   `Skill` (`name`, `description` and `text`, the SKILL.md as written, in
   full), given on a stage workspace's holder, and `skills_note`, one sentence

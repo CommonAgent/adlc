@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.9 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.9");
+test("the schema is version 0.4.10 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.10");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1378,4 +1378,60 @@ test("0.4.9: a holder lists each skill once, and lists its skills or says why it
   Object.assign(role(r, "code-writer"), { from: "org", binding: { role: "code-writer", holder: { kind: "your_agent", name: "Our coding agent", handle: "coder.you@example.com", skills: [], skills_note: "Its skills cannot be seen." }, scope: { org: true }, since: AT, by: "you@example.com" } });
   const i = r.roles.findIndex((x) => x.role === "code-writer");
   assert.deepEqual(checkRoles(r, SR), [`body.roles[${i}].binding.holder: lists its skills and also says they cannot be seen (skills_note); it says one or the other`]);
+});
+
+// ---------- 0.4.10: each feature in a run of its own ----------
+
+/** A version with two features, each made in a run of its own: F1 waits for the OK at Code, F2 is still at Test. */
+function featureRuns() {
+  const b = build();
+  const stage = (s, state, label) => ({ ...blank(s), state, holder: { kind: "reference_agent", name: s === "test" ? "test-writer" : "code-writer" }, runs: 1, rounds: [{ n: 1, at: AT, label, verdict: "passed", back: false, words: "Passed." }] });
+  const card = (id, name, s, state) => ({ id, feature: id, name: `${id} ${name}`, started: AT, at: { stage: s, state, summary: state === "waiting_on_you" ? "Waiting on you at Code" : "Working at Test" }, ended: false });
+  const accept = { stage: "code", name: "accept", label: "OK the code: F1", needs: [], run: "F1" };
+  b.build.feature_runs = [
+    { ...card("F1", "Count words", "code", "waiting_on_you"), by: "you@example.com", stages: [stage("test", "done", "Round 1"), stage("code", "waiting_on_you", "Push 1")], actions: [accept], pull_request: { kind: "pull_request", url: "https://github.com/you/word-tally/pull/2", head: "1a2b3c4", check: null }, log: [{ at: AT, said: "The code waits for your OK." }], timeline: [] },
+    { ...card("F2", "Count lines", "test", "working"), by: "you@example.com", stages: [stage("test", "working", "Round 1")], actions: [], pull_request: null, log: [], timeline: [] },
+  ];
+  b.build.actions = [accept, { stage: "code", name: "stop", label: "Stop", needs: [] }];
+  b.build.timeline = [{ phase: "write-the-suite", round: 1, holder: "adlc/test-writer", kind: "agent", start: AT, end: AT, duration_ms: 0, status: "closed", run: "F1" }];
+  return b;
+}
+
+test("0.4.10: a version answers each feature run, with its stages, its actions naming it, its pull request and its timeline; the list gives a card per run", () => {
+  assert.deepEqual(checkBuild(featureRuns(), IDS, "b1"), []);
+  // A build made in one run, with none of it, still passes.
+  assert.deepEqual(checkBuild(build(), IDS, "b1"), []);
+  const l = list();
+  l.builds[0].feature_runs = featureRuns().build.feature_runs.map(({ id, feature, name, started, at, ended }) => ({ id, feature, name, started, at, ended }));
+  assert.deepEqual(checkBuildList(l, IDS), []);
+  const { at, ...bare } = l.builds[0].feature_runs[0];
+  assert.ok(checkBuildList({ builds: [{ ...l.builds[0], feature_runs: [bare] }] }, IDS).length > 0, "a card says where its run is");
+  const run = featureRuns();
+  delete run.build.feature_runs[0].stages;
+  assert.ok(checkBuild(run, IDS, "b1").length > 0, "a feature run carries its stages");
+});
+
+test("0.4.10: a feature run is named once, holds each stage once, names itself on its actions, and offers none once it ended; an action or a bar names a run the build has", () => {
+  const twice = featureRuns();
+  twice.build.feature_runs[1].id = "F1";
+  assert.ok(checkBuild(twice, IDS, "b1").includes('body.build.feature_runs: the feature run "F1" is listed more than once'));
+  const stages = featureRuns();
+  stages.build.feature_runs[0].stages.push({ ...stages.build.feature_runs[0].stages[1] });
+  stages.build.feature_runs[0].stages.push({ ...blank("nowhere") });
+  const sp = checkBuild(stages, IDS, "b1");
+  assert.ok(sp.includes('body.build.feature_runs[0].stages: the stage "code" is listed more than once'));
+  assert.ok(sp.includes('body.build.feature_runs[0].stages: "nowhere" is not a stage in stages.json'));
+  const other = featureRuns();
+  other.build.feature_runs[0].actions[0] = { ...other.build.feature_runs[0].actions[0], run: "F2" };
+  assert.ok(checkBuild(other, IDS, "b1").includes('body.build.feature_runs[0].actions[0]: "accept" is this run\'s, so it names it as run ("F1")'));
+  const ended = featureRuns();
+  ended.build.feature_runs[0].ended = true;
+  assert.ok(checkBuild(ended, IDS, "b1").includes('body.build.feature_runs[0].actions[0]: "accept" is offered on a run that has ended'));
+  const stray = featureRuns();
+  stray.build.actions[0] = { ...stray.build.actions[0], run: "F9" };
+  stray.build.timeline[0].run = "F9";
+  assert.deepEqual(checkBuild(stray, IDS, "b1"), ['body.build.actions[0]: "accept" names the feature run "F9", which the build does not have', 'body.build.timeline[0]: names the feature run "F9", which the build does not have']);
+  const notOffered = featureRuns();
+  notOffered.build.actions[0] = { ...notOffered.build.actions[0], run: "F2" };
+  assert.deepEqual(checkBuild(notOffered, IDS, "b1"), ['body.build.actions[0]: "accept" names the feature run F2, which does not offer it']);
 });
