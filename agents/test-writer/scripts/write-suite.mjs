@@ -91,6 +91,19 @@
 //   [CARRIED=<folder holding the original's own tests, placed>]
 //   [REFERENCE=<md>] [WORKED=<test file>] [WORKED_SPEC=<spec.json>] [KEPT_TEST=<master copy>] node write-suite.mjs
 //
+// One feature's tests (test-writer 0.11.0). A message with a line of its own
+// "feature: <id>" asks for that feature's tests alone, as Product Factory asks
+// once each feature of a version is made in a run of its own, at the same time
+// as the others. The spec goes to the model and to the spec rules with that
+// feature alone among its features (its interfaces, constraints, systems and
+// settings kept), so the acceptance scenarios and exact entries a suite is held
+// to are that feature's; a feature the spec does not hold yet is described in
+// the message, and then no spec rule asks for a scenario. Each new file is
+// named for the feature, test/<id in lower case>-<name>.test.mjs, renamed so by
+// code when the model names it otherwise, so two features' suites never write
+// the same file. The standard checks are the same bytes in every feature's
+// suite. With a suite attached it adds, as always.
+//
 // The original's own tests are carried (test-writer 0.10.0). CARRIED names a
 // folder job.mjs filled by code (carried.mjs): each original test at
 // test/<name>, unchanged but for the import specifiers the manifest lists,
@@ -345,6 +358,34 @@ are kept exactly as they are, and a file you answer with under one of their
 names is refused. Write only NEW test files, for what they asked for above,
 in the same style and against the same interface the existing files import.
 A new file must still fail against empty stand-ins on its own.`;
+
+/** The feature a message asks the tests of, on a line of its own, "feature: F2"; null when it names none (test-writer 0.11.0). */
+export function featureAsked(asked = "") {
+  return /^feature:\s*([A-Za-z][A-Za-z0-9._-]{0,63})\s*$/m.exec(String(asked ?? ""))?.[1] ?? null;
+}
+
+/** The spec with that feature alone among its features, and every interface,
+ *  constraint, system and setting kept; null when the spec holds no such
+ *  feature (test-writer 0.11.0). */
+export function specForFeature(spec, id) {
+  const features = (Array.isArray(spec?.features) ? spec.features : []).filter((x) => trim(x?.id) === id);
+  return features.length ? { ...spec, features } : null;
+}
+
+/** The name a new file of one feature's tests takes: test/<id in lower case>-<its name>, unless it is named for the feature already. */
+export function featureFileName(path, id) {
+  const m = /^test\/([^/]+)$/.exec(String(path ?? ""));
+  const pre = String(id).toLowerCase();
+  if (!m || STANDARD_NAMES.includes(m[1])) return path;
+  const name = m[1].toLowerCase();
+  return name.startsWith(`${pre}-`) || name === `${pre}.test.mjs` ? path : `test/${pre}-${m[1]}`;
+}
+
+/** What is said when the message asks for one feature's tests (test-writer 0.11.0). */
+export function featureInstruction(id, inSpec = true) {
+  const lower = String(id).toLowerCase();
+  return `This job writes the tests of one feature alone, ${id}${inSpec ? ", the only feature in THE SPEC above. The spec's interfaces, constraints, systems and settings are there for what its tests call and must keep" : ", which the spec does not hold yet: WHAT THEY ASKED FOR describes it"}. Every other feature is written in a run of its own, so write tests for ${id} and for nothing else. Name each test with ${id}'s ids in square brackets as always, and name each new file for the feature: test/${lower}-<what it checks>.test.mjs. A file named otherwise is renamed so.`;
+}
 
 /** What is said with the original's own tests (test-writer 0.10.0). */
 export const CARRIED_INSTRUCTION = `These are the original's own tests, given whole: the code being rebuilt
@@ -670,13 +711,15 @@ export function agentFilesOf(folder) {
 
 /** The parts of the request, in order, as text. Pure and exported so the
  *  whole prompt can be read in a test rather than inferred from a fixture. */
-export function requestParts({ spec = null, specV1 = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], revise = [], part = null, dependencies = [], agentFiles = [], carried = [] } = {}) {
+export function requestParts({ spec = null, specV1 = null, declared = null, reference = "", worked = "", workedSpec = "", findings = [], asked = "", existing = [], revise = [], part = null, dependencies = [], agentFiles = [], carried = [], feature = null, featureInSpec = true } = {}) {
   const parts = [INSTRUCTION];
   if (trim(asked)) parts.push(`--- WHAT THEY ASKED FOR ---\n${trim(asked)}`);
   // The spec (spec-v1), whole and in its own section, ahead of the reading of
   // the agent's files, which is then named for what it is (test-writer 0.9.0).
   const withSpec = isSpecV1(specV1);
   if (withSpec) parts.push(`--- THE SPEC ---\n${specInstruction(specV1)}\n\n${JSON.stringify(specV1, null, 2)}`);
+  // One feature's tests (test-writer 0.11.0).
+  if (feature) parts.push(`--- ONE FEATURE ---\n${featureInstruction(feature, featureInSpec)}`);
   parts.push(`--- ${withSpec ? "WHAT THE AGENT'S FILES DECLARE" : "THE SPEC"} ---\n${spec ? JSON.stringify(spec, null, 2) : "(no spec)"}`);
   if (agentFiles.length) {
     parts.push(`--- THE AGENT'S OWN FILES ---\n${agentFilesInstruction(withSpec)}\n\n${agentFiles.map((f) =>
@@ -1226,7 +1269,7 @@ export async function askForSuite({ call, run = null, tries = TRIES, ...opts } =
       // to, whole in one ask (a suite in parts once all its parts are in);
       // never a revision, which changes only the tests it names.
       specV1: opts.specV1 ?? null,
-      specCheck: isSpecV1(opts.specV1) && !opts.part && !(opts.revise ?? []).length,
+      specCheck: isSpecV1(opts.specV1) && !opts.part && !(opts.revise ?? []).length && opts.specRules !== false,
       carried: opts.carried ?? [],
     });
     // Every test file the model wrote loads (test-writer 0.10.0): node
@@ -1299,7 +1342,7 @@ export async function askInParts({ call, run = null, tries = TRIES, size = PART_
   if (declaresPerJobRecords(opts.declared) && !callsRecordsCheck(files)) findings.push(`the whole suite: ${NO_RECORDS_CHECK}`);
   if (trim(opts.workedTest) && !callsWorked(files) && !saysNoWorkedValues(notes.join("\n"))) findings.push(`the whole suite: ${NO_WORKED_VALUES}`);
   for (const f of pinFindings(files, { words: opts.asked ?? "", declared: opts.declared, skip: STANDARD_TESTS })) findings.push(`the whole suite: ${f}`);
-  for (const f of specFindings(files, opts.specV1, { skip: STANDARD_TESTS })) findings.push(`the whole suite: ${f}`);
+  for (const f of opts.specRules === false ? [] : specFindings(files, opts.specV1, { skip: STANDARD_TESTS })) findings.push(`the whole suite: ${f}`);
   const standIns = run ? await run(withStandardTests(files, opts)) : null;
   if (standIns) for (const f of standInFindings(standIns, { skip: (opts.carried ?? []).map((x) => x.path) })) findings.push(`the whole suite: ${f}`);
   return { files, could_not: couldNot, notes: notes.join("\n"), findings, stand_ins: standIns, calls, tried_again: triedAgain, parts };
@@ -1423,6 +1466,10 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       ...loadFindings(existing.filter((f) => !STANDARD_TESTS.includes(f.path))).map((w) => `${w}. It is kept as it is`),
     ];
     const revise = trim(env.REVISE) === "1" ? namedForRevision(existing, asked) : [];
+    // One feature's tests (test-writer 0.11.0): the spec with that feature alone, or, for a
+    // feature it does not hold yet, the spec as it came and no spec rule asking for a scenario.
+    const feature = trim(env.REVISE) === "1" ? null : featureAsked(asked);
+    const featureSpec = feature && specV1 ? specForFeature(specV1, feature) : null;
     // A revision that only drops an original test, as the person named it,
     // changes no other test and asks no model.
     const dropsOnly = trim(env.REVISE) === "1" && !revise.length && carriedSet.dropped.length > 0;
@@ -1437,8 +1484,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       process.exit(0);
     }
     const out = dropsOnly ? { files: [], could_not: [], notes: "", findings: [], stand_ins: null, calls: 0, restored: [] } : await askInParts({
-      call, declared, spec, specV1, existing, dependencies, revise,
+      call, declared, spec, specV1: featureSpec ?? specV1, existing, dependencies, revise,
       asked, carried,
+      feature, featureInSpec: Boolean(featureSpec), specRules: !feature || Boolean(featureSpec),
       keptTest,
       run: async (files) => standInChecks({ spec, files, folder: statSync(SPEC).isDirectory() ? SPEC : null }),
       agentFiles: statSync(SPEC).isDirectory() ? agentFilesOf(SPEC) : [],
@@ -1463,6 +1511,8 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       existing.splice(0, existing.length, ...refreshed.existing);
       generated.push(...refreshed.generated);
     }
+    // One feature's files are named for it, so two features' suites never write the same file.
+    if (feature) out.files = out.files.map((x) => ({ ...x, path: featureFileName(x.path, feature) }));
     out.files = [...out.files.filter((f) => !STANDARD_TESTS.includes(f.path)), ...generated];
     // What the kept-interfaces check could not hold is said beside the suite,
     // with what the model could not test.
