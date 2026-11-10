@@ -1,4 +1,4 @@
-// The lifecycle API (lifecycle-api.schema.json, version 0.4.8) and its check
+// The lifecycle API (lifecycle-api.schema.json, version 0.4.9) and its check
 // (lifecycle-api-check.mjs). This checks that the schema names a definition
 // for every request and answer, that a build in the contract's shape passes,
 // that each rule the check holds catches the answer that breaks it, that
@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.8 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.8");
+test("the schema is version 0.4.9 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.9");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1343,4 +1343,39 @@ test("0.4.8: the spec schema (spec-v1) reuses ISO/IEC/IEEE 29148's verification 
   assert.deepEqual(s.$defs.Requirement.properties.verify.enum, ["inspection", "analysis", "demonstration", "test"]);
   assert.match(s.$defs.Acceptance.properties.gherkin.pattern, /Scenario:/);
   assert.deepEqual(s.$defs.Feature.required, ["id", "name", "does", "requirements", "acceptance"]);
+});
+
+// ---------- 0.4.9: the holder's skills ----------
+
+const skill = (name, description) => ({ name, description, text: `---
+name: ${name}
+description: ${description}
+---
+
+# ${name}
+` });
+
+test("0.4.9: a stage workspace's holder may list its skills, each with its SKILL.md in full, or say why it cannot", () => {
+  const listed = { ...workspace(), holder: { kind: "reference_agent", name: "code-writer", role: "code-writer", skills: [skill("write-the-scripts", "to write the scripts"), skill("check-the-work", "once the scripts are written")] } };
+  assert.deepEqual(checkStageWorkspace(listed, IDS, "code"), []);
+  assert.deepEqual(checkStageWorkspace({ ...listed, holder: { ...listed.holder, skills: [] } }, IDS, "code"), []);
+  const noted = { ...workspace(), holder: { ...workspace().holder, skills_note: "Its skills are whatever your coding agent has installed." } };
+  assert.deepEqual(checkStageWorkspace(noted, IDS, "code"), []);
+  // A 0.4.8 holder, with neither, still passes.
+  assert.deepEqual(checkStageWorkspace(workspace(), IDS, "code"), []);
+  const { text, ...bare } = skill("write-the-scripts", "to write the scripts");
+  assert.ok(checkStageWorkspace({ ...listed, holder: { ...listed.holder, skills: [bare] } }, IDS, "code").length > 0, "a skill carries its SKILL.md");
+  assert.ok(checkStageWorkspace({ ...listed, holder: { ...listed.holder, skills: [{ ...bare, name: "", text: "x" }] } }, IDS, "code").length > 0, "a skill has a name");
+});
+
+test("0.4.9: a holder lists each skill once, and lists its skills or says why it cannot, not both", () => {
+  const twice = { ...workspace(), holder: { kind: "reference_agent", name: "code-writer", skills: [skill("check-the-work", "a"), skill("check-the-work", "b")] } };
+  assert.deepEqual(checkStageWorkspace(twice, IDS, "code"), ['body.holder.skills: "check-the-work" is listed more than once']);
+  const both = { ...workspace(), holder: { kind: "reference_agent", name: "code-writer", skills: [], skills_note: "Its skills cannot be seen." } };
+  assert.deepEqual(checkStageWorkspace(both, IDS, "code"), ["body.holder: lists its skills and also says they cannot be seen (skills_note); it says one or the other"]);
+  // The same rules hold wherever a holder is checked, such as a role's binding.
+  const r = roles();
+  Object.assign(role(r, "code-writer"), { from: "org", binding: { role: "code-writer", holder: { kind: "your_agent", name: "Our coding agent", handle: "coder.you@example.com", skills: [], skills_note: "Its skills cannot be seen." }, scope: { org: true }, since: AT, by: "you@example.com" } });
+  const i = r.roles.findIndex((x) => x.role === "code-writer");
+  assert.deepEqual(checkRoles(r, SR), [`body.roles[${i}].binding.holder: lists its skills and also says they cannot be seen (skills_note); it says one or the other`]);
 });
