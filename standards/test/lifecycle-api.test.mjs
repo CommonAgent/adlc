@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.13 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.13");
+test("the schema is version 0.4.14 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.14");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1543,4 +1543,24 @@ test("0.4.13: a check names its section by number, a check not done says why, an
   assert.deepEqual(checkArtifacts([withChecks([check(), check({ result: "not_met", detail: "Another reading." })])], IDS), ['body.artifacts[0].checks[1]: Section 12.6, rule 2, "No address in its scripts", is on this artifact twice']);
   assert.deepEqual(checkArtifacts([withChecks([check(), check({ rule: "5", asks: "The review names the archive's digest" })])], IDS), [], "two rules of one section are two checks");
   assert.deepEqual(checkArtifacts([withChecks([check({ result: "not_checked", detail: "" })], "next")], IDS).length, 0, "the rules beyond the schema hold for a made artifact");
+});
+
+// ---------- 0.4.14: the spec of a version built before specs ----------
+
+const specArtifact = (o = {}) => ({ id: "spec", stage: "requirements", name: "Spec", by: "spec writer", kind: "spec", ...o });
+
+test("0.4.14: a spec not made can offer to be written now, and once written says when and from what", () => {
+  const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
+  assert.ok(ops.includes("POST /builds/{id}/spec/backfill"));
+  const offer = specArtifact({ state: "not_made", summary: { words: "This version was built before the spec writer wrote specs, so it has none." }, backfill: { offered: true, words: "The spec writer writes its spec from what it was asked and its own files. Nothing else changes." } });
+  assert.deepEqual(checkArtifacts([offer], IDS), []);
+  const written = specArtifact({ state: "made", at: "2026-11-11T10:00:00-07:00", summary: { product: "word-counter 0.1.0", purpose: "Counts the words in a sentence.", features: [], interfaces: [], constraints: [], open: [] }, written_after: { at: "2026-11-11T10:00:00-07:00", words: "Written after version 0.1.0 was built, from what it was asked and its own files." }, files: [] });
+  assert.deepEqual(checkArtifacts([written], IDS), []);
+});
+
+test("0.4.14: backfill is only on a spec not made, and written_after only on a made spec", () => {
+  const off = { offered: false, words: "Its spec is there." };
+  assert.deepEqual(checkArtifacts([specArtifact({ state: "made", summary: { product: "word-counter 0.1.0", purpose: "x", features: [], interfaces: [], constraints: [], open: [] }, files: [], backfill: off })], IDS), ["body.artifacts[0].backfill: only a spec that was not made can be written after the fact"]);
+  assert.deepEqual(checkArtifacts([{ ...securityArtifact({ reach: [], spend: "nothing", never: [], verdict: "Passed." }), backfill: off }], IDS), ["body.artifacts[0].backfill: only a spec that was not made can be written after the fact"]);
+  assert.deepEqual(checkArtifacts([specArtifact({ state: "not_made", summary: { words: "None." }, written_after: { at: "2026-11-11T10:00:00-07:00", words: "x" } })], IDS), ["body.artifacts[0].written_after: only a made spec was written after its version"]);
 });

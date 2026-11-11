@@ -84,6 +84,17 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.14**: the spec of a version built before specs. A version built by a
+  spec writer from before stages.json 1.6.0 has the agent's own files and no
+  spec. Its spec artifact, not made, may carry `backfill`: whether the spec
+  can be written now, and what that does or why not, in words. `POST
+  /builds/{id}/spec/backfill` gives the spec writer what the version was
+  asked, its earlier draft and the agent's own files, and it writes the spec
+  for the version as it was built. Nothing else in the version changes,
+  nothing reruns and no gate is answered. The made spec carries
+  `written_after`: when, and what it was written from. The check holds that
+  `backfill` is only on a spec not made and `written_after` only on a made
+  spec. Additive.
 - **0.4.13**: each artifact's Common Agent checks. `Artifact` gains `checks`,
   a list of `RuleCheck`: the `standard`, the `version` it was read in, the
   `section` by number and, where the section numbers its rules, the `rule`;
