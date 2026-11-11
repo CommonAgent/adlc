@@ -117,6 +117,37 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.5.0**: one version for the one-builder lifecycle (stages.json 1.7.0),
+  so a client and a service move once. The action `send_back`, offered at the
+  stage a build is at, reopens any earlier stage the build offers: its need
+  `to` is a choice of those stages, and it asks for the person's words. The
+  stage chosen opens again with the words as an ask for changes; it and every
+  stage after it run again, each when the one before passes; their artifacts
+  so far are kept as earlier versions; a person's approval a reopened stage
+  needs is asked again; and the service records it as a deviation.
+  `back_to_test` and `back_to_requirements` stay as the two sends back offered
+  before. A binding's `provided_by` gains `itself`, for a keyless public
+  service bound to the service itself (architecture-standard.md 1.1.0,
+  section 2), which a build of hn-digest needed and had no word for. A try
+  gains `inputs`, the job's inputs by the names the offering declares, so a
+  job's inputs have a defined place; a try in a list says what it was sent
+  with. And `ArchitectureSummary` gains the record's views from
+  architecture-standard.md 2.0.0, as pull request 158 defined them, so that
+  pull request needs no API version of its own: `components` (id, name, kind,
+  within, responsibility, and for a part the system it reaches), `connectors`
+  (from, to, how, access, carries), `runtime` (runs, per_job, own_service,
+  and each environment's systems with their bindings), `flow` (from, to,
+  data, says) and `drivers` (key, quality, says, from); each decision may say
+  its `kind`, `structure` with its `context`, `drivers`, `alternatives` and
+  `consequences`, or `ruling`, which keeps `options` and `follows`. `limits`
+  stays, for a client that reads it. The check holds that `send_back` asks for
+  words and offers only earlier stages the build offers, and, for a record
+  that gives its views, that each component has a responsibility and sits
+  within one the record names, each connector and flow step names both ends,
+  each system has a component, a decision about structure cites drivers the
+  record lists, weighs an alternative and says its consequences, and no
+  decision only states a limit. Additive: a client that knows only 0.4.14
+  ignores what it does not know.
 - **0.4.14**: the spec of a version built before specs. A version built by a
   spec writer from before stages.json 1.6.0 has the agent's own files and no
   spec. Its spec artifact, not made, may carry `backfill`: whether the spec

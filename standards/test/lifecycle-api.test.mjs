@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.14 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.14");
+test("the schema is version 0.5.0 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.5.0");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1326,6 +1326,39 @@ test("back_to_requirements is an action name, acts at Code, and asks for the per
   assert.deepEqual(checkBuild(b, IDS, "b1"), ["body.build.actions[1]: back_to_requirements acts at Code, not at requirements"]);
 });
 
+// ---------- 0.5.0: send back to any stage, a binding to the service itself, a try's inputs ----------
+
+test("0.5.0: send_back reopens any earlier stage the build offers, with the person's words", () => {
+  assert.match(SCHEMA.$defs.Action.properties.name.description, /send_back/);
+  const words = { name: "changes", label: "What should change", kind: "words" };
+  const to = (options) => ({ name: "to", label: "Back to", kind: "choice", options });
+  const b = build();
+  b.build.actions.splice(1, 0, { stage: "code", name: "send_back", label: "Send back", needs: [to(["requirements"]), words] });
+  assert.deepEqual(checkBuild(b, IDS, "b1"), []);
+  b.build.actions[1].needs = [to(["requirements"]), { ...words, optional: true }];
+  assert.deepEqual(checkBuild(b, IDS, "b1"), ["body.build.actions[1]: send_back asks for the person's words (a need of kind words that is not optional)"]);
+  b.build.actions[1].needs = [words];
+  assert.deepEqual(checkBuild(b, IDS, "b1"), ["body.build.actions[1]: send_back needs to, a choice of the earlier stages it may reopen"]);
+  b.build.actions[1].needs = [to(["acceptance", "design"]), words];
+  assert.deepEqual(checkBuild(b, IDS, "b1"), [
+    "body.build.actions[1]: send_back offers acceptance, which is not before code",
+    "body.build.actions[1]: send_back offers design, which is not a stage the build offers",
+  ]);
+});
+
+test("0.5.0: a keyless public service is bound to itself", () => {
+  const rec = { systems: ["hacker-news"], kind: "plugin-on-harness", decisions: [{ decided: "Bind hacker-news to the service itself", why: "It takes no key and the owner approved it." }],
+    bindings: { "hacker-news": { production: { product: "itself", provided_by: "itself" } } } };
+  assert.deepEqual(checkArtifacts([archArtifact(rec)], IDS), []);
+  assert.ok(checkArtifacts([archArtifact({ ...rec, bindings: { "hacker-news": { production: { product: "itself", provided_by: "nobody" } } } })], IDS).length > 0);
+});
+
+test("0.5.0: a try names the job's inputs by the names the offering declares", () => {
+  assert.deepEqual(validate("TryRequest", { say: "databases", against: "pull_request", offering: "topic-digest", inputs: { topic: "databases" } }), []);
+  assert.ok(validate("TryRequest", { say: "x", against: "pull_request", inputs: { topic: 3 } }).length > 0, "an input's value is words");
+  assert.deepEqual(validate("TryAnswer", { try: { id: "t1", say: "databases", against: "installed", answer: "y", ms: 12, at: AT, inputs: { topic: "databases" } } }), []);
+});
+
 // ---------- 0.4.8: the spec ----------
 
 test("0.4.8: a spec artifact carries a SpecSummary, and one without its features is refused", () => {
@@ -1514,6 +1547,92 @@ test("0.4.12: an architecture record carries its systems, bindings per environme
   assert.deepEqual(checkArtifacts([archArtifact({ ...rec, decisions: [{ decided: "use the house model", why: "" }] })], IDS), ["body.artifacts[0].summary.decisions[0]: a decision without a reason is not delivered"]);
   assert.ok(checkArtifacts([archArtifact({ systems: ["files"] })], IDS).length > 0, "systems, kind and decisions are required");
   assert.deepEqual(checkArtifacts([archArtifact({ words: "One step, a program. It reaches nothing." })], IDS), [], "a record in words alone, as before 0.4.12, still passes");
+});
+
+// ---------- 0.5.0: the architecture record's views ----------
+
+/** hn-digest's record as an ArchitectureSummary gives it, with its views
+ *  (architecture-standard.md 2.0.0, sections 12 to 17). */
+const hnDigest = () => ({
+  systems: ["text-reasoning", "hacker-news"],
+  bindings: { "text-reasoning": { production: { product: "platform", provided_by: "platform" } } },
+  dependencies: [], kind: "plugin-on-harness",
+  limits: { cost: "1 USD per day, across every job", speed: "a digest within 300 seconds", data: "keeps nothing between jobs", trust: "takes jobs only from its owner" },
+  components: [
+    { id: "harness", name: "the harness", kind: "harness", responsibility: "Starts the skill's script once per job and sends back what it writes as the reply." },
+    { id: "skill-topic-digest", name: "topic-digest", kind: "skill", within: "harness", responsibility: "Writes a digest of the current top stories on the caller's topic." },
+    { id: "script-topic-digest", name: "scripts/topic-digest.mjs", kind: "script", within: "skill-topic-digest", responsibility: "Runs the job in order." },
+    { id: "hacker-news-client", name: "Hacker News client", kind: "part", within: "script-topic-digest", responsibility: "Reads the top story ids, then each item.", reaches: "hacker-news" },
+    { id: "sentence-writer", name: "sentence writer", kind: "part", within: "script-topic-digest", responsibility: "Has the model write one sentence per story.", reaches: "text-reasoning" },
+    { id: "text-reasoning", name: "text reasoning", kind: "system", outside: true, responsibility: "The model behind the shared caller." },
+    { id: "hacker-news", name: "public Hacker News API", kind: "system", outside: true, responsibility: "To read the current top stories." },
+  ],
+  connectors: [
+    { from: "caller", to: "harness", how: "a job message", carries: "the topic" },
+    { from: "harness", to: "script-topic-digest", how: "by command, with the topic and the settings as flags" },
+    { from: "hacker-news-client", to: "hacker-news", access: "read", how: "over HTTPS, with no key, at the address its binding names" },
+    { from: "sentence-writer", to: "text-reasoning", access: "trigger", how: "through the shared model caller and its four settings" },
+    { from: "script-topic-digest", to: "caller", how: "the reply", carries: "the digest" },
+  ],
+  runtime: { runs: "Runs once per job under a harness, with no service of its own.", per_job: true, own_service: false, environments: [{ environment: "production", systems: [{ system: "hacker-news", binding: "the service itself, no key, read" }] }] },
+  flow: [
+    { from: "caller", to: "harness", data: "the topic", says: "The caller names the topic." },
+    { from: "hacker-news", to: "hacker-news-client", data: "the top story ids", says: "The client reads them." },
+    { from: "sentence-writer", to: "text-reasoning", data: "each story's title", says: "The writer asks for one sentence." },
+    { from: "script-topic-digest", to: "caller", data: "the digest", says: "It goes back as the reply." },
+  ],
+  drivers: [{ key: "cost", quality: "cost", says: "1 USD per day, across every job", from: "the owner's answer" }, { key: "speed", says: "a digest within 300 seconds" }],
+  decisions: [
+    { decided: "Code controls the job, and the model writes only the sentences", kind: "structure", context: "The job is the same steps every time.", drivers: ["cost", "speed"], why: "A program bounds the spend.", alternatives: [{ option: "A model-driven agent", why_not: "its spend would not be bounded" }], consequences: ["Only the sentence writer calls the model."] },
+    { decided: "Bind text-reasoning to platform in production", kind: "ruling", why: "The organization chose no product.", follows: "The install places the model." },
+  ],
+  egress: [{ environment: "production", destinations: [], enforced: false }], questions: 0,
+});
+
+test("0.5.0: an architecture record may give its components, connectors, runtime, data flow, drivers and decisions about structure", () => {
+  assert.deepEqual(checkArtifacts([archArtifact(hnDigest())], IDS), []);
+  const { components, connectors, runtime, flow, drivers, ...before } = hnDigest();
+  assert.deepEqual(checkArtifacts([archArtifact({ ...before, decisions: [{ decided: "Limit what the agent spends to 1 USD a day", why: "the owner said so" }] })], IDS), [], "a record from before 0.5.0 reads as it did, limits and all");
+  assert.ok(checkArtifacts([archArtifact({ ...hnDigest(), components: [{ ...hnDigest().components[0], kind: "module" }] })], IDS).length > 0, "a component's kind is one of the seven");
+  assert.ok(checkArtifacts([archArtifact({ ...hnDigest(), runtime: { per_job: true } })], IDS).length > 0, "the runtime view says how it runs");
+});
+
+test("0.5.0: every component has a responsibility, and every connector and flow step names both of its ends", () => {
+  const rec = hnDigest();
+  rec.components[3].responsibility = " ";
+  rec.connectors.push({ from: "digest-writer", to: "caller", how: "the reply" });
+  rec.flow.push({ from: "topic-filter", to: "sentence-writer", data: "the kept stories", says: "Handed on." });
+  rec.components.push({ id: "orphan", name: "orphan", kind: "part", within: "nowhere", responsibility: "x" });
+  assert.deepEqual(checkArtifacts([archArtifact(rec)], IDS), [
+    "body.artifacts[0].summary.components[3]: hacker-news-client has no responsibility",
+    'body.artifacts[0].summary.components[7].within: "nowhere" is not one of the record\'s components',
+    'body.artifacts[0].summary.connectors[5].from: "digest-writer" is not one of the record\'s components or the caller',
+    'body.artifacts[0].summary.flow[4].from: "topic-filter" is not one of the record\'s components or the caller',
+  ]);
+  const unseen = hnDigest();
+  unseen.components = unseen.components.filter((c) => c.id !== "hacker-news");
+  unseen.connectors = unseen.connectors.filter((k) => k.to !== "hacker-news");
+  unseen.flow = unseen.flow.filter((s) => s.from !== "hacker-news");
+  assert.deepEqual(checkArtifacts([archArtifact(unseen)], IDS), ['body.artifacts[0].summary.components: the system "hacker-news" has no component']);
+});
+
+test("0.5.0: a decision about structure cites its drivers, weighs an alternative and says its consequences, and a limit is never a decision", () => {
+  const bare = hnDigest();
+  bare.decisions[0] = { decided: "Code controls the job", kind: "structure", why: "A program bounds the spend." };
+  assert.deepEqual(checkArtifacts([archArtifact(bare)], IDS), [
+    "body.artifacts[0].summary.decisions[0]: a decision about structure cites the drivers it answers",
+    "body.artifacts[0].summary.decisions[0]: a decision about structure weighs at least one alternative",
+    "body.artifacts[0].summary.decisions[0]: a decision about structure says its consequences",
+  ]);
+  const unknown = hnDigest();
+  unknown.decisions[0].drivers = ["cost", "latency"];
+  assert.deepEqual(checkArtifacts([archArtifact(unknown)], IDS), ['body.artifacts[0].summary.decisions[0].drivers: "latency" is not one of the record\'s drivers']);
+  const limit = hnDigest();
+  limit.decisions.push({ decided: "Limit what the agent spends to 1 USD per day", kind: "ruling", why: "The owner set it." });
+  assert.deepEqual(checkArtifacts([archArtifact(limit)], IDS), ['body.artifacts[0].summary.decisions[2]: "Limit what the agent spends to 1 USD per day" only states a limit; a limit is a driver, never a decision']);
+  const ruling = hnDigest();
+  assert.equal(ruling.decisions[1].kind, "ruling");
+  assert.deepEqual(checkArtifacts([archArtifact(ruling)], IDS), [], "a ruling keeps its earlier form: no drivers, alternatives or consequences asked of it");
 });
 
 // ---------- 0.4.13: each artifact's Common Agent checks ----------
