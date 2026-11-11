@@ -66,7 +66,7 @@ test("the adapter is told the agent acts for its person", () => {
   assert.deepEqual(actsForRecord({ at: "2026-10-18T00:00:00Z" }), { acts_for: "person", set_at: "2026-10-18T00:00:00Z", by: "tenant-host" });
 });
 
-test("Common Agent 0.28.0-draft: no shape, acts_for stated, never unsigned", () => {
+test("Common Agent 0.41.0: no shape, acts_for stated, never unsigned", () => {
   const draft = { format: "agent-descriptor-v1", agent_version: "1", does: "x", offerings: [], shape: { kind: "plugin-on-harness", memory: "keeps" }, organization_name: "Stale" };
   let signed = "";
   const d = bindDescriptor(draft, { key: "UKEY", actsFor: "anyone" }, (m) => { signed = m; return "c2ln"; });

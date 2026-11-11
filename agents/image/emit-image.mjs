@@ -69,7 +69,7 @@ function amEnv(key) {
 }
 
 export const EXT = "net.agentdoc.package";
-// The runtime requirements' format (Common Agent 0.30.0-draft, 12.2) and the
+// The runtime requirements' format (Common Agent 0.41.0, 12.2) and the
 // one before it, which a reader still accepts.
 export const INSTALL_FORMAT = "agent-runtime-requirements-v1";
 export const LEGACY_INSTALL_FORMAT = "agent-install-v1";

@@ -1,4 +1,4 @@
-// A handed address that a standing asset carries (Common Agent 0.40.2, 12.6
+// A handed address that a standing asset carries (Common Agent 0.41.0, 12.6
 // rule 2): where a can_use entry's reads names a member that holds an address,
 // such as a brand profile's logo.mark.href, a program that reads that member
 // and calls the address it holds has made a declared reach.

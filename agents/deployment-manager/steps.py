@@ -1234,7 +1234,7 @@ def fetch_and_verify(name, url, expected_sha):
     return staging, pkg_dir, sha256, pkg
 
 
-# THE MODEL SYSTEM'S FOUR SETTINGS (Common Agent 0.39.0, 12.4.1), where the
+# THE MODEL SYSTEM'S FOUR SETTINGS (Common Agent 0.41.0, 12.4.1), where the
 # owner's instruction leaves them out: the environment file's `model` block,
 # which is this host's configuration and never a package's.
 #
@@ -1611,7 +1611,7 @@ def acts_for_of(home):
 
 def bind_descriptor(home, pkg_name, name, agent_key, handle, pkg_version,
                     interaction, harness, model, sha256=None):
-    """Bind the builder's draft descriptor (Common Agent 0.28.0-draft 4.9,
+    """Bind the builder's draft descriptor (Common Agent 0.41.0, 4.9,
     6.2, 6.6, 12.6 rule 6): fill the subject now that the agent has an
     identity, add what the install decides (acts_for, interaction, fleet, and
     agent_version where the draft leaves it empty), sign with the identity

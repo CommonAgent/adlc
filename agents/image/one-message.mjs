@@ -1356,7 +1356,7 @@ function childEnv(env, where) {
 
 // ── THE MODEL GATEWAY INSIDE THE JOB ──────────────────────────────────────
 //
-// Common Agent 0.39.0 (12.4.1): a package reaches its model through four
+// Common Agent 0.41.0 (12.4.1): a package reaches its model through four
 // settings, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, and takes
 // no credential from anything around it. Claude on Vertex signs in with a
 // short-lived Google token, so the host supplies a gateway that holds the

@@ -548,7 +548,7 @@ class TheAgentsFilesThatGoTogether(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 class WhereTheSourceWasRead(Harness):
-    """The build record's `source` (Common Agent 8.2, 0.17.0-draft): the
+    """The build record's `source` (Common Agent 0.41.0, 8.2): the
     repository and commit the builder read, when it read a clean checkout.
 
     It is what joins a published package back to the repository it came from,

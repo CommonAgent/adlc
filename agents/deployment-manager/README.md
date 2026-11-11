@@ -26,7 +26,8 @@ of the role's clauses to the code that enforces it.
 A package's draft Descriptor is `agent-descriptor.json` and its runtime
 requirements are `agent-runtime-requirements.json`, pointed at from
 `plugin.json` under `descriptor` and `runtime_requirements` (Common Agent
-0.30.0-draft). A package built before then uses `descriptor.json`,
+0.41.0, 12.2). A package built before Common Agent 0.30.0-draft uses
+`descriptor.json`,
 `install.json`, the pointer `install` and the format `agent-install-v1`, and
 it still installs and updates exactly as before. Where both names are present,
 the current one is read. The bound Descriptor the agent serves from its own

@@ -298,8 +298,8 @@ test("the service shape carries the key as one variable and nothing mounted", ()
   assert.equal(argv[argv.indexOf("--min-instances") + 1], "0");
 });
 
-// Common Agent 0.30.0-draft: the draft is agent-descriptor.json, and a
-// package from before it keeps descriptor.json. The tenant host opens the one
+// Common Agent 0.41.0 (12.2): the draft is agent-descriptor.json, and a
+// package from before 0.30.0-draft keeps descriptor.json. The tenant host opens the one
 // the emitter read.
 test("the tenant host is told which descriptor file the package carries", () => {
   const ext = (p) => ({ manifest: { extensions: { "net.agentdoc.package": p } } });

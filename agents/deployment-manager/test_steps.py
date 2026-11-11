@@ -2551,7 +2551,7 @@ class TrialsAtInstall(unittest.TestCase):
         self.assertTrue(self.signed[-1].startswith(steps.DESCRIPTOR_TAG + "\n"))
 
     def test_a_package_under_the_current_names_binds_the_same(self):
-        # Common Agent 0.30.0-draft: agent-descriptor.json and
+        # Common Agent 0.41.0 (12.2): agent-descriptor.json and
         # agent-runtime-requirements.json, with the former names still read.
         with open(f"{self.home}/pkg/agent-runtime-requirements.json", "w") as f:
             json.dump({"format": "agent-runtime-requirements-v1", "samples_ref": True}, f)
@@ -2960,7 +2960,7 @@ class TheModelPlaced(unittest.TestCase):
 
 
 class BoundDescriptorFloor(unittest.TestCase):
-    """Common Agent 0.28.0-draft at the deploy (4.9, 6.2, 6.6, 6.12): the
+    """Common Agent 0.41.0 at the deploy (4.9, 6.2, 6.6, 6.12): the
     bound descriptor is always signed by its subject, says whom the agent acts
     for, and never carries shape, a draft's own included. What shape used to
     say about the deploy (memory starts clean, the model) goes to the adapter

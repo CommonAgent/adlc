@@ -34,7 +34,7 @@ EXT = "net.agentdoc.package"
 # The namespace packages carried before the package format was published.
 OLD_EXT = "com.agentcatalog.agent"
 SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-# The runtime requirements' format (Common Agent 0.30.0-draft, 12.2), and the
+# The runtime requirements' format (Common Agent 0.41.0, 12.2), and the
 # one it had before, which a reader still accepts: a package published under
 # the former names stays installable.
 INSTALL_FORMAT = "agent-runtime-requirements-v1"

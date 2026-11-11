@@ -147,7 +147,7 @@ import sys
 
 EXT = "net.agentdoc.package"
 # The names of the two authored files, the manifest pointer at the second and
-# its format (Common Agent 0.30.0-draft, 12.2). A writer emits only these. The
+# its format (Common Agent 0.41.0, 12.2). A writer emits only these. The
 # names before 0.30.0-draft are read where the current ones are absent, and
 # the current ones win where both are present, with a warning either way.
 DESCRIPTOR_FILE = "agent-descriptor.json"
@@ -190,7 +190,7 @@ CREDENTIAL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 ACCESS = ("read", "write", "trigger")
 KINDS = ("directory", "mcp", "service", "model")
-#: The request formats a model system may declare (Common Agent 0.39.0,
+#: The request formats a model system may declare (Common Agent 0.41.0,
 #: 12.4.1). The list is closed; the shared caller speaks exactly these.
 MODEL_PROTOCOLS = ("anthropic-messages", "openai-chat", "gemini")
 VALUE_KINDS = ("text", "identifier", "url", "document")
@@ -1142,7 +1142,7 @@ def run_config_declaration(spec):
             out_named.append(e)
         out["named"] = out_named
     # Whether the agent can replay a saved job's step without calling a model
-    # (Common Agent 0.24.0-draft 6.2 `replay`; docs/run-config-plan.md phase 2
+    # (Common Agent 0.41.0, 6.2 `replay`; docs/run-config-plan.md phase 2
     # item 5): carried only as true, since absent already means it cannot.
     if "replay" in rc:
         if not isinstance(rc["replay"], bool):
@@ -2091,7 +2091,7 @@ def container_spec(spec, name, version, jobs):
 def where_it_is_read(spec):
     """The three manifest members that name where a READER goes: the license
     this package is under, the page about it, and the repository its source is
-    kept in (Common Agent 12.6 rule 3, 0.17.0-draft). Nothing at install or at
+    kept in (Common Agent 0.41.0, 12.6 rule 3). Nothing at install or at
     run fetches any of them, which is why they are excepted from the rule that
     keeps addresses out of a package."""
     for k in ("homepage", "repository"):
@@ -2486,7 +2486,7 @@ def check_manifest(manifest):
         allowed = set(props.get("author", {}).get("properties", {}).keys()) or {"name", "email", "url"}
         if not isinstance(a, dict) or any(k not in allowed for k in a):
             fail("plugin.json author may carry only name, email, url")
-    # Addresses, by member and by file (Common Agent 0.17.0-draft, 12.6 rule 3).
+    # Addresses, by member and by file (Common Agent 0.41.0, 12.6 rule 3).
     # Four members may carry one, and every one of them names where a READER
     # goes: the manifest's own $schema, the homepage, the repository the source
     # is kept in, and the repository of each ancestor a copy descends from.

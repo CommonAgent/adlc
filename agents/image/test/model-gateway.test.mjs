@@ -1,4 +1,4 @@
-// The model gateway in a worker job (Common Agent 0.39.0, 12.4.1): the
+// The model gateway in a worker job (Common Agent 0.41.0, 12.4.1): the
 // entrypoint starts the host's gateway on the loopback port MODEL_ENDPOINT
 // names when the deployment placed the gateway's settings, keeps those
 // settings from the work, and counts calls through the gateway the way it
