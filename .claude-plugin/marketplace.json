@@ -1,0 +1,14 @@
+{
+  "name": "adlc",
+  "owner": { "name": "Common Agent" },
+  "metadata": {
+    "description": "The Agent Development Lifecycle for coding agents: one builder writes an agent from its spec through its code, and every gate is checked from the first draft."
+  },
+  "plugins": [
+    {
+      "name": "adlc",
+      "source": "./plugin",
+      "description": "Build an agent through the Agent Development Lifecycle."
+    }
+  ]
+}
