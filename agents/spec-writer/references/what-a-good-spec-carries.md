@@ -134,6 +134,19 @@ or an install can set: name, kind, default, range and what it changes. The
 address of a system it reaches is a setting too, with the address as its
 default; it is the one place the files will carry one.
 
+A system is named in plain system words, lowercase with hyphens, by what it
+is and not by its product: `code-host`, not GitHub, with the product in its
+`why`, because the architecture record names it that way. A model is not a
+system of the spec; the record names it by capability. From spec-v1 1.3.0 a
+system says what the scripts need to reach it (Common Agent Section 12.4,
+item 3): its `credential`, the credential's `name` and the environment
+variable (`env`) the scripts read it from, or `"none"` for a keyless public
+service; and its `settings`, each non-secret value the host must supply,
+such as its address, by `env` and `purpose`, never with a value. The files
+declare both on the system, so an install knows what to place and a script
+reads nothing the files do not declare. A system that takes a key and does
+not say so cannot be installed.
+
 A setting's kind is one of six words. What a person or a job sets is a
 `preference` (the closest layer wins) or a `rule` (the tightest layer wins),
 or `run-config` where that is not yet decided, with `set_by` person or

@@ -76,6 +76,28 @@ test("the structure is the spec's: offering, steps, pieces, labels, settings, sy
   for (const k of proseSlots(draft)) assert.ok(!/^job:.*\.(?:does|when|good|empty|instructions)$/.test(k) || draft.jobs.find((j) => k.startsWith(`job:${j.slug}.`))[k.split(".").pop()] === "", `${k} is left for the model`);
 });
 
+test("a system's credential and its settings reach the runtime requirements by variable, with no value (spec-v1 1.3.0)", () => {
+  const spec = theSpec();
+  spec.systems.push(
+    { name: "code-host", reach: "read", why: "To read the merged pull requests, on GitHub.", credential: { name: "code-host token", env: "CODE_HOST_TOKEN" }, settings: [{ env: "CODE_HOST_ADDRESS", purpose: "where the code host's API answers" }] },
+    { name: "team-chat", reach: "write", why: "To post the draft, on Slack.", credential: { name: "team-chat token", env: "TEAM_CHAT_TOKEN" } },
+    { name: "public-feed", reach: "read", why: "A keyless public feed.", credential: "none" },
+  );
+  const { draft, problems } = structureOf(spec);
+  assert.deepEqual(problems, []);
+  const by = Object.fromEntries(draft.systems.map((s) => [s.name, s]));
+  assert.equal(by["code-host"].credential, "code-host token");
+  assert.equal(by["code-host"].env, "CODE_HOST_TOKEN");
+  assert.deepEqual(by["code-host"].settings, [{ env: "CODE_HOST_ADDRESS", purpose: "where the code host's API answers" }]);
+  assert.equal(by["team-chat"].env, "TEAM_CHAT_TOKEN");
+  assert.equal(by["team-chat"].settings, undefined);
+  assert.equal(by["public-feed"].credential, undefined, "none takes no credential");
+  const runtime = JSON.parse(agentFilesOf(draft)["agent-runtime-requirements.json"]);
+  const rt = Object.fromEntries(runtime.systems.map((s) => [s.name, s]));
+  assert.deepEqual(rt["code-host"], { name: "code-host", kind: "service", credential: "code-host token", env: "CODE_HOST_TOKEN", settings: [{ env: "CODE_HOST_ADDRESS", purpose: "where the code host's API answers" }] });
+  assert.deepEqual(rt["team-chat"], { name: "team-chat", kind: "service", credential: "team-chat token", env: "TEAM_CHAT_TOKEN" });
+});
+
 test("with no declaration the offering comes from the features' offering, and a command's flags take what the host puts after each", () => {
   const spec = theSpec();
   spec.interfaces = spec.interfaces.filter((i) => i.kind !== "declaration");

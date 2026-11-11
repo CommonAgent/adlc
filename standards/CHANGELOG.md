@@ -101,6 +101,16 @@ Changes to the standards in this folder, newest first.
 
 ## spec.schema.json
 
+- **1.3.0**: a system says what the scripts need to reach it (Common Agent
+  Section 12.4, item 3). `credential` is the credential's `name` and the
+  environment variable (`env`) the scripts read it from, or `"none"` for a
+  keyless public service; `settings` is each non-secret value the host must
+  supply, such as its address, by `env` and `purpose`, never with a value.
+  The description now says a system is named in plain system words (code-host,
+  not GitHub) and that a model is not a system of the spec. Additive. The
+  release-notes agent of the ADLC One-Builder Plan's step 3 could not declare
+  its GitHub and Slack tokens and addresses, so its scripts read eight
+  variables no file declared.
 - **1.2.0**: each input and output of a feature (Data) may say whether it
   is `required` and who gives it (`given_by`: person, agent or either), so
   an offering's pieces are carried whole from what the person said to the
