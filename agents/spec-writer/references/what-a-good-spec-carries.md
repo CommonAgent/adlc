@@ -115,6 +115,17 @@ or an install can set: name, kind, default, range and what it changes. The
 address of a system it reaches is a setting too, with the address as its
 default; it is the one place the files will carry one.
 
+A setting's kind is one of six words. What a person or a job sets is a
+`preference` (the closest layer wins) or a `rule` (the tightest layer wins),
+or `run-config` where that is not yet decided, with `set_by` person or
+either. What the install places is an `address` (where a system it reaches
+answers), an `environment` (a variable the code reads) or a `credential` (a
+secret, never written down), with `set_by` install. The type of the value
+is said by its default, its `min` and `max` and its `values`, not by the
+kind: a count of stories is a `preference` with the default 30, min 10 and
+max 100, not a kind `integer`. The Design reads a setting of any other kind
+that a person or a job may set as a preference.
+
 ## The name, the price and access
 
 The name, the price and access to any system are the person's. A name they
@@ -220,11 +231,18 @@ So:
   extension when the spec gives none); a schema carries no address, which the
   spec keeps;
 - the labels are the ones the spec keeps; the run-config settings are the
-  spec's settings, with their default, range and allowed values (a whole
-  number range steps by one);
+  spec's settings a person or a job sets (a preference, a rule, a run-config,
+  or a value kind such as integer with `set_by` person or either), with their
+  default, range and allowed values (a whole number range steps by one);
 - the systems are the spec's systems it reaches, each with the address
-  setting the spec lists for its address; an address sits only in that
-  setting's default;
+  setting the spec lists for its address, or one named for the system when
+  the spec lists none; an address sits only in that setting's default. Each
+  model system the architecture record names is declared, as kind model with
+  its protocols, even where the spec does not list it, so the install places
+  its four settings (Common Agent Section 12.4.1). A service the record does
+  not name as a system is kept when a destination its egress grants names
+  it, because the architect asks the owner for a keyless public service as
+  egress and not as a system;
 - each run command is the declared one, else the command interface the spec
   keeps, in the packaged form `{home}/{package}/skills/<slug>/scripts/...`,
   with each flag and what the host puts after it (`--job {job_dir}`, `--records
@@ -363,7 +381,11 @@ the job did not have and did anyway, and the signed job manifest.
 When an architecture record came with the request, what it reaches is
 settled already: the draft's systems are the record's, by name and access,
 and a step that needs another is asked of the architect rather than declared
-(the Architecture stage's standard, standards/architecture-standard.md).
+(the Architecture stage's standard, standards/architecture-standard.md). A
+service of the spec that a destination the record's egress grants names
+("public Hacker News API (granted by the person)") is the one exception: the
+owner granted it at Architecture, so it is declared with its address
+setting.
 The same holds for its standing assets: the draft's `can_use` is exactly the
 record's "Standing assets", one entry per schema, each with `reads` (the
 fields the agent reads), `required` (false unless the job cannot be done

@@ -14,7 +14,8 @@
 //      each input's and output's name, kind and schema (declarations, else
 //      the spec's pieces and file interfaces), the labels the spec keeps, the
 //      run-config settings (the spec's settings), the systems and their
-//      address settings (the spec's systems; an address only in a setting's
+//      address settings (the spec's systems, and each model system the
+//      architecture record names; an address only in a setting's
 //      default), each run command in the packaged form {home}/{package}/
 //      skills/<slug>/scripts/... with the flags its command interface keeps,
 //      the scripts, the runtimes, the records and the price. The model writes
@@ -231,8 +232,19 @@ export function houseRun(slug) {
   return runOf(slug, { name: `scripts/${slug}.mjs`, flags: HOUSE_FLAGS, id: "" }).run;
 }
 
-/** Is a spec setting one a run config sets? */
-const isRunConfig = (s) => ["run-config", "preference", "rule"].includes(trim(s?.kind));
+/** The kinds of a spec setting that a run config sets, and the kinds the
+ *  install places: where a system answers, a variable the code reads, and a
+ *  secret. */
+export const RUN_CONFIG_KINDS = ["run-config", "preference", "rule"];
+export const INSTALL_KINDS = ["address", "environment", "credential"];
+
+/** Is a spec setting one a run config sets? One of the run-config kinds, or
+ *  a value a person or a job may set (set_by person or either) whose kind is
+ *  a value type: integer, number, string, boolean, or any kind the install
+ *  does not place. The spec of hn-digest (2026-11-11) wrote its two counts as
+ *  kind integer, set by either, and both were dropped from the files. */
+const isRunConfig = (s) => RUN_CONFIG_KINDS.includes(trim(s?.kind))
+  || (!INSTALL_KINDS.includes(trim(s?.kind)) && ["person", "either"].includes(trim(s?.set_by)));
 
 /** A spec setting as a run-config setting, with what code can say of it. */
 function runSettingOf(s) {
@@ -257,10 +269,18 @@ function runSettingOf(s) {
   return e;
 }
 
+/** A system's name as the variable that holds its address:
+ *  "public-hacker-news-api" is PUBLIC_HACKER_NEWS_API_ADDRESS. */
+export const addressEnvOf = (name) => `${slugOf(name, "service").toUpperCase().replace(/-/g, "_").slice(0, 55).replace(/_+$/, "")}_ADDRESS`;
+
 /** The systems the files declare: each system the spec reaches, as a
  *  service (or a model system, by its reserved name), with the address
  *  setting the spec lists for its address, under the name the architecture
- *  record gives it when one came. A system of reach none is no system. */
+ *  record gives it when one came. A system of reach none is no system. A
+ *  service whose fixed address no setting of the spec holds gets one, named
+ *  for the service, with the address as its default: the one place a file
+ *  may carry an address (Common Agent Section 12.6, rule 2). Each model
+ *  system the record names is declared too, where the spec lists none. */
 function systemsOf(spec, architecture = null) {
   const settings = list(spec?.settings);
   const named = Array.isArray(architecture?.systems) ? architecture.systems.map(trim) : [];
@@ -275,9 +295,20 @@ function systemsOf(spec, architecture = null) {
     const e = { name, kind: "service", access: { read: "read", write: "write", "read-write": "read-write" }[trim(s.reach)] ?? "read", needs: "", from: s.name };
     if (trim(s.address)) {
       const st = settings.find((x) => trim(x?.kind) === "address" && typeof x.default === "string" && sameAddress(x.default) === sameAddress(s.address));
-      if (st) e.settings = [{ env: trim(st.name), purpose: trim(st.about) || `where ${trim(s.name)} answers, its base address`, default: st.default }];
+      e.settings = [st
+        ? { env: trim(st.name), purpose: trim(st.about) || `where ${trim(s.name)} answers, its base address`, default: st.default }
+        : { env: addressEnvOf(name), purpose: `where ${trim(s.name)} answers, its base address`, default: trim(s.address) }];
     }
     out.push(e);
+  }
+  // A model system the record names and the spec does not list is declared
+  // all the same. The install places MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY
+  // and MODEL_PROTOCOL only for a declared system of kind model (Common Agent
+  // Section 12.4.1); in hn-digest (2026-11-11) the record named text-reasoning,
+  // the spec listed only the Hacker News API, and the scripts read four
+  // settings nothing declared.
+  for (const m of named.filter((n) => MODEL_SYSTEMS.includes(n))) {
+    if (!out.some((x) => x.name === m)) out.push({ name: m, kind: "model", access: "trigger", protocols: [...MODEL_PROTOCOLS], needs: "", from: m });
   }
   // A setting the code reads from its environment is declared on the first
   // service, the one place a descriptor carries a variable, when its name is
@@ -286,6 +317,39 @@ function systemsOf(spec, architecture = null) {
   const first = out.find((x) => x.kind === "service");
   if (first) for (const st of env) (first.settings ??= []).push({ env: trim(st.name), purpose: trim(st.about) || `the setting ${trim(st.name)}` });
   return out;
+}
+
+/** Whether two names of a destination name the same thing, read the way the
+ *  solution architect matches an answer to its destination (its
+ *  scripts/standard.mjs, sameThing): one contains the other, case and
+ *  punctuation aside. */
+export function sameDestination(x, y) {
+  const n = (s) => trim(s).toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
+  const a = n(x), b = n(y);
+  if (a.length < 3 || b.length < 3) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+/** The record as the Design is held to it: its systems, and each service
+ *  of the spec that a destination the person granted in the record's egress
+ *  names, under the service's own name. The architect records a keyless
+ *  public service as a destination beyond the derived set and asks the
+ *  owner for it (the architecture standard, section 1, item 7, and section
+ *  7), so the owner's yes is the grant, and the service is not added on the
+ *  Design's word alone. Returns the record unchanged when it grants none, or
+ *  a copy with the names added to `systems` and listed again under
+ *  `granted_services`. */
+export function withGrantedServices(architecture = null, spec = null) {
+  if (!architecture || !Array.isArray(architecture.systems)) return architecture;
+  const granted = list(architecture.egress_granted).map(trim).filter(Boolean);
+  const add = [];
+  for (const s of list(spec?.systems)) {
+    if (!isObj(s) || trim(s.reach) === "none" || !trim(s.name)) continue;
+    const slug = slugOf(s.name, "service");
+    if (MODEL_SYSTEMS.includes(slug) || architecture.systems.includes(slug) || add.includes(slug)) continue;
+    if (granted.some((g) => sameDestination(g, s.name))) add.push(slug);
+  }
+  return add.length ? { ...architecture, systems: [...architecture.systems, ...add], granted_services: add } : architecture;
 }
 
 /** The runtimes the spec's constraints name, and node wherever a command
@@ -405,7 +469,8 @@ export function structureOf(spec, { architecture = null } = {}) {
   const featuresOf = (slug) => (offerSlugs.length === 1 ? features : features.filter((f) => slugOf(f.offering) === slug));
   const commands = commandsOf(spec);
   const modules = modulesOf(spec);
-  const reachesModel = list(spec?.systems).some((s) => trim(s?.reach) !== "none" && MODEL_SYSTEMS.includes(slugOf(s?.name)));
+  const systems = systemsOf(spec, architecture);
+  const reachesModel = systems.some((s) => s.kind === "model");
   const how = { control: "script", intelligence: reachesModel ? "called" : "none", cost: reachesModel ? "metered" : "none", contract: "full" };
   const jobs = [];
   shape.forEach((o, i) => {
@@ -466,7 +531,7 @@ export function structureOf(spec, { architecture = null } = {}) {
   draft.refuses = [];
   const ships = jobs.some((j) => list(j.scripts).some((f) => f.endsWith("went-without.mjs")));
   draft.records = [...(ships ? [{ ...WENT_WITHOUT_RECORD }] : []), { ...MANIFEST_RECORD }];
-  draft.systems = systemsOf(spec, architecture);
+  draft.systems = systems;
   const run = list(spec?.settings).filter(isRunConfig);
   if (run.length) {
     // The declared order first, by the name each index declares, then the rest.

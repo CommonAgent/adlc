@@ -55,7 +55,7 @@ import { callModel, cannotCall, modelSettings } from "./model-caller.mjs";
 import { jsonCandidates, jsonIn } from "./json-in.mjs";
 import { PROSE_FINDING, THE_SPEC, addressProblems, designView, earlierDraftOf, fitNeeds, fitToSpec, prosePrompt, specPart } from "./design.mjs";
 import { NoSpec, askTwice, keepSpec, referenceParts, specCounts, specSecondsOf, writeTheSpec } from "./spec.mjs";
-import { carriedProse, mergeProse, namedProse, proseAt, proseSlots, proseUnchangedProblems, setProse, structureChanges, structureOf } from "./structure.mjs";
+import { carriedProse, mergeProse, namedProse, proseAt, proseSlots, proseUnchangedProblems, setProse, structureChanges, structureOf, withGrantedServices } from "./structure.mjs";
 import { declarationProblems } from "./declared.mjs";
 import { agentFilesOf } from "./files.mjs";
 import { personWords } from "./revise.mjs";
@@ -618,7 +618,17 @@ export async function designFromSpec({
   spec, asked = null, answers = null, call, reference = "", env = {}, earlier = null, words = null,
   seconds = null, minCallSeconds = MIN_CALL_SECONDS, now = Date.now, table,
 } = {}) {
-  const architecture = asked?.architecture ?? null;
+  // The record's systems, and each service of the spec its egress grants:
+  // the architect records a keyless public service as a destination the
+  // owner says yes to, not as a system, and the yes is the grant (hn-digest,
+  // 2026-11-11, where the Hacker News API was dropped as a system the record
+  // does not name).
+  const architecture = withGrantedServices(asked?.architecture ?? null, spec);
+  const granted = list(architecture?.granted_services);
+  const one = granted.length === 1;
+  const grantedNote = granted.length
+    ? `${granted.join(" and ")} ${one ? "is" : "are"} declared because the architecture record's egress grants ${one ? "it" : "them"}; the record lists ${one ? "it" : "them"} under Egress and not under Systems.`
+    : "";
   const built = structureOf(spec, { architecture });
   const structure = built.draft;
   const before = earlier ?? earlierDraftOf(asked);
@@ -684,7 +694,7 @@ export async function designFromSpec({
   return {
     spec: draft,
     blanks,
-    notes: [notes, ...built.notes, ...needs.notes, ...withAssets.notes].filter(Boolean).join(" "),
+    notes: [notes, grantedNote, ...built.notes, ...needs.notes, ...withAssets.notes].filter(Boolean).join(" "),
     findings: [...findings, ...canUseProblems(draft, architecture, tbl)].filter((f, i, a) => a.indexOf(f) === i),
     calls, used, tried_again: calls > 1, stopped: findings.length ? stopped : null,
     design: {

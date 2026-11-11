@@ -92,6 +92,17 @@ code. On the round trip of 2026-11-09 a request to rename one output renamed
 the offering, its step and its skill folder too; now it changes that output's
 name and its about, and nothing else.
 
+From 0.10.1 the structure keeps three things the hn-digest build
+(2026-11-11) lost. A setting a person or a job sets whose kind is a value
+type (integer, number, string, boolean) is a run-config preference with its
+default and range. Each model system the architecture record names is
+declared as kind model with its protocols, even where the spec lists none,
+so the install places its four settings (Common Agent Section 12.4.1). And a
+service of the spec that a destination the record's egress grants names is
+declared with an address setting holding its address
+(`withGrantedServices` in `scripts/structure.mjs`, the granted destinations
+read from the record's Egress section by `scripts/asked.mjs`).
+
 `scripts/spec-check.mjs` holds every spec to the schema (`scripts/spec-v1.mjs`
 validates it with no dependencies), to a scenario per feature that checks
 requirement ids it has and is Gherkin, to every quote, rule value and
