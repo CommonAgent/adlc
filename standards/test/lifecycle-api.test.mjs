@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.11 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.11");
+test("the schema is version 0.4.12 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.12");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1480,4 +1480,38 @@ test("0.4.11: the check holds a document to its stage's asset and cadence, a mad
   assert.ok(wrong((d) => { d.documents[1].history.reverse(); }).includes("body.documents[1].history: the newest entry is not the copy that stands"));
   assert.ok(wrong((d) => { d.documents[2].history = []; }).includes("body.documents[2].history: a made document names the version that made it"));
   assert.ok(wrong((d) => { Object.assign(d.documents.find((x) => x.stage === "test"), { current: documents().documents[2].current }); }).includes("body.documents[5]: is not_made, so it has no current copy"));
+});
+
+// ---------- 0.4.12: the security statement's parts, and the architecture record ----------
+
+const securityArtifact = (summary) => ({ id: "sec", stage: "security", name: "Security statement", by: "security reviewer", state: "made", kind: "security", summary });
+const archArtifact = (summary) => ({ id: "arch", stage: "architecture", name: "Architecture record", by: "solution architect", state: "made", kind: "architecture", summary });
+
+test("0.4.12: a security statement may give each reach, spend and never with its reason; a permission without a reason keeps it from passing", () => {
+  const base = { reach: ["files (write): its own records"], spend: "nothing", never: ["reach an address no system covers"], verdict: "Passed." };
+  const full = { ...base, reaches: [{ system: "files", access: "write", reason: "its own records" }], spends: [{ limit: "10 USD per day", ceiling: "the owner's spending limit" }], never_does: [{ act: "reach an address no system covers", reason: "nothing else was agreed" }], no_reason_recorded: [], architecture_record: "absent" };
+  assert.deepEqual(checkArtifacts([securityArtifact(full)], IDS), []);
+  assert.deepEqual(checkArtifacts([securityArtifact(base)], IDS), [], "the structured parts are optional");
+  const unreasoned = { ...full, reaches: [...full.reaches, { system: "network", access: "read", reason: "" }] };
+  assert.deepEqual(checkArtifacts([securityArtifact(unreasoned)], IDS), ["body.artifacts[0].summary.reaches[1]: network has no reason, so it is one of no_reason_recorded"]);
+  const passedAnyway = { ...unreasoned, no_reason_recorded: ["network"] };
+  assert.deepEqual(checkArtifacts([securityArtifact(passedAnyway)], IDS), ["body.artifacts[0].summary.verdict: passed, but 1 permission has no recorded reason"]);
+  assert.deepEqual(checkArtifacts([securityArtifact({ ...passedAnyway, verdict: "Refused: network has no reason." })], IDS), []);
+});
+
+test("0.4.12: an architecture record carries its systems, bindings per environment, kind, limits and every decision with its reason", () => {
+  const rec = {
+    systems: ["files", "text-reasoning"],
+    bindings: { files: { dev: { product: "local disk", provided_by: "platform" }, production: { product: "the org's bucket", provided_by: "customer" } }, "text-reasoning": { production: { product: "the house model", provided_by: "platform" } } },
+    dependencies: [], kind: "plugin-on-harness",
+    limits: { cost: "10 USD per day", speed: "answers within a minute", data: "nothing leaves its folder", trust: "input is untrusted text" },
+    decisions: [{ decided: "a program, not a model, counts the words", why: "counting needs no judgment" }],
+    egress: [{ environment: "production", destinations: [], enforced: true }], questions: 0,
+  };
+  assert.deepEqual(checkArtifacts([archArtifact(rec)], IDS), []);
+  assert.ok(checkArtifacts([archArtifact({ ...rec, kind: "a container" })], IDS).length > 0, "the kind is one of the three");
+  assert.deepEqual(checkArtifacts([archArtifact({ ...rec, bindings: { ...rec.bindings, mail: { production: { product: "the org's mail", provided_by: "customer" } } } })], IDS), ['body.artifacts[0].summary.bindings: "mail" is bound but is not one of the record\'s systems']);
+  assert.deepEqual(checkArtifacts([archArtifact({ ...rec, decisions: [{ decided: "use the house model", why: "" }] })], IDS), ["body.artifacts[0].summary.decisions[0]: a decision without a reason is not delivered"]);
+  assert.ok(checkArtifacts([archArtifact({ systems: ["files"] })], IDS).length > 0, "systems, kind and decisions are required");
+  assert.deepEqual(checkArtifacts([archArtifact({ words: "One step, a program. It reaches nothing." })], IDS), [], "a record in words alone, as before 0.4.12, still passes");
 });
