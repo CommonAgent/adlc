@@ -314,6 +314,8 @@ export function codeProblems(dir, _lock, { env = process.env, packer = pack, spa
   const scripts = codeScriptsOf(specOfFolder(dir));
   for (const s of scripts) if (!existsSync(join(dir, s)) || !trim(readFileSync(join(dir, s), "utf8"))) out.push(`${s} is not written; the agent's files name it, and the code is yours to write`);
   if (out.length) return out;
+  out.push(...undeclaredReads(dir));
+  if (out.length) return out;
   const paths = suiteFiles(dir).map((f) => f.path);
   const run = runTests(dir, paths, spawn ? { spawn } : {});
   if (run.timed_out) return ["the suite did not finish in time over the scripts; a script waits on something that never comes"];
@@ -328,6 +330,49 @@ export function codeProblems(dir, _lock, { env = process.env, packer = pack, spa
   const packed = packer(dir, { env });
   if (!packed.ok) out.push(`the packer (${PACKER.package} ${PACKER.version}, Common Agent ${PACKER.common_agent}) refuses the folder with its scripts: ${packed.refused}`);
   return out;
+}
+
+/** The model's settings (Common Agent 12.4.1) and the house's own variables
+ *  for where a job's folders are: read by any agent without a declaration. */
+export const MODEL_SETTINGS = ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL", "MODEL_MAX_OUTPUT_TOKENS"];
+export const HOUSE_VARIABLES = ["JOB_DIR", "RECORDS", "WORK", "TEXT_FILE", "FILES"];
+
+/** Every variable a script reads from the environment that the agent's files
+ *  do not declare. A script reaches a system only through the variables its
+ *  runtime requirements name (Common Agent 12.4, item 3; 12.6, rule 2); a run
+ *  setting arrives in the job's run-context.json (Section 5.8), never as a
+ *  variable. Read by text, as the packer's address check reads addresses. */
+export function undeclaredReads(dir) {
+  const runtime = readJson(join(dir, "agent-runtime-requirements.json")) ?? {};
+  const declared = new Set(HOUSE_VARIABLES);
+  const walk = (v) => {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) { if (k === "env" && typeof x === "string") declared.add(x); else walk(x); }
+  };
+  walk(runtime);
+  if (list(runtime.systems).some((s) => s?.kind === "model")) MODEL_SETTINGS.forEach((n) => declared.add(n));
+  const runNames = new Set(list(readJson(join(dir, "agent-descriptor.json"))?.run_config?.settings).map((s) => String(s?.name ?? "").toUpperCase()));
+  const out = [];
+  const READ = /\benv(?:\.([A-Z][A-Z0-9_]*)\b|\[\s*["'`]([A-Z][A-Z0-9_]*)["'`]\s*\])/g;
+  for (const rel of walk2(join(dir, "scripts"))) {
+    if (!/\.(?:mjs|js|cjs)$/.test(rel)) continue;
+    const seen = new Set();
+    for (const m of readFileSync(join(dir, "scripts", rel), "utf8").matchAll(READ)) {
+      const name = m[1] ?? m[2];
+      if (declared.has(name) || seen.has(name)) continue;
+      seen.add(name);
+      const why = runNames.has(name)
+        ? "it is a declared run setting, and a run setting arrives in the job's run-context.json (Common Agent 5.8), never as a variable"
+        : "the agent's files do not declare it, so no install sets it; if a system needs it (an address, a key), it goes into the spec and the build goes back to Requirements";
+      out.push(`scripts/${rel} reads ${name} from the environment: ${why}`);
+    }
+  }
+  return out;
+}
+
+function walk2(dir, base = dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk2(join(dir, e.name), base) : [relative(base, join(dir, e.name)).split(sep).join("/")]));
 }
 
 /** The suite run as the test writer runs it (node --test, TAP, no trace of a

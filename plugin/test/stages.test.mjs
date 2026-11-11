@@ -290,6 +290,17 @@ test("a pinned file git checked out with CRLF line ends is still the pinned file
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("a script that reads a variable the files do not declare, or a run setting from the environment, does not pass Code", async () => {
+  const dir = await codeFolder();
+  try {
+    writeFileSync(join(dir, "scripts", "topic-digest.mjs"), SCRIPT + "\nconst t = process.env.HN_TOKEN; const n = process.env.STORIES_IN_DIGEST; const m = process.env.MODEL_NAME; const h = process.env.HACKER_NEWS_ADDRESS;\n");
+    const p = codeProblems(dir, null, { packer: accepts });
+    assert.equal(p.length, 2, p.join("\n"));
+    assert.match(p[0], /reads HN_TOKEN from the environment: the agent's files do not declare it/);
+    assert.match(p[1], /reads STORIES_IN_DIGEST from the environment: it is a declared run setting/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("each pinned path belongs to the stage that wrote it", () => {
   assert.equal(ownerOf("spec.json"), "requirements");
   assert.equal(ownerOf("architecture-record.md"), "architecture");
