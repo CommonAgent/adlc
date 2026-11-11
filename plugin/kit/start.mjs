@@ -11,7 +11,7 @@
 //
 //   needs: node >= 22
 //   node <plugin>/kit/start.mjs <folder>
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LOCK_FILE, digestOf } from "./code-writer/scripts/workspace.mjs";
@@ -48,11 +48,30 @@ export function start(folder, { kit = KIT, skill = SKILL } = {}) {
   return { ok: true, dir, said: `The build folder is ${dir}. Write the person's own words to request.md there, then follow AGENTS.md from the start.` };
 }
 
+/** Bring a build folder's kit up to this plugin's: .adlc/ replaced whole,
+ *  AGENTS.md rewritten, and the kit pinned again. Every other pin and every
+ *  stage passed stay as they were, so nothing the build settled moves; a
+ *  stage's check that is now stricter says so the next time it runs. */
+export function update(folder, { kit = KIT, skill = SKILL } = {}) {
+  const dir = resolve(folder);
+  if (!existsSync(join(dir, ".adlc"))) return { ok: false, said: `${dir} is not a build folder; start one with start.mjs <folder>.` };
+  const lock = JSON.parse(readFileSync(join(dir, LOCK_FILE), "utf8"));
+  rmSync(join(dir, ".adlc"), { recursive: true, force: true });
+  cpSync(kit, join(dir, ".adlc"), { recursive: true });
+  writeFileSync(join(dir, "AGENTS.md"), instructionsOf(readFileSync(skill, "utf8")));
+  const kept = Object.entries(lock.digests ?? {}).filter(([p]) => !p.startsWith(".adlc/"));
+  const kitPins = walk(join(dir, ".adlc")).map((r) => [`.adlc/${r}`, digestOf(readFileSync(join(dir, ".adlc", r)))]);
+  const digests = Object.fromEntries([...kept, ...kitPins].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  writeFileSync(join(dir, LOCK_FILE), JSON.stringify({ ...lock, digests }, null, 2) + "\n");
+  return { ok: true, dir, said: `The kit in ${dir} is this plugin's now. Run \`node .adlc/check.mjs\` there.` };
+}
+
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
 if (thisFile === "start.mjs" && import.meta.url.endsWith("/start.mjs")) {
-  const folder = process.argv[2];
-  if (!folder) { console.error("usage: node start.mjs <folder>"); process.exit(2); }
-  const r = start(folder);
+  const updating = process.argv[2] === "--update";
+  const folder = process.argv[updating ? 3 : 2];
+  if (!folder) { console.error("usage: node start.mjs <folder> | node start.mjs --update <folder>"); process.exit(2); }
+  const r = updating ? update(folder) : start(folder);
   console.log(r.said);
   process.exitCode = r.ok ? 0 : 1;
 }
