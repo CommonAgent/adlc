@@ -491,7 +491,7 @@ export function checkBuild(body, ids, id, roles, cadences = CADENCES()) {
 }
 
 // The summary's shape for each kind of artifact (added in 0.4).
-const SUMMARY_OF = { spec: "SpecSummary", statement: "StatementSummary", suite: "SuiteSummary", programs: "ProgramsSummary", findings: "FindingsSummary", security: "SecuritySummary", package: "PackageSummary", run_plan: "RunPlanSummary", as_built: "AsBuiltSummary" };
+const SUMMARY_OF = { spec: "SpecSummary", statement: "StatementSummary", suite: "SuiteSummary", programs: "ProgramsSummary", findings: "FindingsSummary", security: "SecuritySummary", package: "PackageSummary", run_plan: "RunPlanSummary", as_built: "AsBuiltSummary", architecture: "ArchitectureSummary" };
 
 /** The parts of the as-built record, in order (added in 0.4.6). */
 export const AS_BUILT_PARTS = ["behaviors", "architecture", "interfaces", "dependencies", "tests_and_gaps"];
@@ -522,8 +522,35 @@ export function checkArtifacts(list, ids, at = "body.artifacts") {
       const def = a.state === "made" ? SUMMARY_OF[a.kind] ?? "WordsSummary" : "WordsSummary";
       if (a.state === "made" || a.state === "not_made" || a.state === "not_run") p.push(...validate(def, a.summary, `${here}.summary`));
       if (a.state === "made" && a.kind === "as_built") p.push(...asBuiltRules(a.summary, `${here}.summary`));
+      if (a.state === "made" && a.kind === "security") p.push(...securityRules(a.summary, `${here}.summary`));
+      if (a.state === "made" && a.kind === "architecture") p.push(...architectureRules(a.summary, `${here}.summary`));
     } else if (a.state === "not_made" || a.state === "not_run") p.push(`${here}: is ${a.state}, so its summary says why in words`);
   });
+  return p;
+}
+
+/**
+ * The security statement's structured parts (added in 0.4.12): a reach with
+ * no reason is one of no_reason_recorded, and a statement with any permission
+ * lacking a reason has not passed (stages.json: done when every permission
+ * asked for has a recorded reason).
+ */
+function securityRules(s, at) {
+  const p = [];
+  const missing = new Set(Array.isArray(s.no_reason_recorded) ? s.no_reason_recorded : []);
+  (Array.isArray(s.reaches) ? s.reaches : []).forEach((r, i) => {
+    if (isObj(r) && typeof r.reason === "string" && !r.reason.trim() && !missing.has(r.system)) p.push(`${at}.reaches[${i}]: ${r.system} has no reason, so it is one of no_reason_recorded`);
+  });
+  if (missing.size && /^passed/i.test(String(s.verdict ?? ""))) p.push(`${at}.verdict: passed, but ${missing.size} permission${missing.size === 1 ? " has" : "s have"} no recorded reason`);
+  return p;
+}
+
+/** The architecture record's rules (added in 0.4.12): a binding is for a system the record names, and every decision carries its reason. */
+function architectureRules(s, at) {
+  const p = [];
+  const systems = new Set(Array.isArray(s.systems) ? s.systems : []);
+  for (const sys of Object.keys(isObj(s.bindings) ? s.bindings : {})) if (!systems.has(sys)) p.push(`${at}.bindings: "${sys}" is bound but is not one of the record's systems`);
+  (Array.isArray(s.decisions) ? s.decisions : []).forEach((d, i) => { if (isObj(d) && typeof d.why === "string" && !d.why.trim()) p.push(`${at}.decisions[${i}]: a decision without a reason is not delivered`); });
   return p;
 }
 

@@ -66,6 +66,18 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.12**: the security statement and the architecture record, in parts.
+  `SecuritySummary` gains `reaches` (system, access, reason), `spends`
+  (limit, ceiling), `never_does` (act, reason), `no_reason_recorded` and
+  `architecture_record`, as the security reviewer's record lists them; the
+  words fields stay. `ArchitectureSummary` is new, for a made
+  `architecture` artifact: the record's seven parts from
+  architecture-standard.md section 1 (systems, bindings per environment,
+  dependencies, kind, limits, decisions with reasons, egress) and the
+  questions still open. The check holds that a reach without a reason is
+  listed as such, that a statement with one has not passed, that every
+  binding is for a named system, and that every decision has a reason.
+  Additive.
 - **0.4.11**: a product's documents. `GET /products/{name}/documents` answers
   one `Document` per stage of stages.json that names an asset, in its order:
   the stage, the asset's name, the stage's cadence, a state (`made`,
