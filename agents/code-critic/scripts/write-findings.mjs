@@ -77,7 +77,7 @@ export function answerAgainst(current, earlier) {
 const firstSentence = (s) => { const t = trim(s); const m = /^(.{20,160}?[.!?])(\s|$)/.exec(t); return m ? m[1] : t.slice(0, 160); };
 
 /** The document. */
-export function findingsDocument({ read, findings = [], warnings = [], outside = [], dropped = [], earlier = [], leftOut = [], wentWithout = "", reviewer = "code-critic", version = "", now = new Date().toISOString(), modelError = null }) {
+export function findingsDocument({ read, findings = [], warnings = [], advisory = [], outside = [], dropped = [], earlier = [], leftOut = [], wentWithout = "", reviewer = "code-critic", version = "", now = new Date().toISOString(), modelError = null }) {
   const who = `${read.package?.name ?? "the package"}${read.package?.version ? ` ${read.package.version}` : ""}`;
   const open = findings.filter((f) => !trim(f.answer)).length;
   const change = read.change?.scope === "diff"
@@ -98,6 +98,7 @@ export function findingsDocument({ read, findings = [], warnings = [], outside =
     L.push(`### F${i + 1}. ${firstSentence(f.claim)}`, "");
     L.push(`- Place: \`${placeText(f.place)}\``);
     L.push(`- Rule: ${f.rule}${RULES[f.rule] ? ` (${RULES[f.rule]})` : " (general code quality)"}`);
+    L.push(`- Breaks: ${trim(f.breaks) || (RULES[f.rule] ? `the house rule ${f.rule}` : "what the earlier review named")}`);
     L.push(`- Claim: ${trim(f.claim)}`);
     L.push(`- Consequence: ${trim(f.consequence)}`);
     L.push(`- Found by: ${f.source === "house rule" ? "the house-rule check" : "the review"}${f.earlier ? `; ${f.earlier} in the earlier review` : ""}`);
@@ -108,6 +109,12 @@ export function findingsDocument({ read, findings = [], warnings = [], outside =
     L.push("## Warnings", "");
     L.push("Every network address written into a script is listed here, the same on every run. A warning is not a finding: it is not counted above, it is not answered, and a reason does not remove it.", "");
     for (const w of warnings) L.push(`- \`${placeText(w.place)}\`: \`${trim(w.literal) || trim(w.claim)}\`${trim(w.consequence) ? ` ${trim(w.consequence)}` : ""}`);
+    L.push("");
+  }
+  if (advisory.length) {
+    L.push("## Advisory", "");
+    L.push("A finding holds a build only when it names the requirement, declared fact or house rule it breaks. These name none, so they are shown for whoever owns the code and hold nothing: they are not counted above, and they need no answer.", "");
+    for (const a of advisory) L.push(`- \`${placeText(a.place)}\`: ${trim(a.claim)}${trim(a.consequence) ? ` ${trim(a.consequence)}` : ""}`);
     L.push("");
   }
   // Both sections stand in every document, so it always carries the
@@ -183,7 +190,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
   const { findings, earlier } = answerAgainst(current, earlierFindings(earlierText));
   const wentWithout = paragraph(RECORDS);
   const doc = findingsDocument({
-    read, findings, warnings: house.warnings ?? [], outside: [...(house.outside_the_change ?? []), ...(checked.outside_the_change ?? [])],
+    read, findings, warnings: house.warnings ?? [], advisory: checked.advisory ?? [], outside: [...(house.outside_the_change ?? []), ...(checked.outside_the_change ?? [])],
     dropped: checked.dropped ?? [], earlier, leftOut: rev.left ?? [], wentWithout, modelError: rev.error ?? null,
     version: process.env.VERSION ?? "", now: process.env.NOW || new Date().toISOString(),
   });

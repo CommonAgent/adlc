@@ -89,11 +89,12 @@ The package is ${read.package?.name ?? "unnamed"}${read.package?.version ? ` ${r
 <<<FINDING>>>
 place: <path as shown above>:<line>
 rule: <one of model-in-code, hard-coded-address, kind-mismatch, undeclared-output, claims-match-code, declaration-change, credential-in-package, undeclared-setting, or general>
+breaks: <what it breaks, by name: a requirement or constraint id of the spec (F1.R2, C1), a declared fact (the declaration file and its member, such as agent-descriptor.json refusals), or the house rule above; or none>
 claim: <one or two sentences: what is wrong, stated so it can be checked>
 consequence: <one or two sentences: what happens because of it, and to whom>
 <<<END>>>
 
-If you find nothing worth a person's time, answer <<<NONE>>> alone. Never write a finding without a place. Never write a finding that praises, grades or summarises the package. Never include code to fix anything.`);
+If you find nothing worth a person's time, answer <<<NONE>>> alone. A finding that names nothing it breaks is advisory: it is shown, and it holds nothing. Never write a finding without a place. Never write a finding that praises, grades or summarises the package. Never include code to fix anything.`);
   if (problem) parts.push(`Your last answer could not be used: ${problem}. Answer again in exactly the form above.`);
   return parts.join("\n\n---\n\n");
 }
@@ -110,11 +111,11 @@ export function findingsFrom(text) {
     const f = {};
     let key = null;
     for (const line of m[1].split(/\r?\n/)) {
-      const kv = /^\s*(place|rule|claim|consequence)\s*:\s*(.*)$/i.exec(line);
+      const kv = /^\s*(place|rule|breaks|claim|consequence)\s*:\s*(.*)$/i.exec(line);
       if (kv) { key = kv[1].toLowerCase(); f[key] = trim(kv[2]); }
       else if (key && trim(line)) f[key] = `${f[key]} ${trim(line)}`.trim();
     }
-    out.push({ place_text: f.place ?? "", rule: (f.rule ?? "general").toLowerCase(), claim: f.claim ?? "", consequence: f.consequence ?? "" });
+    out.push({ place_text: f.place ?? "", rule: (f.rule ?? "general").toLowerCase(), breaks: f.breaks ?? "", claim: f.claim ?? "", consequence: f.consequence ?? "" });
   }
   if (out.length) return out;
   if (/<<<NONE>>>/.test(raw)) return { none: true };

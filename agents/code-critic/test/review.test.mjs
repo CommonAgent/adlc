@@ -15,6 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chooseFiles, findingsFrom, numbered, review, reviewPrompt, TRIES } from "../scripts/review.mjs";
 import { checkFindings, placeOf } from "../scripts/check-findings.mjs";
+import { findingsDocument } from "../scripts/write-findings.mjs";
 import { badPackage, readOf } from "./helpers.mjs";
 
 const pkg = () => readOf(badPackage());
@@ -45,7 +46,7 @@ test("the ask carries the house-rule findings, the person's words, and the form,
 
 test("findings are read out of blocks, and an answer with neither blocks nor NONE is refused", () => {
   const got = findingsFrom("```\n<<<FINDING>>>\nplace: scripts/make.mjs:6\nrule: claims-match-code\nclaim: reads STORE_TOKEN\n  unbound.\nconsequence: fails on every host.\n<<<END>>>\n```");
-  assert.deepEqual(got, [{ place_text: "scripts/make.mjs:6", rule: "claims-match-code", claim: "reads STORE_TOKEN unbound.", consequence: "fails on every host." }]);
+  assert.deepEqual(got, [{ place_text: "scripts/make.mjs:6", rule: "claims-match-code", breaks: "", claim: "reads STORE_TOKEN unbound.", consequence: "fails on every host." }]);
   assert.deepEqual(findingsFrom("<<<NONE>>>"), { none: true });
   assert.throws(() => findingsFrom("The code looks good overall."), /no <<<FINDING>>> block/);
 });
@@ -74,7 +75,7 @@ test("a finding needs a real place, a claim and a consequence, and must not grad
   const { read } = pkg();
   const house = [{ source: "house rule", rule: "model-in-code", place: { file: "scripts/make.mjs", line: 4 }, claim: "names a model" }];
   const answered = [
-    { place_text: "scripts/think.mjs:2", rule: "general", claim: "think returns a constant.", consequence: "Every job gets the same answer." },
+    { place_text: "scripts/think.mjs:2", rule: "general", breaks: "F1.R2", claim: "think returns a constant.", consequence: "Every job gets the same answer." },
     { place_text: "", rule: "general", claim: "x", consequence: "y" },
     { place_text: "scripts/nowhere.mjs:1", rule: "general", claim: "x", consequence: "y" },
     { place_text: "scripts/think.mjs:99", rule: "general", claim: "x", consequence: "y" },
@@ -101,12 +102,32 @@ test("a finding needs a real place, a claim and a consequence, and must not grad
   assert.deepEqual(placeOf("`a/b.mjs:12-14`"), { file: "a/b.mjs", line: 12 });
 });
 
+test("a finding holds only when it names what it breaks; one that names nothing is advisory and holds nothing", () => {
+  const { read } = pkg();
+  const out = checkFindings([
+    { place_text: "scripts/think.mjs:2", rule: "general", breaks: "none", claim: "think could be shorter.", consequence: "A reader takes longer." },
+    { place_text: "scripts/make.mjs:1", rule: "general", breaks: "F1.R4", claim: "make ignores the topic.", consequence: "Every digest is the same." },
+    { place_text: "scripts/read.mjs:1", rule: "general", breaks: "agent-descriptor.json refusals", claim: "read fetches a link the caller gave.", consequence: "It does what it says it refuses." },
+    { place_text: "scripts/read.mjs:2", rule: "undeclared-setting", claim: "reads TOKEN.", consequence: "No install sets it." },
+  ], read, []);
+  assert.deepEqual(out.advisory.map((f) => f.place.line), [2]);
+  assert.deepEqual(out.kept.map((f) => f.breaks), ["the spec's F1.R4", "the declared fact agent-descriptor.json refusals", "the house rule undeclared-setting"]);
+  const withSpec = { ...read, spec: { features: [{ requirements: [{ id: "F1.R1" }] }], constraints: [] } };
+  const named = checkFindings([{ place_text: "scripts/think.mjs:3", rule: "general", breaks: "F9.R9", claim: "x is wrong.", consequence: "y happens." }], withSpec, []);
+  assert.equal(named.kept.length, 0);
+  assert.equal(named.advisory.length, 1);
+  const doc = findingsDocument({ read, findings: out.kept, advisory: out.advisory });
+  assert.match(doc, /^- findings: 3$/m);
+  assert.match(doc, /^## Advisory$/m);
+  assert.match(doc, /^- Breaks: the spec's F1\.R4$/m);
+});
+
 test("with a diff, a finding off the changed lines is kept apart", () => {
   const { read } = pkg();
   read.change = { scope: "diff", files: [{ path: "scripts/think.mjs", lines: [2] }] };
   const out = checkFindings([
-    { place_text: "scripts/think.mjs:2", rule: "general", claim: "a", consequence: "b" },
-    { place_text: "scripts/read.mjs:2", rule: "general", claim: "c", consequence: "d" },
+    { place_text: "scripts/think.mjs:2", rule: "general", breaks: "C1", claim: "a", consequence: "b" },
+    { place_text: "scripts/read.mjs:2", rule: "general", breaks: "spec.json constraints C1", claim: "c", consequence: "d" },
   ], read, []);
   assert.equal(out.kept.length, 1);
   assert.equal(out.outside_the_change[0].place.file, "scripts/read.mjs");

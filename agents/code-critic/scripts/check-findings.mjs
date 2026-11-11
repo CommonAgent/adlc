@@ -27,10 +27,41 @@ export function placeOf(text) {
   return m ? { file: trim(m[1]), line: Number(m[2]) } : { file: t, line: null };
 }
 
-/** Kept and dropped, each with its reason. */
+const DECLARED = /\b(agent-descriptor\.json|agent-runtime-requirements\.json|plugin\.json|spec\.json|mcp\.json|skills\/[^\s/]+\/SKILL\.md)\b/;
+const SPEC_ID = /(?<![\w.])(F\d+\.R\d+|C\d+)(?![\w.])/g;
+
+/** What a finding says it breaks, by name: a house rule, a requirement or
+ *  constraint of the spec, or a declared fact (a declaration file named).
+ *  Null when it names none: then it is advisory and holds nothing. Where the
+ *  spec came with the change, a requirement id must be one it has. */
+export function breaksOf(f, specIds = null) {
+  if (RULES[f.rule]) return `the house rule ${f.rule}`;
+  const said = trim(f.breaks);
+  if (!said || /^none\b/i.test(said)) return null;
+  const ids = [...said.matchAll(SPEC_ID)].map((m) => m[1]).filter((id) => !specIds || specIds.has(id));
+  if (ids.length) return `the spec's ${ids.join(", ")}`;
+  const decl = DECLARED.exec(said);
+  if (decl) return `the declared fact ${said}`;
+  return null;
+}
+
+/** The requirement and constraint ids of the spec that came with the change, or null. */
+export function specIdsOf(read) {
+  const spec = read?.spec;
+  if (!spec || typeof spec !== "object") return null;
+  const ids = new Set();
+  for (const f of spec.features ?? []) for (const r of f.requirements ?? []) if (r?.id) ids.add(r.id);
+  for (const c of spec.constraints ?? []) if (c?.id) ids.add(c.id);
+  return ids;
+}
+
+/** Kept, advisory and dropped, each with its reason. A kept finding names
+ *  what it breaks; one that names nothing is advisory: shown, never counted,
+ *  and it holds nothing. */
 export function checkFindings(answered = [], read, houseFindings = []) {
   const files = new Map(read.files.map((f) => [f.path, f]));
-  const kept = [], dropped = [], outside = [];
+  const kept = [], dropped = [], outside = [], advisory = [];
+  const specIds = specIdsOf(read);
   const seen = [...houseFindings];
   for (const a of answered) {
     const p = placeOf(a.place_text);
@@ -49,9 +80,11 @@ export function checkFindings(answered = [], read, houseFindings = []) {
     const twin = seen.find((s) => s.place.file === f.place.file && Math.abs((s.place.line ?? 0) - f.place.line) <= 2 && (s.rule === f.rule || f.rule === "general"));
     if (twin) { drop(twin.source === "house rule" ? "the house-rule check already found it" : "it repeats another finding"); continue; }
     seen.push(f);
-    (inChange(f, read) ? kept : outside).push(f);
+    const breaks = breaksOf({ ...f, breaks: a.breaks }, specIds);
+    if (!breaks) { advisory.push({ ...f, why: "it names no requirement, declared fact or house rule it breaks" }); continue; }
+    (inChange(f, read) ? kept : outside).push({ ...f, breaks });
   }
-  return { checked: "v1", kept, outside_the_change: outside, dropped };
+  return { checked: "v1", kept, advisory, outside_the_change: outside, dropped };
 }
 
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";

@@ -35,7 +35,7 @@ function setUp() {
 }
 
 const answer = [
-  "<<<FINDING>>>\nplace: scripts/think.mjs:2\nrule: general\nclaim: think returns the same value for every job.\nconsequence: The step the descriptor calls a judgment decides nothing, so every buyer gets the same answer.\n<<<END>>>",
+  "<<<FINDING>>>\nplace: scripts/think.mjs:2\nrule: general\nbreaks: agent-descriptor.json offerings, which call this step a judgment\nclaim: think returns the same value for every job.\nconsequence: The step the descriptor calls a judgment decides nothing, so every buyer gets the same answer.\n<<<END>>>",
   "<<<FINDING>>>\nplace: scripts/nowhere.mjs:1\nrule: general\nclaim: Something.\nconsequence: Something else.\n<<<END>>>",
 ].join("\n");
 

@@ -47,6 +47,12 @@ finding it gives that names no file and line of the package, makes no claim,
 says no consequence, grades the work or writes the fix is dropped, with its
 reason kept in the job's records.
 
+A finding holds a build only when it names what it breaks: a requirement or
+constraint of the spec (`F1.R2`, `C1`), a declared fact (a declaration file
+and its member), or a house rule. One that names none is advisory. It is
+listed under `## Advisory` for whoever owns the code, it is not counted, and
+it needs no answer.
+
 ## What it needs
 
 - Node 22 or later. The scripts use only node's own modules.
@@ -63,7 +69,7 @@ reason kept in the job's records.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 100 tests
+node --test test/*.test.mjs                                   # 102 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 node scripts/job.mjs --job <job> --records <records> --work <work> \
   --text-file <message> --file <package.tgz>::application/gzip
