@@ -224,6 +224,15 @@ test("a suite that passes against empty stand-ins asserts nothing, and is held",
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("a test carrying a control character, an escape lost through a shell, is named at Test", async () => {
+  const dir = await suiteFolder();
+  try {
+    writeFileSync(join(dir, "test", "f1-topic-digest.test.mjs"), SUITE.replace("/120 points/", "/\b120 points\b/"));
+    const p = testProblems(dir);
+    assert.ok(p.some((x) => /^test\/f1-topic-digest\.test\.mjs, line \d+, carries the control character U\+0008/.test(x)), p.join("\n"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("a test that stops on a name it never defines is named at Test, not left for Code", async () => {
   const dir = await suiteFolder();
   try {
