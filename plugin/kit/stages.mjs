@@ -276,6 +276,15 @@ export function testProblems(dir, _lock, { spawn } = {}) {
       if (!bracketIdsOf(name).some((id) => approved.has(id))) out.push(`${f.path}: the test "${name}" is named for nothing approved; open its name with the scenario, requirement or constraint it checks in square brackets ("[F1.A1] ...", "[F1.R2] ...", "[C1] ..."), or take it out: a behaviour the spec does not state goes back to the spec`);
     }
   }
+  // A control character in a test is an escape lost on the way in (a "\b"
+  // that became a backspace when the file was written through a shell), and
+  // a pattern carrying one matches nothing it was meant to.
+  for (const f of own) {
+    f.text.split("\n").forEach((line, i) => {
+      const c = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.exec(line);
+      if (c) out.push(`${f.path}, line ${i + 1}, carries the control character U+${c[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}: an escape such as \\b was lost when the file was written; write it again with the editor, not through a shell`);
+    });
+  }
   out.push(...specFindings([...files, ...supportFiles(dir)], spec, { skip: Object.keys(standard) }));
   if (out.length) return out;
   // Against empty stand-ins it is the builder's own tests that must fail: the
