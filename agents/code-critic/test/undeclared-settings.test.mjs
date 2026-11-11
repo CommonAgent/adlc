@@ -157,6 +157,13 @@ test("nothing is said without the declarations to hold the code to", () => {
   assert.ok(declaredSettings({}).has("MESH_JOB_DIR"));
 });
 
+test("a model system places the four settings and the answer budget, and not the former names TEXT_MODEL and TEXT_API_KEY", () => {
+  const placed = declaredSettings({ runtime: { systems: [{ name: "text-reasoning", kind: "model", protocols: ["openai-chat"] }] } });
+  for (const n of ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL", "MODEL_MAX_OUTPUT_TOKENS"]) assert.ok(placed.has(n), n);
+  assert.equal(placed.has("TEXT_MODEL"), false);
+  assert.equal(placed.has("TEXT_API_KEY"), false);
+});
+
 test("with a diff, an undeclared read off the changed lines is outside the change", () => {
   const files = reader({ script: "// reads\nconst a = process.env.OLD_READ;\nconst b = process.env.NEW_READ;\n" });
   const { read, texts } = readOf(files, { scope: "diff", files: [{ path: "scripts/read.mjs", lines: [3], removed: 0 }] });

@@ -99,9 +99,9 @@ const CREDENTIAL_ENV = /(_KEY|_TOKEN|_SECRET|_PASSWORD|_CREDS|_CREDENTIALS?)$/;
 // patterns ([_]) so this package's own scripts never read or carry them.
 const PROVIDER_KEY_RE = /^(?:GOOGLE[_]GENERATIVE_AI|ANTHROPIC|OPENAI)[_]API_KEY$/;
 const OLD_MODEL_VARS_RE = /\b((?:GOOGLE[_]GENERATIVE_AI|ANTHROPIC|OPENAI)[_]API_KEY|AGENT[_]MODEL|VERTEX[_]WHERE|GOOGLE[_]CLOUD_(?:PROJECT|LOCATION))\b/;
-// The settings a system of kind model is read through (12.4.1), and the
-// names this version of the shared caller still reads in their place.
-const MODEL_SETTINGS = ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL", "TEXT_MODEL", "TEXT_API_KEY"];
+// The four settings a system of kind model is read through (Common Agent
+// 0.41.0, Section 12.4.1), and no other name.
+const MODEL_SETTINGS = ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL"];
 const CALLS_A_MODEL = /\b(callModel|askModel|askJson|lookJson)\s*\(|from\s+["']\.\/(model-caller|caller|model|look|vertex)\.m?js["']/;
 
 const isScript = (f) => f.role === "script";
@@ -326,7 +326,7 @@ export function addressWarnings(files, texts) {
           claim: `${p} carries the address ${literal} on line ${i + 1}.`,
           consequence: metadata
             ? "A script that asks the machine's metadata server takes a credential from around the agent rather than the one the install placed, and runs only on that provider's machines (Common Agent 12.4.1, 12.10)."
-            : "Every install reaches this address as written, whatever it placed, and a depot refuses a package that carries one (Common Agent 12.10). Where a system is, a model included, is the install's to place.",
+            : "Every install reaches this address as written, whatever it placed, so the script has gone around its declaration (Common Agent 12.6, rule 2). A depot publishes the package with a warning that names this file and this address, shown to the publisher and to every reader of the package, and only a version whose scripts carry no address is published without one (Common Agent 12.10). Where a system is, a model included, is the install's to place.",
         });
       }
     });
@@ -574,8 +574,8 @@ export const HOST_PLACED = [
   "AGENTMESH_ENV",
   "PATH", "HOME", "TMPDIR", "TEMP", "TMP", "USER", "LANG", "TZ", "PWD", "SHELL", "CI", "NODE_ENV", "NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "DEBUG",
 ];
-// The model system's settings, and the names the shared caller reads beside
-// them: placed for a package that declares a system of kind model.
+// The model system's four settings and its optional answer budget: placed
+// for a package that declares a system of kind model.
 const MODEL_PLACED = [...MODEL_SETTINGS, "MODEL_MAX_OUTPUT_TOKENS"];
 const upperName = (s) => trim(s).toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 

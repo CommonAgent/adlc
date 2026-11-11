@@ -10,10 +10,15 @@ Changes to the standards in this folder, newest first.
   0.30.0-draft, 0.39.0 and 0.40.2 for a rule that still holds in 0.41.0 now
   name 0.41.0, and a citation of the records member now names Section 12.3,
   where 0.41.0 defines it. A citation that says what an older version changed
-  is history and stays. Ten citations of 0.39.0 stay as they are, because the
-  code beside them reads or places the model aliases `TEXT_MODEL` and
-  `TEXT_API_KEY`, which 0.41.0 removed; `test/common-agent-pin.test.mjs`
-  names each of them and fails on any other version.
+  is history and stays. The ten citations of 0.39.0 that were first left as
+  divergences now name 0.41.0 too: the shared model caller reads only the four
+  settings of Section 12.4.1, and the deployment manager no longer places
+  `TEXT_MODEL` beside `MODEL_NAME`. `test/common-agent-pin.test.mjs` names no
+  divergence and fails on any version other than the pin. In the same change,
+  architecture-standard.md says the scripts read the four settings of 12.4.1
+  in place of `AGENT_MODEL` or `TEXT_MODEL`, and the code critic's address
+  warning says that a depot publishes such a package with a warning, as
+  Section 12.10 has said since 0.40.0, in place of saying it refuses one.
 
 ## stages.json
 

@@ -42,14 +42,7 @@ const BINARY = /\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|zip|tgz|gz|tar|pdf|
 // to decide rather than rewritten. Each names the file, the citation as it
 // reads, and why it cannot move to the pin by a change of text alone. When a
 // divergence is settled, its entry leaves this list.
-const MODEL_ALIASES = "Common Agent 0.41.0, Section 12.4.1, removes the aliases TEXT_MODEL and TEXT_API_KEY, and this file still reads them";
-export const DIVERGENCES = [
-  ...["code-critic", "reverse-engineer", "security-reviewer", "solution-architect", "solution-planner", "spec-writer", "test-writer"].map((a) => (
-    { file: `agents/${a}/scripts/model-caller.mjs`, cite: "Common Agent 0.39.0, Section 12.4.1", why: MODEL_ALIASES })),
-  { file: "agents/package-maker/shared/model-caller.mjs", cite: "Common Agent 0.39.0, Section 12.4.1", why: MODEL_ALIASES },
-  { file: "agents/deployment-manager/install.py", cite: "Common Agent 0.39.0, 12.4.1", why: "the installer places TEXT_MODEL beside MODEL_NAME (MODEL_ALIASES), which Common Agent 0.41.0, Section 12.4.1, no longer allows a host to set" },
-  { file: "agents/deployment-manager/test_model_system.py", cite: "Common Agent 0.39.0, 12.4.1", why: "the suite pins TEXT_MODEL beside MODEL_NAME in the binding, which Common Agent 0.41.0, Section 12.4.1, no longer allows a host to set" },
-];
+export const DIVERGENCES = [];
 
 // A version of the specification is 0.x.y so far, with -draft before 0.38.0,
 // and a section number never starts with 0, so "Common Agent 12.4.1" is a

@@ -1,8 +1,9 @@
 // The shared model caller, against a stand-in model service for each protocol.
 //   node --test model-caller.test.mjs
 //
-// What is worth pinning: the four settings are read on every call, with
-// TEXT_MODEL and TEXT_API_KEY as older names and none for the endpoint; each
+// What is worth pinning: the four settings are read on every call, under
+// their own names and no other (Common Agent 0.41.0 removed TEXT_MODEL and
+// TEXT_API_KEY); each
 // protocol is spoken at the address its endpoint gives, with the key in its
 // own header and nowhere else; an answer is read whole, streamed or not, and a
 // cut, refused or early-stopped answer is a failure that says so; a service's
@@ -49,14 +50,14 @@ async function standIn(answer) {
 
 const sse = (events) => events.map((e) => `event: ${e.type ?? "message"}\ndata: ${JSON.stringify(e)}\n\n`).join("");
 
-test("the four settings, the older names for one version, and no older name for the endpoint", () => {
+test("the four settings, and no other name for any of them", () => {
   const s = modelSettings({ MODEL_NAME: "m", MODEL_ENDPOINT: "http://h", MODEL_KEY: "k", MODEL_PROTOCOL: "gemini" });
   assert.deepEqual(s, { name: "m", endpoint: "http://h", key: "k", protocol: "gemini", maxOutputTokens: 64000, from: { name: "MODEL_NAME", key: "MODEL_KEY" } });
+  // The former names TEXT_MODEL and TEXT_API_KEY are not read (Common Agent 0.41.0, Section 12.4.1).
   const old = modelSettings({ TEXT_MODEL: "t", TEXT_API_KEY: "tk" });
-  assert.equal(old.name, "t");
-  assert.equal(old.key, "tk");
-  assert.deepEqual(old.from, { name: "TEXT_MODEL", key: "TEXT_API_KEY" });
-  // An empty MODEL_KEY is a placed credential that is empty: the older key is not read.
+  assert.equal(old.name, "");
+  assert.equal(old.key, "");
+  assert.deepEqual(old.from, { name: null, key: null });
   assert.equal(modelSettings({ MODEL_KEY: "", TEXT_API_KEY: "tk" }).key, "");
   assert.equal(modelSettings({ MODEL_NAME: "m", TEXT_MODEL: "t" }).name, "m");
   // AGENT_MODEL is not one of the names this caller reads.
@@ -69,7 +70,7 @@ test("each missing or wrong setting is refused in words that name it", () => {
   assert.equal(cannotCall({ ...ok, MODEL_KEY: "" }), "");
   assert.match(cannotCall({ ...ok, MODEL_NAME: "" }), /^MODEL_NAME is not set/);
   assert.match(cannotCall({ ...ok, MODEL_ENDPOINT: undefined }), /^MODEL_ENDPOINT is not set, so there is nowhere to call the model/);
-  assert.match(cannotCall({ TEXT_MODEL: "t", TEXT_API_KEY: "k" }), /^MODEL_ENDPOINT is not set/);
+  assert.match(cannotCall({ TEXT_MODEL: "t", TEXT_API_KEY: "k" }), /^MODEL_NAME is not set/);
   assert.match(cannotCall({ ...ok, MODEL_ENDPOINT: "ftp://h" }), /not an http or https address/);
   assert.match(cannotCall({ ...ok, MODEL_ENDPOINT: "http://u:p@127.0.0.1" }), /carries a credential/);
   assert.match(cannotCall({ ...ok, MODEL_PROTOCOL: "" }), /^MODEL_PROTOCOL is not set.*anthropic-messages, openai-chat, gemini/);

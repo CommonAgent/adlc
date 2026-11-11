@@ -65,6 +65,17 @@ test("address literals and metadata hostname in skill scripts are listed as warn
   }
 });
 
+test("a warning says the depot publishes the package with it, never that a depot refuses the package (Common Agent 0.41.0, 12.10)", () => {
+  const { read, texts } = readOf(packageWithAddresses());
+  const warnings = addressWarnings(read.files, texts).filter((w) => !/metadata|169.254/.test(w.literal));
+  assert.ok(warnings.length > 0);
+  for (const w of warnings) {
+    assert.doesNotMatch(w.consequence, /refuse/);
+    assert.match(w.consequence, /publishes the package with a warning that names this file and this address/);
+    assert.match(w.consequence, /12.6, rule 2/);
+  }
+});
+
 test("a model service endpoint is listed as a warning like any other address", () => {
   const files = {
     "skills/ask/scripts/ask.mjs": "const URL = \"https://api.anthropic.com/v1/messages\";\n",

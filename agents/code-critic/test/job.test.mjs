@@ -23,7 +23,7 @@ import { badPackage, tarOf } from "./helpers.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const descriptor = JSON.parse(readFileSync(join(HERE, "..", "agent-descriptor.json"), "utf8"));
-const env = { TEXT_MODEL: "some-model", TEXT_API_KEY: "k" };
+const env = { MODEL_NAME: "some-model", MODEL_KEY: "k" };
 
 function setUp() {
   const dir = mkdtempSync(join(tmpdir(), "cc-job-"));

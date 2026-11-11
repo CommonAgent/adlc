@@ -110,10 +110,13 @@ and bound to a product per environment.
   door the build provides, say), the record names no model system at all
   (section 11).
 - No model name goes into code, a skill, an instruction, a setting's default
-  or the record. The scripts read which model from configuration,
-  `AGENT_MODEL` or `TEXT_MODEL`, through the caller, and refuse in words when
-  it is empty. The install places the value from the binding, and a run
-  config may change it for one job.
+  or the record. The scripts reach the model through the four settings of
+  the model system, `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` and
+  `MODEL_PROTOCOL` (Common Agent 0.41.0, Section 12.4.1), read through the
+  caller on every run and from nowhere else, and refuse in words, naming the
+  setting, when `MODEL_NAME`, `MODEL_ENDPOINT` or `MODEL_PROTOCOL` is empty.
+  The install places the values from the binding, and a run config may
+  change the model for one job.
 
 Why: models are retired on somebody else's schedule. An agent shipped with a
 model's name written into a script answered 404 the day that model went, and
