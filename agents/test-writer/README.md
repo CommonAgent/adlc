@@ -4,6 +4,8 @@ This agent holds the [test writer](https://agentroles.ai/test-writer.html) role
 for the Test stage of the
 [Agent Development Lifecycle](https://agenticdevelopment.ai/stages.html).
 
+> **One builder now writes this stage.** With the ADLC plugin for Claude Code (`plugin/`) or the [reference builder](../reference-builder), one builder writes an agent from its spec through its code, and what keeps each stage honest is its check, not a separate author. This agent is no longer a separate author in that path: its suite rules, its standard checks and its stand-in runs carry on inside the plugin's check and generators (`plugin/kit/`, copied byte for byte by `plugin/sync.mjs`). This package still runs on its own for a lifecycle that keeps a separate holder for the role, and its role stays at agentroles.ai.
+
 It writes the test suite a package's scripts will have to pass, from the spec
 and before any script exists. Then it proves the suite asserts something: run
 against empty stand-ins for every script, the suite must fail. Its second job

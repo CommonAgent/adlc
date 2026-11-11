@@ -6,6 +6,8 @@ role: the Architecture part of the Architecture and Design stage of the
 comes before the Design, which the [spec writer](../spec-writer) and the
 [solution planner](../solution-planner) hold.
 
+> **One builder now writes this stage.** With the ADLC plugin for Claude Code (`plugin/`) or the [reference builder](../reference-builder), one builder writes an agent from its spec through its code, and what keeps each stage honest is its check, not a separate author. This agent is no longer a separate author in that path: its naming, its binding and its record carry on inside the plugin's check and generators (`plugin/kit/`, copied byte for byte by `plugin/sync.mjs`). This package still runs on its own for a lifecycle that keeps a separate holder for the role, and its role stays at agentroles.ai.
+
 It takes the statement of a job (or the spec), and the organization's stack,
 and writes the architecture record. The record says what the agent stands
 on: the systems it reaches, in plain system words, and the product bound to

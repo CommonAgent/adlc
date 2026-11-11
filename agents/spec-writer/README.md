@@ -4,6 +4,8 @@ This agent holds the [spec writer](https://agentroles.ai/spec-writer.html) role
 for the Requirements and Design stages of the
 [Agent Development Lifecycle](https://agenticdevelopment.ai/stages.html).
 
+> **One builder now writes this stage.** With the ADLC plugin for Claude Code (`plugin/`) or the [reference builder](../reference-builder), one builder writes an agent from its spec through its code, and what keeps each stage honest is its check, not a separate author. This agent is no longer a separate author in that path: its spec checks, its structure and its files generator carry on inside the plugin's check and generators (`plugin/kit/`, copied byte for byte by `plugin/sync.mjs`). This package still runs on its own for a lifecycle that keeps a separate holder for the role, and its role stays at agentroles.ai.
+
 It takes what somebody wants an agent to do, in their own words or as the
 as-built record of code that already exists, and writes the spec
 ([standards/spec.schema.json](../../standards/spec.schema.json), spec-v1):

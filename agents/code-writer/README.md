@@ -4,6 +4,8 @@ This agent holds the [code writer](https://agentroles.ai/code-writer.html) role
 for the Code stage of the
 [Agent Development Lifecycle](https://agenticdevelopment.ai/stages.html).
 
+> **One builder now writes this stage.** With the ADLC plugin for Claude Code (`plugin/`) or the [reference builder](../reference-builder), one builder writes an agent from its spec through its code, and what keeps each stage honest is its check, not a separate author. This agent is no longer a separate author in that path: its build folder lock and its fence carry on inside the plugin's check and generators (`plugin/kit/`, copied byte for byte by `plugin/sync.mjs`). This package still runs on its own for a lifecycle that keeps a separate holder for the role, and its role stays at agentroles.ai.
+
 It writes the scripts a spec names so that the test writer's suite passes. The
 package lays out a workspace, a coding harness does the work the way a coding
 session does (write, check, read the failures, fix), and the package checks the
