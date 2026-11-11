@@ -28,6 +28,8 @@ import { declarationProblems } from "./spec-writer/scripts/declared.mjs";
 import { givenOfSpec } from "./spec-writer/scripts/given.mjs";
 import { loadSchemas } from "./spec-writer/scripts/can-use.mjs";
 import { filesFrom, recordFrom, standardTestsOf } from "./generate.mjs";
+import { parseRecord } from "./spec-writer/scripts/architecture-record.mjs";
+import { structureOf } from "./spec-writer/scripts/structure.mjs";
 import { RUN_SECONDS, declarationRun, declarationStandIn, importsOf, placeSuite, runSuite, standInPackage, suiteFiles, supportFiles } from "./test-writer/scripts/check-suite.mjs";
 import { bracketIdsOf, scenariosOf, specFindings } from "./test-writer/scripts/spec-rules.mjs";
 import { testNamesIn } from "./test-writer/scripts/suite-rules.mjs";
@@ -196,6 +198,17 @@ export async function architectureProblems(dir) {
   for (const f of r.findings) out.push(`architecture.json: ${f}`);
   for (const q of r.questions) out.push(`the person has not answered ${q.key}: ${q.question} Ask them, and put their answer in answers.json under ${q.key}`);
   if (!r.questions.length) for (const p of r.problems) out.push(`the record is not finished: ${p}`);
+  // The spec and the record name the same systems: the files are made from
+  // both, and a spec system the record knows under another name would only be
+  // found at the agent's files, after the record is pinned. The mapping is
+  // the files generator's own (a public service by its host, else by name).
+  const record = parseRecord(text);
+  if (Array.isArray(record?.systems)) {
+    const named = new Set(record.systems);
+    for (const s of list(structureOf(spec, { architecture: record }).draft?.systems)) {
+      if (!named.has(s.name)) out.push(`the spec's system ${JSON.stringify(s.from ?? s.name)} is ${s.name} in the files, and the record names no ${s.name}${record.systems.length ? ` (it names ${record.systems.join(", ")})` : ""}; name it the same in both, in plain system words: in architecture.json, or, since the spec is pinned, by asking the person to send the build back to Requirements`);
+    }
+  }
   return out;
 }
 

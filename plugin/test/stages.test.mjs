@@ -120,6 +120,17 @@ const writeFiles = (dir, prose) => {
   for (const [rel, text] of Object.entries(r.files)) { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); }
 };
 
+test("a spec system the record knows under another name is named at Architecture, not at the agent's files", async () => {
+  const dir = await approvedFolder();
+  try {
+    const s = complete();
+    s.systems.push({ name: "GitHub", reach: "read", why: "To read the merged pull requests." });
+    writeFileSync(join(dir, "spec.json"), JSON.stringify(s, null, 2) + "\n");
+    const p = await architectureProblems(dir);
+    assert.ok(p.some((x) => /^the spec's system "github" is github in the files, and the record names no github \(it names text-reasoning, hacker-news\)/i.test(x)), p.join("\n"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("Architecture passes on the generated, finished record, and pins it", async () => {
   const dir = await approvedFolder();
   try {
