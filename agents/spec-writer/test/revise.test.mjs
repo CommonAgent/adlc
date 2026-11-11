@@ -109,6 +109,28 @@ test("a revision asks the model for edits to what the words name, applies those,
   assert.deepEqual(validateSpec(out.spec), []);
 });
 
+test("words that name nothing still revise the features when the spec leaves the empty case unsaid", async () => {
+  // The spec as the cloud machine's spec writer wrote the digest: no empty
+  // case, so the build folder's Requirements check would hold it.
+  const spec = earlierSpec();
+  const f1 = spec.features[0];
+  const empty = f1.requirements.find((r) => /no tide was found/.test(r.shall));
+  f1.requirements = f1.requirements.filter((r) => r !== empty);
+  f1.acceptance = f1.acceptance.map((a) => ({ ...a, checks: a.checks.filter((c) => c !== empty.id) }));
+  const revised = structuredClone(f1);
+  revised.requirements.push({ ...empty });
+  revised.acceptance = revised.acceptance.map((a) => ({ ...a, checks: [...a.checks, empty.id] }));
+  const prompts = [];
+  const answer = { edits: [{ set: "F1", value: revised }], notes: "added the empty case" };
+  const out = await writeTheSpec({ asked: revision("changes: Add the empty case: when the table has no tide for the harbor, say so.", spec), call: async (req) => { prompts.push(req.body.contents[0].parts[0].text); return { text: JSON.stringify(answer) }; } });
+  assert.equal(prompts.length, 1, out.notes);
+  assert.match(prompts[0], /WHAT THEIR WORDS NAME ---\n[\s\S]*?\bF1\b/);
+  assert.ok(out.spec.features[0].requirements.some((r) => /no tide was found/.test(r.shall)));
+  assert.match(out.notes, /so its features were revised from them/);
+  assert.deepEqual(out.findings, []);
+  assert.deepEqual(validateSpec(out.spec), []);
+});
+
 test("an edit that loses what the record fixes is found and goes back once", async () => {
   const spec = earlierSpec();
   const prompts = [];

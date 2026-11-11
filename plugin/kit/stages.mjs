@@ -21,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, relative, sep } from "node:path";
 import { LOCK_FILE, digestOf, scriptsOf as codeScriptsOf } from "./code-writer/scripts/workspace.mjs";
 import { specOfFolder } from "./code-writer/scripts/agent-folder.mjs";
-import { corpusOf, specProblems } from "./spec-writer/scripts/spec-check.mjs";
+import { corpusOf, coverageProblems, specProblems } from "./spec-writer/scripts/spec-check.mjs";
 import { checkDraft } from "./spec-writer/scripts/check-spec.mjs";
 import { addressProblems } from "./spec-writer/scripts/design.mjs";
 import { declarationProblems } from "./spec-writer/scripts/declared.mjs";
@@ -141,27 +141,15 @@ export const ownerOf = (p) => STAGES.find((s) => (PINS[s] ?? []).some((x) => mat
 // ---------- Requirements ----------
 
 const kinds = (spec) => list(spec?.features).flatMap((f) => list(f?.requirements));
-const EMPTY_WORDS = /\b(no|none|nothing|empty|zero)\b/i;
 
-/** What the plan's Requirements row adds to the spec writer's checks: every
- *  requirement is checked by a scenario, and the refusals, the empty case and
- *  the failure case are each stated, so none is first decided in the code. */
-export function coverageProblems(spec) {
-  const out = [];
-  const checked = new Set(list(spec?.features).flatMap((f) => list(f?.acceptance).flatMap((a) => list(a?.checks).map(trim))));
-  for (const r of kinds(spec)) if (trim(r?.id) && !checked.has(trim(r.id))) out.push(`requirement ${trim(r.id)} is checked by no scenario; every requirement has a scenario a test can be written from`);
-  const reqs = kinds(spec);
-  if (!reqs.some((r) => trim(r?.kind) === "refusal")) out.push("no requirement is a refusal; say what the agent refuses (kind refusal), each from the person's words");
-  if (!reqs.some((r) => trim(r?.kind) !== "refusal" && EMPTY_WORDS.test(String(r?.shall ?? ""))))
-    out.push("the empty case is not stated; say what the agent does when it is given nothing to work on or finds nothing (a requirement whose shall says so), and ask the person where their words do not say");
-  if (!reqs.some((r) => trim(r?.kind) === "error"))
-    out.push("the failure case is not stated; say what the agent does when a system it reaches fails or answers wrongly (kind error), and ask the person where their words do not say");
-  return out;
-}
+/** Every requirement checked by a scenario, and the refusals, the empty case
+ *  and the failure case each stated: the spec writer's own rule, run by its
+ *  specProblems too, so the spec it calls ready is never held here. */
+export { coverageProblems };
 
-/** The Requirements check: the spec writer's own rules over what the person
- *  gave (request.md, and their answers in answers.json: name, price and
- *  version are theirs), and the coverage rules above. */
+/** The Requirements check: the spec writer's own rules (coverage among them)
+ *  over what the person gave (request.md, and their answers in answers.json:
+ *  name, price and version are theirs). */
 export function requirementsProblems(dir) {
   const spec = readJson(join(dir, "spec.json"));
   if (!spec) return ["spec.json is not in the folder, or is not JSON; write the spec first"];
@@ -170,7 +158,7 @@ export function requirementsProblems(dir) {
   const answers = readJson(join(dir, "answers.json")) ?? {};
   const person = Object.fromEntries(["name", "version", "price"].filter((k) => trim(answers[k])).map((k) => [k, trim(answers[k])]));
   const corpus = corpusOf({ said: request }, answers);
-  return [...specProblems(spec, { corpus, person }), ...coverageProblems(spec)];
+  return specProblems(spec, { corpus, person });
 }
 
 // ---------- Architecture ----------
