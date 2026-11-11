@@ -144,6 +144,7 @@ export function bindAll(arch, { stack = null, vocabulary = [], answers = {}, tar
     if (s.public) {
       const b = { public: true, product: "itself", address: trim(s.public.address), key: "none", access: trim(s.access) || "read", ...(trim(s.public.approved) ? { approved: trim(s.public.approved) } : {}) };
       decisions.push({
+        kind: "ruling",
         decided: `Bind ${s.name} to the service itself in ${list(environments)}`,
         why: `It is a public service that takes no key and has no product behind it, so nobody chooses one; the owner approved reaching it${b.approved ? ` (${b.approved})` : ""}`,
         weighed: "",
@@ -201,6 +202,7 @@ export function bindAll(arch, { stack = null, vocabulary = [], answers = {}, tar
         ? "The install places the model from this binding in the four settings MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL, and the scripts read them on every call through the shared model caller and name no model, so changing the model is a setting and not a rebuild"
         : "The install places the credential and address this binding names; the package names neither";
       decisions.push({
+        kind: "ruling",
         decided,
         why,
         // A model system's other products are not listed by their providers'

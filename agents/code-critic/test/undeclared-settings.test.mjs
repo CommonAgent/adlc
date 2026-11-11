@@ -60,7 +60,7 @@ test("an address read from a variable nothing declares is a finding with its fil
     "",
   ].join("\n") }));
   assert.deepEqual(at(out), ["scripts/read.mjs:4 STORY_API"]);
-  assert.match(out[0].claim, /reads STORY_API, and nothing declares it: not a system's credential or setting in agent-runtime-requirements\.json, not a run config setting in agent-descriptor\.json, and not a name the host places\./);
+  assert.match(out[0].claim, /reads STORY_API, and nothing declares it: not a system's credential or setting in agent-runtime-requirements\.json, and not a name the host places\./);
   assert.match(out[0].consequence, /once deployed the script reads nothing there and reaches no service at that address/);
 });
 
@@ -84,7 +84,7 @@ test("every form of reading is seen, and a comment, a write or a lowercase name 
 test("what the agent's own files declare, and what the host places, is not a finding", () => {
   const script = [
     "// reads with everything declared",
-    "const { STORY_LIST_ADDRESS, LIST_TOKEN, COUNT, count, MODEL_NAME, MODEL_MAX_OUTPUT_TOKENS } = process.env;",
+    "const { STORY_LIST_ADDRESS, LIST_TOKEN, MODEL_NAME, MODEL_MAX_OUTPUT_TOKENS } = process.env;",
     "const job = process.env.MESH_JOB_DIR, home = process.env.HOME, dir = process.env.AGENT_DIRECTORY_RECORDS;",
     "const limit = process.env.CEILING_STORY_LIST, bin = process.env.BINARY_FFMPEG;",
     "",
@@ -170,4 +170,25 @@ test("with a diff, an undeclared read off the changed lines is outside the chang
   const out = checkHouseRules(read, texts);
   assert.deepEqual(at(out.findings.filter((f) => f.rule === "undeclared-setting")), ["scripts/read.mjs:3 NEW_READ"]);
   assert.deepEqual(at(out.outside_the_change.filter((f) => f.rule === "undeclared-setting")), ["scripts/read.mjs:2 OLD_READ"]);
+});
+
+test("a run config setting read from the environment is a holding finding that names Section 5.8, and read from run-context.json it is not", () => {
+  const fromEnv = findingsOf(reader({ script: [
+    "// reads the count the wrong way",
+    "const n = Number(process.env.COUNT ?? 10);",
+    "",
+  ].join("\n") }));
+  assert.deepEqual(at(fromEnv), ["scripts/read.mjs:2 COUNT"]);
+  assert.match(fromEnv[0].claim, /COUNT is a run config setting: a run setting arrives in the job's run-context\.json, as the member run_config, never as a variable \(Common Agent 0\.41\.0, Section 5\.8\)\./);
+  assert.match(fromEnv[0].consequence, /Read it from run_config in the job's run-context\.json\./);
+  const fromContext = findingsOf(reader({ script: [
+    "// reads the count from the run context",
+    "import { readFileSync } from \"node:fs\";",
+    "export function countOf(jobDir) {",
+    "  const ctx = JSON.parse(readFileSync(jobDir + \"/run-context.json\", \"utf8\"));",
+    "  return ctx.run_config?.settings?.count ?? 10;",
+    "}",
+    "",
+  ].join("\n") }));
+  assert.deepEqual(at(fromContext), []);
 });

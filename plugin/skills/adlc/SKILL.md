@@ -30,7 +30,7 @@ Run every command from the build folder (the one that holds `.adlc/`). After any
 ### Architecture
 
 1. Run `node .adlc/generate.mjs brief`. It prints what `architecture.json` holds and the standard it is held to. Read the standard it names.
-2. Write `architecture.json`: the systems the agent stands on (a model only by capability, never by name or provider), the kind, dependencies, limits, egress, formats, settings and each decision with its reason.
+2. Write `architecture.json`: the systems the agent stands on (a model only by capability, never by name or provider), the kind, dependencies, limits, egress, formats and settings; what the agent is made of (its skills and their parts, and the data flow from the caller and back); the drivers the statement gives beyond the four limits; and each decision with its context, the drivers it answers, the alternatives weighed and its consequences.
 3. Run `node .adlc/generate.mjs record`. It writes `architecture-record.md` and, where only the person can answer, `still-open.md`. Ask them each question there, put their answers in `answers.json` under the key the question gives, and run it again.
 4. Never edit the record by hand. Change `architecture.json` or the answers, and write it again.
 

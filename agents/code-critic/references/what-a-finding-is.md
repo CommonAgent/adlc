@@ -16,6 +16,12 @@ change or a reason.
   a preference.
 - **Rule.** Which house rule it breaks (references/the-house-rules.md), or
   `general`.
+- **Breaks.** What it breaks, by name: a requirement or constraint of the
+  spec (`F1.R2`, `C1`), a declared fact (the declaration file and its
+  member, such as `agent-descriptor.json` refusals), or a house rule. A
+  finding that names none is advisory: it is shown for whoever owns the
+  code, is not counted, needs no answer, and holds nothing. Only a finding
+  that names what it breaks holds a build.
 
 A finding is not a fix. It says what is wrong and why it matters, and how
 it is put right is for whoever owns the code. It never carries replacement

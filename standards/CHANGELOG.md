@@ -4,6 +4,40 @@ Changes to the standards in this folder, newest first.
 
 ## architecture-standard.md
 
+- **2.0.0**: the record describes the software architecture, not only the
+  systems and their bindings. It gains four views: the components, each with
+  what it is responsible for (section 12: the carrier from the kind, a skill
+  per offering, a script per skill, the parts of each script, and the
+  outside systems); the connectors between them and to each system, each
+  naming both of its ends (section 13: the harness to each script by command
+  and flags, a model through the shared caller and its four settings, a
+  keyless public service at the address its binding names, any other system
+  through its bound product); the runtime and deployment view (section 14);
+  and the data flow (section 15). The limits become drivers (section 16):
+  quality requirements and constraints taken from the spec and the statement,
+  which the decisions cite by key, with `cost`, `speed`, `data` and `trust`
+  first and the spec's constraints under their own ids. The header keeps
+  `cost_limit`, because the Design declares it as the spending system's
+  ceiling, and it is an input the record carries. A limit is never a
+  decision, and a settled spending limit is the cost driver rather than a
+  decision (section 11). Each decision about structure is an architecture
+  decision record (section 17): its context, its drivers, why, at least one
+  alternative with why it was not chosen, and its consequences. Bindings,
+  grants and settled answers are rulings, which keep their earlier form and
+  follow the decisions about structure. The body's headings are now
+  `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`,
+  `## Components`, `## Connectors`, `## Runtime and deployment`,
+  `## Data flow`, `## Drivers` (in place of `## Limits`), `## Egress`,
+  `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and
+  `## Questions` (section 9). Done now also needs every component with a
+  responsibility, every connector with both ends, a data flow, and every
+  decision about structure with its drivers, an alternative and its
+  consequences (section 8). The header and its format word,
+  `architecture-record-v1`, are unchanged, so a reader of the header reads a
+  2.0.0 record as before. This is a major version because a record finished
+  under 1.1.0 is not finished under 2.0.0, and the `## Limits` heading is
+  gone. Sections 2 to 11 keep their numbers. The worked example is
+  hn-digest.
 - **1.1.0**: a keyless public service is a system of the record. A service
   the agent reaches at one fixed address that takes no key, such as the
   Hacker News API, is asked for as a destination, with its address in the

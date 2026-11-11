@@ -126,14 +126,14 @@ export async function runJob({ job, records, work, files = [], textFile = "", en
   const { findings, earlier } = answerAgainst([...house.findings, ...checked.kept], earlierFindings(r.earlier_text));
   const wentWithout = paragraph(RECORDS);
   const doc = findingsDocument({
-    read, findings, warnings: house.warnings, outside: [...house.outside_the_change, ...checked.outside_the_change], dropped: checked.dropped,
+    read, findings, warnings: house.warnings, advisory: checked.advisory ?? [], outside: [...house.outside_the_change, ...checked.outside_the_change], dropped: checked.dropped,
     earlier, leftOut: left, wentWithout, modelError: rev.error, version: ownVersion(), now: now(),
   });
   writeFileSync(join(RECORDS, "findings.md"), doc);
   const reply = replyText({ read, findings, wentWithout, modelError: rev.error });
   let pieces = null, filedNote = null;
   try { fill(job, doc); pieces = "pieces.json"; } catch (e) { filedNote = `the findings were not filed: ${e.message}`; }
-  return { ok: true, code: 0, reply, pieces, findings: findings.length, open: findings.filter((f) => !trim(f.answer)).length, ...(filedNote ? { note: filedNote } : {}) };
+  return { ok: true, code: 0, reply, pieces, findings: findings.length, advisory: (checked.advisory ?? []).length, open: findings.filter((f) => !trim(f.answer)).length, ...(filedNote ? { note: filedNote } : {}) };
 }
 
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";

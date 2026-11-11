@@ -22,7 +22,7 @@ when an architecture record comes back with answers to its questions, or with so
 
 ## What a good result looks like
 
-The record again, with what was asked changed and everything else kept, and beside it what changed: each line that is new or gone, and the reason for each decision that changed. An answer settles the question under its key. A change that needs a system the statement never called for, such as a design step reaching something new, is asked as a question and the system is not added on the designer's word.
+The record again, with what was asked changed and everything else kept, and beside it what changed: each line that is new or gone, and the reason for each driver and each decision that changed. An answer settles the question under its key. A change that needs a system the statement never called for, such as a design step reaching something new, is asked as a question and the system is not added on the designer's word.
 
 ## What it produces
 
@@ -70,6 +70,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/went-without.mjs
 - scripts/settled.mjs
 - scripts/no-provider.mjs
+- scripts/views.mjs
 
 ## References
 

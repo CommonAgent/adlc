@@ -16,6 +16,7 @@
 import { inputIs, settingMissing } from "./options.mjs";
 import { providersIn, withoutProviders } from "./no-provider.mjs";
 import { PUBLIC_ACCESS, PUBLIC_ADDRESS, parseRecord } from "./architecture-record.mjs";
+import { LIMIT_DRIVERS, decisionOf, driversOf, isRuling, slug, specOfferings, statesLimit } from "./views.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -163,6 +164,7 @@ export function findingsOf(arch, ctx = {}) {
     if (!trim(d?.decided)) out.push("a decision says nothing was decided");
     else if (!trim(d?.why)) out.push(`the decision "${trim(d.decided)}" has no reason`);
   }
+  out.push(...viewFindings(arch, ctx));
   for (const [at, s] of stringsIn(arch)) {
     for (const m of modelNamesIn(s)) out.push(`${at} names the model ${m}; state the capability and leave the model to the binding`);
     // The one address a record carries: a keyless public service's, which
@@ -173,6 +175,63 @@ export function findingsOf(arch, ctx = {}) {
   }
   for (const e of arch.environments ?? []) if (!["dev", "test", "staging", "production"].includes(e)) out.push(`the environment ${e} is not one the deploy spells (dev, test, staging, production)`);
   return [...new Set(out)];
+}
+
+/** The driver keys an answer's decisions may cite: the four limits, the
+ *  spec's constraints by their ids, and the further drivers it names. */
+export function driverKeys(arch = {}, spec = null) {
+  return new Set(driversOf({ limits: { cost: { limit: "x" } }, spec, extra: arch?.drivers }).map((d) => d.key));
+}
+
+/** The findings on the answer's views (the architecture standard, sections
+ *  12 to 17): the skills it names (unless a spec named them), the parts and
+ *  what each is responsible for, the data flow, the further drivers, and each
+ *  decision about structure with its context, drivers, alternatives and
+ *  consequences. A decision that only states a limit is a finding too: a
+ *  limit is a driver the decisions cite. */
+export function viewFindings(arch, ctx = {}) {
+  const out = [];
+  const kind = trim(arch?.kind?.kind) || "plugin-on-harness";
+  const onHarness = kind === "plugin-on-harness" || kind === "bare-harness";
+  const offerings = specOfferings(ctx.spec);
+  const skills = Array.isArray(arch.skills) ? arch.skills : [];
+  if (onHarness && !offerings.length && !skills.some((s) => trim(s?.name))) out.push("no skill is named; name each skill the harness reads, in lowercase-hyphen words, with what it is responsible for");
+  for (const s of skills) {
+    if (!trim(s?.name)) { out.push("a skill has no name"); continue; }
+    if (!/^[a-z][a-z0-9-]*$/.test(trim(s.name))) out.push(`the skill ${JSON.stringify(s.name)} is not named in lowercase-hyphen words`);
+    if (!trim(s.responsibility)) out.push(`the skill ${trim(s.name)} has no responsibility`);
+  }
+  for (const p of Array.isArray(arch.parts) ? arch.parts : []) {
+    if (!trim(p?.name)) { out.push("a part has no name"); continue; }
+    if (!trim(p.responsibility)) out.push(`the part ${trim(p.name)} has no responsibility; say what it is responsible for in one sentence`);
+  }
+  const flow = Array.isArray(arch.flow) ? arch.flow : [];
+  if (!flow.length) out.push("the data flow is missing; give each step from one component to the next, with what passes and a sentence saying how");
+  flow.forEach((s, i) => {
+    if (!trim(s?.from) || !trim(s?.to)) out.push(`step ${i + 1} of the data flow does not name both of its ends`);
+    if (!trim(s?.data) || !trim(s?.says)) out.push(`step ${i + 1} of the data flow does not say what passes and how`);
+  });
+  for (const x of Array.isArray(arch.drivers) ? arch.drivers : []) {
+    if (!trim(x?.key) || !trim(x?.says)) out.push("a driver has no key or does not say what it requires");
+    else if (LIMIT_DRIVERS.includes(slug(x.key))) out.push(`the driver ${trim(x.key)} is one of the four limits; give it under limits, not again under drivers`);
+  }
+  const keys = driverKeys(arch, ctx.spec);
+  const drivers = driversOf({ limits: arch.limits ?? {}, spec: ctx.spec, extra: arch.drivers });
+  const structural = (Array.isArray(arch.decisions) ? arch.decisions : []).filter((d) => d && trim(d.decided) && !isRuling(d));
+  if (Array.isArray(arch.decisions) && arch.decisions.length && !structural.length) out.push("no decision chooses the agent's structure; the rulings (bindings, grants, the build's settled answers) are written for you");
+  for (const raw of Array.isArray(arch.decisions) ? arch.decisions : []) {
+    if (!raw || !trim(raw.decided)) continue;
+    const said = trim(raw.decided);
+    if (statesLimit(raw, drivers)) { out.push(`the decision "${said}" only states a limit; a limit is a driver the decisions cite, so give it under limits or drivers and decide the structure that answers it`); continue; }
+    if (isRuling(raw)) continue;
+    const d = decisionOf(raw);
+    if (!d.context) out.push(`the decision "${said}" has no context; say the situation that called for it`);
+    if (!d.drivers.length) out.push(`the decision "${said}" cites no driver; name the drivers it answers (${[...keys].join(", ")})`);
+    for (const k of d.drivers) if (!keys.has(k)) out.push(`the decision "${said}" cites ${k}, which is not a driver; cite one of ${[...keys].join(", ")}, or add it under drivers`);
+    if (!d.alternatives.length) out.push(`the decision "${said}" weighs no alternative; give at least one, with why it was not chosen`);
+    if (!d.consequences.length) out.push(`the decision "${said}" says no consequence; say what follows from it`);
+  }
+  return out;
 }
 
 /** Words that make a sentence about money. */
@@ -201,8 +260,11 @@ export function sameThing(x, y) {
 export function carriedFrom(text = "") {
   const t = String(text ?? "");
   const decided = [...t.matchAll(/^### Decision \d+\. (.+)$/gm)].map((m) => m[1].trim());
-  const cost = decided.map((d) => /^Limit what the agent spends to (.+)$/.exec(d)?.[1]).find(Boolean)
-    ?? /^- \*\*Cost\*\*: (?!not set)(.+?)\. [A-Z]/m.exec(t)?.[1] ?? "";
+  // The header's cost_limit (from 1.1.0); then, for a record written before
+  // it, the decision that stated the limit or the Limits section's line.
+  const cost = parseRecord(t)?.cost_limit
+    || decided.map((d) => /^Limit what the agent spends to (.+)$/.exec(d)?.[1]).find(Boolean)
+    || /^- \*\*Cost\*\*(?: \(`cost`\))?: (?!not set)(.+?)\. [A-Z]/m.exec(t)?.[1] || "";
   const publicServices = {};
   for (const [name, envs] of Object.entries(parseRecord(t)?.bindings ?? {})) {
     const b = Object.values(envs ?? {}).find((x) => x?.public);
@@ -324,8 +386,10 @@ export function repaired(arch, ctx = {}) {
   if (!stated && !answeredCost && trim(carried.cost)) {
     a.limits.cost = { limit: trim(carried.cost), why: "Settled in an earlier round of this record" };
   } else if (!stated && answeredCost) {
-    a.limits.cost = { limit: answeredCost, why: "The person set it in an answer" };
-    a.decisions.push({ decided: `Limit what the agent spends to ${answeredCost}`, why: `The person set the limit in an answer (limit-cost: ${answeredCost})`, follows: "The limit is the package's ceiling for its text-reasoning spend, within the organization's own" });
+    // The limit is the cost driver, and the header's cost_limit, which the
+    // Design declares as the spending system's ceiling. It is not a
+    // decision: a limit is what the decisions answer.
+    a.limits.cost = { limit: answeredCost, why: `The person set it in an answer (limit-cost: ${answeredCost})` };
   } else if (!stated) {
     if (costText) notes.push("took out a spending limit the statement did not state, and asked for it");
     a.limits.cost = null;
@@ -363,19 +427,22 @@ export function repaired(arch, ctx = {}) {
       d.granted = true;
       if (svc) {
         madeSystems.push({ d, system: { name: svc.name, plain: dest, access: svc.access, why: trim(d.why) || `To reach ${dest}`, public: { address: svc.address, approved: key ?? boundBefore?.approved ?? "" } } });
-        if (verdict === "yes") a.decisions.push({ decided: `The agent may reach ${dest}`, why: `The person granted it in an answer (${key}: ${answer})`, follows: `${dest} is the system ${svc.name}, bound to the service itself at the address the owner approved, with no key; the Design declares that address as a setting whose default it is, and the scripts hold no address of their own` });
+        if (verdict === "yes") a.decisions.push({ kind: "ruling", decided: `The agent may reach ${dest}`, why: `The person granted it in an answer (${key}: ${answer})`, follows: `${dest} is the system ${svc.name}, bound to the service itself at the address the owner approved, with no key; the Design declares that address as a setting whose default it is, and the scripts hold no address of their own` });
         continue;
       }
-      if (verdict === "yes") a.decisions.push({ decided: `The agent may reach ${dest}`, why: `The person granted it in an answer (${key}: ${answer})`, follows: "The offering declares reaches-network, and the destination is named in the egress of each environment" });
+      if (verdict === "yes") a.decisions.push({ kind: "ruling", decided: `The agent may reach ${dest}`, why: `The person granted it in an answer (${key}: ${answer})`, follows: "The offering declares reaches-network, and the destination is named in the egress of each environment" });
       continue;
     }
     if (verdict === "no" || (!answer && (carried.refused ?? []).some((g) => sameThing(g, dest)))) {
       refused.push(d);
-      if (verdict === "no") a.decisions.push({ decided: `The agent does not reach ${dest}`, why: `The person said no in an answer (${key}: ${answer})`, follows: "Whatever needed it has to work without it, or the statement changes" });
+      if (verdict === "no") a.decisions.push({ kind: "ruling", decided: `The agent does not reach ${dest}`, why: `The person said no in an answer (${key}: ${answer})`, follows: "Whatever needed it has to work without it, or the statement changes" });
       continue;
     }
     d.granted = false;
     const k = key ?? freshKey();
+    // The key it is asked under, so the views can draw an asked service as
+    // asked (views.mjs).
+    d.asked = k;
     const named = dest.includes("(an address, supplied at Deploy)")
       ? `a destination the drafting named only by its address (${trim(d.why) || "no reason given"})`
       : dest;
@@ -402,8 +469,18 @@ export function repaired(arch, ctx = {}) {
     if (b && !s.public) Object.assign(s, { public: { address: b.address, approved: b.approved }, access: PUBLIC_ACCESS.includes(s.access) ? s.access : b.access });
   }
 
-  // Decisions without a reason are not delivered: each is asked.
+  // A decision that only states a limit is taken out: the limit is a driver
+  // the decisions cite (the architecture standard, section 16), and the
+  // limits already carry it. Each decision about structure is put in the
+  // record's form (views.mjs, decisionOf), and each ruling made above is
+  // marked as one.
   a.decisions = a.decisions.filter((d) => trim(d?.decided));
+  const drivers = driversOf({ limits: a.limits, spec: ctx.spec, extra: a.drivers });
+  const limitsDecided = a.decisions.filter((d) => statesLimit(d, drivers));
+  if (limitsDecided.length) notes.push(`took out ${limitsDecided.length === 1 ? "a decision that only stated a limit" : `${limitsDecided.length} decisions that only stated limits`}; a limit is a driver the decisions cite`);
+  a.decisions = a.decisions.filter((d) => !limitsDecided.includes(d)).map(decisionOf);
+
+  // Decisions without a reason are not delivered: each is asked.
   a.decisions.forEach((d, i) => {
     if (!trim(d.why)) questions.push({ key: `reason-${i + 1}`, question: `Why "${trim(d.decided)}"? A decision without a reason is not delivered, and I could not find one in the statement.` });
   });

@@ -1,0 +1,178 @@
+{
+  "format": "spec-v1",
+  "product": {
+    "name": "reference-builder",
+    "version": "0.1.0",
+    "kind": "agent"
+  },
+  "purpose": "Takes a person's request for an agent and builds it through the ADLC with a coding harness and the ADLC plugin, stopping to ask the person at each decision that is theirs, until the build's check passes.",
+  "features": [
+    {
+      "id": "F1",
+      "name": "Build an agent",
+      "does": "Starts a build folder from the person's request, runs the coding harness with the ADLC plugin on it, and answers with where the build stands or the question that is the person's.",
+      "inputs": [
+        {
+          "name": "request",
+          "kind": "text",
+          "about": "The person's words: what the agent should do, or, naming a build, their answer to its last question.",
+          "required": true,
+          "given_by": "person"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reply",
+          "kind": "text/markdown",
+          "about": "What the build did, the stage it is at, and the question for the person when one is theirs."
+        }
+      ],
+      "requirements": [
+        {
+          "id": "F1.R1",
+          "shall": "The agent shall start a new build folder with /adlc:start from the person's request and run the coding harness with the ADLC plugin on it.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "it starts a build folder with /adlc:start, then runs the plugin's check until it passes or a person is needed"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R2",
+          "shall": "The agent shall stop at each person gate and answer with the question.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "At each person gate it stops, and the question is its reply"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R3",
+          "shall": "The agent shall resume the same build with the person's answer when the person's message names that build.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "it resumes the same build with the person's answer"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R4",
+          "shall": "The agent shall approve a build's spec only when the person's message says approve for that build.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "it approves the spec only when the person says approve for that build"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R5",
+          "shall": "The agent shall refuse to write a build's files itself.",
+          "kind": "refusal",
+          "priority": "must",
+          "source": {
+            "said": "It refuses to write a build's files itself"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R6",
+          "shall": "The agent shall refuse a message about a build it does not keep.",
+          "kind": "refusal",
+          "priority": "must",
+          "source": {
+            "said": "it refuses a message about a build it does not keep"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R7",
+          "shall": "The agent shall ask for the request when the message has no words, and start nothing.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "When the message has no words, it asks for the request"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R8",
+          "shall": "The agent shall stop and say the harness could not be run when it fails, and write nothing.",
+          "kind": "error",
+          "priority": "must",
+          "source": {
+            "said": "When the harness cannot be run, it stops and says so, and writes nothing"
+          },
+          "verify": "test"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": "F1.A1",
+          "gherkin": "Scenario: A request starts a build\n  Given a person's request for an agent\n  When the agent is sent the request\n  Then it starts a build folder with /adlc:start and runs the coding harness on it\n  And its reply names the build and where it stands",
+          "checks": [
+            "F1.R1"
+          ]
+        },
+        {
+          "id": "F1.A2",
+          "gherkin": "Scenario: A question is the person's, and their answer resumes the build\n  Given the harness stopped with a question for the person\n  When the agent replies\n  Then the question is its reply\n  When the person answers naming the build\n  Then the same build resumes with their answer",
+          "checks": [
+            "F1.R2",
+            "F1.R3"
+          ]
+        },
+        {
+          "id": "F1.A3",
+          "gherkin": "Scenario: Only the person's word approves the spec\n  Given a build waiting for the person's approval\n  When the person's message names the build and says approve\n  Then the spec is approved and the build carries on\n  And a message that does not say approve approves nothing",
+          "checks": [
+            "F1.R4"
+          ]
+        },
+        {
+          "id": "F1.A4",
+          "gherkin": "Scenario: What it refuses, and when it has nothing to work on\n  Given a message naming a build it does not keep, or a message with no words\n  When the agent is sent it\n  Then it refuses the unknown build, or asks for the request, and runs nothing\n  And it never writes a build's files itself",
+          "checks": [
+            "F1.R5",
+            "F1.R6",
+            "F1.R7"
+          ]
+        },
+        {
+          "id": "F1.A5",
+          "gherkin": "Scenario: The harness cannot be run\n  Given a coding harness that cannot be run\n  When the agent is sent a request\n  Then it says the harness could not be run and writes nothing",
+          "checks": [
+            "F1.R8"
+          ]
+        }
+      ]
+    }
+  ],
+  "constraints": [],
+  "systems": [],
+  "settings": [],
+  "open": [],
+  "source": {
+    "kind": "account"
+  },
+  "price": "Free",
+  "interfaces": [
+    {
+      "id": "I1",
+      "kind": "declaration",
+      "name": "the coding harness",
+      "declared_in": "agent-runtime-requirements.json binaries",
+      "value": [
+        {
+          "name": "coding-harness",
+          "purpose": "The coding harness command, installed on the host with the ADLC plugin, that the agent runs headless on each build folder: it takes a prompt and, to resume, a session id, and answers with JSON that carries the result and the session id."
+        }
+      ],
+      "keep": true,
+      "about": "The coding-harness program the agent runs: declared so an install puts it on the host, since the agent reaches no system of its own."
+    }
+  ]
+}

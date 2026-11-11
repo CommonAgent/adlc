@@ -73,7 +73,12 @@ test("the record carries the section and the header line, and the header reads b
   const sa = standingAssetsOf([out("the announcement", "text/markdown")], table);
   const rec = recordOf({
     asked: { statement: "an agent that writes a one-page product announcement for a person to review", answers: {} },
-    named: { architecture: { title: "announcement", kind: { kind: "plugin-on-harness", why: "default" }, formats: [out("the announcement", "text/markdown")], decisions: [] } },
+    named: { architecture: {
+      title: "announcement", kind: { kind: "plugin-on-harness", why: "default" }, formats: [out("the announcement", "text/markdown")],
+      skills: [{ name: "announcement", responsibility: "Writes the announcement." }],
+      flow: [{ from: "caller", to: "harness", data: "the product", says: "The caller names the product." }, { from: "announcement", to: "caller", data: "the announcement", says: "It goes back as the reply." }],
+      decisions: [{ decided: "Code writes the page, with one model call", context: "One page a job.", drivers: ["speed"], why: "One call is enough.", alternatives: [{ option: "A model in control", why_not: "nothing needs one" }], consequences: ["The job is control script."] }],
+    } },
     bound: { environments: ["dev"], systems: [] },
     table,
   });

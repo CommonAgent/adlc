@@ -33,9 +33,11 @@ First, with a program and no model, the house architecture rules
   are written, written records are declared, credentials are bound, and
   each step's `how` is what its scripts do;
 - every environment variable a script reads is declared by the agent's own
-  files (a system's credential or setting, a run config setting, the spec
-  when one comes, or a SKILL.md command line) or placed by the host, so a
-  script never reads an address nothing places.
+  files (a system's credential or setting, the spec when one comes, or a
+  SKILL.md command line) or placed by the host, so a script never reads an
+  address nothing places. A run config setting read from the environment is
+  a finding too: a run setting arrives in the job's run-context.json, never
+  as a variable (Common Agent 0.41.0, Section 5.8).
 
 With a diff, an access a declaration adds is a finding too. A credential
 value carried in the package is a finding, and is left out of the records,
@@ -46,6 +48,12 @@ the house-rule findings already made, for what a program cannot see. Every
 finding it gives that names no file and line of the package, makes no claim,
 says no consequence, grades the work or writes the fix is dropped, with its
 reason kept in the job's records.
+
+A finding holds a build only when it names what it breaks: a requirement or
+constraint of the spec (`F1.R2`, `C1`), a declared fact (a declaration file
+and its member), or a house rule. One that names none is advisory. It is
+listed under `## Advisory` for whoever owns the code, it is not counted, and
+it needs no answer.
 
 ## What it needs
 
@@ -63,7 +71,7 @@ reason kept in the job's records.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 100 tests
+node --test test/*.test.mjs                                   # 103 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 node scripts/job.mjs --job <job> --records <records> --work <work> \
   --text-file <message> --file <package.tgz>::application/gzip

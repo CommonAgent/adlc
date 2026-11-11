@@ -39,8 +39,9 @@ const TEXT_EXT = new Set([".md", ".markdown", ".txt", ".json", ".text"]);
 const isText = (path, media) => TEXT_EXT.has(extname(path).toLowerCase()) || /^text\/|json/.test(String(media ?? ""));
 
 /** What one attached file is: "a stack", "the platform's defaults", "the
- *  build's settled answers", "an architecture record", "part of the
- *  statement", or "something else", with its text when it is text. */
+ *  build's settled answers", "the spec" (spec-v1), "an architecture record",
+ *  "part of the statement", or "something else", with its text when it is
+ *  text. */
 export function kindOf(text) {
   if (text == null) return "something else";
   if (parseRecord(text)) return "an architecture record";
@@ -49,6 +50,7 @@ export function kindOf(text) {
     let doc = null;
     try { doc = JSON.parse(t); } catch { return "something else"; }
     if (isSettled(doc)) return "the build's settled answers";
+    if (doc?.format === "spec-v1") return "the spec";
     if (stackOf(doc)) return "a stack";
     if (Array.isArray(doc?.systems) && doc.systems.length && doc.systems.every((s) => s && typeof s.name === "string") && doc.systems.some((s) => s.house && typeof s.house === "object")) return "the platform's defaults";
     return "something else";
@@ -68,6 +70,26 @@ export function oneFile(f) {
     ...(text != null ? { sha256: sha(Buffer.from(text)), text: cut ? text.slice(0, TEXT_CAP) : text, text_chars: text.length, ...(cut ? { cut: true } : {}) } : {}),
   };
 }
+
+/** What the architecture reads from a spec (standards/spec.schema.json,
+ *  spec-v1): the product, its purpose and what each feature does, the
+ *  offerings its features belong to, which are the skills a harness reads,
+ *  and its constraints, which are drivers the decisions cite by id. */
+export function specOf(doc) {
+  if (!doc || doc.format !== "spec-v1") return null;
+  const features = Array.isArray(doc.features) ? doc.features : [];
+  return {
+    product: trim(doc.product?.name),
+    purpose: trim(doc.purpose),
+    does: features.map((f) => trim(f?.does)).filter(Boolean),
+    offerings: [...new Set(features.map((f) => trim(f?.offering)).filter(Boolean))],
+    constraints: (Array.isArray(doc.constraints) ? doc.constraints : []).filter((c) => c && trim(c.id)).map((c) => ({ id: trim(c.id), kind: trim(c.kind), shall: trim(c.shall) })),
+  };
+}
+
+/** The statement a spec gives where nothing else came: its purpose, then
+ *  what each feature does. */
+export const specStatement = (spec) => (spec ? [spec.purpose, ...spec.does].filter(Boolean).join("\n") : "");
 
 /** The keys the architect asks under, so an answer can be told from a change
  *  without a model: the open questions of the earlier record, and the shapes
@@ -159,6 +181,8 @@ export function readingOf({ text = "", files = [], earlierPath = null, defaultsA
   const stackFile = attached.find((a) => a.kind === "a stack");
   const defaultsFile = attached.find((a) => a.kind === "the platform's defaults");
   const settledFile = attached.find((a) => a.kind === "the build's settled answers");
+  const specFile = attached.find((a) => a.kind === "the spec");
+  const spec = specFile ? specOf(JSON.parse(specFile.text)) : null;
   const statementParts = attached.filter((a) => a.kind === "part of the statement" && trim(a.text));
   const revision = wantsRevision ? (() => {
     const open = earlier ? questionsIn(earlier.text).map((q) => q.key) : [];
@@ -166,7 +190,7 @@ export function readingOf({ text = "", files = [], earlierPath = null, defaultsA
   })() : null;
   const statement = earlier
     ? statementIn(earlier.text) || parseRecord(earlier.text)?.statement || ""
-    : [requestWords(said), ...statementParts.map((a) => a.text)].map(trim).filter(Boolean).join("\n\n");
+    : [requestWords(said), ...statementParts.map((a) => a.text)].map(trim).filter(Boolean).join("\n\n") || specStatement(spec);
   let defaults = null;
   let defaults_from = "attached";
   if (defaultsFile) defaults = JSON.parse(defaultsFile.text);
@@ -188,6 +212,10 @@ export function readingOf({ text = "", files = [], earlierPath = null, defaultsA
     // where each came from, and never asked again.
     settled: settledFile ? settledOf(JSON.parse(settledFile.text)) : null,
     settled_from: settledFile?.name ?? null,
+    // The spec Requirements handed back (spec-v1), where one came: its
+    // offerings are the skills, and its constraints are drivers (views.mjs).
+    spec,
+    spec_from: specFile?.name ?? null,
     ...(wantsRevision ? { revision: { earlier_from: earlier?.from ?? null, change: revision.change } } : {}),
     earlier: earlier ? { from: earlier.from, text: earlier.text } : null,
     answers: revision?.answers ?? {},

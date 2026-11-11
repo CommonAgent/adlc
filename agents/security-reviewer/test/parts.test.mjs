@@ -134,6 +134,18 @@ test("the owner's spending limit is a line of its own; a number in passing is no
   assert.deepEqual(spendingLimit("", { limits: ["Spending limit: $40 per month"] }), { said: "Spending limit: $40 per month", from: "the architecture record's limits" });
 });
 
+test("a record written to the architecture standard's 2.0.0 gives its limits as drivers, and the spending limit in its header", () => {
+  const a = readArchitecture([
+    "---", "record: architecture-record-v1", "cost_limit: \"1 USD per day, across every job\"", "---", "",
+    "# Architecture record: a digest", "## Drivers", "- **Cost** (`cost`): 1 USD per day, across every job. The person set it in an answer. Cited by decision 1.", "- **Speed** (`speed`): a digest within 300 seconds.",
+    "## Decisions", "### Decision 1. Code controls the job", "", "Drivers: `cost` (1 USD per day, across every job).",
+  ].join("\n"));
+  assert.equal(a.cost_limit, "1 USD per day, across every job");
+  assert.deepEqual(a.limits, ["**Cost** (`cost`): 1 USD per day, across every job. The person set it in an answer. Cited by decision 1."]);
+  assert.deepEqual(spendingLimit("", a), { said: "1 USD per day, across every job", from: "the architecture record's limits" }, "the header's words come first");
+  assert.equal(readArchitecture("---\nrecord: architecture-record-v1\ncost_limit: not set\n---\n## Drivers\n- **Cost** (`cost`): not set; asked.\n").cost_limit, undefined);
+});
+
 test("an architecture record is told from the package's own Markdown by its name or first heading", () => {
   assert.ok(isArchitectureRecord("architecture-record.md", "x"));
   assert.ok(isArchitectureRecord("notes.md", "# Architecture record: the weather reader\n"));

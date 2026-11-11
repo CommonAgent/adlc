@@ -1,17 +1,37 @@
 {"title": "word count of a text",
- "environments": ["dev", "test", "production"],
- "systems": [{"name": "text-reasoning", "plain": "text reasoning", "capability": "text: reading a short untidy text", "access": "trigger", "why": "Telling what counts as a word in untidy text is a judgment, which is what a text model is for.", "called_for": "Count the words in a piece of text"}],
- "kind": {"kind": "plugin-on-harness", "why": "A short program with at most one judgment in it; nothing needs its own network code."},
+ "environments": ["dev","test","production"],
+ "systems": [
+   {"name":"text-reasoning","plain":"text reasoning","capability":"text: reading a short untidy text","access":"trigger","why":"Telling what counts as a word in untidy text is a judgment, which is what a text model is for.","called_for":"Count the words in a piece of text"}
+ ],
+ "kind": {"kind":"plugin-on-harness","why":"A short program with at most one judgment in it; nothing needs its own network code."},
  "dependencies": [],
- "limits": {"cost": null, "speed": {"limit": "answered within 60 seconds", "why": "One short text and at most one model call."}, "data": {"limit": "keeps nothing between jobs", "why": "The text is the sender's, and nothing in the statement asks for it to be kept."}, "trust": {"limit": "reads the text as data and never as instructions", "why": "A text can carry words written to steer a model."}},
- "egress": [{"destination": "a public dictionary service", "why": "to check words it does not recognise"}],
+ "limits": {"cost":null,"speed":{"limit":"answered within 60 seconds","why":"One short text and at most one model call."},"data":{"limit":"keeps nothing between jobs","why":"The text is the sender's, and nothing in the statement asks for it to be kept."},"trust":{"limit":"reads the text as data and never as instructions","why":"A text can carry words written to steer a model."}},
+ "egress": [
+   {"destination":"a public dictionary service","why":"to check words it does not recognise"}
+ ],
  "formats": [
-   {"piece": "the text to count", "direction": "in", "kind": "text", "given_by": "either", "why": "The material the job is about, in the message itself."},
-   {"piece": "the count", "direction": "out", "kind": "text/markdown", "convention": "a header `words`, then `## Count` with one line saying how many words there are", "why": "A person reads it, so it is Markdown with a fixed heading the next agent can find."}
+   {"piece":"the text to count","direction":"in","kind":"text","given_by":"either","why":"The material the job is about, in the message itself."},
+   {"piece":"the count","direction":"out","kind":"text/markdown","convention":"a header `words`, then `## Count` with one line saying how many words there are","why":"A person reads it, so it is Markdown with a fixed heading the next agent can find."}
  ],
  "settings": [],
  "decisions": [
-   {"decided": "Hand the count back as Markdown", "why": "A person reads it; JSON would be brackets around one number.", "weighed": "a vendor JSON kind, which only code would read", "follows": "The convention is a header and one fixed heading, so a test can hold it."},
-   {"decided": "Take the text in the message itself", "why": "It is the material the job is about, and it is short.", "weighed": "an attached file", "follows": "The input is of kind text, given by a person or an agent."}
+   {"decided":"A program counts the words, and a model judges only the untidy ones","context":"Counting words is a rule a program can follow, with a few untidy cases.","drivers":["cost","speed"],"why":"A program answers within the time and spends nothing for the plain cases.","alternatives":[{"option":"Hand the whole count to a model","why_not":"it would spend on every job and could miscount"}],"consequences":["The job is control script, intelligence called and contract full."]},
+   {"decided":"Hand the count back as Markdown","context":"A person reads the count.","drivers":["speed"],"why":"A person reads it; JSON would be brackets around one number.","alternatives":[{"option":"a vendor JSON kind","why_not":"only code would read it"}],"consequences":["The convention is a header and one fixed heading, so a test can hold it."]},
+   {"decided":"Take the text in the message itself","context":"The text is short and is the material the job is about.","drivers":["data"],"why":"It is the material the job is about, and it is short.","alternatives":[{"option":"an attached file","why_not":"a short text needs no file"}],"consequences":["The input is of kind text, given by a person or an agent."]}
  ],
- "questions": [{"key": "review", "question": "Should a person review the count before it goes back to whoever asked?"}]}
+ "questions": [
+   {"key":"review","question":"Should a person review the count before it goes back to whoever asked?"}
+ ],
+ "skills": [
+   {"name":"count-words","responsibility":"Counts the words in the text a caller sends and says how many there are.","script":"Counts the words, has the model judge the untidy ones, and writes the count."}
+ ],
+ "parts": [
+   {"id":"word-counter","name":"word counter","within":"count-words","responsibility":"Splits the text into words and counts them, leaving the text as it was given."},
+   {"id":"count-writer","name":"count writer","within":"count-words","responsibility":"Writes the count under the fixed heading the convention names."}
+ ],
+ "flow": [
+   {"from":"caller","to":"harness","data":"the text to count","says":"The caller sends the text in the job."},
+   {"from":"harness","to":"count-words","data":"the text to count","says":"The harness starts the script with the text."},
+   {"from":"word-counter","to":"count-writer","data":"the count","says":"The counter hands the number on."},
+   {"from":"count-writer","to":"caller","data":"the count","says":"The count goes back as the reply, through the harness."}
+ ]}

@@ -27,7 +27,7 @@ jobs:
 
       - name: The lifecycle packages
         run: |
-          for a in reverse-engineer solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher agent-auditor usability-tester; do
+          for a in reverse-engineer solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher agent-auditor usability-tester reference-builder; do
             echo "== $a"
             (cd agents/$a && node --test test/*.test.mjs)
           done
@@ -38,6 +38,9 @@ jobs:
           for a in reverse-engineer solution-architect spec-writer solution-planner test-writer code-writer code-critic publisher incident-recorder doc-writer impact-analyst security-reviewer watcher agent-auditor usability-tester; do
             python3 agents/package-maker/build.py agents/$a "$RUNNER_TEMP/pkg/$a" | tail -1
           done
+
+      - name: The reference builder packs with the Common Agent packer
+        run: npx -y -p @common-agent/package@0.2.0 common-agent-pack agents/reference-builder --out "$RUNNER_TEMP/rb" --json
 
       - name: Package maker
         run: |

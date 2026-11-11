@@ -1,0 +1,69 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "does": "Builds an agent from a person's request through the ADLC, by running a coding harness with the ADLC plugin and stopping to ask the person at each decision that is theirs.",
+  "offerings": [
+    {
+      "id": "build-an-agent",
+      "name": "Build an agent",
+      "does": "Starts a build folder from the person's request, or resumes the build their message names, runs the coding harness with the ADLC plugin on it, and answers with where the build stands or the question that is the person's.",
+      "inputs": [
+        {
+          "name": "request",
+          "kind": "text",
+          "required": true,
+          "given_by": "person",
+          "about": "The person's words: what the agent should do, or, naming a build, their answer to its last question."
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reply",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "The reply, in Markdown: a short header with `build` and `stage`, then what the harness said, ending with the person's question when one is theirs."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "none",
+        "cost": "none",
+        "contract": "full"
+      }
+    }
+  ],
+  "refusals": "Writing a build's files itself, because the harness and the plugin are the only authors and their check holds what they write; it runs the harness instead.\nAnswering a message about a build it does not keep, because it would carry on somebody else's work or none; it says it keeps no such build and names the ones it does.\nApproving a spec on anything but the person's own word, because the approval is theirs; it waits until their message says approve for that build.\nStarting a build from a message with no words, because there is nothing to build from; it asks for the request.",
+  "records": [
+    {
+      "name": "the signed job manifest of each delivery",
+      "when": "per_task"
+    }
+  ],
+  "can_use": [
+    {
+      "schema": "https://schemas.agentmesh.ai/brand/v1",
+      "reads": [
+        "name",
+        "legal.first_mention",
+        "words.instead_of",
+        "words.never_say"
+      ],
+      "required": false,
+      "does": "writes the organization's name as the brand writes it, uses its first-mention form the first time, and keeps out the words the brand never says",
+      "without": "writes the organization's name as the person gave it, and says that no brand profile was given"
+    },
+    {
+      "schema": "https://schemas.agentmesh.ai/style-guide/v1",
+      "reads": [
+        "voice",
+        "tone",
+        "spelling",
+        "words.prefer",
+        "words.avoid"
+      ],
+      "required": false,
+      "does": "writes in the organization's voice, tone and spelling, and uses the words it prefers in place of the ones it avoids",
+      "without": "writes in a plain, neutral voice in the spelling of the words it was given, and says that no style guide was given"
+    }
+  ]
+}

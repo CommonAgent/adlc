@@ -70,13 +70,19 @@ export function readArchitecture(md) {
   for (const l of egressLines) for (const m of l.matchAll(HOST)) if (!NOT_A_HOST.test(m[1])) hosts.add(m[1].toLowerCase());
   const none = egressLines.some((l) => /\b(?:needs|reaches|requires)\s+none\b|\bno further destinations?\b|\bnone beyond\b/i.test(l));
 
-  const limitLines = under(secs, /\blimits?\b|\bcost\b|\bspend/).map(trim).filter((l) => l && !/^\|?\s*:?-{2,}/.test(l));
+  // From the architecture standard's 2.0.0 the limits are the record's
+  // drivers, under `## Drivers`, and the spending limit is also the header's
+  // cost_limit, which is read first because it is the limit in the words it
+  // was set in.
+  const header = /^---\r?\n[\s\S]*?^cost_limit:\s*"((?:[^"\\]|\\.)+)"\s*$/m.exec(String(md))?.[1] ?? "";
+  const limitLines = under(secs, /\blimits?\b|\bdrivers?\b|\bcost\b|\bspend/).map(trim).filter((l) => l && !/^\|?\s*:?-{2,}/.test(l));
   const limits = limitLines.filter((l) => MONEY.test(l)).map((l) => l.replace(/^[-*+]\s+/, "").replace(/^\||\|$/g, "").replace(/\s*\|\s*/g, " | "));
+  const cost_limit = MONEY.test(header) ? header.replace(/\\"/g, "\"") : "";
 
   const decLines = under(secs, /\bdecisions?\b/);
   const decisions = Math.max(rows(decLines).length, bullets(decLines).length, secs.filter((s) => /^decision\b|^adr\b/.test(s.heading)).length);
   const dependencies = bullets(under(secs, /\bdependenc/)).concat(rows(under(secs, /\bdependenc/)).map((r) => r.join(" — ")));
-  return { given: true, systems, egress: { hosts: [...hosts].sort(), none, lines: egressLines.map(trim).filter(Boolean) }, limits, decisions, dependencies };
+  return { given: true, systems, egress: { hosts: [...hosts].sort(), none, lines: egressLines.map(trim).filter(Boolean) }, limits, ...(cost_limit ? { cost_limit } : {}), decisions, dependencies };
 }
 
 const MONEY = /(?:[$€£]\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP|dollars?|cents?)\b)/i;
@@ -89,6 +95,7 @@ export function spendingLimit(message = "", arch = null) {
   const m = /^\s*(?:[-*]\s*)?(?:(?:the\s+)?owner'?s?\s+)?(?:spending|spend|budget|cost)\s*(?:limit|ceiling|cap)?\s*[:=]\s*(.+?)\s*$/im.exec(String(message));
   if (m && MONEY.test(m[1])) return { said: bare(m[1]), from: "the message" };
   if (m && /\bnone\b|\bno limit\b|\bunlimited\b/i.test(m[1])) return null;
+  if (trim(arch?.cost_limit)) return { said: trim(arch.cost_limit), from: "the architecture record's limits" };
   const fromRecord = arch?.limits?.find((l) => /spend|cost|budget|limit|ceiling/i.test(l)) ?? arch?.limits?.[0];
   if (fromRecord) return { said: fromRecord, from: "the architecture record's limits" };
   return null;

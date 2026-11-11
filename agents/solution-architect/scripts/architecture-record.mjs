@@ -20,9 +20,11 @@ export const RECORD = "architecture-record-v1";
 
 /** The header's fields, in order, and the body's fixed headings, in order.
  *  The architecture standard (standards/architecture-standard.md, section 9)
- *  names the same lists. */
+ *  names the same lists. From the standard's 2.0.0 the body carries the
+ *  architecture's views (Components, Connectors, Runtime and deployment, Data
+ *  flow), and Drivers takes the place of Limits; the header is unchanged. */
 export const HEADER_FIELDS = ["record", "statement", "environments", "kind", "done", "questions", "systems", "standing_assets", "cost_limit", "bindings"];
-export const HEADINGS = ["Statement", "Systems", "Bindings", "Dependencies", "Kind", "Limits", "Egress", "Formats", "Standing assets", "Settings", "Decisions", "Questions"];
+export const HEADINGS = ["Statement", "Systems", "Bindings", "Dependencies", "Kind", "Components", "Connectors", "Runtime and deployment", "Data flow", "Drivers", "Egress", "Formats", "Standing assets", "Settings", "Decisions", "Questions"];
 
 /** The access a public service may be reached with, and how its address may
  *  be written: http or https, a host, a path, and nothing that could carry a
@@ -145,18 +147,70 @@ function listOr(items, empty, render) {
   return (items ?? []).length ? items.map(render).map(bullet).join("\n") : empty;
 }
 
-function limitsSection(rec) {
-  const l = rec.limits ?? {};
-  const one = (word, x, open) => {
-    if (!x || (!trim(x.limit) && !trim(x.said))) return `**${word}**: ${open}`;
-    return `**${word}**: ${oneLine(x.limit || x.said)}${trim(x.why) ? `. ${sentence(x.why)}` : ""}`;
+const KIND_WORD = { harness: "the harness", service: "the agent's own service", container: "a container", skill: "a skill", script: "a script", part: "a part", system: "an outside system" };
+
+/** The components, each under the one it sits within, then the systems
+ *  outside, each with what it is responsible for (the standard, section 12). */
+function componentsSection(rec) {
+  const all = rec.components ?? [];
+  if (!all.length) return "Not described.";
+  const lines = [];
+  const one = (c, depth) => {
+    const asked = c.asked ? `, asked in ${c.asked}` : "";
+    const reach = trim(c.reaches) ? ` It reaches \`${c.reaches}\`.` : "";
+    lines.push(`${"  ".repeat(depth)}- **${oneLine(c.name)}** (\`${c.id}\`), ${KIND_WORD[c.kind] ?? c.kind}${asked}: ${sentence(c.responsibility) || "no responsibility given."}${reach}`);
+    for (const k of all.filter((x) => x.within === c.id && !x.outside)) one(k, depth + 1);
   };
-  return [
-    one("Cost", l.cost, "not set; asked, because a spending limit is a commitment."),
-    one("Speed", l.speed, "not set."),
-    one("Data", l.data, "not set."),
-    one("Trust", l.trust, "not set."),
-  ].map(bullet).join("\n");
+  const inside = all.filter((c) => !c.outside);
+  const ids = new Set(inside.map((c) => c.id));
+  for (const c of inside.filter((x) => !x.within || !ids.has(x.within))) one(c, 0);
+  for (const c of all.filter((x) => x.outside)) one(c, 0);
+  return lines.join("\n");
+}
+
+/** The connectors, each naming both of its ends (the standard, section 13). */
+function connectorsSection(rec) {
+  return listOr(rec.connectors, "Not described.", (k) => `\`${k.from}\` to \`${k.to}\`${trim(k.access) ? `, ${k.access}` : ""}: ${oneLine(k.how)}${trim(k.carries) ? `; it carries ${noStop(k.carries)}` : ""}.`);
+}
+
+/** How the agent runs, and what each system is bound to where it runs (the
+ *  standard, section 14). */
+function runtimeSection(rec) {
+  const r = rec.runtime;
+  if (!r || !trim(r.runs)) return "Not described.";
+  const lines = [sentence(r.runs), ""];
+  for (const e of r.environments ?? []) {
+    lines.push(bullet(`${e.environment}: ${(e.systems ?? []).length ? e.systems.map((s) => `\`${s.system}\` on ${noStop(s.binding)}`).join("; ") : "no system to bind"}.`));
+  }
+  if (trim(r.note)) lines.push("", sentence(r.note));
+  return lines.join("\n").trim();
+}
+
+/** The data flow, in order, each step from one component to another (the
+ *  standard, section 15). */
+function flowSection(rec) {
+  const steps = rec.flow ?? [];
+  if (!steps.length) return "Not described.";
+  return steps.map((s, i) => `${i + 1}. \`${s.from}\` to \`${s.to}\`, ${noStop(s.data)}: ${sentence(s.says)}`).join("\n");
+}
+
+/** The decisions that cite a driver, by their number in the record. */
+const citing = (rec, key) => orderedDecisions(rec).map((d, i) => ((d.drivers ?? []).includes(key) ? i + 1 : 0)).filter(Boolean);
+
+/** The drivers the decisions answer: the quality requirements and
+ *  constraints, each with where it came from (the standard, section 16). The
+ *  four limits keep their place at the top, so a reader of an earlier record
+ *  finds them where they were. */
+function driversSection(rec) {
+  const drivers = rec.drivers?.length ? rec.drivers : ["cost", "speed", "data", "trust"].map((key) => ({ key, quality: key, says: oneLine(rec.limits?.[key]?.limit || rec.limits?.[key]?.said), why: rec.limits?.[key]?.why }));
+  return drivers.map((d) => {
+    const word = d.quality === d.key ? d.key[0].toUpperCase() + d.key.slice(1) : `${oneLine(d.quality)[0]?.toUpperCase() ?? ""}${oneLine(d.quality).slice(1)}`;
+    const says = trim(d.says) ? `${noStop(d.says)}.${trim(d.why) ? ` ${sentence(d.why)}` : ""}` : d.key === "cost" ? "not set; asked, because a spending limit is a commitment." : "not set.";
+    const from = trim(d.from) && !/^(?:the statement|the cost limit the record carries|asked \(limit-cost\))$/.test(trim(d.from)) ? ` From ${noStop(d.from)}.` : "";
+    const cited = citing(rec, d.key);
+    const by = cited.length ? ` Cited by decision${cited.length === 1 ? "" : "s"} ${list(cited.map(String))}.` : "";
+    return bullet(`**${word}** (\`${d.key}\`): ${says}${from}${by}`);
+  }).join("\n");
 }
 
 function egressSection(rec) {
@@ -210,15 +264,62 @@ function settingsSection(rec) {
   return lines.length ? lines.map(bullet).join("\n") : "No setting beyond the bindings' own.";
 }
 
-function decisionsSection(rec) {
-  if (!(rec.decisions ?? []).length) return "No decision was made.";
-  return rec.decisions.map((d, i) => [
+/** A ruling: a rule of the standard applied, or an answer a person or the
+ *  build gave (a binding, a destination granted or refused, a settled
+ *  answer). Everything else the record decides is a decision about the
+ *  agent's structure. */
+export const RULING_RE = /^(?:bind [a-z0-9-]+ to\b|the agent (?:may reach|does not reach|reaches)\b|reach a model only through\b|nobody attends a job\b)/i;
+export const isRuling = (d) => d?.kind === "ruling" || Boolean(d?.from_binding) || RULING_RE.test(trim(d?.decided));
+
+/** The decisions in the record's order: those about structure first, then
+ *  the rulings, each group as it came. */
+export function orderedDecisions(rec) {
+  const all = rec.decisions ?? [];
+  return [...all.filter((d) => !isRuling(d)), ...all.filter(isRuling)];
+}
+
+const list = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** One decision about structure, in the manner of an architecture decision
+ *  record: its context, the drivers it answers, why, the alternatives weighed
+ *  and its consequences (the standard, section 17). */
+function structureDecision(d, i, rec) {
+  const drivers = rec.drivers ?? [];
+  const driver = (k) => { const x = drivers.find((y) => y.key === k); return `\`${k}\`${x && trim(x.says) ? ` (${noStop(x.says)})` : ""}`; };
+  const alternatives = (d.alternatives ?? []).length ? d.alternatives : trim(d.weighed) ? [{ option: d.weighed }] : [];
+  const consequences = (d.consequences ?? []).length ? d.consequences : trim(d.follows) ? [d.follows] : [];
+  return [
+    `### Decision ${i + 1}. ${oneLine(d.decided)}`,
+    ...(trim(d.context) ? ["", `Context: ${sentence(d.context)}`] : []),
+    "", `Drivers: ${(d.drivers ?? []).length ? `${d.drivers.map(driver).join("; ")}.` : "none cited."}`,
+    "", `Why: ${sentence(d.why) || "no reason given."}`,
+    "", "Alternatives:", "",
+    ...(alternatives.length ? alternatives.map((a) => bullet(`${noStop(a.option)}${trim(a.why_not) ? `: not chosen, because ${noStop(a.why_not)}` : ""}.`)) : ["- None weighed."]),
+    "", "Consequences:", "",
+    ...(consequences.length ? consequences.map((c) => bullet(sentence(c))) : ["- None said."]),
+  ].join("\n");
+}
+
+/** A ruling, as the record has always written its decisions. */
+function rulingDecision(d, i) {
+  return [
     `### Decision ${i + 1}. ${oneLine(d.decided)}`,
     "",
     `Why: ${sentence(d.why) || "no reason given."}`,
     ...(trim(d.weighed) ? ["", `Weighed: ${sentence(d.weighed)}`] : []),
     ...(trim(d.follows) ? ["", `What follows: ${sentence(d.follows)}`] : []),
-  ].join("\n")).join("\n\n");
+  ].join("\n");
+}
+
+function decisionsSection(rec) {
+  const all = orderedDecisions(rec);
+  if (!all.length) return "No decision was made.";
+  const n = all.filter((d) => !isRuling(d)).length;
+  const span = (a, b) => (a === b ? `Decision ${a}` : b === a + 1 ? `Decisions ${a} and ${b}` : `Decisions ${a} to ${b}`);
+  const lead = n && n < all.length
+    ? `${span(1, n)} ${n === 1 ? "chooses" : "choose"} the agent's structure. ${span(n + 1, all.length)} ${all.length - n === 1 ? "is a ruling" : "are rulings"}: the standard's rules applied, and the answers a person or the build gave.`
+    : n ? `${span(1, n)} ${n === 1 ? "chooses" : "choose"} the agent's structure.` : `${span(1, all.length)} ${all.length === 1 ? "is a ruling" : "are rulings"}: the standard's rules applied, and the answers a person or the build gave. No decision chooses the agent's structure.`;
+  return [lead, ...all.map((d, i) => (isRuling(d) ? rulingDecision(d, i) : structureDecision(d, i, rec)))].join("\n\n");
 }
 
 function questionsSection(rec) {
@@ -242,7 +343,11 @@ export function renderRecord(rec) {
     "## Bindings", "", bindingsSection(rec), "",
     "## Dependencies", "", listOr(rec.dependencies, "None.", (d) => `**${oneLine(d.name)}** (${d.what === "agent" ? "an agent" : "a service"}): ${sentence(d.why)}`), "",
     "## Kind", "", `**${trim(rec.kind?.kind) || "not settled"}**: ${sentence(rec.kind?.why) || "no reason given."}`, "",
-    "## Limits", "", limitsSection(rec), "",
+    "## Components", "", componentsSection(rec), "",
+    "## Connectors", "", connectorsSection(rec), "",
+    "## Runtime and deployment", "", runtimeSection(rec), "",
+    "## Data flow", "", flowSection(rec), "",
+    "## Drivers", "", driversSection(rec), "",
     "## Egress", "", egressSection(rec), "",
     "## Formats", "", formatsSection(rec), "",
     "## Standing assets", "", standingSection(rec), "",
