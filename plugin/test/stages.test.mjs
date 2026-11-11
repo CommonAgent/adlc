@@ -13,8 +13,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkFolder } from "../kit/check.mjs";
 import { approve, sendBackTo } from "../kit/approve.mjs";
-import { architectureProblems, coverageProblems, filesProblems, lockOf, ownerOf, stageOf } from "../kit/stages.mjs";
-import { filesFrom, recordFrom } from "../kit/generate.mjs";
+import { architectureProblems, coverageProblems, filesProblems, lockOf, ownerOf, stageOf, testProblems } from "../kit/stages.mjs";
+import { filesFrom, recordFrom, standardTestsOf } from "../kit/generate.mjs";
 
 const AT = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "hn-digest");
 const spec = JSON.parse(readFileSync(join(AT, "spec.json"), "utf8"));
@@ -169,6 +169,47 @@ test("a file edited by hand or a word left out is named before the packer runs",
     writeFiles(dir, { ...prose, "job:topic-digest.empty": "" });
     assert.deepEqual(await filesProblems(dir, null, { packer: spy }), ["prose.json: job:topic-digest.empty is empty"]);
     assert.equal(ran, false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+/** A folder with the agent's files written and the standard checks laid
+ *  down, ready for the builder's suite. */
+async function suiteFolder() {
+  const dir = await approvedFolder();
+  writeFiles(dir, JSON.parse(readFileSync(join(AT, "prose.json"), "utf8")));
+  for (const [rel, text] of Object.entries(standardTestsOf(complete()))) { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); }
+  return dir;
+}
+const SUITE = readFileSync(join(AT, "suite", "f1-topic-digest.test.mjs"), "utf8");
+
+test("Test passes a suite with a test for every scenario that fails against empty stand-ins", async () => {
+  const dir = await suiteFolder();
+  try {
+    writeFileSync(join(dir, "test", "f1-topic-digest.test.mjs"), SUITE);
+    assert.deepEqual(testProblems(dir), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a scenario with no test, a test named for nothing, and a changed standard check are each named", async () => {
+  const dir = await suiteFolder();
+  try {
+    const without = SUITE.replace(/test\("\[F1\.A4\][\s\S]*?\n\}\);\n/, "").replace("[F1.A2] a request", "a request");
+    writeFileSync(join(dir, "test", "f1-topic-digest.test.mjs"), without);
+    appendFileSync(join(dir, "test", "worked-values.test.mjs"), "\n");
+    const p = testProblems(dir);
+    assert.ok(p.some((x) => /^test\/worked-values\.test\.mjs is the test writer's standard check/.test(x)), p.join("\n"));
+    assert.ok(p.some((x) => /the test "a request to comment is refused" is named for nothing approved/.test(x)), p.join("\n"));
+    assert.ok(p.some((x) => /no test is named for the acceptance scenario F1\.A4/.test(x)), p.join("\n"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a suite that passes against empty stand-ins asserts nothing, and is held", async () => {
+  const dir = await suiteFolder();
+  try {
+    const empty = ["F1.A1", "F1.A2", "F1.A3", "F1.A4", "C1"].map((id) => `test("[${id}] nothing", () => {});`).join("\n");
+    writeFileSync(join(dir, "test", "f1-topic-digest.test.mjs"), `import { test } from "node:test";\n${empty}\n`);
+    const p = testProblems(dir);
+    assert.ok(p.some((x) => /^against empty stand-ins for the 1 script the suite passes/.test(x)), p.join("\n"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

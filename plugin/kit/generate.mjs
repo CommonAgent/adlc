@@ -15,6 +15,7 @@
 //   node .adlc/generate.mjs brief    what architecture.json holds
 //   node .adlc/generate.mjs record   spec.json + architecture.json -> architecture-record.md
 //   node .adlc/generate.mjs files    spec.json + architecture-record.md + prose.json -> the agent's files
+//   node .adlc/generate.mjs tests    spec.json -> the test writer's standard checks under test/
 //
 // Run in the build folder. `record` also reads answers.json (the person's
 // answers to the record's questions, by key), stack.json (the organization's
@@ -32,6 +33,7 @@ import { proseAt, proseSlots, setProse, structureOf } from "./spec-writer/script
 import { agentFilesOf } from "./spec-writer/scripts/files.mjs";
 import { fitNeeds } from "./spec-writer/scripts/design.mjs";
 import { fitCanUse, loadSchemas } from "./spec-writer/scripts/can-use.mjs";
+import { keptInterfacesTest } from "./test-writer/scripts/kept-interfaces.mjs";
 
 const KIT = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -136,6 +138,18 @@ export function filesFrom({ spec, recordText = "", prose = {} }) {
   return { files: agentFilesOf(done), draft: done, worded: needs.draft, architecture, notes: [...built.notes, ...needs.notes, ...[assets.notes].flat()].filter(Boolean), problems: built.problems, asks: built.asks, slots: writable, fixed: [...fixed], empty, unknown, refused, misshapen, laidOut };
 }
 
+/** The test writer's standard checks, which every suite carries and nobody
+ *  writes: four copied as they are, and the kept-interfaces check made from
+ *  the spec when it keeps an interface. {path: text}. */
+export const STANDARD_TESTS = ["delivered-formats.test.mjs", "records-per-job.test.mjs", "worked-values.test.mjs", "printed-reply.test.mjs"];
+export function standardTestsOf(spec) {
+  const ref = (n) => readFileSync(join(KIT, "test-writer", "references", n), "utf8");
+  const out = Object.fromEntries(STANDARD_TESTS.map((n) => [`test/${n}`, ref(n)]));
+  const kept = keptInterfacesTest(spec, ref("kept-interfaces.test.mjs"));
+  if (kept) out[kept.path] = kept.text;
+  return out;
+}
+
 const readJson = (dir, name) => (existsSync(join(dir, name)) ? JSON.parse(readFileSync(join(dir, name), "utf8")) : null);
 const readText = (dir, name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), "utf8") : "");
 
@@ -180,7 +194,18 @@ async function main(cmd, dir) {
     }, null, 2));
     return ok ? 0 : 1;
   }
-  console.error("usage: node .adlc/generate.mjs brief | record | files");
+  if (cmd === "tests") {
+    const files = standardTestsOf(spec);
+    for (const [rel, text] of Object.entries(files)) { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); }
+    const scenarios = (spec.features ?? []).flatMap((f) => (f.acceptance ?? []).map((a) => a.id));
+    console.log(JSON.stringify({
+      ok: true, wrote: Object.keys(files),
+      write: `one test file per feature under test/, each test named with the scenario it checks in square brackets ("[F1.A1] ..."): ${scenarios.join(", ")}`,
+      read_first: [join(KIT, "test-writer", "references", "what-a-good-suite-carries.md"), join(KIT, "test-writer", "references", "a-suite-that-works.test.mjs")],
+    }, null, 2));
+    return 0;
+  }
+  console.error("usage: node .adlc/generate.mjs brief | record | files | tests");
   return 2;
 }
 

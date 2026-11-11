@@ -25,7 +25,7 @@ const KIT = join(HERE, "kit");
 export const ENTRIES = {
   "spec-writer": ["structure.mjs", "files.mjs", "can-use.mjs", "check-spec.mjs", "spec-check.mjs", "spec-v1.mjs", "architecture-record.mjs", "design.mjs", "declared.mjs", "given.mjs"],
   "solution-architect": ["name.mjs", "check-record.mjs", "bind.mjs", "standing.mjs"],
-  "test-writer": ["check-suite.mjs", "spec-rules.mjs", "suite-rules.mjs"],
+  "test-writer": ["check-suite.mjs", "spec-rules.mjs", "suite-rules.mjs", "kept-interfaces.mjs"],
   "code-writer": ["check.mjs", "workspace.mjs"],
 };
 
@@ -40,6 +40,13 @@ export const REFERENCES = {
   "solution-architect/references/standing-asset-schemas.json": "standards/standing-asset-schemas.json",
   "solution-architect/references/architecture-standard.md": "standards/architecture-standard.md",
   "solution-architect/references/a-record-that-works.md": "agents/solution-architect/references/a-record-that-works.md",
+  "test-writer/references/delivered-formats.test.mjs": "agents/test-writer/references/delivered-formats.test.mjs",
+  "test-writer/references/records-per-job.test.mjs": "agents/test-writer/references/records-per-job.test.mjs",
+  "test-writer/references/worked-values.test.mjs": "agents/test-writer/references/worked-values.test.mjs",
+  "test-writer/references/printed-reply.test.mjs": "agents/test-writer/references/printed-reply.test.mjs",
+  "test-writer/references/kept-interfaces.test.mjs": "agents/test-writer/references/kept-interfaces.test.mjs",
+  "test-writer/references/a-suite-that-works.test.mjs": "agents/test-writer/references/a-suite-that-works.test.mjs",
+  "test-writer/references/what-a-good-suite-carries.md": "agents/test-writer/references/what-a-good-suite-carries.md",
   "common-agent-pin.json": "standards/common-agent-pin.json",
   "stages.json": "standards/stages.json",
 };
@@ -49,7 +56,10 @@ export const REFERENCES = {
 const STATIC = /^[ \t]*(?:import|export)\s+(?:[^;'"`]*?\sfrom\s+)?["'](\.{1,2}\/[^"']+)["']/gm;
 const DYNAMIC = /\bimport\s*\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)/g;
 // Comments are taken out first: an example import in a comment is not one.
-const uncommented = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+// Only a comment that begins its line is taken out: an import begins its line
+// too, and a "/*" inside a line comment or a string ("test/*.test.mjs") is
+// not the start of a block.
+const uncommented = (text) => text.replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, "").replace(/^[ \t]*\/\/.*$/gm, "");
 const importsOf = (text) => {
   const code = uncommented(text);
   return [...code.matchAll(STATIC), ...code.matchAll(DYNAMIC)].map((m) => m[1]);

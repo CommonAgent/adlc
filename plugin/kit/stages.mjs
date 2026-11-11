@@ -15,7 +15,8 @@
 // its check does, because the check is the gate and the builder cannot change it.
 //
 //   needs: node >= 22
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { LOCK_FILE, digestOf } from "./code-writer/scripts/workspace.mjs";
 import { corpusOf, specProblems } from "./spec-writer/scripts/spec-check.mjs";
@@ -24,7 +25,11 @@ import { addressProblems } from "./spec-writer/scripts/design.mjs";
 import { declarationProblems } from "./spec-writer/scripts/declared.mjs";
 import { givenOfSpec } from "./spec-writer/scripts/given.mjs";
 import { loadSchemas } from "./spec-writer/scripts/can-use.mjs";
-import { filesFrom, recordFrom } from "./generate.mjs";
+import { filesFrom, recordFrom, standardTestsOf } from "./generate.mjs";
+import { declarationRun, placeSuite, runSuite, standInPackage, suiteFiles, supportFiles } from "./test-writer/scripts/check-suite.mjs";
+import { bracketIdsOf, scenariosOf, specFindings } from "./test-writer/scripts/spec-rules.mjs";
+import { testNamesIn } from "./test-writer/scripts/suite-rules.mjs";
+import { loadSpec } from "./test-writer/scripts/agent-folder.mjs";
 import { PACKER, pack } from "./packer.mjs";
 
 const trim = (s) => String(s ?? "").trim();
@@ -217,9 +222,65 @@ export async function filesProblems(dir, _lock, { env = process.env, packer = pa
   return out;
 }
 
+// ---------- Test ----------
+
+/** The Test check: the standard checks are the test writer's own bytes;
+ *  every approved scenario has a test named for it and no test is named for
+ *  no scenario; the test writer's rules for exact values and kept interfaces
+ *  hold; and against empty stand-ins for every script the suite fails, while
+ *  every test that touches no script passes beside the agent's own files. */
+export function testProblems(dir, _lock, { spawn } = {}) {
+  const spec = readJson(join(dir, "spec.json"));
+  const out = [];
+  const standard = standardTestsOf(spec);
+  for (const [rel, text] of Object.entries(standard)) {
+    if (!existsSync(join(dir, rel))) out.push(`${rel} is not in the folder; run \`node .adlc/generate.mjs tests\``);
+    else if (readFileSync(join(dir, rel), "utf8") !== text) out.push(`${rel} is the test writer's standard check and is not its bytes; run \`node .adlc/generate.mjs tests\`, and ${NOT_BY_HAND}`);
+  }
+  const files = suiteFiles(dir);
+  const own = files.filter((f) => !(f.path in standard));
+  if (!own.length) return [...out, "there are no tests of the agent's own under test/; write one file per feature, each test named with the scenario it checks in square brackets (\"[F1.A1] ...\")"];
+  // A test is tied to the approved spec through a scenario, a requirement
+  // (Requirements holds every requirement to a scenario) or a constraint (a
+  // constraint has no scenario, and the test writer names its test for it).
+  const approved = new Set([
+    ...scenariosOf(spec).map((s) => s.id),
+    ...kinds(spec).map((r) => trim(r?.id)),
+    ...list(spec?.constraints).map((c) => trim(c?.id)),
+  ].filter(Boolean));
+  for (const f of own) {
+    for (const name of testNamesIn(f.text)) {
+      if (!bracketIdsOf(name).some((id) => approved.has(id))) out.push(`${f.path}: the test "${name}" is named for nothing approved; open its name with the scenario, requirement or constraint it checks in square brackets ("[F1.A1] ...", "[F1.R2] ...", "[C1] ..."), or take it out: a behaviour the spec does not state goes back to the spec`);
+    }
+  }
+  out.push(...specFindings([...files, ...supportFiles(dir)], spec, { skip: Object.keys(standard) }));
+  if (out.length) return out;
+  // Against empty stand-ins it is the builder's own tests that must fail: the
+  // standard checks fail there by themselves, and would hide a suite that
+  // asserts nothing. Every file is placed, so an own test that imports a
+  // standard check still loads it; only the own tests are run.
+  const all = [...files, ...supportFiles(dir)];
+  const agent = loadSpec(dir);
+  const ownPaths = own.map((f) => f.path);
+  const scratch = mkdtempSync(join(tmpdir(), "adlc-standins-"));
+  let run;
+  try {
+    const scripts = standInPackage(agent, scratch, dir);
+    placeSuite(all, scratch);
+    run = { scripts: scripts.length, ...runSuite(scratch, ownPaths, spawn ? { spawn } : {}) };
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+  if (run.timed_out) out.push("against empty stand-ins for the scripts the suite did not finish in time; a test waits on something that never comes");
+  else if (!run.fails) out.push(`against empty stand-ins for the ${run.scripts} script${run.scripts === 1 ? "" : "s"} the suite passes (${run.pass} of ${run.tests} of its own tests), so it asserts nothing about them; each scenario's test must fail until the code does what it says`);
+  const d = declarationRun({ spec: agent, files: all, folder: dir, ...(spawn ? { spawn } : {}) });
+  for (const u of d.unpassable ?? []) out.push(`${u.path}: the test "${u.name}" touches no script and fails against the agent's own files, so no script can make it pass; it is wrong about the files, not the code`);
+  for (const w of d.wrong_values ?? []) out.push(`a worked value disagrees with its own computation: ${w}`);
+  return out;
+}
+
 /** Each stage's check, by name. A stage without one here is not built yet. */
 export const CHECKS = {
   requirements: requirementsProblems,
   architecture: architectureProblems,
   files: filesProblems,
+  test: testProblems,
 };
