@@ -2,6 +2,19 @@
 
 Changes to the standards in this folder, newest first.
 
+## common-agent-pin.json
+
+- **v1**: the lifecycle cites one version of the Common Agent Specification,
+  0.41.0 (tag `common-agent-v0.41.0`), pinned by the sha256 of its SPEC.md.
+  Citations that named 0.17.0-draft, 0.24.0-draft, 0.28.0-draft,
+  0.30.0-draft, 0.39.0 and 0.40.2 for a rule that still holds in 0.41.0 now
+  name 0.41.0, and a citation of the records member now names Section 12.3,
+  where 0.41.0 defines it. A citation that says what an older version changed
+  is history and stays. Ten citations of 0.39.0 stay as they are, because the
+  code beside them reads or places the model aliases `TEXT_MODEL` and
+  `TEXT_API_KEY`, which 0.41.0 removed; `test/common-agent-pin.test.mjs`
+  names each of them and fails on any other version.
+
 ## stages.json
 
 - **1.6.0**: Requirements hands back the spec (`spec.schema.json`, spec-v1),

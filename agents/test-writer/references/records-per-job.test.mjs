@@ -9,7 +9,7 @@
 // records folder, the agent's own (RECORDS, or --records), and keeps it from
 // one job to the next. A record the declaration keeps per job has a `file`
 // pattern whose first part is the job's folder, such as `*/went-without.json`,
-// read relative to that records folder (Common Agent 12.4, records[].file).
+// read relative to that records folder (Common Agent 12.3, records[].file).
 // So each job writes it under a folder of its own named after its job folder:
 // <records>/<the job folder's name>/went-without.json, which a script makes
 // as join(RECORDS, basename(JOB_DIR)). A script that writes it straight into

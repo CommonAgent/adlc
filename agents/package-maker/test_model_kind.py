@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The model system (Common Agent 0.39.0, 12.4.1) as the builder writes it.
+"""The model system (Common Agent 0.41.0, 12.4.1) as the builder writes it.
 
 What is worth pinning: a system of kind model with protocols from the closed
 list builds, from a spec and from an agent folder, and the runtime requirements carry its kind and protocols and no

@@ -164,7 +164,7 @@ export function canonical(v) {
 }
 
 /** The package's draft descriptor bound to this agent, as the host install
- *  binds it (deploymgr steps.py bind_descriptor, Common Agent 0.28.0-draft
+ *  binds it (deploymgr steps.py bind_descriptor, Common Agent 0.41.0,
  *  4.9, 6.2, 6.6): the subject filled in, what the install decides stated
  *  (interaction, acts_for, fleet), and signed by the agent's own key. Every
  *  agent serves a bound, signed Descriptor, so a binding that cannot be

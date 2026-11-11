@@ -223,7 +223,7 @@ try {
 
 def git_source(path):
     """Where the builder read what it built, when it read a repository at a
-    commit (Common Agent 8.2 `source`, 0.17.0-draft). Three rules, and each
+    commit (Common Agent 0.41.0, 8.2 `source`). Three rules, and each
     one is why a member is absent rather than wrong:
 
       - not a git checkout: nothing to name, so no member;

@@ -188,8 +188,8 @@ carries the credential it was complaining about.
 ## What each declaration in the runtime requirements does to the build
 
 The runtime requirements are `agent-runtime-requirements.json`, and the draft
-Descriptor is `agent-descriptor.json` (Common Agent 0.30.0-draft). A package
-built before then calls them `install.json` and `descriptor.json`, points at
+Descriptor is `agent-descriptor.json` (Common Agent 0.41.0, 12.2). A package
+built before Common Agent 0.30.0-draft calls them `install.json` and `descriptor.json`, points at
 the first under `install`, and gives its format as `agent-install-v1`; those
 names are still read, so a package already in a depot still builds. Where a
 package carries both names, the current one is read.

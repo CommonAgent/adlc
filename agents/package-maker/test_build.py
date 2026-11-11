@@ -798,7 +798,7 @@ class ASystemIsNamedAndRoleIsItsAlias(Harness):
 
 class WhereAReaderGoes(Harness):
     """The three manifest members that carry an address, and the lineage that
-    carries one more (Common Agent 0.17.0-draft, 12.6 rule 3 and 13.5).
+    carries one more (Common Agent 0.41.0, 12.6 rule 3 and 13.5).
 
     Until 0.17.0-draft a package could carry exactly one address, its own
     $schema, which forbade the homepage and repository members of the very

@@ -530,7 +530,7 @@ export function matchReaches({ traced, systems = [], binaries = [], egressHosts 
   //       link, address or endpoint, or ends _url, _href or _uri), as a
   //       string path ("logo.mark.href") or a property chain ending in it
   //       (profile?.logo?.mark?.href). The address in the version a job is
-  //       handed is a handed address (Common Agent 0.40.2, 12.6 rule 2).
+  //       handed is a handed address (Common Agent 0.41.0, 12.6 rule 2).
   // What stays as it was in 0.2.0: a call in a program that writes down an
   // address this review matched is taken as that address, a call built from a
   // written host being no handed one; and a program that also writes down an
