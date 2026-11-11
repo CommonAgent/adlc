@@ -15,10 +15,10 @@
 // its check does, because the check is the gate and the builder cannot change it.
 //
 //   needs: node >= 22
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { LOCK_FILE, digestOf, scriptsOf as codeScriptsOf } from "./code-writer/scripts/workspace.mjs";
 import { specOfFolder } from "./code-writer/scripts/agent-folder.mjs";
 import { corpusOf, specProblems } from "./spec-writer/scripts/spec-check.mjs";
@@ -28,7 +28,7 @@ import { declarationProblems } from "./spec-writer/scripts/declared.mjs";
 import { givenOfSpec } from "./spec-writer/scripts/given.mjs";
 import { loadSchemas } from "./spec-writer/scripts/can-use.mjs";
 import { filesFrom, recordFrom, standardTestsOf } from "./generate.mjs";
-import { RUN_SECONDS, declarationRun, placeSuite, runSuite, standInPackage, suiteFiles, supportFiles } from "./test-writer/scripts/check-suite.mjs";
+import { RUN_SECONDS, declarationRun, declarationStandIn, importsOf, placeSuite, runSuite, standInPackage, suiteFiles, supportFiles } from "./test-writer/scripts/check-suite.mjs";
 import { bracketIdsOf, scenariosOf, specFindings } from "./test-writer/scripts/spec-rules.mjs";
 import { testNamesIn } from "./test-writer/scripts/suite-rules.mjs";
 import { loadSpec } from "./test-writer/scripts/agent-folder.mjs";
@@ -284,6 +284,7 @@ export function testProblems(dir, _lock, { spawn } = {}) {
   const d = declarationRun({ spec: agent, files: all, folder: dir, ...(spawn ? { spawn } : {}) });
   for (const u of d.unpassable ?? []) out.push(`${u.path}: the test "${u.name}" touches no script and fails against the agent's own files, so no script can make it pass; it is wrong about the files, not the code`);
   for (const w of d.wrong_values ?? []) out.push(`a worked value disagrees with its own computation: ${w}`);
+  for (const b of brokenTests(dir, all, ownPaths, spawn ? { spawn } : {})) out.push(`the test "${b.name}" uses ${b.undefined}, which it never defines, so it fails before it checks anything and no script can make it pass; fix the test`);
   return out;
 }
 
@@ -331,7 +332,39 @@ export function runTests(dir, paths, { spawn = spawnSync } = {}) {
     fails: status !== 0 || fail > 0 || tests === 0,
     // A file that did not load is a "not ok" at the top level, named by its path.
     failing: [...out.matchAll(/^\s*not ok \d+ - (.+)$/gm)].map((m) => trim(m[1])).filter((n, i, a) => a.indexOf(n) === i),
+    output: out,
   };
+}
+
+/** The tests that fail on a mistake of their own: run against stand-ins that
+ *  export every name the suite imports and only throw when called, a test
+ *  that stops on a name it never defined (ReferenceError) has failed before
+ *  checking anything, and no script can make it pass. */
+export function brokenTests(dir, files, ownPaths, { spawn } = {}) {
+  const scratch = mkdtempSync(join(tmpdir(), "adlc-broken-"));
+  try {
+    cpSync(dir, scratch, { recursive: true, filter: (src) => !/(?:^|[\\/])(?:\.git|records|node_modules|scripts)(?:[\\/]|$)/.test(relative(dir, src)) });
+    const wanted = new Map();
+    for (const f of files) for (const i of importsOf(f.text)) {
+      if (!i.script) continue;
+      if (!wanted.has(i.from)) wanted.set(i.from, new Set());
+      for (const n of i.names) wanted.get(i.from).add(n.imported);
+    }
+    for (const [s, names] of wanted) {
+      mkdirSync(dirname(join(scratch, s)), { recursive: true });
+      writeFileSync(join(scratch, s), declarationStandIn([...names]));
+    }
+    const out = runTests(scratch, ownPaths, spawn ? { spawn } : {}).output;
+    const found = [];
+    const blocks = out.split(/^(?=\s*(?:not ok|ok) \d+ - )/m);
+    for (const b of blocks) {
+      const m = /^\s*not ok \d+ - (.+)$/m.exec(b);
+      // TAP gives the error's name and its message on lines of their own.
+      const ref = /ReferenceError/.test(b) ? /['"|\s]([A-Za-z_$][\w$]*) is not defined/.exec(b) : null;
+      if (m && ref) found.push({ name: trim(m[1]), undefined: ref[1] });
+    }
+    return found;
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
 
 /** Each script blanked in turn, in a copy of the folder: does the suite fail? */

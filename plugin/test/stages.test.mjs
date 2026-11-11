@@ -213,6 +213,15 @@ test("a suite that passes against empty stand-ins asserts nothing, and is held",
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("a test that stops on a name it never defines is named at Test, not left for Code", async () => {
+  const dir = await suiteFolder();
+  try {
+    writeFileSync(join(dir, "test", "f1-topic-digest.test.mjs"), SUITE.replace('const out = await runJob({ topic: "gardening"', 'const out = await runJob({ topic: "gardening" + i'));
+    const p = testProblems(dir);
+    assert.ok(p.some((x) => /^the test "\[F1\.A3\] no story about the topic says so in one sentence" uses i, which it never defines/.test(x)), p.join("\n"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 const SCRIPT = readFileSync(join(AT, "code", "topic-digest.mjs"), "utf8");
 const accepts = () => ({ ok: true, ran: true, refused: null, warnings: [] });
 
