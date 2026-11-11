@@ -18,7 +18,7 @@
 //   AGENTMESH_TOKEN_FILE=<file holding an amt_ token> \
 //   node trial-check.mjs [--record] <handle> [<handle> ...]
 // --record prints, for one handle, `{ cases }` in the evaluation record's
-// shape (agent-eval-record-v1 cases[], kind trial), which is what eval-run.py
+// shape (agent-eval-record-v1 cases[], kind trial), which is what eval-run.mjs
 // and role-check.mjs fold into the record they sign. With no token every
 // case is inconclusive and nothing is sent. The token is read from the file
 // and never printed.

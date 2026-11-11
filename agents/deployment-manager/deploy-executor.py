@@ -870,8 +870,8 @@ def host_outcome(job, result):
 # A deploy or an update that worked is followed, where the environment wants
 # it, by the Conformance Checker (agentevaluator, on this same host) run
 # against the agent it put in place: the cases derived from the installed
-# package's own declarations (agenteval-gen.py), sent to the agent, judged and
-# signed by the checker's own key (agenteval-run.py), and filed with the
+# package's own declarations (agenteval-gen.mjs), sent to the agent, judged and
+# signed by the checker's own key (agenteval-run.mjs), and filed with the
 # registry, where the auditor reads the newest verdict. The verdict names the
 # package digest the deploy verified, so the auditor binds it to this version.
 #
@@ -880,8 +880,8 @@ def host_outcome(job, result):
 # deploy. It is wanted everywhere but prod unless DM_CONFORMANCE says
 # otherwise; a check that cannot run says why in its log and fails nothing.
 
-EVAL_GEN = f"{FLEET}/agenteval-gen.py"
-EVAL_RUN = f"{FLEET}/agenteval-run.py"
+EVAL_GEN = f"{FLEET}/agenteval-gen.mjs"
+EVAL_RUN = f"{FLEET}/agenteval-run.mjs"
 EVAL_USER = "agentevaluator"
 EVAL_HOME = f"/home/{EVAL_USER}"
 EVAL_IDENTITY = f"{EVAL_HOME}/.agentmesh/adapter/identity.json"
@@ -1011,7 +1011,7 @@ def checker_seat():
 
 
 def checker_command(seat, creds, spec_path, handle, records_root):
-    """The command that runs agenteval-run.py, and a private state folder to
+    """The command that runs agenteval-run.mjs, and a private state folder to
     remove afterwards. Always as root over a copy of the checker's adapter
     state (and of its credential) in a folder only root reads: the checker
     still signs and sends as itself, nothing of the checker's own is
@@ -1038,7 +1038,7 @@ def checker_command(seat, creds, spec_path, handle, records_root):
         os.chmod(os.path.join(work, "mesh.creds"), 0o600)
         creds = os.path.join(work, "mesh.creds")
     return (["env", f"HOME={work}", am_env, f"MESH_ADAPTER_STATE={state}", f"EVAL_CREDS={creds}",
-             "python3", EVAL_RUN, spec_path, handle, records_root, os.path.join(state, "identity.json")], work)
+             "node", EVAL_RUN, spec_path, handle, records_root, os.path.join(state, "identity.json")], work)
 
 
 # Where the shared bucket is mounted on this host, so a container agent's
@@ -1099,7 +1099,7 @@ def _owned_by_checker(path):
 def conform_now(s, run=subprocess.run):
     """Derive the cases from the installed package, run them as the checker,
     and keep the signed verdict beside the deployment records. The verdict is
-    filed with the registry by agenteval-run.py itself."""
+    filed with the registry by agenteval-run.mjs itself."""
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     def said(d):
@@ -1111,7 +1111,7 @@ def conform_now(s, run=subprocess.run):
     if not os.path.isdir(pkg_dir):
         return said({"ok": False, "why": f"the installed package is not at {pkg_dir}"})
     try:
-        g = run(["python3", EVAL_GEN, pkg_dir], capture_output=True, text=True, timeout=120)
+        g = run(["node", EVAL_GEN, pkg_dir], capture_output=True, text=True, timeout=120)
         spec = json.loads(g.stdout)
         if not isinstance(spec, dict) or "cases" not in spec:
             raise ValueError(spec.get("error") if isinstance(spec, dict) else "no spec")
