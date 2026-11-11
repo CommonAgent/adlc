@@ -332,7 +332,7 @@ test("from 1.7.0 one holder may hold several stages, and each writing stage name
     }
   }
   assert.match(byId("requirements").done_when, /the refusals|what the agent refuses/);
-  assert.match(byId("requirements").done_when, /the person has approved it$/);
-  assert.match(byId("code").done_when, /read only the variables the agent's files declare/);
+  assert.match(byId("requirements").done_when, /the person has approved the spec$/);
+  assert.match(byId("code").done_when, /read only the settings the agent's files declare/);
   for (const s of data.stages) if (!want[s.id]) assert.equal(s.checked_by, undefined, `${s.id} names no check of the plugin`);
 });
