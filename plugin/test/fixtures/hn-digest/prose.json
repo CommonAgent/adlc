@@ -1,16 +1,17 @@
 {
   "description": "Reads the current top stories on Hacker News and writes a short digest of the ones about a topic you name.",
   "refuses": [
-    "Writing about stories it did not read from Hacker News.",
-    "Inventing points, links or comments.",
-    "Posting, voting or commenting on Hacker News."
+    "Writing about a story it did not read from Hacker News, because a digest stands for what is there; it leaves the story out instead.",
+    "Inventing points, links or comments, because a reader acts on them; it writes only what the API returned.",
+    "Posting, voting or commenting on Hacker News, because it only reads; it says so and does nothing on the site.",
+    "Writing a digest when Hacker News cannot be read, because it would be made up; it says the site could not be read."
   ],
   "job:topic-digest.does": "Reads the current top stories on Hacker News, keeps the ones about the topic, and writes a short digest of them.",
   "job:topic-digest.when": "When someone wants to know what Hacker News is saying about one topic right now.",
   "job:topic-digest.good": "A short digest: each story's title as a link, its points, and one plain sentence on why it matters, for the stories about the topic and no others.",
   "job:topic-digest.empty": "When no top story is about the topic, the digest says so in one sentence and lists nothing.",
   "job:topic-digest.instructions": "Run the job's script with the topic. It reads the top stories, keeps those about the topic, and asks the model for one sentence per story.",
-  "job:topic-digest.outputs:digest.about": "The digest, in Markdown: one item per story, with its title as a link, its points and one sentence on why it matters.",
+  "job:topic-digest.outputs:digest.about": "The digest, in Markdown: a short header with `topic` and `stories`, then `## Stories` with one item per story (its title as a link, its points and one sentence on why it matters), or one sentence that none is about the topic.",
   "system:hacker-news.needs": "The public Hacker News API, read only, for the top stories and each story's details.",
   "system:text-reasoning.needs": "A model that writes one plain sentence on why each story matters."
 }

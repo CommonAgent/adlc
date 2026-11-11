@@ -23,7 +23,7 @@ const KIT = join(HERE, "kit");
 /** What the kit imports from each agent. Everything those files import comes
  *  with them. */
 export const ENTRIES = {
-  "spec-writer": ["structure.mjs", "files.mjs", "can-use.mjs", "check-spec.mjs", "spec-check.mjs", "spec-v1.mjs", "architecture-record.mjs"],
+  "spec-writer": ["structure.mjs", "files.mjs", "can-use.mjs", "check-spec.mjs", "spec-check.mjs", "spec-v1.mjs", "architecture-record.mjs", "design.mjs", "declared.mjs", "given.mjs"],
   "solution-architect": ["name.mjs", "check-record.mjs", "bind.mjs", "standing.mjs"],
   "test-writer": ["check-suite.mjs", "spec-rules.mjs", "suite-rules.mjs"],
   "code-writer": ["check.mjs", "workspace.mjs"],

@@ -19,6 +19,13 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "
 import { join, relative, sep } from "node:path";
 import { LOCK_FILE, digestOf } from "./code-writer/scripts/workspace.mjs";
 import { corpusOf, specProblems } from "./spec-writer/scripts/spec-check.mjs";
+import { checkDraft } from "./spec-writer/scripts/check-spec.mjs";
+import { addressProblems } from "./spec-writer/scripts/design.mjs";
+import { declarationProblems } from "./spec-writer/scripts/declared.mjs";
+import { givenOfSpec } from "./spec-writer/scripts/given.mjs";
+import { loadSchemas } from "./spec-writer/scripts/can-use.mjs";
+import { filesFrom, recordFrom } from "./generate.mjs";
+import { PACKER, pack } from "./packer.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const list = (v) => (Array.isArray(v) ? v : []);
@@ -149,7 +156,70 @@ export function requirementsProblems(dir) {
   return [...specProblems(spec, { corpus, person }), ...coverageProblems(spec)];
 }
 
+// ---------- Architecture ----------
+
+const NOT_BY_HAND = "never edit it by hand: change what it is written from and write it again";
+
+/** The Architecture check: the record is finished, and it is the record the
+ *  generator writes from architecture.json and the person's answers, so every
+ *  fact in it came through the architect's own naming, binding and checks. */
+export async function architectureProblems(dir) {
+  const spec = readJson(join(dir, "spec.json"));
+  const named = readJson(join(dir, "architecture.json"));
+  if (!named) return ["architecture.json is not in the folder; run `node .adlc/generate.mjs brief` for what it holds, write it, then `node .adlc/generate.mjs record`"];
+  const text = existsSync(join(dir, "architecture-record.md")) ? readFileSync(join(dir, "architecture-record.md"), "utf8") : "";
+  if (!trim(text)) return ["architecture-record.md is not in the folder; run `node .adlc/generate.mjs record`"];
+  const r = await recordFrom({
+    spec, named,
+    answers: readJson(join(dir, "answers.json")) ?? {},
+    request: existsSync(join(dir, "request.md")) ? readFileSync(join(dir, "request.md"), "utf8") : "",
+    stack: readJson(join(dir, "stack.json")),
+  });
+  const out = [];
+  if (r.text !== text) out.push(`architecture-record.md is not what the generator writes from architecture.json and answers.json; run \`node .adlc/generate.mjs record\`, and ${NOT_BY_HAND}`);
+  for (const f of r.forbidden) out.push(`the record would carry ${f}; a record names no model, model provider, address or credential`);
+  for (const f of r.findings) out.push(`architecture.json: ${f}`);
+  for (const q of r.questions) out.push(`the person has not answered ${q.key}: ${q.question} Ask them, and put their answer in answers.json under ${q.key}`);
+  if (!r.questions.length) for (const p of r.problems) out.push(`the record is not finished: ${p}`);
+  return out;
+}
+
+// ---------- The agent's files ----------
+
+/** The check on the agent's files: every one is what the generators write
+ *  from the spec, the record and prose.json; every prose key is written; the
+ *  files hold what good files hold and every declaration the spec keeps; they
+ *  carry no address; and the packer accepts them. */
+export async function filesProblems(dir, _lock, { env = process.env, packer = pack } = {}) {
+  const spec = readJson(join(dir, "spec.json"));
+  const recordText = existsSync(join(dir, "architecture-record.md")) ? readFileSync(join(dir, "architecture-record.md"), "utf8") : "";
+  const prose = readJson(join(dir, "prose.json"));
+  if (!prose) return ["prose.json is not in the folder; run `node .adlc/generate.mjs files`, which lays out every key, then write the words"];
+  const r = filesFrom({ spec, recordText, prose });
+  const out = [];
+  for (const k of r.empty) out.push(`prose.json: ${k} is empty`);
+  for (const k of r.unknown) out.push(`prose.json: ${k} is not a key of the agent's files; move its words to the key that is, or delete it`);
+  for (const k of r.refused) out.push(`prose.json: ${k} is fixed by the spec; take it out of prose.json`);
+  for (const k of r.misshapen) out.push(`prose.json: ${k === "refuses" ? "refuses is a list of sentences" : `${k} is one string`}`);
+  out.push(...r.problems);
+  for (const [rel, text] of Object.entries(r.files)) {
+    const at = join(dir, rel);
+    if (!existsSync(at)) out.push(`${rel} is not in the folder; run \`node .adlc/generate.mjs files\``);
+    else if (readFileSync(at, "utf8") !== text) out.push(`${rel} is not what the generators write from the spec, the record and prose.json; run \`node .adlc/generate.mjs files\`, and ${NOT_BY_HAND}`);
+  }
+  if (out.length) return out;
+  out.push(...checkDraft(r.draft, { architecture: r.architecture, given: givenOfSpec(spec), table: loadSchemas() }));
+  out.push(...addressProblems(r.worded));
+  out.push(...declarationProblems(spec, r.files));
+  if (out.length) return [...new Set(out)];
+  const packed = packer(dir, { env });
+  if (!packed.ok) out.push(`the packer (${PACKER.package} ${PACKER.version}, Common Agent ${PACKER.common_agent}) refuses the folder: ${packed.refused}`);
+  return out;
+}
+
 /** Each stage's check, by name. A stage without one here is not built yet. */
 export const CHECKS = {
   requirements: requirementsProblems,
+  architecture: architectureProblems,
+  files: filesProblems,
 };

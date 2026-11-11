@@ -26,18 +26,23 @@ test("the first record asks the person about the one public service, and is not 
 });
 
 test("the person's yes, read against the record that asked it, binds the service to itself", async () => {
-  const first = await recordFrom({ spec, named });
-  const r = await recordFrom({ spec, named, answers: { "egress-1": "yes" }, earlier: first.text });
+  const r = await recordFrom({ spec, named, answers: { "egress-1": "yes" } });
   assert.equal(r.done, true);
   assert.deepEqual(r.questions, []);
   assert.equal(r.open, "");
   assert.match(r.text, /^systems: \[text-reasoning, hacker-news\]$/m);
   assert.match(r.text, /hacker-news:\n {4}dev: itself at https:\/\/hacker-news\.firebaseio\.com\/v0, no key, read, approved by the owner in egress-1/);
+  assert.match(r.text, /Why: The person granted it in an answer \(egress-1: yes\)/);
+});
+
+test("the same facts and answers give the same record every time, with the grant kept", async () => {
+  const a = await recordFrom({ spec, named, answers: { "egress-1": "yes" } });
+  const b = await recordFrom({ spec, named, answers: { "egress-1": "yes" } });
+  assert.equal(a.text, b.text);
 });
 
 test("the agent's files take the record's systems, and the address is a setting with no value", async () => {
-  const first = await recordFrom({ spec, named });
-  const rec = await recordFrom({ spec, named, answers: { "egress-1": "yes" }, earlier: first.text });
+  const rec = await recordFrom({ spec, named, answers: { "egress-1": "yes" } });
   const r = filesFrom({ spec, recordText: rec.text, prose });
   assert.deepEqual(r.empty, []);
   assert.deepEqual(r.unknown, []);

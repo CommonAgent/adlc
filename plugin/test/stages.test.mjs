@@ -7,13 +7,14 @@
 //   node --test plugin/test/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkFolder } from "../kit/check.mjs";
 import { approve, sendBackTo } from "../kit/approve.mjs";
-import { coverageProblems, lockOf, ownerOf, stageOf } from "../kit/stages.mjs";
+import { architectureProblems, coverageProblems, filesProblems, lockOf, ownerOf, stageOf } from "../kit/stages.mjs";
+import { filesFrom, recordFrom } from "../kit/generate.mjs";
 
 const AT = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "hn-digest");
 const spec = JSON.parse(readFileSync(join(AT, "spec.json"), "utf8"));
@@ -96,6 +97,78 @@ test("a pinned file that moves stops the check, and sending back takes the pins 
     const lock = lockOf(dir);
     assert.deepEqual(lock.digests, {});
     assert.deepEqual(lock.gates, {});
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+/** A folder past Requirements, with the record written from the builder's
+ *  facts and the person's yes to the one service. */
+async function approvedFolder() {
+  const dir = folder(complete());
+  await approve(dir);
+  copyFileSync(join(AT, "architecture.json"), join(dir, "architecture.json"));
+  const named = JSON.parse(readFileSync(join(AT, "architecture.json"), "utf8"));
+  const request = readFileSync(join(AT, "request.md"), "utf8");
+  const answers = { name: "hn-digest", price: "Free", "egress-1": "yes" };
+  writeFileSync(join(dir, "answers.json"), JSON.stringify(answers) + "\n");
+  writeFileSync(join(dir, "architecture-record.md"), (await recordFrom({ spec: complete(), named, request, answers })).text);
+  return dir;
+}
+
+const writeFiles = (dir, prose) => {
+  writeFileSync(join(dir, "prose.json"), JSON.stringify(prose, null, 2) + "\n");
+  const r = filesFrom({ spec: complete(), recordText: readFileSync(join(dir, "architecture-record.md"), "utf8"), prose });
+  for (const [rel, text] of Object.entries(r.files)) { mkdirSync(dirname(join(dir, rel)), { recursive: true }); writeFileSync(join(dir, rel), text); }
+};
+
+test("Architecture passes on the generated, finished record, and pins it", async () => {
+  const dir = await approvedFolder();
+  try {
+    assert.deepEqual(await architectureProblems(dir), []);
+    const r = await checkFolder(dir);
+    assert.equal(r.stage, "architecture");
+    assert.equal(r.passed, true);
+    assert.ok("architecture-record.md" in lockOf(dir).digests);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a record edited by hand, or with a question open, does not pass", async () => {
+  const dir = await approvedFolder();
+  try {
+    appendFileSync(join(dir, "architecture-record.md"), "\nOne more line.\n");
+    assert.match((await architectureProblems(dir))[0], /^architecture-record\.md is not what the generator writes/);
+    writeFileSync(join(dir, "answers.json"), "{}\n");
+    const first = await recordFrom({ spec: complete(), named: JSON.parse(readFileSync(join(AT, "architecture.json"), "utf8")), request: readFileSync(join(AT, "request.md"), "utf8") });
+    writeFileSync(join(dir, "architecture-record.md"), first.text);
+    assert.ok((await architectureProblems(dir)).some((p) => /^the person has not answered egress-1/.test(p)));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the agent's files pass when generated with every word written, and the packer's refusal is quoted", async () => {
+  const dir = await approvedFolder();
+  try {
+    await checkFolder(dir);
+    const prose = JSON.parse(readFileSync(join(AT, "prose.json"), "utf8"));
+    writeFiles(dir, prose);
+    const accepts = () => ({ ok: true, ran: true, refused: null, warnings: [] });
+    assert.deepEqual(await filesProblems(dir, null, { packer: accepts }), []);
+    const refuses = () => ({ ok: false, ran: true, refused: "plugin.json: no name", warnings: [] });
+    assert.match((await filesProblems(dir, null, { packer: refuses }))[0], /refuses the folder: plugin\.json: no name$/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a file edited by hand or a word left out is named before the packer runs", async () => {
+  const dir = await approvedFolder();
+  try {
+    await checkFolder(dir);
+    const prose = JSON.parse(readFileSync(join(AT, "prose.json"), "utf8"));
+    writeFiles(dir, prose);
+    appendFileSync(join(dir, "plugin.json"), " ");
+    let ran = false;
+    const spy = () => { ran = true; return { ok: true }; };
+    assert.match((await filesProblems(dir, null, { packer: spy }))[0], /^plugin\.json is not what the generators write/);
+    writeFiles(dir, { ...prose, "job:topic-digest.empty": "" });
+    assert.deepEqual(await filesProblems(dir, null, { packer: spy }), ["prose.json: job:topic-digest.empty is empty"]);
+    assert.equal(ran, false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

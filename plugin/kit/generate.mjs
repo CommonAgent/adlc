@@ -30,6 +30,8 @@ import { customerProducts } from "./solution-architect/scripts/no-provider.mjs";
 import { parseRecord } from "./spec-writer/scripts/architecture-record.mjs";
 import { proseAt, proseSlots, setProse, structureOf } from "./spec-writer/scripts/structure.mjs";
 import { agentFilesOf } from "./spec-writer/scripts/files.mjs";
+import { fitNeeds } from "./spec-writer/scripts/design.mjs";
+import { fitCanUse, loadSchemas } from "./spec-writer/scripts/can-use.mjs";
 
 const KIT = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -62,11 +64,23 @@ export function statementOf(spec, request = "") {
  *  repair, called-for and settled steps (nameTheSystems, with the builder's
  *  file as the one answer), its binding (bindAll) and its record (recordOf).
  *  Returns the record's text and every reason it is not finished. */
-export async function recordFrom({ spec, named, answers = {}, request = "", stack = null, defaults = null, earlier = "" }) {
+export async function recordFrom({ spec, named, answers = {}, request = "", stack = null, defaults = null }) {
   const house = defaults ?? JSON.parse(readFileSync(houseAt(join(KIT, "solution-architect", "scripts")), "utf8"));
-  // An answer is read against the record that asked it: the architect keys a
-  // destination's question by its place in that record, so a record already
-  // written is the earlier record and this run is its revision.
+  // An answer to a destination's question is read against the record that
+  // asked it, because the architect keys the question by its place there. So
+  // the asking record is always made first, from the same facts, and the
+  // answers read against it: the same inputs give the same record every time,
+  // and a grant's decision never drops out on a later run.
+  // The asking record is the one before any destination's answer: with the
+  // answer in, its question would not be asked, and the answer not read.
+  const ASKED_BY_PLACE = /^egress-\d+$/;
+  const before = Object.fromEntries(Object.entries(answers ?? {}).filter(([k]) => !ASKED_BY_PLACE.test(k)));
+  const first = await recordOnce({ spec, named, answers: before, request, stack, house, earlier: "" });
+  const answersIt = first.questions.some((q) => ASKED_BY_PLACE.test(q.key) && trim(answers?.[q.key]));
+  return answersIt ? recordOnce({ spec, named, answers, request, stack, house, earlier: first.text }) : first;
+}
+
+async function recordOnce({ spec, named, answers, request, stack, house, earlier }) {
   const asked = { statement: statementOf(spec, request), answers, defaults: house, stack, ...(trim(earlier) ? { revision: true, earlier: { text: earlier } } : {}) };
   const out = await nameTheSystems({ ask: async () => ({ text: JSON.stringify(named) }), asked, tries: 1 });
   if (out.declined) throw new Error(`architecture.json declines (${out.declined}): it holds the architecture and nothing else`);
@@ -107,11 +121,19 @@ export function filesFrom({ spec, recordText = "", prose = {} }) {
   }
   const writable = slots.filter((k) => !fixed.has(k));
   const empty = writable.filter((k) => isEmpty(proseAt(draft, k)));
+  // What the Design's code settled after the words, the same here: the hosts
+  // in each service's needs, and the standing assets the record decides, in
+  // can_use. (A system the record does not name is never in the structure.)
+  const needs = fitNeeds(draft, spec);
+  const assets = fitCanUse(needs.draft, architecture, loadSchemas());
+  const done = assets.spec;
   // prose.json as it should stand: the builder's words kept, every key the
   // files now have laid out, and a key they no longer have left for the
   // builder to move or delete, never dropped here.
   const laidOut = { ...Object.fromEntries(writable.map((k) => [k, prose?.[k] ?? shapeOf(k)])), ...Object.fromEntries(unknown.map((k) => [k, prose[k]])) };
-  return { files: agentFilesOf(draft), notes: built.notes, problems: built.problems, asks: built.asks, slots: writable, fixed: [...fixed], empty, unknown, refused, misshapen, laidOut };
+  // `worded` is the draft before the standing assets: the Design checked its
+  // addresses there, because a can_use schema is a name and never fetched.
+  return { files: agentFilesOf(done), draft: done, worded: needs.draft, architecture, notes: [...built.notes, ...needs.notes, ...[assets.notes].flat()].filter(Boolean), problems: built.problems, asks: built.asks, slots: writable, fixed: [...fixed], empty, unknown, refused, misshapen, laidOut };
 }
 
 const readJson = (dir, name) => (existsSync(join(dir, name)) ? JSON.parse(readFileSync(join(dir, name), "utf8")) : null);
@@ -129,7 +151,7 @@ async function main(cmd, dir) {
   if (cmd === "record") {
     const named = readJson(dir, FILES.architecture);
     if (!named) { console.error(`${FILES.architecture} is not in ${dir}: run \`node .adlc/generate.mjs brief\` for what it holds`); return 2; }
-    const r = await recordFrom({ spec, named, answers: readJson(dir, FILES.answers) ?? {}, request: readText(dir, FILES.request), stack: readJson(dir, FILES.stack), earlier: readText(dir, FILES.record) });
+    const r = await recordFrom({ spec, named, answers: readJson(dir, FILES.answers) ?? {}, request: readText(dir, FILES.request), stack: readJson(dir, FILES.stack) });
     if (r.forbidden.length) {
       console.log(JSON.stringify({ ok: false, wrote: [], refused: r.forbidden.map((f) => `the record would carry ${f}; a record names no model, model provider, address or credential`) }, null, 2));
       return 1;
