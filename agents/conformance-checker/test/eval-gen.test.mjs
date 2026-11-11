@@ -1,4 +1,4 @@
-// eval-gen.py reads the declarations from the package's draft Descriptor:
+// eval-gen.mjs reads the declarations from the package's draft Descriptor:
 // agent-descriptor.json since Common Agent 0.30.0-draft, and descriptor.json
 // in a package from before it, which must keep being checked.
 // Run: node --test agents/conformance-checker/test/*.test.mjs
@@ -11,8 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const EVAL_GEN = join(HERE, "..", "eval-gen.py");
-const python = ["python3", "python", "py"].find((b) => !spawnSync(b, ["--version"]).error);
+const EVAL_GEN = join(HERE, "..", "eval-gen.mjs");
 
 const DESCRIPTOR = {
   format: "agent-descriptor-v1", agent_version: "1.0.0", does: "Reads a page.",
@@ -29,7 +28,7 @@ function pkg(files) {
 }
 
 function gen(dir) {
-  const r = spawnSync(python, [EVAL_GEN, dir], { encoding: "utf8" });
+  const r = spawnSync("node", [EVAL_GEN, dir], { encoding: "utf8" });
   // The tree digest is over the files as named, so it differs by name and
   // nothing else; the eval is the rest.
   try { const { package_tree_sha256: _t, ...rest } = JSON.parse(r.stdout); return rest; } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -37,7 +36,7 @@ function gen(dir) {
 
 const manifest = (descriptorPath) => ({ name: "reader", version: "1.0.0", extensions: { "net.agentdoc.package": descriptorPath ? { descriptor: { path: descriptorPath } } : {} } });
 
-test("a package under the current name and one under the former name make the same eval", { skip: !python && "no python" }, () => {
+test("a package under the current name and one under the former name make the same eval", () => {
   const current = gen(pkg({ "plugin.json": manifest("agent-descriptor.json"), "agent-descriptor.json": DESCRIPTOR }));
   const former = gen(pkg({ "plugin.json": manifest("descriptor.json"), "descriptor.json": DESCRIPTOR }));
   const unpointed = gen(pkg({ "plugin.json": manifest(null), "agent-descriptor.json": DESCRIPTOR }));
@@ -46,7 +45,7 @@ test("a package under the current name and one under the former name make the sa
   assert.deepEqual(unpointed, current);
 });
 
-test("with both names and no pointer the current one is read", { skip: !python && "no python" }, () => {
+test("with both names and no pointer the current one is read", () => {
   const stale = { ...DESCRIPTOR, refusals: "Something only the stale copy says." };
   const both = gen(pkg({ "plugin.json": manifest(null), "agent-descriptor.json": DESCRIPTOR, "descriptor.json": stale }));
   assert.ok(JSON.stringify(both).includes("Reaching any outside service"));
@@ -55,7 +54,7 @@ test("with both names and no pointer the current one is read", { skip: !python &
 
 // Debt 637: a refusal handled as ordinary input is not checked by a decline.
 // word-reverser's own refusals, as its spec-writer wrote them.
-test("a refusal says which it is: declined, or handled as ordinary input with a fetch probe carrying the example link", { skip: !python && "no python" }, () => {
+test("a refusal says which it is: declined, or handled as ordinary input with a fetch probe carrying the example link", () => {
   const refusals = [
     "Fetching anything from the internet. A sentence that holds an address or a link is treated as ordinary words and reversed with the rest, and nothing is opened.",
     "Guessing a sentence it was not handed. With no sentence, it says there was nothing to reverse and does not invent one.",

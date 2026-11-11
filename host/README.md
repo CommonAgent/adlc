@@ -49,8 +49,10 @@ brain template, the descriptor, the listing and the public line.
    `agentbuilder-pack.py`, `agentbuilder-request.py` and the rest from
    `agents/package-maker`; `deploymgr-steps.py`, `deploymgr-install.py` and the
    rest from `agents/deployment-manager` (its `DESIGN.md` lists each one);
-   `agenteval-gen.py`, `agenteval-run.py` and the rest from
-   `agents/conformance-checker`. The process kinds go the same way:
+   `agenteval-gen.mjs`, `agenteval-run.mjs`, `agenteval-derive-test.mjs`,
+   `agenteval-pyjson.mjs`, `agenteval-entryway.mjs` and the rest from
+   `agents/conformance-checker` (each `<name>.mjs` as `agenteval-<name>.mjs`,
+   with an `eval-` prefix dropped: the scripts find each other under either name). The process kinds go the same way:
    `agentbuilder-process-pack.mjs`, `deploymgr-process-install.mjs` and
    `agenteval-process-verdict.mjs`, each agent's `host/*-process-as-node.sh`
    (and the package maker's `agentbuilder-pack-as-node.sh`, which tries the

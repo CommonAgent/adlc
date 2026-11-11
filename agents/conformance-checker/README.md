@@ -16,11 +16,16 @@ runs the conformance check published with the role the agent claims.
 
 ## The parts
 
-- `eval-gen.py` derives the cases from a package:
-  `python3 eval-gen.py <package folder>`. It runs anywhere with Python 3. It
+- `eval-gen.mjs` derives the cases from a package:
+  `node eval-gen.mjs <package folder>`. It runs anywhere with node. It
   reads the draft Descriptor from `agent-descriptor.json`, or from
-  `descriptor.json` in a package built before Common Agent 0.30.0-draft.
-- `eval-run.py` sends the cases to the agent over the mesh, audits its records
+  `descriptor.json` in a package built before Common Agent 0.30.0-draft. With
+  `--agent <handle>` it reads the agent's own Descriptor through the Common
+  Agent entryway instead (exchange 2, Sections 4.4 and 4.9, in
+  `entryway.mjs`): the bytes and their digest, the digest checked against the
+  bytes, and the spec names it as `descriptor_sha256`.
+- `eval-run.mjs` sends the cases to the agent through one transport function
+  (the mesh adapter by default; another can be passed in), audits its records
   and signs the verdict: `conforms`, `does-not-conform` or `inconclusive`.
   A refusal whose words say the request is declined must be declined; one
   whose words say the request is handled as ordinary input (the link treated
@@ -30,8 +35,9 @@ runs the conformance check published with the role the agent claims.
   run is the host's, so it judges nothing.
   When the spec carries `package_sha256` and `package_version`, as the
   deployment manager's spec does after each deploy, the verdict names the
-  package's digest, which binds it to that version.
-- `derive-test.py` answers the `derive-test` offering: the cases a package
+  package's digest, which binds it to that version, and a spec derived from
+  the agent's own Descriptor names that Descriptor's digest the same way.
+- `derive-test.mjs` answers the `derive-test` offering: the cases a package
   gives rise to, shown and never run (with no package, from the Descriptor the
   registry serves for a named agent). The brain hands it any request that
   names `derive-test`, without waking a model.
@@ -40,6 +46,9 @@ runs the conformance check published with the role the agent claims.
 - `input-cases.mjs`, `input-check.mjs`, `trial-cases.mjs` and `trial-check.mjs`
   derive and send the input and trial cases.
 - `sign.mjs` and `submit-record.mjs` sign the verdict and file it.
+- `pyjson.mjs` writes JSON as these scripts always have (they were Python
+  until 2026-11-11), so a record, a spec or a reply is byte for byte what it
+  was, and takes the canonical form a signature covers.
 - `process-verdict.mjs` is the process kind (`check-a-process`): an installed
   process's document checked against Agent Processes (§17.1) and every test
   case of the suite the package maker signed read back as the platform's test
@@ -52,7 +61,8 @@ runs the conformance check published with the role the agent claims.
 
 ## What it needs
 
-- Python 3.11 or later and Node 22 or later.
+- Node 22 or later. (Building a package to check with the package maker still
+  needs Python, as below; the checker does not.)
 - To run cases against a live agent: the mesh-adapter installed globally (for
   its libraries and the agent's identity), mesh credentials for the evaluator,
   and the agent's handle and records folder.
@@ -62,7 +72,7 @@ runs the conformance check published with the role the agent claims.
 
 ```sh
 python3 ../package-maker/build.py ../publisher /tmp/pkg
-python3 eval-gen.py /tmp/pkg/publisher          # the cases it would run
+node eval-gen.mjs /tmp/pkg/publisher            # the cases it would run
 node --test test/*.test.mjs
 ```
 
