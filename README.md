@@ -36,6 +36,22 @@ package is the shared gate: a platform that installs agents checks the package,
 not the path that produced it. Build your agent any way you like, and hand over
 a package that validates.
 
+## Building an agent in Claude Code
+
+The ADLC plugin lets one coding assistant build an agent from a request to a
+package, with every stage checked from the first draft. Install it in Claude
+Code:
+
+```
+/plugin install adlc --marketplace CommonAgent/adlc
+```
+
+Then `/adlc:start <folder> <what the agent should do>`. The folder it lays out
+carries its instructions as `AGENTS.md`, so another coding assistant or a
+person can work it the same way, and `node .adlc/check.mjs` says, at any
+moment, which stage the folder is at and what is missing there. Approving the
+spec is the person's, with `node .adlc/approve.mjs`.
+
 ## The agents in this repository
 
 These are AgentMesh's own role agents, published as reference
@@ -108,6 +124,11 @@ only runs inside AgentMesh today.
   deployment manager and the conformance checker on a fleet host.
 - `env/` holds the environment reader the agents and host templates use, with
   an example environment to copy.
+- `plugin/` holds the ADLC plugin for Claude Code: its two skills, its hooks,
+  and `kit/`, the check and the generators a build folder carries under
+  `.adlc/`. The kit is the agents' own checks and generators, copied byte for
+  byte by `plugin/sync.mjs`; `node plugin/sync.mjs --check` fails when a copy
+  differs from its master.
 - `checks/` holds the repository's own checks: `addresses.mjs` finds every
   network address written into an agent's scripts (Common Agent 12.6 rule 2),
   against `known-addresses.json`, the addresses written before the check,
@@ -135,6 +156,7 @@ node --test "agents/image/test/*.test.mjs"
 (cd agents/package-maker && node --test connection.test.mjs request.test.mjs model-caller.test.mjs)
 node --test host/test/*.test.mjs
 node checks/addresses.mjs && node --test checks/test/*.test.mjs
+node plugin/sync.mjs --check && node --test plugin/test/*.test.mjs
 (cd agents/catalog && npm install && npm test)
 ```
 
