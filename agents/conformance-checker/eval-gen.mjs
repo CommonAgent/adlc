@@ -35,7 +35,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
-import { pyDumps } from "./pyjson.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolve as resolvePath } from "node:path";
+// A script beside this one: by its name here, or by its name on a fleet host,
+// where the checker is copied flat into /opt/fleet as agenteval-<name>.
+const nearby = (n) => { const own = new URL(`./${n}`, import.meta.url); return existsSync(fileURLToPath(own)) ? own.href : new URL(`./agenteval-${n.replace(/^eval-/, "")}`, import.meta.url).href; };
+const { pyDumps } = await import(nearby("pyjson.mjs"));
 
 const EXT = "net.agentdoc.package";
 const OLD_EXT = "com.agentcatalog.agent";
@@ -228,7 +233,7 @@ export function evalOf(pkg) {
 /** The eval spec from the agent's own Descriptor, read through the entryway.
  *  `exchange` is handed in (entryway.mjs gives the default). */
 export async function evalOfAgent(handle, { exchange } = {}) {
-  const { descriptorOfAgent, standInFolder } = await import("./entryway.mjs");
+  const { descriptorOfAgent, standInFolder } = await import(nearby("entryway.mjs"));
   const got = await descriptorOfAgent(handle, exchange ? { exchange } : {});
   const tmp = mkdtempSync(join(tmpdir(), "eval-gen-agent-"));
   try {
@@ -237,8 +242,9 @@ export async function evalOfAgent(handle, { exchange } = {}) {
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 
-const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
-if (thisFile === "eval-gen.mjs" && import.meta.url.endsWith("/eval-gen.mjs")) {
+// Run as a command, under its name here or on a host (agenteval-<name>).
+const isMain = Boolean(process.argv[1]) && pathToFileURL(resolvePath(process.argv[1])).href === import.meta.url;
+if (isMain) {
   const args = process.argv.slice(2);
   if (args.length === 2 && args[0] === "--agent") {
     evalOfAgent(args[1]).then((spec) => console.log(pyDumps(spec, { indent: 2 })), (e) => {

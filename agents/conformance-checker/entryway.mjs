@@ -24,7 +24,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { pyDumps } from "./pyjson.mjs";
+// A script beside this one: by its name here, or by its name on a fleet host,
+// where the checker is copied flat into /opt/fleet as agenteval-<name>.
+const nearby = (n) => { const own = new URL(`./${n}`, import.meta.url); return existsSync(fileURLToPath(own)) ? own.href : new URL(`./agenteval-${n.replace(/^eval-/, "")}`, import.meta.url).href; };
+const { pyDumps } = await import(nearby("pyjson.mjs"));
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);

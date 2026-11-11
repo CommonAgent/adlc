@@ -21,9 +21,14 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { evalOf } from "./eval-gen.mjs";
-import { descriptorOfAgent, standInFolder } from "./entryway.mjs";
-import { pyDumps } from "./pyjson.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolve as resolvePath } from "node:path";
+// A script beside this one: by its name here, or by its name on a fleet host,
+// where the checker is copied flat into /opt/fleet as agenteval-<name>.
+const nearby = (n) => { const own = new URL(`./${n}`, import.meta.url); return existsSync(fileURLToPath(own)) ? own.href : new URL(`./agenteval-${n.replace(/^eval-/, "")}`, import.meta.url).href; };
+const { evalOf } = await import(nearby("eval-gen.mjs"));
+const { descriptorOfAgent, standInFolder } = await import(nearby("entryway.mjs"));
+const { pyDumps } = await import(nearby("pyjson.mjs"));
 
 const HANDLE = /\b[a-z0-9][a-z0-9._-]*\.[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i;
 const MEDIA = "application/vnd.agentmesh.conformance-test+json";
@@ -166,7 +171,8 @@ export async function main(argv) {
   return 0;
 }
 
-const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
-if (thisFile === "derive-test.mjs" && import.meta.url.endsWith("/derive-test.mjs")) {
+// Run as a command, under its name here or on a host (agenteval-<name>).
+const isMain = Boolean(process.argv[1]) && pathToFileURL(resolvePath(process.argv[1])).href === import.meta.url;
+if (isMain) {
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 }

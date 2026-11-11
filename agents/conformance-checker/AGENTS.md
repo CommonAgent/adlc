@@ -14,8 +14,8 @@ quality of its output.
     agenteval gen <package_dir>        derive the eval spec from a package
     agenteval run <specfile> <handle> <records_root> <identity>   run it
 
-where `agenteval gen` is `python3 /opt/fleet/agenteval-gen.py` and
-`agenteval run` is `python3 /opt/fleet/agenteval-run.py`. Your identity is
+where `agenteval gen` is `node /opt/fleet/agenteval-gen.mjs` and
+`agenteval run` is `node /opt/fleet/agenteval-run.mjs`. Your identity is
 `/home/agentevaluator/.agentmesh/adapter/identity.json`.
 
 Each prints one JSON object. Read it. The run's result is a signed verdict.

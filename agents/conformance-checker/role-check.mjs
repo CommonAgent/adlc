@@ -3,8 +3,8 @@
 // container agent's own image, and sign the verdict (docs/container-agents-plan.md,
 // item 9). Installed on the fleet host as /opt/fleet/agenteval-role-check.mjs.
 //
-// A package's conformance is derived from its own declarations (eval-gen.py,
-// eval-run.py). A container agent has no package: what it declares is the role
+// A package's conformance is derived from its own declarations (eval-gen.mjs,
+// eval-run.mjs). A container agent has no package: what it declares is the role
 // it claims, and a role on agentroles.ai comes with a conformance check. So this
 // runs THAT check, written by the role's authors, against the very image the
 // deployment manager's service runs, by digest:
@@ -18,7 +18,7 @@
 //      working folder, starting the agent with its own start command;
 //   4. each case is read off the check's own output, and the verdict is signed
 //      as an agent-eval-record-v1 by the evaluator's own key and handed to the
-//      registry, the same record and the same door eval-run.py uses.
+//      registry, the same record and the same door eval-run.mjs uses.
 //
 // It never touches the running service, sends it nothing and changes nothing.
 //
@@ -263,7 +263,7 @@ export function realDeps() {
       } catch { return null; }
     },
     submit: (doc) => {
-      // The same door eval-run.py uses: the registry keeps the latest verdict
+      // The same door eval-run.mjs uses: the registry keeps the latest verdict
       // per agent, and the AgentDoc renders it. Best effort; the signed record
       // on stdout is the artifact.
       const submitter = ["/opt/fleet/agenteval-submit-record.mjs", join(process.cwd(), "submit-record.mjs")].find((p) => existsSync(p));

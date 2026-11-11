@@ -31,8 +31,12 @@ import { spawnSync } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
-import { canonical, pyDumps } from "./pyjson.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolve as resolvePath } from "node:path";
+// A script beside this one: by its name here, or by its name on a fleet host,
+// where the checker is copied flat into /opt/fleet as agenteval-<name>.
+const nearby = (n) => { const own = new URL(`./${n}`, import.meta.url); return existsSync(fileURLToPath(own)) ? own.href : new URL(`./agenteval-${n.replace(/^eval-/, "")}`, import.meta.url).href; };
+const { canonical, pyDumps } = await import(nearby("pyjson.mjs"));
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const first = (paths, fallback = null) => paths.find((p) => existsSync(p)) ?? fallback;
@@ -410,8 +414,9 @@ export async function run(spec, handle, recordsRoot, identityPath, { env = proce
   return { ok: true, act: "evaluate", conforms, summary: doc.summary, records_audit: audit, record: doc, ...(pieces ? { pieces } : {}) };
 }
 
-const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
-if (thisFile === "eval-run.mjs" && import.meta.url.endsWith("/eval-run.mjs")) {
+// Run as a command, under its name here or on a host (agenteval-<name>).
+const isMain = Boolean(process.argv[1]) && pathToFileURL(resolvePath(process.argv[1])).href === import.meta.url;
+if (isMain) {
   const out = (o) => { console.log(pyDumps(o)); process.exit(o.ok ? 0 : 1); };
   const args = process.argv.slice(2);
   if (args.length !== 4) out({ ok: false, error: "usage: eval-run.mjs <evalspec.json> <handle> <records_root> <identity.json>" });

@@ -18,7 +18,7 @@ cd "$HOME" || exit 1
 # derive-test (its Descriptor's second offering): the test, shown and never
 # run. Deterministic, so no model is woken for it.
 case "$1" in
-  *derive-test*|*"derive the test"*|*"Show the test"*) exec python3 /opt/fleet/agenteval-derive-test.py --prompt "$1" ;;
+  *derive-test*|*"derive the test"*|*"Show the test"*) exec node /opt/fleet/agenteval-derive-test.mjs --prompt "$1" ;;
 esac
 # A process first (agenteval-process-verdict.mjs, the process kind): a signed
 # process deployment record attached is judged by that procedure, run as the
