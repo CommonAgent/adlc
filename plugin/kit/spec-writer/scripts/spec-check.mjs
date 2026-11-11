@@ -29,6 +29,7 @@
 //   import { specProblems, fitSpec, corpusOf } from "./spec-check.mjs"
 import { validateSpec } from "./spec-v1.mjs";
 import { STAND_IN_NAME, recordFixes } from "./seed.mjs";
+import { ADDRESS_SETTING, FETCHING } from "./reaches.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -208,6 +209,26 @@ export function coverageProblems(spec) {
   return out;
 }
 
+/** What the agent's own files are later held to for a system the agent reaches (reaches.mjs,
+ *  reachProblems), said here, at Requirements, where the spec can still change: a public
+ *  service names its own `address`, unless its why says it fetches whatever address the
+ *  caller hands it; and its address is never a setting of the spec (a setting carries no
+ *  value, so the files would declare an address with no default). A service that takes a
+ *  credential may have its address installed as a setting, as before. */
+export function systemAddressProblems(spec) {
+  const out = [];
+  for (const s of list(spec?.systems)) {
+    if (!isObj(s) || trim(s.reach) === "none" || !trim(s.name)) continue;
+    const name = trim(s.name);
+    const publicRead = s.credential === undefined || s.credential === null || s.credential === "none";
+    if (!publicRead) continue;
+    const addressSettings = list(s.settings).filter((st) => isObj(st) && ADDRESS_SETTING.test(trim(st.env)));
+    for (const st of addressSettings) out.push(`system ${name} lists its address as the setting ${trim(st.env)}, and a service that takes no key carries its address in \`address\`, with no setting for it; put the address in \`address\` and take the setting out`);
+    if (!trim(s.address) && !addressSettings.length && !FETCHING.test(String(s.why ?? ""))) out.push(`system ${name} is reached over the network and the spec gives no \`address\` for it; give the address it is reached at, or, where it reaches whatever address the caller hands it, say so in its why with the word fetches`);
+  }
+  return out;
+}
+
 /** Every problem with a spec, as sentences a model can act on. */
 export function specProblems(spec, { record = null, corpus = null, person = {}, targets = new Set() } = {}) {
   if (!isObj(spec)) return ["the spec is not an object"];
@@ -216,6 +237,7 @@ export function specProblems(spec, { record = null, corpus = null, person = {}, 
     ...idProblems(spec),
     ...featureProblems(spec),
     ...coverageProblems(spec),
+    ...systemAddressProblems(spec),
     ...recordProblems(spec, record, { targets }),
     ...inventedValues(spec, corpus).map((x) => `requirement ${x.id} fixes ${JSON.stringify(x.value)}, which nothing given states; a value nobody gave is asked in open, never fixed`),
     ...personProblems(spec, person, corpus),

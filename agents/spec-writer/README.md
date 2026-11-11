@@ -114,6 +114,12 @@ plugin's Requirements check runs this same rule, so a spec this agent calls
 ready is never held in the build folder. A revision may add what is missing to
 the features even when the person's words name none of them.
 
+From 0.12.1 a system's address is settled at Requirements too
+(`systemAddressProblems`): a service that takes no key names its own `address`,
+unless its why says it fetches whatever address the caller hands it, and its
+address is never a setting of the spec. The agent's own files were already held
+to this; now the spec is, before the person approves it.
+
 From 0.11.0 a system in the spec says what the scripts need to reach it
 (spec-v1 1.3.0, Common Agent Section 12.4, item 3): its `credential`, by name
 and the environment variable it is read from, or `"none"`, and its
