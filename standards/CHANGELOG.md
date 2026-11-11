@@ -84,6 +84,17 @@ Changes to the standards in this folder, newest first.
 
 ## The lifecycle API
 
+- **0.4.13**: each artifact's Common Agent checks. `Artifact` gains `checks`,
+  a list of `RuleCheck`: the `standard`, the `version` it was read in, the
+  `section` by number and, where the section numbers its rules, the `rule`;
+  what the rule `asks` in plain words; the `result`, one of `met`, `not_met`
+  and `not_checked`; and the `detail`, what the stage did, in one line. A
+  client can show a table of rules per document, such as "Section 12.6,
+  rule 2: No address in its scripts", and a tally for the version. The
+  definition is `RuleCheck` because `Check` already names the check on a pull
+  request. The check holds that each check on a made artifact names its
+  section by number, that a check not done says why, and that the same
+  section, rule and asks appear once on one artifact. Additive.
 - **0.4.12**: the security statement and the architecture record, in parts.
   `SecuritySummary` gains `reaches` (system, access, reason), `spends`
   (limit, ceiling), `never_does` (act, reason), `no_reason_recorded` and

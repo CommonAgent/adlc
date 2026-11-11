@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.12 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.12");
+test("the schema is version 0.4.13 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.13");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1514,4 +1514,33 @@ test("0.4.12: an architecture record carries its systems, bindings per environme
   assert.deepEqual(checkArtifacts([archArtifact({ ...rec, decisions: [{ decided: "use the house model", why: "" }] })], IDS), ["body.artifacts[0].summary.decisions[0]: a decision without a reason is not delivered"]);
   assert.ok(checkArtifacts([archArtifact({ systems: ["files"] })], IDS).length > 0, "systems, kind and decisions are required");
   assert.deepEqual(checkArtifacts([archArtifact({ words: "One step, a program. It reaches nothing." })], IDS), [], "a record in words alone, as before 0.4.12, still passes");
+});
+
+// ---------- 0.4.13: each artifact's Common Agent checks ----------
+
+const check = (o = {}) => ({ standard: "common-agent", version: "0.41.0", section: "12.6", rule: "2", asks: "No address in its scripts", result: "met", detail: "4 scripts read; none carries an http, https, ws or wss address.", ...o });
+const withChecks = (checks, state = "made") => ({ ...securityArtifact({ reach: [], spend: "nothing", never: [], verdict: "Passed." }), state, checks });
+
+test("0.4.13: a made artifact may say which Common Agent rules its stage applied, each met, not met or not checked", () => {
+  const checks = [
+    check(),
+    check({ section: "12.4", rule: undefined, asks: "Every permission asked for has a reason", detail: "Every permission the reviewer read has a reason." }),
+    check({ section: "4.9", rule: undefined, asks: "It serves a bound, signed Descriptor", result: "not_checked", detail: "Your runtime holds the agent, so this check is its to run." }),
+    check({ section: "12.6", rule: "5", asks: "The review names the archive's digest", result: "not_met", detail: "The review names sha256:aa, and the package is sha256:bb." }),
+  ].map((c) => JSON.parse(JSON.stringify(c)));
+  assert.deepEqual(checkArtifacts([withChecks(checks)], IDS), []);
+  assert.deepEqual(checkArtifacts([withChecks([])], IDS), [], "an empty list says the stage applied no rule");
+  assert.deepEqual(checkArtifacts([securityArtifact({ reach: [], spend: "nothing", never: [], verdict: "Passed." })], IDS), [], "checks are optional");
+});
+
+test("0.4.13: a check names its section by number, a check not done says why, and one rule appears once on an artifact", () => {
+  const sign = checkArtifacts([withChecks([check({ section: "§12.6" })])], IDS);
+  assert.ok(sign.includes("body.artifacts[0].checks[0].section: names a section by its number alone, such as 12.6"), sign.join("\n"));
+  assert.ok(checkArtifacts([withChecks([check({ rule: "r2" })])], IDS).length > 0, "a rule is its number alone");
+  assert.ok(checkArtifacts([withChecks([check({ result: "passed" })])], IDS).length > 0, "the result is met, not_met or not_checked");
+  assert.ok(checkArtifacts([withChecks([check({ asks: undefined })].map((c) => JSON.parse(JSON.stringify(c))))], IDS).length > 0, "a check says what the rule asks");
+  assert.deepEqual(checkArtifacts([withChecks([check({ result: "not_checked", detail: " " })])], IDS), ["body.artifacts[0].checks[0].detail: the check was not done, so its detail says why"]);
+  assert.deepEqual(checkArtifacts([withChecks([check(), check({ result: "not_met", detail: "Another reading." })])], IDS), ['body.artifacts[0].checks[1]: Section 12.6, rule 2, "No address in its scripts", is on this artifact twice']);
+  assert.deepEqual(checkArtifacts([withChecks([check(), check({ rule: "5", asks: "The review names the archive's digest" })])], IDS), [], "two rules of one section are two checks");
+  assert.deepEqual(checkArtifacts([withChecks([check({ result: "not_checked", detail: "" })], "next")], IDS).length, 0, "the rules beyond the schema hold for a made artifact");
 });

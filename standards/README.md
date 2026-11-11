@@ -10,7 +10,7 @@ version each Builder pins.
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [stages.json](stages.json) | the lifecycle's stages, in order, in seven phases: Reverse engineering, numbered 0, and the 24 after it; each stage's cadence (every build, set up once, or when needed); the roles that hold them; the evidence formats an outside holder hands back in; and the starting points, each with the stage it enters at (`version` in the file; changes in [CHANGELOG.md](CHANGELOG.md)) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
 | [spec.schema.json](spec.schema.json) | the spec, spec-v1: what Requirements hands back, the analysis of a product's functional requirements and capabilities (features, requirements with ISO/IEC/IEEE 29148's attributes, acceptance criteria as Gherkin scenarios, interfaces as JSON Schema) | the spec writer, which writes it; the test writer, which writes a test per acceptance scenario; the code writer and the coding harness, which are given it; the console, which shows it |
-| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.12: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
+| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.13: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [runtime-verbs.md](runtime-verbs.md) | how a lifecycle service hands a finished product to the runtime it is given: install, and from lifecycle API 0.4.4 rollback, reconfigure and retire, as one command with a package and a run plan and the verb in the environment | a runtime's author; a service that runs Rollback, Reconfigure and Decommission |
 | [lifecycle-document.schema.json](lifecycle-document.schema.json) | a lifecycle document, version 0.1: one JSON file holding which stages an organization uses, who holds each role (and with what settings), and the stages it adds of its own, for the organization and each project; no service needed | a person or team defining its lifecycle as a file; the console (`npx adlc-console --lifecycle <path>`), which reads, checks and writes it |
 | [process-check.mjs](process-check.mjs) | the check of a process document against Agent Processes 0.9.0: its §17.1 conformance items and the four tests of §20.1 (see [The process check](#the-process-check)) | the spec writer, which runs it over every process document before handing it back; the test writer, which reads a document's phases, deviations and digest through it; review and conformance |
@@ -137,7 +137,7 @@ actions the person may take now, and a client draws one button for each
 action and nothing else, so every judgment stays with the service. The page
 that explains it is https://agenticdevelopment.ai/api.html.
 
-The schema is version 0.4.12, served at `/v1/lifecycle` on the service. It
+The schema is version 0.4.13, served at `/v1/lifecycle` on the service. It
 changes only by adding: a client ignores a field it does not know, and a
 service never removes a field or changes its type. Version 0.2 also added
 values to two lists, the holder's kinds and the stage's states, and a client
@@ -152,7 +152,7 @@ lists the features of a product made before them. Version 0.4.6 starts a build f
 existing code. Version 0.4.7 starts a build from the as-built record of code
 kept elsewhere, and adds the action back_to_requirements. Version 0.4.8 adds the spec.
 Version 0.4.9 adds the skills of a stage's holder. Version 0.4.10 makes each feature of a
-version in a run of its own. Version 0.4.11 adds a product's documents. Version 0.4.12 gives the security statement and the architecture record their parts. Its `operations` list names the
+version in a run of its own. Version 0.4.11 adds a product's documents. Version 0.4.12 gives the security statement and the architecture record their parts. Version 0.4.13 says which Common Agent rules each artifact was checked against. Its `operations` list names the
 definition each request and answer must match.
 
 **Lifecycle stages.** An organization chooses which of the stages its
@@ -239,6 +239,22 @@ holds that a reach without a reason is listed in `no_reason_recorded`, that a
 statement with any such permission has not passed (the stage's done-when),
 that every binding is for a system the record names, and that every decision
 carries its reason.
+
+**Each artifact's Common Agent checks.** From version 0.4.13, any artifact
+may carry `checks`: the Common Agent rules its stage applied to it, one
+`RuleCheck` each. A check names the `standard` (`common-agent`), the
+`version` it was read in (0.41.0, the version `common-agent-pin.json` pins),
+the `section` by number alone, such as `12.6`, and where the section numbers
+its rules, the `rule`, such as `2`. It says what the rule `asks` in plain
+words, its `result` (`met`, `not_met` or `not_checked`), and in `detail`
+what the stage did, in one line. A client shows "Section 12.6, rule 2" and
+the words, so a person reads a table of rules per document and a tally for
+the version. A service builds each check only from what the stage's own
+records say: a rule the stage did not apply is left out, and one it could
+not apply here is `not_checked` with the reason. `checkArtifacts` holds that
+each check on a made artifact names its section by number, that a check not
+done says why, and that the same section, rule and asks appear once on one
+artifact.
 
 **A product's documents.** From version 0.4.11, `GET /products/{name}/documents`
 answers the product's documents: one `Document` per stage of stages.json that
