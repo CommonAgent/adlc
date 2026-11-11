@@ -18,7 +18,7 @@ import { checkFindings, placeOf } from "../scripts/check-findings.mjs";
 import { badPackage, readOf } from "./helpers.mjs";
 
 const pkg = () => readOf(badPackage());
-const env = { TEXT_MODEL: "some-model", TEXT_API_KEY: "k" };
+const env = { MODEL_NAME: "some-model", MODEL_KEY: "k" };
 
 test("files go numbered, declarations first, changed files ahead of the rest", () => {
   const { read, texts } = pkg();

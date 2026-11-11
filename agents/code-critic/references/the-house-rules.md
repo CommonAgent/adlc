@@ -9,10 +9,11 @@ Each rule names the finding's `rule` id.
 
 A model is a bound system, `text-reasoning` (or `image-reading`,
 `speech-to-text`, `text-to-speech`) with access `trigger`. The scripts read
-which model from configuration, `TEXT_MODEL` or `AGENT_MODEL`, through the
-shared caller, so the install chooses it and a run config can change it. No
-script, skill or declaration names a model or a version, not as a default,
-not in an instruction, not in a sentence.
+which model from configuration, the four model settings `MODEL_NAME`,
+`MODEL_ENDPOINT`, `MODEL_KEY` and `MODEL_PROTOCOL` (Common Agent 0.41.0,
+Section 12.4.1), through the shared caller, so the install chooses it and a
+run config can change it. No script, skill or declaration names a model or a
+version, not as a default, not in an instruction, not in a sentence.
 
 Why: models are retired on somebody else's schedule. Brand reader shipped
 with `gemini-2.5-flash` written into `scripts/choose-roles.mjs`; the model
@@ -21,7 +22,7 @@ got a primary or an accent color until the package was rebuilt.
 
 The program finds: a model's name in a code line of a script (comments are
 history and are not read), in a SKILL.md, or in a declaration; and a script
-that calls a model's endpoint without reading `TEXT_MODEL` or `AGENT_MODEL`.
+that calls a model's endpoint without reading the four model settings.
 
 ## 2. No address where a bound system belongs (`hard-coded-address`)
 

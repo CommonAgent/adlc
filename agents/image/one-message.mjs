@@ -973,7 +973,7 @@ function installUsageTap(usageOf) {
   const gateway = () => {
     const endpoint = String(process.env.MODEL_ENDPOINT ?? "").trim().replace(/\/+$/, "");
     const stt = String(process.env.STT_ENDPOINT ?? "").trim().replace(/\/+$/, "");
-    return endpoint || stt ? { endpoint, stt, model: String(process.env.MODEL_NAME ?? process.env.TEXT_MODEL ?? "").trim() } : null;
+    return endpoint || stt ? { endpoint, stt, model: String(process.env.MODEL_NAME ?? "").trim() } : null;
   };
   const tapped = async function (input, init) {
     const res = await real.call(this, input, init);

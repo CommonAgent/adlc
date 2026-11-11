@@ -168,12 +168,13 @@ A model is reached like any other bound system: the spec declares the
 capability (`text-reasoning` for text, `image-reading` for pictures,
 `speech-to-text` and `text-to-speech` for speech, each with access
 `trigger`), and the script calls it through the shared caller, which reads
-which model from `AGENT_MODEL` (or `TEXT_MODEL`, where the spec's install
-entry names that variable) and refuses when it is empty. The install sets
-it, and a run config can override it for one job.
+the four settings `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` and
+`MODEL_PROTOCOL` (Common Agent 0.41.0, Section 12.4.1) and no other name,
+and refuses, naming the setting, when one it needs is empty. The install
+sets them, and a run config can override the model for one job.
 
-    const model = trim(env.AGENT_MODEL ?? env.TEXT_MODEL);
-    if (!model) return { ok: false, said: "AGENT_MODEL is not set, so no model is called" };
+    const model = trim(env.MODEL_NAME);
+    if (!model) return { ok: false, said: "MODEL_NAME is not set, so no model is called" };
 
 Never write a model's name or version into a script: not as a default, not
 in a price table, not in a test of your own. Models are retired on somebody

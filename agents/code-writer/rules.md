@@ -20,7 +20,7 @@ The records folder a job is handed is the same records folder, the agent's own, 
 
 ## A model is read from configuration
 
-A script never names a model. A job that calls one reaches it through the system the spec declares (`text-reasoning`, `image-reading` and the like) and reads which model from `AGENT_MODEL` or `TEXT_MODEL` through the shared caller, so the install chooses it and a run config can change it. No model name or version goes into a script, a default, a table or a SKILL.md: when the variable is empty the script refuses and says the model is not set. Brand reader shipped with `gemini-2.5-flash` written into a script and answered 404 when it was retired. The package maker refuses a new agent whose scripts name a model.
+A script never names a model. A job that calls one reaches it through the system the spec declares (`text-reasoning`, `image-reading` and the like) and reaches the model through the four settings `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` and `MODEL_PROTOCOL` (Common Agent 0.41.0, Section 12.4.1) through the shared caller, so the install chooses it and a run config can change it. No model name or version goes into a script, a default, a table or a SKILL.md: when a setting is empty the script refuses and says which one is not set. Brand reader shipped with `gemini-2.5-flash` written into a script and answered 404 when it was retired. The package maker refuses a new agent whose scripts name a model.
 
 ## The fence
 

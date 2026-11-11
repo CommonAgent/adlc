@@ -80,7 +80,7 @@ against that writer's signed delivery manifest.
 ## The model settings
 
 A package carries no model address and no way of signing in (Common Agent
-0.39.0, Section 12.4.1, and 12.6 rule 2). The host places four settings for
+0.41.0, Section 12.4.1, and 12.6 rule 2). The host places four settings for
 every agent that calls a model, and the agent reads them on every call
 through its copy of the shared model caller (`agents/package-maker/shared/model-caller.mjs`):
 
@@ -91,9 +91,9 @@ through its copy of the shared model caller (`agents/package-maker/shared/model-
 | `MODEL_KEY` | the credential; empty when the endpoint needs none |
 | `MODEL_PROTOCOL` | the request format: `anthropic-messages`, `openai-chat` or `gemini` |
 
-For one version the caller also reads `TEXT_MODEL` in place of `MODEL_NAME`
-and `TEXT_API_KEY` in place of `MODEL_KEY`. There is no older name for the
-endpoint: an agent with no `MODEL_ENDPOINT` refuses, naming it.
+The caller reads no other name for any of them, since Common Agent 0.41.0
+removed `TEXT_MODEL` and `TEXT_API_KEY`: an agent with no `MODEL_NAME`,
+`MODEL_ENDPOINT` or `MODEL_PROTOCOL` refuses, naming the setting.
 
 `env/example.json` carries them under `model`. The values there are the ones
 for Claude on Vertex AI through this host's gateway:
@@ -145,9 +145,8 @@ The deployment manager binds the four settings for a package whose runtime
 requirements declare a system of kind `model`. The owner's instruction gives
 them under `settings` for that system (and the name of the credential placed as
 `MODEL_KEY` under `credentials`); what the instruction leaves out comes from
-the environment file's `model` block, key by key. `TEXT_MODEL` is placed beside
-`MODEL_NAME` for this version, and `MODEL_KEY` is placed empty when no
-credential is named.
+the environment file's `model` block, key by key. No former name is placed
+beside them, and `MODEL_KEY` is placed empty when no credential is named.
 
 A host that reaches a model service directly sets `MODEL_ENDPOINT` to that
 service's root, `MODEL_PROTOCOL` to the format it speaks, and `MODEL_KEY` to

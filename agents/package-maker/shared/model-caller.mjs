@@ -1,7 +1,7 @@
 // The model caller: the one way a package reaches its model, from the four
 // settings the install places and nothing written here.
 //
-// Common Agent 0.39.0, Section 12.4.1: an agent's scripts reach its model
+// Common Agent 0.41.0, Section 12.4.1: an agent's scripts reach its model
 // system through four settings with the same names in every agent, read from
 // the environment on every call and from nowhere else, never kept from one
 // call to the next, with no value of this file's own for any of them:
@@ -13,10 +13,8 @@
 //                   no credential is sent
 //   MODEL_PROTOCOL  the request format, one of PROTOCOLS
 //
-// For this version only, TEXT_MODEL is read where MODEL_NAME is not set, and
-// TEXT_API_KEY where MODEL_KEY is not set at all (an empty MODEL_KEY is a
-// placed credential that is empty, and TEXT_API_KEY is then not read). There
-// is no older name for the endpoint or the protocol. Where MODEL_NAME,
+// No other name is read for any of them: the former names TEXT_MODEL and
+// TEXT_API_KEY were removed in Common Agent 0.41.0. Where MODEL_NAME,
 // MODEL_ENDPOINT or MODEL_PROTOCOL is empty, or MODEL_PROTOCOL is outside the
 // list (or outside the package's own declared protocols, when the job passes
 // them), nothing is sent and the refusal names the setting. No credential is
@@ -131,13 +129,13 @@ export function partsOf(prompt) {
 const has = (env, name) => Object.prototype.hasOwnProperty.call(env ?? {}, name) && env[name] !== undefined && env[name] !== null;
 
 /** The four settings as this call reads them, the answer budget, and which
- *  variable gave the name and the key: {name, endpoint, key, protocol,
- *  maxOutputTokens, from: {name, key}}. */
+ *  variable gave the name and the key, null where it is not set:
+ *  {name, endpoint, key, protocol, maxOutputTokens, from: {name, key}}. */
 export function modelSettings(env = process.env) {
-  const fromName = trim(env?.MODEL_NAME) ? "MODEL_NAME" : trim(env?.TEXT_MODEL) ? "TEXT_MODEL" : null;
-  const name = trim(env?.MODEL_NAME) || trim(env?.TEXT_MODEL);
-  const fromKey = has(env, "MODEL_KEY") ? "MODEL_KEY" : has(env, "TEXT_API_KEY") ? "TEXT_API_KEY" : null;
-  const key = fromKey ? trim(env[fromKey]) : "";
+  const name = trim(env?.MODEL_NAME);
+  const fromName = name ? "MODEL_NAME" : null;
+  const fromKey = has(env, "MODEL_KEY") ? "MODEL_KEY" : null;
+  const key = fromKey ? trim(env.MODEL_KEY) : "";
   return { name, endpoint: trim(env?.MODEL_ENDPOINT), key, protocol: trim(env?.MODEL_PROTOCOL), maxOutputTokens: outputBudget(env), from: { name: fromName, key: fromKey } };
 }
 

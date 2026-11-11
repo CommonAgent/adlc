@@ -60,7 +60,7 @@ CREDENTIAL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 SYSTEM_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
 KINDS = ("directory", "mcp", "service", "model")
-# THE MODEL SYSTEM (Common Agent 0.39.0, 12.4.1). An agent declares at most one
+# THE MODEL SYSTEM (Common Agent 0.41.0, 12.4.1). An agent declares at most one
 # system of kind model, whose entry names the formats its scripts speak and no
 # credential, variable or setting: the four settings have the same names in
 # every agent and the installer binds them without being told. The formats are
@@ -75,9 +75,7 @@ MODEL_VALUES = ("MODEL_NAME", "MODEL_ENDPOINT", "MODEL_PROTOCOL")
 # answer budget, a whole number of tokens above zero. Without it the shared
 # caller uses its own default.
 MODEL_OPTIONAL = ("MODEL_MAX_OUTPUT_TOKENS",)
-# For 0.39.0 only a host MAY set the former name beside the current one; the
-# platform's older scripts still read TEXT_MODEL, so it is placed too.
-MODEL_ALIASES = {"TEXT_MODEL": "MODEL_NAME"}
+# No former name is placed: 0.41.0 removed TEXT_MODEL and TEXT_API_KEY.
 # Characters that can carry invisible instructions: zero-width, bidi
 # controls, and the tag block. The depot refuses these at its door; the
 # installer refuses them again because a package can reach it another way.
@@ -751,17 +749,15 @@ def plan_bindings(args, pkg, home):
         if s["kind"] == "directory":
             b["path"] = f"{home}/work/{s['name']}"
         elif s["kind"] == "model":
-            # The four settings under their fixed names (12.4.1), the former
-            # name beside the current one for this version, and MODEL_KEY as a
-            # credential when the instruction names one, empty when it does not.
+            # The four settings under their fixed names (12.4.1), and no other
+            # name, with MODEL_KEY as a credential when the instruction names
+            # one, empty when it does not.
             got = settings.get(s["name"]) if isinstance(settings, dict) else {}
             got = got if isinstance(got, dict) else {}
             b["settings"] = {k: str(got.get(k)) for k in MODEL_VALUES}
             for k in MODEL_OPTIONAL:
                 if got.get(k) not in (None, ""):
                     b["settings"][k] = str(got.get(k))
-            for alias, of in MODEL_ALIASES.items():
-                b["settings"][alias] = b["settings"][of]
             if isinstance(creds, dict) and creds.get(s["name"]):
                 b["credential"] = creds[s["name"]]
                 b["env"] = MODEL_KEY_VAR

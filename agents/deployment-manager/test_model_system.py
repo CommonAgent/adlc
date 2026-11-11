@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The model system (Common Agent 0.39.0, 12.4.1): what the installer binds.
+"""The model system (Common Agent 0.41.0, 12.4.1): what the installer binds.
 
 What is worth pinning: a package's one system of kind model reads with its
 protocols and no credential, variable or setting; the instruction must give
@@ -7,7 +7,7 @@ MODEL_NAME, MODEL_ENDPOINT and MODEL_PROTOCOL, and a protocol outside the
 closed list or outside the entry's own protocols is refused before anything
 is changed; MODEL_KEY is a credential the instruction names, never a setting,
 and is placed empty when none is named; the binding places the four settings
-under their fixed names with TEXT_MODEL beside MODEL_NAME for this version;
+under their fixed names and no former name beside them;
 the host's environment file fills what the instruction leaves out, key by key,
 without replacing what it gives; and a worker job whose endpoint is on
 loopback is given its own gateway's settings.
@@ -82,9 +82,10 @@ class TheInstruction(unittest.TestCase):
 
 
 class TheBinding(unittest.TestCase):
-    def test_the_four_settings_and_the_former_name_are_placed(self):
+    def test_the_four_settings_are_placed_and_no_former_name(self):
         [b] = install.plan_bindings({"settings": {"text-reasoning": dict(GOOD)}}, PKG, "/home/a")
-        self.assertEqual(b["settings"], {**GOOD, "TEXT_MODEL": "claude-sonnet-5-5", "MODEL_KEY": ""})
+        self.assertEqual(b["settings"], {**GOOD, "MODEL_KEY": ""})
+        self.assertNotIn("TEXT_MODEL", b["settings"])
         self.assertNotIn("credential", b)
         text = install.env_file([b], {})
         self.assertIn("export MODEL_ENDPOINT='http://127.0.0.1:8788'", text)
@@ -146,7 +147,7 @@ class TheHostFillsTheGaps(unittest.TestCase):
         self.assertEqual(install.check_instruction(args, pkg), [])
         [b] = install.plan_bindings(args, pkg, "/home/a")
         self.assertEqual(b["settings"], {"MODEL_NAME": "gemini-3.8-flash", "MODEL_ENDPOINT": "http://127.0.0.1:8788",
-                                         "MODEL_PROTOCOL": "gemini", "TEXT_MODEL": "gemini-3.8-flash", "MODEL_KEY": ""})
+                                         "MODEL_PROTOCOL": "gemini", "MODEL_KEY": ""})
         self.assertEqual(steps.model_gateway_env(args, pkg)["BRIDGE_PORT"], "8788")
         # A package whose model system does not speak gemini is refused it.
         args = steps.with_model_defaults({"settings": {"text-reasoning": {"MODEL_PROTOCOL": "gemini"}}}, PKG)
