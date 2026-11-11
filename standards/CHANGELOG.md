@@ -2,6 +2,31 @@
 
 Changes to the standards in this folder, newest first.
 
+## architecture-standard.md
+
+- **1.1.0**: a keyless public service is a system of the record. A service
+  the agent reaches at one fixed address that takes no key, such as the
+  Hacker News API, is asked for as a destination, with its address in the
+  question, and the owner's yes makes it a system bound to the service
+  itself in every environment: the binding names the address, says it takes
+  no key, gives the access (`read`, `write` or `read-write`) and records the
+  approval (`itself at <address>, no key, read, approved by the owner in
+  egress-1`). There is no product behind it, and that is a valid binding, so
+  the record is finished with it; a no leaves the service out. That address
+  is the one address a record carries (section 2). Section 5 no longer says a
+  keyless public read keeps its address as a constant in the script: the
+  Design declares the address as the service's address setting, whose
+  default is the address, and no script holds one (Common Agent Section
+  12.6, rule 2). The Design still declares exactly the record's systems
+  (section 8), now including the approved service. The header gains
+  `cost_limit`, the spending limit in the words it was set in, which the
+  Design declares as the ceiling of the spending system in the shape of
+  Common Agent Section 12.4, item 4 (section 9). The header now carries a
+  `version`; the standard was unversioned before, and this is its first
+  change since it was written. Built in build b_6e496a709479 (hn-digest),
+  where the Design dropped the approved service, the model system and the
+  limit.
+
 ## common-agent-pin.json
 
 - **v1**: the lifecycle cites one version of the Common Agent Specification,

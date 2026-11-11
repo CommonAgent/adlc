@@ -26,6 +26,8 @@
 // A binding names a product and says who provides it. It never carries the
 // credential, the address, the settings or the key store the stack holds:
 // those are what an install needs, and the owner's instruction supplies them.
+// The one exception is a keyless public service the owner approved: it is
+// bound to the service itself, and that binding names its address.
 //
 //   needs: node >= 22
 //   NAMED=<named.json> ASKED=<asked.json> RECORDS=<records folder> node bind.mjs
@@ -135,6 +137,21 @@ export function bindAll(arch, { stack = null, vocabulary = [], answers = {}, tar
   const questions = [];
   const decisions = [];
   const systems = (arch.systems ?? []).map((s) => {
+    // A keyless public service the owner approved is bound to the service
+    // itself in every environment: its address, no key, its access and the
+    // approval. There is no product behind it, and that is a binding (the
+    // architecture standard, section 2).
+    if (s.public) {
+      const b = { public: true, product: "itself", address: trim(s.public.address), key: "none", access: trim(s.access) || "read", ...(trim(s.public.approved) ? { approved: trim(s.public.approved) } : {}) };
+      decisions.push({
+        decided: `Bind ${s.name} to the service itself in ${list(environments)}`,
+        why: `It is a public service that takes no key and has no product behind it, so nobody chooses one; the owner approved reaching it${b.approved ? ` (${b.approved})` : ""}`,
+        weighed: "",
+        follows: "The Design declares the service with its address as a setting whose default is the address the binding names; the scripts read the setting and hold no address of their own (Common Agent Section 12.6, rule 2)",
+        from_binding: s.name,
+      });
+      return { ...s, bindings: Object.fromEntries(environments.map((e) => [e, { ...b }])) };
+    }
     const bindings = {};
     for (const env of environments) {
       let b = bindOne(s.name, env, { stack, vocabulary });

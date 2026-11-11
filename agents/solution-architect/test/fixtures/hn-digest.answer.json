@@ -1,0 +1,18 @@
+{"title": "a daily Hacker News digest",
+ "environments": ["dev", "test", "production"],
+ "systems": [{"name": "text-reasoning", "plain": "text reasoning", "capability": "text: one plain sentence for each story", "access": "trigger", "why": "Writing a sentence that says what each story is about is a judgment, which is what a text model is for.", "called_for": "writes a short digest"}],
+ "kind": {"kind": "plugin-on-harness", "why": "A short program with one judgment in it: read the top stories, write a sentence for each, hand back the digest. A harness reading skills carries it."},
+ "dependencies": [],
+ "limits": {"cost": null, "speed": {"limit": "a digest within 300 seconds", "why": "One read of the top stories and one model call."}, "data": {"limit": "holds the stories only for the job and keeps nothing between jobs", "why": "Nothing in the statement asks for a history."}, "trust": {"limit": "takes jobs only from its owner", "why": "The digest is for the owner."}},
+ "egress": [{"destination": "public Hacker News API", "why": "To read the current top stories. It needs no key", "service": {"name": "hacker-news", "access": "read", "address": "https://hacker-news.firebaseio.com/v0"}}],
+ "formats": [
+   {"piece": "the digest", "direction": "out", "kind": "text/markdown", "convention": "a header `read_at, stories`, then `## Digest` with one bullet per story", "why": "A person reads it."}
+ ],
+ "settings": [
+   {"name": "stories_to_read", "kind": "preference", "label": "Stories to read", "about": "How many top stories to read from Hacker News.", "default": 30, "min": 10, "max": 100, "step": 1, "job_may_set": true, "why": "How far down the list to read is the owner's habit; thirty is a morning's front page."},
+   {"name": "digest_size", "kind": "preference", "label": "Digest size", "about": "How many stories to put in the digest.", "default": 5, "min": 1, "max": 10, "step": 1, "job_may_set": true, "why": "Five stories is a short read."}
+ ],
+ "decisions": [
+   {"decided": "Hand the digest back as Markdown", "why": "A person reads it; JSON would be a page of brackets.", "weighed": "JSON with a vendor kind, which only code would read", "follows": "The convention is a header and one fixed heading."}
+ ],
+ "questions": []}

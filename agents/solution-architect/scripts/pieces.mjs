@@ -21,7 +21,7 @@ const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 /** The outputs, as the descriptor declares them. */
 export const PIECES = [
   { name: "the architecture record", file: "record.md", to: "out/architecture-record.md", step: "check-the-record", media_type: "text/markdown",
-    about: "The architecture record: the systems the agent reaches, the product bound to each in each environment and who chose it, its dependencies, kind, limits, egress, formats, settings, and every decision with its reason. Markdown with a front matter header (record, statement, environments, kind, done, questions, systems, bindings) the next stage reads the bindings from." },
+    about: "The architecture record: the systems the agent reaches, the product bound to each in each environment and who chose it, its dependencies, kind, limits, egress, formats, settings, and every decision with its reason. Markdown with a front matter header (record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings) the next stage reads the bindings from." },
   { name: "what is still open", file: "still-open.md", to: "out/still-open.md", step: "check-the-record", media_type: "text/markdown",
     about: "The questions the record could not settle without the person, each under the key an answer goes back with. Until these are answered the record is not finished." },
   { name: "what changed", file: "what-changed.md", to: "out/what-changed.md", step: "check-the-record", media_type: "text/markdown",

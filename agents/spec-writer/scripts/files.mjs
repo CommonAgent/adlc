@@ -222,7 +222,10 @@ export function runtimeOf(spec, jobs, systems, lockfiles) {
   const byName = new Map(sysEntries.map((e) => [e.name, e]));
   const ceilings = (spec.ceilings ?? spending.map((r) => ({ system: r, per: "task" }))).map((c) => {
     const s = byName.get(c.system) ?? {};
-    const side = s.credential ? "runtime" : s.kind === "mcp" ? "platform" : undefined;
+    // A model system is called by the scripts themselves, through the shared
+    // caller, so the runtime that makes the call applies its ceiling, as
+    // build.py's ceiling_side derives it (Common Agent Section 12.4, item 4).
+    const side = s.credential || s.kind === "model" ? "runtime" : s.kind === "mcp" ? "platform" : undefined;
     return { system: c.system, per: c.per, enforced_by: side, ...("suggested" in c ? { suggested: c.suggested } : {}) };
   });
   const directories = spec.directories?.length ? spec.directories : [

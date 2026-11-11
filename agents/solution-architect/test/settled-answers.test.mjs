@@ -159,8 +159,8 @@ test("both offerings declare the build's settled answers, given by an agent, as 
     assert.equal(input.given_by, "agent");
     assert.equal(input.required, false);
   }
-  assert.equal(d.agent_version, "0.3.1");
-  assert.equal(readJson(join(ROOT, "plugin.json")).version, "0.3.1");
+  assert.equal(d.agent_version, "0.4.0");
+  assert.equal(readJson(join(ROOT, "plugin.json")).version, "0.4.0");
 });
 
 test("the architecture standard says a settled answer is used with its source, and the House Stack names no provider", () => {

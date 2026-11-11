@@ -275,11 +275,12 @@ export function readingOf({ text = "", files = [], io = {} } = {}) {
 
 /** The architecture record among the attachments, read: the file's name and
  *  its header (systems, environments, kind, whether it is finished, how many
- *  questions it leaves open). Empty when none came. */
+ *  questions it leaves open, the spending limit it sets). Empty when none
+ *  came. */
 export function architectureOf(attached = []) {
   const a = attached.find((x) => x.kind === "an architecture record" && typeof x.text === "string");
   const h = a ? parseRecord(a.text) : null;
-  return h ? { architecture: { from: a.name, systems: h.systems, environments: h.environments, kind: h.kind, done: h.done, questions: h.questions, bindings: h.bindings, standing_assets: h.standing_assets } } : {};
+  return h ? { architecture: { from: a.name, systems: h.systems, environments: h.environments, kind: h.kind, done: h.done, questions: h.questions, bindings: h.bindings, standing_assets: h.standing_assets, cost_limit: h.cost_limit } } : {};
 }
 
 /** What this step says out loud. Not the reply to the buyer, which the last

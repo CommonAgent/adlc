@@ -21,8 +21,14 @@ export const RECORD = "architecture-record-v1";
 /** The header's fields, in order, and the body's fixed headings, in order.
  *  The architecture standard (standards/architecture-standard.md, section 9)
  *  names the same lists. */
-export const HEADER_FIELDS = ["record", "statement", "environments", "kind", "done", "questions", "systems", "standing_assets", "bindings"];
+export const HEADER_FIELDS = ["record", "statement", "environments", "kind", "done", "questions", "systems", "standing_assets", "cost_limit", "bindings"];
 export const HEADINGS = ["Statement", "Systems", "Bindings", "Dependencies", "Kind", "Limits", "Egress", "Formats", "Standing assets", "Settings", "Decisions", "Questions"];
+
+/** The access a public service may be reached with, and how its address may
+ *  be written: http or https, a host, a path, and nothing that could carry a
+ *  credential (no user before the host and no query). */
+export const PUBLIC_ACCESS = ["read", "write", "read-write"];
+export const PUBLIC_ADDRESS = /^https?:\/\/[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d+)?(?:\/[^\s?#@]*)?$/i;
 
 /** The environments a record may bind, in the words the deploy into each uses
  *  (Common Agent 8.3), and the stack's word for each. */
@@ -33,11 +39,26 @@ const trim = (s) => String(s ?? "").trim();
 const oneLine = (s) => trim(s).replace(/\s+/g, " ");
 
 /** A binding as the header spells it: the product and who provides it, or
- *  `unbound (asked)` where the record asks instead of binding. */
+ *  `unbound (asked)` where the record asks instead of binding. A keyless
+ *  public service is bound to the service itself, and its binding names the
+ *  address, says it takes no key, gives the access and records the owner's
+ *  approval: `itself at <address>, no key, read, approved by the owner in
+ *  egress-1` (the architecture standard, section 2). */
 export function bindingWord(b) {
   if (!b || b.unbound) return "unbound (asked)";
+  if (b.public) return `itself at ${trim(b.address)}, no key, ${trim(b.access) || "read"}, approved by the owner${trim(b.approved) ? ` in ${trim(b.approved)}` : ""}`;
   return `${trim(b.product)} (${b.provided_by === "customer" ? "customer" : "platform"})`;
 }
+
+/** A public binding read back from its header words, or null. */
+export function publicBinding(value) {
+  const m = /^itself at (\S+?),\s*no key,\s*(read-write|read|write),\s*approved by the owner(?: in ([a-z][a-z0-9-]*))?$/.exec(trim(value));
+  if (!m || !PUBLIC_ADDRESS.test(m[1])) return null;
+  return { public: true, product: "itself", address: m[1], key: "none", access: m[2], ...(m[3] ? { approved: m[3] } : {}) };
+}
+
+/** The spending limit a record carries, in the words it was set in, or "". */
+const costOf = (rec) => oneLine(rec.limits?.cost?.limit || rec.limits?.cost?.said || "");
 
 /** The header, as text between the two `---` lines. */
 export function headerOf(rec) {
@@ -55,6 +76,9 @@ export function headerOf(rec) {
     // The schemas the record decided (standard section 10), or none. A record
     // written before the section has no line, and reads as not decided.
     ...(rec.standing_assets ? [`standing_assets: ${rec.standing_assets.schemas?.length ? `[${rec.standing_assets.schemas.join(", ")}]` : "none"}`] : []),
+    // The spending limit, in the words it was set in, so the Design can
+    // declare it as the ceiling of the spending system without reading prose.
+    `cost_limit: ${costOf(rec) ? JSON.stringify(costOf(rec)) : "not set"}`,
   ];
   if (systems.length) {
     lines.push("bindings:");
@@ -98,6 +122,7 @@ function systemsSection(rec) {
   return rec.systems.map((s) => {
     const bits = [`\`${s.name}\` (${oneLine(s.plain || s.name)}), ${s.access}`];
     if (trim(s.capability)) bits.push(`for ${oneLine(s.capability)}`);
+    if (s.public) bits.push("a public service with no key, which the owner approved");
     return `${bits.join(", ")}: ${sentence(s.why)}`;
   }).map(bullet).join("\n");
 }
@@ -109,6 +134,7 @@ function bindingsSection(rec) {
   const rows = rec.systems.map((s) => `| ${s.name} | ${envs.map((e) => {
     const b = s.bindings?.[e];
     if (!b || b.unbound) return "unbound: asked";
+    if (b.public) return `the service itself at ${trim(b.address)}, no key, approved by the owner`;
     const who = b.provided_by === "customer" ? "the organization's choice" : "platform default";
     return `${trim(b.label) && b.label !== b.product ? `${b.product} (${b.label})` : b.product}, ${who}`;
   }).join(" | ")} |`);
@@ -237,9 +263,11 @@ export function bodyOf(text) {
 /** Read a record's header back, or null when the text is not an architecture
  *  record. Returns the fields, with `environments` and `systems` as lists,
  *  `done` as a boolean, `questions` as a number, `bindings` as
- *  {system: {environment: {product, provided_by} | {unbound: true}}}, and
- *  `standing_assets` as a list of schemas ([] for none, null when the
- *  record does not say). */
+ *  {system: {environment: {product, provided_by} | {unbound: true} |
+ *  {public: true, product: "itself", address, key: "none", access,
+ *  approved}}}, `standing_assets` as a list of schemas ([] for none, null
+ *  when the record does not say), and `cost_limit` as the words of the
+ *  spending limit ("" when none is set). */
 /** A scalar as YAML would read it: a double-quoted one as JSON, a single-quoted
  *  one with its quotes taken off, anything else trimmed. */
 function unquote(v) {
@@ -280,6 +308,8 @@ export function parseRecord(text) {
     if (!inBindings) continue;
     if (indent <= 2 && !value) { system = key; out.bindings[system] = {}; continue; }
     if (system) {
+      const pub = publicBinding(value);
+      if (pub) { out.bindings[system][key] = pub; continue; }
       const b = /^(.+?)\s*\((customer|platform|asked)\)$/.exec(value);
       out.bindings[system][key] = !b || b[2] === "asked" || /^unbound\b/.test(value)
         ? { unbound: true }
@@ -304,6 +334,8 @@ export function parseRecord(text) {
     // null when the record has no line (written before the standard's
     // section 10), [] when it says none.
     standing_assets: out.standing_assets === undefined ? null : list(out.standing_assets),
+    // "" when the record sets none, or was written before the field.
+    cost_limit: out.cost_limit === undefined || trim(out.cost_limit) === "not set" ? "" : unquote(out.cost_limit),
   };
 }
 

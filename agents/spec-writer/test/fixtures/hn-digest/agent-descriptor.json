@@ -1,0 +1,72 @@
+{
+  "format": "agent-descriptor-v1",
+  "agent_version": "0.1.0",
+  "does": "Reads the next tides for a harbor and hands them back.",
+  "offerings": [
+    {
+      "id": "write-the-digest",
+      "name": "Write the digest",
+      "does": "Reads the tide table for a harbor and writes the next tides.",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "digest",
+          "kind": "text/markdown",
+          "when": "per_task",
+          "about": "What the job hands back, in the shape the spec's schema gives it."
+        }
+      ],
+      "how": {
+        "control": "script",
+        "intelligence": "called",
+        "cost": "metered",
+        "contract": "full"
+      }
+    }
+  ],
+  "refusals": "Reading a harbor that is not four capital letters, because the tide service answers nothing useful for it.\nWriting tides the service did not give, because an invented tide could put a boat on the rocks.\nKeeping any harbor a person asked about after the job, because nobody asked for a history.\nCalling any service other than the tide service, because nothing else was granted to it.",
+  "records": [
+    {
+      "name": "the signed job manifest of each delivery",
+      "when": "per_task"
+    }
+  ],
+  "systems": [
+    {
+      "name": "hacker-news",
+      "access": "read",
+      "needs": "reads the tide table at hacker-news.firebaseio.com"
+    },
+    {
+      "name": "text-reasoning",
+      "access": "trigger",
+      "needs": "reads the tide table"
+    }
+  ],
+  "run_config": {
+    "settings": [
+      {
+        "name": "stories_to_read",
+        "kind": "preference",
+        "default": 30,
+        "label": "Stories to read",
+        "about": "How many top stories to read from Hacker News.",
+        "min": 10,
+        "max": 100,
+        "step": 1,
+        "job_may_set": true
+      },
+      {
+        "name": "digest_size",
+        "kind": "preference",
+        "default": 5,
+        "label": "Digest size",
+        "about": "How many stories to put in the digest.",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "job_may_set": true
+      }
+    ]
+  }
+}
