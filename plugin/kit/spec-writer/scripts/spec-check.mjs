@@ -187,6 +187,27 @@ export function personProblems(spec, person = {}, corpus = null) {
   return out;
 }
 
+const EMPTY_WORDS = /\b(no|none|nothing|empty|zero)\b/i;
+
+/** What Requirements is done with (stages.json 1.7.0): every requirement is
+ *  checked by a scenario, and what the agent refuses, what it does when it
+ *  finds nothing to work on, and what it does when a system it reaches fails
+ *  are each stated. The ADLC plugin's Requirements check runs this same rule,
+ *  so a spec this agent calls ready is never held in the build folder. */
+export function coverageProblems(spec) {
+  const out = [];
+  // The features' requirements: a constraint has no scenario of its own.
+  const reqs = list(spec?.features).flatMap((f) => list(f?.requirements));
+  const checked = new Set(list(spec?.features).flatMap((f) => list(f?.acceptance).flatMap((a) => list(a?.checks).map(trim))));
+  for (const r of reqs) if (trim(r?.id) && !checked.has(trim(r.id))) out.push(`requirement ${trim(r.id)} is checked by no scenario; every requirement has a scenario a test can be written from`);
+  if (!reqs.some((r) => trim(r?.kind) === "refusal")) out.push("no requirement is a refusal; say what the agent refuses (kind refusal), each from the person's words");
+  if (!reqs.some((r) => trim(r?.kind) !== "refusal" && EMPTY_WORDS.test(String(r?.shall ?? ""))))
+    out.push("the empty case is not stated; say what the agent does when it is given nothing to work on or finds nothing (a requirement whose shall says so), and ask the person where their words do not say");
+  if (!reqs.some((r) => trim(r?.kind) === "error"))
+    out.push("the failure case is not stated; say what the agent does when a system it reaches fails or answers wrongly (kind error), and ask the person where their words do not say");
+  return out;
+}
+
 /** Every problem with a spec, as sentences a model can act on. */
 export function specProblems(spec, { record = null, corpus = null, person = {}, targets = new Set() } = {}) {
   if (!isObj(spec)) return ["the spec is not an object"];
@@ -194,6 +215,7 @@ export function specProblems(spec, { record = null, corpus = null, person = {}, 
     ...validateSpec(spec),
     ...idProblems(spec),
     ...featureProblems(spec),
+    ...coverageProblems(spec),
     ...recordProblems(spec, record, { targets }),
     ...inventedValues(spec, corpus).map((x) => `requirement ${x.id} fixes ${JSON.stringify(x.value)}, which nothing given states; a value nobody gave is asked in open, never fixed`),
     ...personProblems(spec, person, corpus),

@@ -38,8 +38,13 @@ const SPEC = () => ({
   source: { kind: "account" },
   features: [{
     id: "F1", name: "Write the digest", does: "Writes a short digest of the top stories about one topic.",
-    requirements: [{ id: "F1.R1", shall: "The agent shall write one sentence for each story in the digest.", kind: "behavior", priority: "must", source: { said: "one sentence on why it matters" }, verify: "test" }],
-    acceptance: [{ id: "F1.A1", gherkin: "Scenario: a digest\n  Given the top stories about databases\n  When the digest is written\n  Then it has one sentence per story", checks: ["F1.R1"] }],
+    requirements: [
+      { id: "F1.R1", shall: "The agent shall write one sentence for each story in the digest.", kind: "behavior", priority: "must", source: { said: "one sentence on why it matters" }, verify: "test" },
+      { id: "F1.R2", shall: "The agent shall refuse writing about a story it did not read.", kind: "refusal", priority: "must", source: { said: "only stories it read" }, verify: "test" },
+      { id: "F1.R3", shall: "The agent shall say that no story is about the topic when none is, and list nothing.", kind: "behavior", priority: "must", source: { said: "about a topic" }, verify: "test" },
+      { id: "F1.R4", shall: "The agent shall stop and say that Hacker News could not be read when it fails.", kind: "error", priority: "must", source: { said: "reads the top stories" }, verify: "test" },
+    ],
+    acceptance: [{ id: "F1.A1", gherkin: "Scenario: a digest\n  Given the top stories about databases\n  When the digest is written\n  Then it has one sentence per story", checks: ["F1.R1", "F1.R2", "F1.R3", "F1.R4"] }],
   }],
   constraints: [],
   systems: [],

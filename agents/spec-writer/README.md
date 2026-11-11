@@ -106,6 +106,14 @@ binding's address as its default. And the record's `cost_limit` is the
 model system's ceiling in Common Agent's shape (Section 12.4, item 4), read
 by `ceilingOf` in `scripts/structure.mjs`.
 
+From 0.12.0 a spec is ready only when every requirement is checked by a
+scenario and what the agent refuses, what it does when it finds nothing to work
+on, and what it does when a system it reaches fails are each stated
+(`coverageProblems` in `scripts/spec-check.mjs`, stages.json 1.7.0). The ADLC
+plugin's Requirements check runs this same rule, so a spec this agent calls
+ready is never held in the build folder. A revision may add what is missing to
+the features even when the person's words name none of them.
+
 From 0.11.0 a system in the spec says what the scripts need to reach it
 (spec-v1 1.3.0, Common Agent Section 12.4, item 3): its `credential`, by name
 and the environment variable it is read from, or `"none"`, and its

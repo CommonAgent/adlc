@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.11.0",
+  "agent_version": "0.12.0",
   "name": "Spec writer",
   "summary": "Turns what you want an agent to do into its spec and then the agent's own files a builder takes, or your work into a process document, and asks what it could not settle.",
   "will_not": [

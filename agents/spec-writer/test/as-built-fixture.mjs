@@ -19,11 +19,18 @@ export const askedWith = (said, extra = []) => ({
 /** A fill that writes a scenario for every feature, from its requirements. */
 export function fillFor(seed, { skip = [] } = {}) {
   const features = {};
+  let emptyStated = false;
   for (const f of seed.features) {
     if (skip.includes(f.id)) continue;
+    // The first feature also states the empty case (Requirements holds every
+    // spec to one, stages.json 1.7.0), added as the model would add it.
+    const add = emptyStated ? [] : [{ shall: "The agent shall say that no tide was found when the table has none for the harbor.", kind: "behavior" }];
+    emptyStated = true;
+    const ids = [...f.requirements.map((r) => r.id), ...add.map((_, i) => `${f.id}.R${f.requirements.length + 1 + i}`)];
     features[f.id] = {
       shall: Object.fromEntries(f.requirements.map((r) => [r.id, r.shall.replace("The agent shall", "The agent shall always")])),
-      acceptance: [{ gherkin: `Scenario: ${f.name}\n  Given the agent is asked\n  When it does ${f.name}\n  Then it does what ${f.id} requires`, checks: f.requirements.map((r) => r.id) }],
+      ...(add.length ? { add } : {}),
+      acceptance: [{ gherkin: `Scenario: ${f.name}\n  Given the agent is asked\n  When it does ${f.name}\n  Then it does what ${f.id} requires`, checks: ids }],
     };
   }
   return { purpose: "Reads the next tides for a harbor, for a sailor planning a day.", users: [{ who: "a sailor", wants: "the next tides" }], features, notes: "wrote the scenarios" };

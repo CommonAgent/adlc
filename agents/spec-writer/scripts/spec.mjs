@@ -44,7 +44,7 @@ import { fileURLToPath } from "node:url";
 import { jsonIn } from "./json-in.mjs";
 import { SPEC_FORMAT, loadSpecSchema, specMarkdown, validateSpec } from "./spec-v1.mjs";
 import { STAND_IN_NAME, personSettled, recordOf, seedSpec } from "./seed.mjs";
-import { corpusOf, fitSpec, specProblems } from "./spec-check.mjs";
+import { corpusOf, coverageProblems, fitSpec, specProblems } from "./spec-check.mjs";
 import { applyEdits, keyedEdits, namedTargets, personWords, unchangedProblems } from "./revise.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -255,6 +255,8 @@ export function mergeFill(seed, fill) {
     const shall = isObj(got.shall) ? got.shall : {};
     for (const r of f.requirements) if (/\bshall\b/.test(String(shall[r.id] ?? ""))) r.shall = trim(shall[r.id]);
     for (const x of list(got.add)) {
+      // An answer given again on the second go adds what it added once.
+      if (f.requirements.some((r) => r.shall === trim(x?.shall))) continue;
       const r = requirementFrom(x, `${f.id}.R${f.requirements.length + 1}`, { behavior: trim(f.as_built) || undefined, said: "drafted from the record's words for this behavior" });
       if (r) f.requirements.push(r);
     }
@@ -349,6 +351,13 @@ export async function writeTheSpec({ asked = null, answers = null, call, referen
     // (the gathering step keeps their whole message as "said" as well).
     const words = personWords([asked?.said, ...Object.entries(isObj(answers) ? answers : {}).filter(([k, v]) => k !== "said" && typeof v === "string").map(([k, v]) => `${k}: ${v}`)].filter(Boolean).join("\n"));
     const targets = namedTargets(words, earlier);
+    // A spec Requirements still holds for what it leaves unsaid (the empty
+    // case, the failure case, a requirement no scenario checks) is revised in
+    // its features from the person's words, even when they name none of them:
+    // "add the empty case" names nothing, and is exactly what is missing.
+    const missing = coverageProblems(earlier);
+    const forCoverage = missing.length > 0 && list(earlier.features).some((f) => trim(f?.id) && !targets.has(trim(f.id)));
+    if (forCoverage) for (const f of list(earlier.features)) if (trim(f?.id)) targets.add(trim(f.id));
     const keyed = keyedEdits(earlier, words);
     const settled = personSettled([words]);
     const person = {
@@ -385,6 +394,7 @@ export async function writeTheSpec({ asked = null, answers = null, call, referen
     const named = [...targets];
     const notes = [
       named.length ? "" : "Your words name nothing in the spec, so it stays as it was; they go to the agent's own files.",
+      forCoverage ? `The spec still left something unsaid (${missing.map((m) => m.split(";")[0]).join("; ")}), so its features were revised from them.` : "",
       keyed.applied.length ? `Code ${keyed.applied.join(", ")} from your words.` : "",
       out.notes,
       ...(out.dropped ?? []).map((d) => `An edit was not applied, because ${d.why}.`),
