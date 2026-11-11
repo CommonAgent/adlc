@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/CommonAgent/adlc/main/standards/spec.schema.json",
   "title": "The spec (spec-v1)",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "What the Requirements stage hands back (stages.json 1.6.0): the analysis of a product's functional requirements and capabilities. It says what the product must do and how anyone can tell that it does, in a form a test writer can write tests from without guessing. It is not the agent's descriptor or any other file a package is built from: those are made at Design, from this spec. Three existing standards are used as they are. Each requirement carries the attributes ISO/IEC/IEEE 29148:2018 (section 5.2) names for a requirement: an identifier, a statement written with shall, a rationale, a priority, its source for traceability, and its verification method, one of that standard's four (inspection, analysis, demonstration, test). Each acceptance criterion is a Gherkin scenario (the Cucumber Gherkin reference), kept as Gherkin text. Each input, output and interface shape is a JSON Schema (2020-12). Where the spec differs from those standards it says so here: requirements are grouped under features (29148 does not group them), the requirement's kind is a list of our own, and exact holds the words and patterns a requirement fixes so that a check can find them byte for byte. Every id is stable across versions of the spec, so tests, findings and history can name it. Version 1.1.0 (additive) adds two kinds of interface, constant (a value a module exports, kept with its value) and declaration (a name or value the agent declares to the platform, such as an offering id, a step id, an output's name, a label or a setting, kept with its value and where it is declared), the flags a command requires, and the allowed values of a field. Version 1.2.0 (additive) gives each input and output of a feature (Data) whether it is required and who gives it, so an offering's pieces are carried whole from what the person said to the Design.",
   "type": "object",
   "required": [
@@ -107,7 +107,7 @@
     },
     "systems": {
       "type": "array",
-      "description": "Every outside system the product reaches or names: what it does with it, the address when one is fixed, and why. An address the product only writes down and never calls is listed with reach none.",
+      "description": "Every outside system the product reaches or names: what it does with it, the address when one is fixed, and why. An address the product only writes down and never calls is listed with reach none. Name a system in plain system words, lowercase with hyphens, by what it is and not by its product (code-host, not GitHub; the product goes in why), as the architecture record names it. From 1.3.0 a system says what the scripts need to reach it (Common Agent Section 12.4, item 3): its credential, and the non-secret values the host must supply, such as its address, by the environment variable the scripts read each from. A model is not a system of the spec: the architecture record names it by capability.",
       "items": {
         "type": "object",
         "required": [
@@ -132,6 +132,56 @@
           },
           "why": {
             "type": "string"
+          },
+          "credential": {
+            "description": "What the scripts need to authenticate to the system: the credential's name and the environment variable they read it from, never its value. \"none\" says it takes none, as a keyless public service. Absent: not said. Added in 1.3.0.",
+            "oneOf": [
+              {
+                "const": "none"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "name",
+                  "env"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The credential's name, which the host resolves."
+                  },
+                  "env": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*$",
+                    "description": "The environment variable the scripts read it from."
+                  }
+                }
+              }
+            ]
+          },
+          "settings": {
+            "type": "array",
+            "description": "The non-secret values the host must supply for the scripts to reach the system, such as its address, each by the environment variable the scripts read it from and its purpose. A value is never given here: the install supplies it (Common Agent Section 12.4, item 3; Section 12.6, rule 3). Added in 1.3.0.",
+            "items": {
+              "type": "object",
+              "required": [
+                "env",
+                "purpose"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "env": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]*$"
+                },
+                "purpose": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
           }
         }
       }

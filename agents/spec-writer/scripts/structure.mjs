@@ -324,6 +324,17 @@ function systemsOf(spec, architecture = null) {
     const e = { name, kind: "service", access: pub ? pub.b.access : { read: "read", write: "write", "read-write": "read-write" }[trim(s.reach)] ?? "read", needs: "", from: s.name };
     const address = pub ? trim(pub.b.address) : trim(s.address);
     if (address) e.settings = [addressSetting(name, trim(s.name), address)];
+    // What the scripts need to reach it, as the spec says it (spec-v1 1.3.0,
+    // Common Agent Section 12.4, item 3): the credential by name and the
+    // variable it is read from, and each value the host supplies by its
+    // variable and purpose, never a value. A keyless public service says
+    // "none", and carries no credential.
+    if (isObj(s.credential) && trim(s.credential.name) && trim(s.credential.env)) { e.credential = trim(s.credential.name); e.env = trim(s.credential.env); }
+    for (const st of list(s.settings)) {
+      if (!isObj(st) || !trim(st.env)) continue;
+      e.settings = e.settings ?? [];
+      if (!e.settings.some((x) => x.env === trim(st.env))) e.settings.push({ env: trim(st.env), purpose: trim(st.purpose) });
+    }
     out.push(e);
   }
   // A system the record names and the spec does not list is declared all the
