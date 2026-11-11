@@ -1,0 +1,140 @@
+{
+  "title": "Headless ADLC build",
+  "environments": [
+    "dev",
+    "test",
+    "production"
+  ],
+  "systems": [],
+  "kind": {
+    "kind": "plugin-on-harness",
+    "why": "One job a harness runs, whose script starts or resumes the coding harness on a build folder and reads the folder's own check."
+  },
+  "dependencies": [],
+  "limits": {
+    "cost": null,
+    "speed": {
+      "limit": "One harness run per message, up to the harness's own limit",
+      "why": "Each message moves the build to its next person gate or to the end."
+    },
+    "data": {
+      "limit": "Only the build folders it keeps, under its work folder",
+      "why": "It writes nothing the plugin does not."
+    },
+    "trust": {
+      "limit": "The person's approval passes through only on their own word",
+      "why": "The person's approval is theirs."
+    }
+  },
+  "drivers": [
+    {
+      "key": "one-author",
+      "quality": "integrity",
+      "says": "The harness and the plugin are the only authors of a build's files.",
+      "from": "It is a harness, not a second author: it writes nothing the plugin does not."
+    }
+  ],
+  "egress": [],
+  "formats": [
+    {
+      "piece": "request",
+      "direction": "in",
+      "kind": "text/plain",
+      "convention": "",
+      "given_by": "person",
+      "why": "The person's words."
+    },
+    {
+      "piece": "reply",
+      "direction": "out",
+      "kind": "text/markdown",
+      "convention": "A short header with `build` and `stage`, then what the harness said.",
+      "given_by": "agent",
+      "why": "A person reads it."
+    }
+  ],
+  "settings": [],
+  "skills": [
+    {
+      "name": "build-an-agent",
+      "responsibility": "Takes the person's words and moves one build to its next person gate or to the end.",
+      "script": "Starts or resumes the harness on a build folder, passes the person's approval through only on their word, and reads the folder's check."
+    }
+  ],
+  "parts": [
+    {
+      "id": "builds",
+      "name": "build keeper",
+      "within": "build-an-agent",
+      "responsibility": "Keeps each build's folder and harness session under its id."
+    },
+    {
+      "id": "harness-runner",
+      "name": "harness runner",
+      "within": "build-an-agent",
+      "responsibility": "Runs the coding harness headless with the plugin and reads its answer."
+    },
+    {
+      "id": "gate-reader",
+      "name": "gate reader",
+      "within": "build-an-agent",
+      "responsibility": "Reads the build folder's own check for the stage it is at."
+    }
+  ],
+  "flow": [
+    {
+      "from": "caller",
+      "to": "harness",
+      "data": "the person's words",
+      "says": "The person sends a request, or an answer naming a build."
+    },
+    {
+      "from": "harness",
+      "to": "build-an-agent",
+      "data": "the person's words",
+      "says": "The harness runs the skill with the message."
+    },
+    {
+      "from": "build-an-agent",
+      "to": "caller",
+      "data": "the reply",
+      "says": "The skill answers with where the build stands or the person's question."
+    }
+  ],
+  "decisions": [
+    {
+      "decided": "Drive the coding harness and never write a build's files",
+      "context": "One builder writes an agent through the plugin; a second author here would be the separate-author line the plan retires.",
+      "drivers": [
+        "one-author"
+      ],
+      "why": "The plugin's check holds what the harness writes; anything this agent wrote would be held by nothing.",
+      "alternatives": [
+        {
+          "option": "Write the spec and the files from the request itself",
+          "why_not": "It would be a second author outside the check."
+        }
+      ],
+      "consequences": [
+        "Every file in a build comes from the harness through the plugin."
+      ]
+    },
+    {
+      "decided": "Pass the person's approval through only when their message says approve for the build",
+      "context": "The plugin keeps approval as the person's command, which the harness may not run.",
+      "drivers": [
+        "trust"
+      ],
+      "why": "With no person at the keyboard, the person's own word in their message is the approval.",
+      "alternatives": [
+        {
+          "option": "Let the harness approve when the check passes",
+          "why_not": "The approval would not be the person's."
+        }
+      ],
+      "consequences": [
+        "A build waits at Requirements until the person says approve."
+      ]
+    }
+  ]
+}
