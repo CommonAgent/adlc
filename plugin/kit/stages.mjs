@@ -15,10 +15,12 @@
 // its check does, because the check is the gate and the builder cannot change it.
 //
 //   needs: node >= 22
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { join, relative, sep } from "node:path";
-import { LOCK_FILE, digestOf } from "./code-writer/scripts/workspace.mjs";
+import { LOCK_FILE, digestOf, scriptsOf as codeScriptsOf } from "./code-writer/scripts/workspace.mjs";
+import { specOfFolder } from "./code-writer/scripts/agent-folder.mjs";
 import { corpusOf, specProblems } from "./spec-writer/scripts/spec-check.mjs";
 import { checkDraft } from "./spec-writer/scripts/check-spec.mjs";
 import { addressProblems } from "./spec-writer/scripts/design.mjs";
@@ -26,7 +28,7 @@ import { declarationProblems } from "./spec-writer/scripts/declared.mjs";
 import { givenOfSpec } from "./spec-writer/scripts/given.mjs";
 import { loadSchemas } from "./spec-writer/scripts/can-use.mjs";
 import { filesFrom, recordFrom, standardTestsOf } from "./generate.mjs";
-import { declarationRun, placeSuite, runSuite, standInPackage, suiteFiles, supportFiles } from "./test-writer/scripts/check-suite.mjs";
+import { RUN_SECONDS, declarationRun, placeSuite, runSuite, standInPackage, suiteFiles, supportFiles } from "./test-writer/scripts/check-suite.mjs";
 import { bracketIdsOf, scenariosOf, specFindings } from "./test-writer/scripts/spec-rules.mjs";
 import { testNamesIn } from "./test-writer/scripts/suite-rules.mjs";
 import { loadSpec } from "./test-writer/scripts/agent-folder.mjs";
@@ -277,10 +279,71 @@ export function testProblems(dir, _lock, { spawn } = {}) {
   return out;
 }
 
+// ---------- Code ----------
+
+/** The Code check: nothing pinned changed (held before any stage's check),
+ *  the whole suite passes over the real scripts, each script the agent's
+ *  files name, blanked in turn, is noticed by the suite, and the packer
+ *  accepts the folder with its scripts. The code writer's own check is not
+ *  imported here: it runs as a command when the command run is named
+ *  check.mjs, as this one is. */
+export function codeProblems(dir, _lock, { env = process.env, packer = pack, spawn } = {}) {
+  const out = [];
+  const scripts = codeScriptsOf(specOfFolder(dir));
+  for (const s of scripts) if (!existsSync(join(dir, s)) || !trim(readFileSync(join(dir, s), "utf8"))) out.push(`${s} is not written; the agent's files name it, and the code is yours to write`);
+  if (out.length) return out;
+  const paths = suiteFiles(dir).map((f) => f.path);
+  const run = runTests(dir, paths, spawn ? { spawn } : {});
+  if (run.timed_out) return ["the suite did not finish in time over the scripts; a script waits on something that never comes"];
+  if (run.fails) {
+    const failing = run.failing.filter((n) => !/^test[\\/]/.test(n) || run.failing.length === 1).slice(0, 20);
+    return [`the suite fails over the scripts: ${run.fail} of ${run.tests}. The tests are pinned, so the scripts change, never the tests${failing.length ? `:\n${failing.map((n) => `      not ok: ${n}`).join("\n")}` : ""}`];
+  }
+  for (const b of blankEach(dir, scripts, paths, spawn)) {
+    if (!b.noticed) out.push(`${b.script}, blanked, is not noticed by the suite: nothing tests it. The tests are pinned, so ask the person to send the build back to Test (\`node .adlc/approve.mjs --send-back test\`)`);
+  }
+  if (out.length) return out;
+  const packed = packer(dir, { env });
+  if (!packed.ok) out.push(`the packer (${PACKER.package} ${PACKER.version}, Common Agent ${PACKER.common_agent}) refuses the folder with its scripts: ${packed.refused}`);
+  return out;
+}
+
+/** The suite run as the test writer runs it (node --test, TAP, no trace of a
+ *  parent runner), with every failing test's name kept, not only the tail. */
+export function runTests(dir, paths, { spawn = spawnSync } = {}) {
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith("NODE_TEST_")) delete env[k];
+  const r = spawn("node", ["--test", "--test-reporter=tap", ...paths], { cwd: dir, env, encoding: "utf8", timeout: RUN_SECONDS * 1000 });
+  const out = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
+  const count = (k) => Number(new RegExp(`^# ${k} (\\d+)$`, "m").exec(out)?.[1] ?? 0);
+  const tests = count("tests"); const fail = count("fail");
+  const status = typeof r.status === "number" ? r.status : 1;
+  return {
+    tests, pass: count("pass"), fail, timed_out: !!r.error && /ETIMEDOUT|timed out/i.test(String(r.error?.code ?? r.error?.message ?? "")),
+    fails: status !== 0 || fail > 0 || tests === 0,
+    // A file that did not load is a "not ok" at the top level, named by its path.
+    failing: [...out.matchAll(/^\s*not ok \d+ - (.+)$/gm)].map((m) => trim(m[1])).filter((n, i, a) => a.indexOf(n) === i),
+  };
+}
+
+/** Each script blanked in turn, in a copy of the folder: does the suite fail? */
+function blankEach(dir, scripts, paths, spawn) {
+  const scratch = mkdtempSync(join(tmpdir(), "adlc-blank-"));
+  try {
+    return scripts.map((s, i) => {
+      const at = join(scratch, `without-${i}`);
+      cpSync(dir, at, { recursive: true, filter: (src) => !/(?:^|[\\/])(?:\.git|records|node_modules)(?:[\\/]|$)/.test(relative(dir, src)) });
+      writeFileSync(join(at, s), "");
+      return { script: s, noticed: runTests(at, paths, spawn ? { spawn } : {}).fails };
+    });
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+}
+
 /** Each stage's check, by name. A stage without one here is not built yet. */
 export const CHECKS = {
   requirements: requirementsProblems,
   architecture: architectureProblems,
   files: filesProblems,
   test: testProblems,
+  code: codeProblems,
 };

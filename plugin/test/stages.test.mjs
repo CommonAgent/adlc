@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkFolder } from "../kit/check.mjs";
 import { approve, sendBackTo } from "../kit/approve.mjs";
-import { architectureProblems, coverageProblems, filesProblems, lockOf, ownerOf, stageOf, testProblems } from "../kit/stages.mjs";
+import { architectureProblems, codeProblems, coverageProblems, filesProblems, lockOf, ownerOf, stageOf, testProblems } from "../kit/stages.mjs";
 import { filesFrom, recordFrom, standardTestsOf } from "../kit/generate.mjs";
 
 const AT = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "hn-digest");
@@ -210,6 +210,52 @@ test("a suite that passes against empty stand-ins asserts nothing, and is held",
     writeFileSync(join(dir, "test", "f1-topic-digest.test.mjs"), `import { test } from "node:test";\n${empty}\n`);
     const p = testProblems(dir);
     assert.ok(p.some((x) => /^against empty stand-ins for the 1 script the suite passes/.test(x)), p.join("\n"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+const SCRIPT = readFileSync(join(AT, "code", "topic-digest.mjs"), "utf8");
+const accepts = () => ({ ok: true, ran: true, refused: null, warnings: [] });
+
+/** A folder with the suite written, ready for the code. */
+async function codeFolder() {
+  const dir = await suiteFolder();
+  writeFileSync(join(dir, "test", "f1-topic-digest.test.mjs"), SUITE);
+  mkdirSync(join(dir, "scripts"), { recursive: true });
+  return dir;
+}
+
+test("Code passes when the suite passes, every script is noticed blanked, and the packer accepts", async () => {
+  const dir = await codeFolder();
+  try {
+    writeFileSync(join(dir, "scripts", "topic-digest.mjs"), SCRIPT);
+    assert.deepEqual(codeProblems(dir, null, { packer: accepts }), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a script not written, and a suite that fails, are named, with each failing test", async () => {
+  const dir = await codeFolder();
+  try {
+    assert.deepEqual(codeProblems(dir, null, { packer: accepts }), ["scripts/topic-digest.mjs is not written; the agent's files name it, and the code is yours to write"]);
+    writeFileSync(join(dir, "scripts", "topic-digest.mjs"), SCRIPT.replace("could not be read", "was unreachable"));
+    const [p] = codeProblems(dir, null, { packer: accepts });
+    assert.match(p, /^the suite fails over the scripts: 1 of \d+\./);
+    assert.match(p, /not ok: \[F1\.A4\] Hacker News cannot be read/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a script the suite does not notice blanked sends the build back to Test, and the packer's refusal is quoted", async () => {
+  const dir = await codeFolder();
+  try {
+    writeFileSync(join(dir, "scripts", "topic-digest.mjs"), SCRIPT);
+    // A suite that only checks the command's reply would not notice runJob go.
+    const fake = (calls) => (cmd, args) => { calls.push(args.join(" ")); return { status: 0, stdout: "# tests 3\n# pass 3\n# fail 0\n", stderr: "" }; };
+    const calls = [];
+    const p = codeProblems(dir, null, { packer: accepts, spawn: fake(calls) });
+    assert.match(p[0], /^scripts\/topic-digest\.mjs, blanked, is not noticed by the suite/);
+    assert.match(p[0], /--send-back test/);
+    assert.equal(calls.length, 2);
+    const refuses = () => ({ ok: false, ran: true, refused: "skills/topic-digest: the script is missing", warnings: [] });
+    assert.match(codeProblems(dir, null, { packer: refuses })[0], /refuses the folder with its scripts: skills\/topic-digest: the script is missing$/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
