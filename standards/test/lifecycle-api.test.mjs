@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments, stageCadences, checkFeatures, checkFeature, checkFeatureDecision, featuresOfTest, FEATURE_COLUMNS, checkFeatureApproveAll, AS_BUILT_PARTS } from "../lifecycle-api-check.mjs";
+import { SCHEMA, STATES, validate, stageIds, stageRoles, stageFacts, drawnState, checkMe, checkBuildList, checkBuild, checkTries, checkError, checkRoles, checkStages, run, checkArtifacts, checkProducts, checkProduct, checkStageWorkspace, checkMessages, checkMessageReply, checkBossMessages, checkBossReply, checkBossCommitments, stageCadences, checkFeatures, checkFeature, checkFeatureDecision, featuresOfTest, FEATURE_COLUMNS, checkFeatureApproveAll, AS_BUILT_PARTS, checkDocuments, stageAssets } from "../lifecycle-api-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECK = join(HERE, "..", "lifecycle-api-check.mjs");
@@ -61,8 +61,8 @@ const list = () => ({ builds: [{ id: "b1", name: "word-tally", does: "Counts the
 const tries = () => ({ tries: [{ id: "t1", say: "one two", against: "pull_request", answer: "2", ms: 35000, at: AT, kept: false, sent_back: false }] });
 const me = () => ({ account: { email: "you@example.com", name: "You" }, service: { name: "Example" } });
 
-test("the schema is version 0.4.10 on /v1/lifecycle, with a definition for every request and answer", () => {
-  assert.equal(SCHEMA.version, "0.4.10");
+test("the schema is version 0.4.11 on /v1/lifecycle, with a definition for every request and answer", () => {
+  assert.equal(SCHEMA.version, "0.4.11");
   assert.equal(SCHEMA.basePath, "/v1/lifecycle");
   assert.equal(SCHEMA.$schema, "https://json-schema.org/draft/2020-12/schema");
   const refs = [SCHEMA.errors, ...SCHEMA.operations.flatMap((o) => [o.request, o.answer])].filter((r) => typeof r === "string" && r.startsWith("#"));
@@ -1434,4 +1434,50 @@ test("0.4.10: a feature run is named once, holds each stage once, names itself o
   const notOffered = featureRuns();
   notOffered.build.actions[0] = { ...notOffered.build.actions[0], run: "F2" };
   assert.deepEqual(checkBuild(notOffered, IDS, "b1"), ['body.build.actions[0]: "accept" names the feature run F2, which does not offer it']);
+});
+
+// ---------- 0.4.11: a product's documents ----------
+
+/** A product's documents: the design made in 0.1.0 and carried, the spec remade in 0.2.0, nothing else made yet. */
+function documents() {
+  const assets = stageAssets();
+  const art = (id, stage, kind, name) => ({ id, stage, name, by: "spec writer", state: "made", kind, version: "v1", at: AT, summary: { words: `${name}, in words.` } });
+  const later = "2026-11-02T16:00:00Z";
+  return {
+    product: "word-tally",
+    documents: Object.entries(assets).map(([stage, name]) => {
+      const cadence = stageCadences()[stage] ?? "every_build";
+      if (stage === "architecture") return { stage, name, cadence, state: "made", current: { build: "b1", version: "0.1.0", artifact: art("a-design", stage, "architecture", name), carried: true }, history: [{ build: "b1", version: "0.1.0", artifact: "a-design", at: AT }] };
+      if (stage === "requirements") return { stage, name, cadence, state: "made", current: { build: "b2", version: "0.2.0", artifact: { ...art("a-spec-2", stage, "spec", name), at: later }, carried: false }, history: [{ build: "b2", version: "0.2.0", artifact: "a-spec-2", at: later }, { build: "b1", version: "0.1.0", artifact: "a-spec-1", at: AT }] };
+      if (stage === "publish") return { stage, name, cadence, state: "not_used", current: null, history: [], words: "The lifecycle leaves Publish out." };
+      return { stage, name, cadence, state: "not_made", current: null, history: [] };
+    }),
+  };
+}
+
+test("0.4.11: a product's documents list every stage that makes one, in order, each with the copy that stands and the versions that made one", () => {
+  const d = documents();
+  assert.deepEqual(validate("DocumentsAnswer", d), []);
+  assert.deepEqual(checkDocuments(d, "word-tally"), []);
+  // Every stage of stages.json that names an asset, once, in its order; Monitor names none and is not listed.
+  assert.deepEqual(d.documents.map((x) => x.stage), Object.keys(stageAssets()));
+  assert.ok(!d.documents.some((x) => x.stage === "monitor"));
+  assert.equal(d.documents.find((x) => x.stage === "architecture").name, "Architecture record");
+  assert.equal(d.documents.find((x) => x.stage === "requirements").name, "Spec");
+});
+
+test("0.4.11: the check holds a document to its stage's asset and cadence, a made one to a current copy at its stage heading its history, and the list to stages.json", () => {
+  const wrong = (f) => { const d = documents(); f(d); return checkDocuments(d, "word-tally"); };
+  assert.ok(wrong((d) => { d.product = "other"; }).includes('body.product: is "other", not the product asked for (word-tally)'));
+  assert.ok(wrong((d) => { d.documents.splice(d.documents.findIndex((x) => x.stage === "test"), 1); }).includes('body.documents: the stage "test" (Test suite) is missing'));
+  assert.ok(wrong((d) => { d.documents.push({ stage: "monitor", name: "Watch", cadence: "setup", state: "not_made", current: null, history: [] }); }).includes('body.documents: "monitor" is not a stage that makes a document in stages.json'));
+  assert.ok(wrong((d) => { d.documents.push({ ...d.documents[1] }); }).includes('body.documents: the stage "requirements" is listed more than once'));
+  assert.ok(wrong((d) => { d.documents.reverse(); }).includes("body.documents: not in stages.json's order"));
+  assert.ok(wrong((d) => { d.documents[1].name = "Statement"; }).includes('body.documents[1].name: is "Statement", and stages.json names the asset "Spec"'));
+  assert.ok(wrong((d) => { d.documents[2].cadence = "every_build"; }).includes('body.documents[2].cadence: is "every_build", and stages.json says setup'));
+  assert.ok(wrong((d) => { d.documents[2].current = null; }).includes("body.documents[2]: is made, so current says which copy stands"));
+  assert.ok(wrong((d) => { d.documents[2].current.artifact.stage = "test"; }).includes('body.documents[2].current.artifact: is made at "test", not at this document\'s stage'));
+  assert.ok(wrong((d) => { d.documents[1].history.reverse(); }).includes("body.documents[1].history: the newest entry is not the copy that stands"));
+  assert.ok(wrong((d) => { d.documents[2].history = []; }).includes("body.documents[2].history: a made document names the version that made it"));
+  assert.ok(wrong((d) => { Object.assign(d.documents.find((x) => x.stage === "test"), { current: documents().documents[2].current }); }).includes("body.documents[5]: is not_made, so it has no current copy"));
 });

@@ -10,7 +10,7 @@ version each Builder pins.
 | [audit-checklist.md](audit-checklist.md) | `https://schemas.agentmesh.ai/audit-checklist/v1` | the auditor, which runs it over an agent version; the deployment manager and the catalog, which read its verdict |
 | [stages.json](stages.json) | the lifecycle's stages, in order, in seven phases: Reverse engineering, numbered 0, and the 24 after it; each stage's cadence (every build, set up once, or when needed); the roles that hold them; the evidence formats an outside holder hands back in; and the starting points, each with the stage it enters at (`version` in the file; changes in [CHANGELOG.md](CHANGELOG.md)) | the site, whose stages page is checked against it (agenticdevelopment.ai `tools/check-stages.mjs`); the auditor, whose stage names must map to it (`test/stages.test.mjs`); the console |
 | [spec.schema.json](spec.schema.json) | the spec, spec-v1: what Requirements hands back, the analysis of a product's functional requirements and capabilities (features, requirements with ISO/IEC/IEEE 29148's attributes, acceptance criteria as Gherkin scenarios, interfaces as JSON Schema) | the spec writer, which writes it; the test writer, which writes a test per acceptance scenario; the code writer and the coding harness, which are given it; the console, which shows it |
-| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.10: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
+| [lifecycle-api.schema.json](lifecycle-api.schema.json) | the lifecycle API, version 0.4.11: every request and answer a service implementing the lifecycle gives at `/v1/lifecycle` | a client that shows a build stage by stage; a service author, with [lifecycle-api-check.mjs](lifecycle-api-check.mjs) (see [The lifecycle API](#the-lifecycle-api)) |
 | [runtime-verbs.md](runtime-verbs.md) | how a lifecycle service hands a finished product to the runtime it is given: install, and from lifecycle API 0.4.4 rollback, reconfigure and retire, as one command with a package and a run plan and the verb in the environment | a runtime's author; a service that runs Rollback, Reconfigure and Decommission |
 | [lifecycle-document.schema.json](lifecycle-document.schema.json) | a lifecycle document, version 0.1: one JSON file holding which stages an organization uses, who holds each role (and with what settings), and the stages it adds of its own, for the organization and each project; no service needed | a person or team defining its lifecycle as a file; the console (`npx adlc-console --lifecycle <path>`), which reads, checks and writes it |
 | [process-check.mjs](process-check.mjs) | the check of a process document against Agent Processes 0.9.0: its §17.1 conformance items and the four tests of §20.1 (see [The process check](#the-process-check)) | the spec writer, which runs it over every process document before handing it back; the test writer, which reads a document's phases, deviations and digest through it; review and conformance |
@@ -136,7 +136,7 @@ actions the person may take now, and a client draws one button for each
 action and nothing else, so every judgment stays with the service. The page
 that explains it is https://agenticdevelopment.ai/api.html.
 
-The schema is version 0.4.10, served at `/v1/lifecycle` on the service. It
+The schema is version 0.4.11, served at `/v1/lifecycle` on the service. It
 changes only by adding: a client ignores a field it does not know, and a
 service never removes a field or changes its type. Version 0.2 also added
 values to two lists, the holder's kinds and the stage's states, and a client
@@ -151,7 +151,7 @@ lists the features of a product made before them. Version 0.4.6 starts a build f
 existing code. Version 0.4.7 starts a build from the as-built record of code
 kept elsewhere, and adds the action back_to_requirements. Version 0.4.8 adds the spec.
 Version 0.4.9 adds the skills of a stage's holder. Version 0.4.10 makes each feature of a
-version in a run of its own. Its `operations` list names the
+version in a run of its own. Version 0.4.11 adds a product's documents. Its `operations` list names the
 definition each request and answer must match.
 
 **Lifecycle stages.** An organization chooses which of the stages its
@@ -218,6 +218,28 @@ board can show one card per run beside the build. `checkBuild` and
 that a run's actions name it and stop once it ended, and that an action or a
 timeline bar naming a run names one the build has, an action being on that
 run's own list too.
+
+**A product's documents.** From version 0.4.11, `GET /products/{name}/documents`
+answers the product's documents: one `Document` per stage of stages.json that
+names an asset (its `asset` field: Spec, Architecture record, Test suite, Code,
+Review findings, Security statement, the package, and on), in stages.json's
+order, and no other. Each carries the stage, the asset's `name` as stages.json
+gives it, the stage's `cadence`, and a `state`: `made` when a copy stands for
+the product now, `not_made` when the stage is in the lifecycle and no build
+has made one yet, `not_used` when the product's lifecycle leaves the stage
+out (`words` says so). A made document's `current` is the copy that stands:
+the `build` and `version` that made it and the `artifact` itself, as that
+build answers it, with `carried` true when a newer version exists and did not
+remake it, which is how a design made in 0.1.0 reads "unchanged since 0.1.0"
+in 0.3.0. `history` lists every version that made one, newest first. A build
+still answers its own artifacts; this is the product's view across versions,
+so a client can show the standing documents (a setup stage's, or the spec
+and the AgentDoc, remade each version but read as one document that evolves)
+without walking the builds. A change to a document goes through the stage's
+holder, as always: the stage's chat and the build's actions. `checkDocuments`
+holds the list to stages.json, each document to its stage's asset and
+cadence, and a made one to a current copy made at its stage that heads its
+history.
 
 **The holder's skills.** From version 0.4.9 a stage workspace's holder may
 list its `skills`, each with its `name`, its one-line `description` and its

@@ -689,6 +689,50 @@ export function sliceRules(s, at = "body.features") {
   return p;
 }
 
+/** Each stage's asset as stages.json names it, for the stages that name one, in stages.json's order: { id: name }. */
+export function stageAssets(path = join(HERE, "stages.json")) {
+  return Object.fromEntries(JSON.parse(readFileSync(path, "utf8")).stages.filter((s) => typeof s.asset === "string" && s.asset).map((s) => [s.id, s.asset]));
+}
+let assetsBeside = null;
+const ASSETS = () => (assetsBeside ??= stageAssets());
+
+/**
+ * GET /products/{name}/documents (added in 0.4.11): one document per stage
+ * that names an asset, in stages.json's order and no other; a made document
+ * has a current copy, made, at its own stage, whose version heads the
+ * history; any other has none; history is newest first.
+ */
+export function checkDocuments(body, name, assets = ASSETS(), cadences = CADENCES()) {
+  const p = validate("DocumentsAnswer", body);
+  if (!isObj(body)) return p;
+  if (name !== undefined && body.product !== name) p.push(`body.product: is ${JSON.stringify(body.product)}, not the product asked for (${name})`);
+  const docs = Array.isArray(body.documents) ? body.documents.filter(isObj) : [];
+  const want = Object.keys(assets);
+  const got = docs.map((d) => d.stage);
+  for (const id of want) if (!got.includes(id)) p.push(`body.documents: the stage "${id}" (${assets[id]}) is missing`);
+  for (const id of got) if (!want.includes(id)) p.push(`body.documents: "${id}" is not a stage that makes a document in stages.json`);
+  for (const id of new Set(got)) if (got.filter((x) => x === id).length > 1) p.push(`body.documents: the stage "${id}" is listed more than once`);
+  const order = got.filter((id) => want.includes(id));
+  if (order.join() !== want.filter((id) => order.includes(id)).join()) p.push("body.documents: not in stages.json's order");
+  docs.forEach((d, i) => {
+    const at = `body.documents[${i}]`;
+    if (assets[d.stage] && d.name !== assets[d.stage]) p.push(`${at}.name: is ${JSON.stringify(d.name)}, and stages.json names the asset "${assets[d.stage]}"`);
+    if (cadences[d.stage] && d.cadence !== cadences[d.stage]) p.push(`${at}.cadence: is ${JSON.stringify(d.cadence)}, and stages.json says ${cadences[d.stage]}`);
+    const cur = isObj(d.current) ? d.current : null;
+    if (d.state === "made" && !cur) p.push(`${at}: is made, so current says which copy stands`);
+    if (d.state !== "made" && cur) p.push(`${at}: is ${d.state}, so it has no current copy`);
+    if (cur && isObj(cur.artifact)) {
+      if (cur.artifact.stage !== d.stage) p.push(`${at}.current.artifact: is made at "${cur.artifact.stage}", not at this document's stage`);
+      if (cur.artifact.state !== "made") p.push(`${at}.current.artifact: the copy that stands is ${cur.artifact.state}, not made`);
+    }
+    const hist = Array.isArray(d.history) ? d.history.filter(isObj) : [];
+    if (cur && hist.length && (hist[0].build !== cur.build || hist[0].artifact !== cur.artifact?.id)) p.push(`${at}.history: the newest entry is not the copy that stands`);
+    if (cur && !hist.length) p.push(`${at}.history: a made document names the version that made it`);
+    hist.forEach((h, j) => { if (j > 0 && typeof h.at === "string" && typeof hist[j - 1].at === "string" && Date.parse(hist[j - 1].at) < Date.parse(h.at)) p.push(`${at}.history[${j}]: newest first, and this one is newer than the one above it`); });
+  });
+  return p;
+}
+
 /** GET /products/{name}/stages/{stage}/messages (added in 0.4): oldest first, each at the stage asked about. */
 export function checkMessages(body, stage) {
   const p = validate("MessagesAnswer", body);
