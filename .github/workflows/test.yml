@@ -51,6 +51,11 @@ jobs:
           node checks/addresses.mjs --base FETCH_HEAD
           node --test checks/test/*.test.mjs
 
+      - name: ADLC plugin (the kit is the agents' bytes, and its checks)
+        run: |
+          node plugin/sync.mjs --check
+          node --test plugin/test/*.test.mjs
+
       - name: Host model gateway
         run: node --test host/test/*.test.mjs
 
