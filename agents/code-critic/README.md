@@ -33,9 +33,11 @@ First, with a program and no model, the house architecture rules
   are written, written records are declared, credentials are bound, and
   each step's `how` is what its scripts do;
 - every environment variable a script reads is declared by the agent's own
-  files (a system's credential or setting, a run config setting, the spec
-  when one comes, or a SKILL.md command line) or placed by the host, so a
-  script never reads an address nothing places.
+  files (a system's credential or setting, the spec when one comes, or a
+  SKILL.md command line) or placed by the host, so a script never reads an
+  address nothing places. A run config setting read from the environment is
+  a finding too: a run setting arrives in the job's run-context.json, never
+  as a variable (Common Agent 0.41.0, Section 5.8).
 
 With a diff, an access a declaration adds is a finding too. A credential
 value carried in the package is a finding, and is left out of the records,
@@ -69,7 +71,7 @@ it needs no answer.
 ## Running it
 
 ```sh
-node --test test/*.test.mjs                                   # 102 tests
+node --test test/*.test.mjs                                   # 103 tests
 python3 ../package-maker/build.py . ./out                     # an Agent Package
 node scripts/job.mjs --job <job> --records <records> --work <work> \
   --text-file <message> --file <package.tgz>::application/gzip

@@ -101,8 +101,7 @@ The program finds every variable a script reads (`process.env.X`,
 taken apart from either, and Python's `os.environ` and `os.getenv`) that
 none of these declares: a system's `env` or `settings` in
 agent-runtime-requirements.json; the model system's settings when one is
-declared; a run config setting in agent-descriptor.json, by its name or in
-capitals; a spec.json handed over with the package; a `NAME=` on a command
+declared; a spec.json handed over with the package; a `NAME=` on a command
 line in a SKILL.md; a name a script of the package hands a program it
 starts; and what the host places: the job folder, message and reply files,
 the image's own facts, AGENT_DEPS, MESH_API_BASE, the job's mesh credential,
@@ -113,6 +112,13 @@ when that script is started, so the entry point of a script no run command
 and no SKILL.md starts (the shared caller's, say) is left out. A credential
 no system binds stays a `claims-match-code` finding and is not said twice.
 A name built at run time is not seen.
+
+A run config setting of agent-descriptor.json (by its name or in capitals)
+read from the environment is a finding of its own: a run setting arrives in
+the job's run-context.json, as the member `run_config`, never as a variable
+(Common Agent 0.41.0, Section 5.8), so a script that reads one from the
+environment never sees the value the job was started with. Read from
+run-context.json, it is no finding.
 
 ## A declaration is part of the change (`declaration-change`)
 

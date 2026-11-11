@@ -598,12 +598,22 @@ export function declaredSettings({ runtime = null, descriptor = null, spec = nul
   if (systems.some((s) => s?.kind === "model")) for (const n of MODEL_PLACED) out.add(n);
   for (const d of runtime?.directories ?? []) if (upperName(d?.name)) out.add(`AGENT_DIRECTORY_${upperName(d.name)}`);
   for (const b of runtime?.binaries ?? []) if (upperName(b?.name)) out.add(`BINARY_${upperName(b.name)}`);
+  for (const text of skills) for (const m of String(text ?? "").matchAll(/(?<![\w$])([A-Z][A-Z0-9_]*)=/g)) out.add(m[1]);
+  return out;
+}
+
+/** The run config settings the descriptor (or a spec) declares, by name and
+ *  in capitals. A run setting arrives in the job's run-context.json, as the
+ *  member run_config (Common Agent 0.41.0, Section 5.8), never as a variable:
+ *  a script that reads one from the environment reads what the host happens
+ *  to hold, not what the job was started with. */
+export function runSettingNames({ descriptor = null, spec = null } = {}) {
+  const out = new Set();
   for (const rc of [descriptor?.run_config, spec?.run_config]) {
     for (const st of Array.isArray(rc?.settings) ? rc.settings : []) {
       if (trim(st?.name)) { out.add(trim(st.name)); out.add(upperName(st.name)); }
     }
   }
-  for (const text of skills) for (const m of String(text ?? "").matchAll(/(?<![\w$])([A-Z][A-Z0-9_]*)=/g)) out.add(m[1]);
   return out;
 }
 
@@ -712,7 +722,8 @@ export function undeclaredSettingFindings(files, texts, { descriptor = null, run
   const run = entryScripts(files, texts, runtime, manifest);
   const said = (n) => (descriptor && CREDENTIAL_ENV.test(n) && !/^(MESH|AGENT)_/.test(n) && !PROVIDER_KEY_RE.test(n))
     || PROVIDER_KEY_RE.test(n) || OLD_MODEL_VARS_RE.test(n);
-  const where = ["a system's credential or setting in agent-runtime-requirements.json", "a run config setting in agent-descriptor.json"];
+  const runNames = runSettingNames({ descriptor, spec: spec?.doc ?? null });
+  const where = ["a system's credential or setting in agent-runtime-requirements.json"];
   if (spec) where.push(`anything in ${spec.path}`);
   where.push("a name the host places");
   const out = [];
@@ -722,6 +733,12 @@ export function undeclaredSettingFindings(files, texts, { descriptor = null, run
     for (const [n, line] of envReads(text, f.path)) {
       if (declared.has(n) || said(n)) continue;
       if (main && line >= main[0] && line <= main[1]) continue;
+      if (runNames.has(n)) {
+        out.push(finding("undeclared-setting", f.path, line,
+          `${f.path} reads ${n} from the environment, and ${n} is a run config setting: a run setting arrives in the job's run-context.json, as the member run_config, never as a variable (Common Agent 0.41.0, Section 5.8).`,
+          `The value the job was started with never reaches the script: it reads whatever the host's environment holds, or nothing, so a run config the caller or the owner chose changes nothing. Read it from run_config in the job's run-context.json.`));
+        continue;
+      }
       const address = /(_API|_URL|_URI|_ENDPOINT|_BASE|_HOST|_ADDRESS|_ORIGIN)$/.test(n);
       out.push(finding("undeclared-setting", f.path, line,
         `${f.path} reads ${n}, and nothing declares it: not ${where.slice(0, -1).join(", not ")}, and not ${where.at(-1)}.`,
