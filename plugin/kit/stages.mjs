@@ -92,12 +92,20 @@ export const writeLock = (dir, lock) => writeFileSync(join(dir, LOCK_FILE), JSON
 /** The first stage not passed: the one the folder is at. */
 export const stageOf = (lock) => STAGES.find((s) => !lock.gates?.[s]) ?? null;
 
+/** Whether a file is the one pinned: its bytes, or its bytes with git's
+ *  CRLF line ends on checkout turned back into LF. */
+export function sameAsPinned(bytes, want) {
+  if (digestOf(bytes) === want) return true;
+  const text = bytes.toString("utf8");
+  return text.includes("\r\n") && digestOf(Buffer.from(text.replace(/\r\n/g, "\n"), "utf8")) === want;
+}
+
 /** Every pinned file that changed or went, against the lock. */
 export function pinProblems(dir, lock) {
   const out = [];
   for (const [p, want] of Object.entries(lock.digests ?? {})) {
     if (!existsSync(join(dir, p))) out.push(`${p} is pinned and is gone; put it back, or ask the person to send the build back to the stage that wrote it`);
-    else if (digestOf(readFileSync(join(dir, p))) !== want) out.push(`${p} is pinned and changed; put it back, or ask the person to send the build back to the stage that wrote it`);
+    else if (!sameAsPinned(readFileSync(join(dir, p)), want)) out.push(`${p} is pinned and changed; put it back, or ask the person to send the build back to the stage that wrote it`);
   }
   return out;
 }

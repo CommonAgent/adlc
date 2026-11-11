@@ -259,6 +259,17 @@ test("a script the suite does not notice blanked sends the build back to Test, a
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("a pinned file git checked out with CRLF line ends is still the pinned file", async () => {
+  const dir = folder(complete());
+  try {
+    await approve(dir);
+    writeFileSync(join(dir, "spec.json"), readFileSync(join(dir, "spec.json"), "utf8").replace(/\n/g, "\r\n"));
+    assert.notEqual((await checkFolder(dir)).code, 3);
+    writeFileSync(join(dir, "spec.json"), readFileSync(join(dir, "spec.json"), "utf8").replace(/\r\n/g, "\n") + " ");
+    assert.equal((await checkFolder(dir)).code, 3);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("each pinned path belongs to the stage that wrote it", () => {
   assert.equal(ownerOf("spec.json"), "requirements");
   assert.equal(ownerOf("architecture-record.md"), "architecture");
