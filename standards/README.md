@@ -228,7 +228,8 @@ each with its `system`, `access` and `reason`; `spends`, each a
 has no reason; and `architecture_record`, `present` or `absent`, whether
 the review read one. The words fields (`reach`, `spend`, `never`) stay, so
 a client from before reads them as it did. A made `architecture` artifact's
-summary is an `ArchitectureSummary`, the record's seven parts
+summary may be an `ArchitectureSummary` (one in words alone still reads as
+words), the record's seven parts
 (architecture-standard.md section 1): `systems`, `bindings` per system per
 environment with `product` and `provided_by`, `dependencies`, `kind`,
 `limits` (cost, speed, data, trust), `decisions` each with its reason, and

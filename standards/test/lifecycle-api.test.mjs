@@ -1513,4 +1513,5 @@ test("0.4.12: an architecture record carries its systems, bindings per environme
   assert.deepEqual(checkArtifacts([archArtifact({ ...rec, bindings: { ...rec.bindings, mail: { production: { product: "the org's mail", provided_by: "customer" } } } })], IDS), ['body.artifacts[0].summary.bindings: "mail" is bound but is not one of the record\'s systems']);
   assert.deepEqual(checkArtifacts([archArtifact({ ...rec, decisions: [{ decided: "use the house model", why: "" }] })], IDS), ["body.artifacts[0].summary.decisions[0]: a decision without a reason is not delivered"]);
   assert.ok(checkArtifacts([archArtifact({ systems: ["files"] })], IDS).length > 0, "systems, kind and decisions are required");
+  assert.deepEqual(checkArtifacts([archArtifact({ words: "One step, a program. It reaches nothing." })], IDS), [], "a record in words alone, as before 0.4.12, still passes");
 });
