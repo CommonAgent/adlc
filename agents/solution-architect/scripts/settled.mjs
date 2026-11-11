@@ -136,7 +136,7 @@ export function applySettled(arch, questions = [], settled = null) {
     drop((q) => /^(?:system-|egress-|binding-)/.test(q.key) && !MODEL_SYSTEMS.some((m) => q.key === `system-${m}` || q.key.startsWith(`binding-${m}-`)));
     const would = [...gone.map((s) => `reaching ${s.name}`), ...dests.map((d) => `reaching ${d}`)];
     for (const w of would) differs.push(`${w}, which I would have asked about`);
-    a.decisions.push({
+    a.decisions.push({ kind: "ruling",
       decided: "The agent reaches nothing outside AgentMesh",
       why: because(reaches),
       weighed: would.length ? `${andList(would).replace(/^reaching/, "Reaching")}, which I would have asked about: the build's settled answer stands, so this is a note and not a question` : "",
@@ -151,7 +151,7 @@ export function applySettled(arch, questions = [], settled = null) {
     drop((q) => MODEL_SYSTEMS.some((m) => q.key === `system-${m}` || q.key.startsWith(`binding-${m}-`)));
     const would = gone.map((s) => `${s.name}${trim(s.capability) ? ` (for ${noStop(s.capability)})` : ""}`);
     for (const w of would) differs.push(`naming and binding ${w}, which I would have chosen for this job`);
-    a.decisions.push({
+    a.decisions.push({ kind: "ruling",
       decided: "Reach a model only through AgentMesh's model door, and name no model system",
       why: because(model),
       weighed: would.length ? `Naming and binding ${andList(would)}, which I would have chosen for this job: the build's settled answer stands, so this is a note and not a binding` : "",
@@ -162,9 +162,11 @@ export function applySettled(arch, questions = [], settled = null) {
 
   const cost = answerOf(settled, "limit-cost");
   if (cost && typeof cost.answer === "string") {
+    // The settled limit is the cost driver and the header's cost_limit, with
+    // where it came from. It is not a decision: a limit is what the
+    // decisions answer (the architecture standard, section 16).
     a.limits.cost = { limit: cost.answer, why: `Settled by ${by}, from ${cost.from}` };
     a.decisions = a.decisions.filter((d) => !/^Limit what the agent spends to /.test(trim(d?.decided)));
-    a.decisions.push({ decided: `Limit what the agent spends to ${noStop(cost.answer)}`, why: because(cost), follows: "The limit is held where it was settled, so the record asks no spending limit of the person" });
     drop((q) => q.key === "limit-cost");
     used.push("limit-cost");
   }
@@ -174,7 +176,7 @@ export function applySettled(arch, questions = [], settled = null) {
     const answered = open.filter((q) => !/^(?:limit-cost|egress-\d+|reason-\d+|binding-|system-|standing-assets)/.test(q.key) && ABOUT_ATTENDING.test(`${q.key} ${q.question}`));
     drop((q) => answered.includes(q));
     for (const q of answered) differs.push(`asking "${trim(q.question)}", which nobody attending answers`);
-    a.decisions.push({
+    a.decisions.push({ kind: "ruling",
       decided: "Nobody attends a job: the agent answers whoever asked, with no person reviewing in between",
       why: because(attended),
       weighed: answered.length ? `${andList(answered.map((q) => `Asking "${trim(q.question)}"`))}, which the build's settled answer answers` : "",

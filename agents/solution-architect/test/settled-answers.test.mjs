@@ -49,8 +49,9 @@ test("a Build an agent request: no question the build answers, no model system, 
   assert.equal(h.done, true, r.record);
   assert.deepEqual(h.systems, [], "the build settles the model door, so no model system is named or bound");
   assert.match(r.record, /^bindings: none$/m);
-  assert.match(r.record, /^- \*\*Cost\*\*: the account's daily model allowance on AgentMesh's model door, 0\.50 USD a day, which AgentMesh pays\. Settled by AgentMesh Build an agent, from the platform's spending rules\.$/m);
-  assert.match(r.record, /^### Decision \d+\. Limit what the agent spends to the account's daily model allowance/m);
+  assert.match(r.record, /^- \*\*Cost\*\* \(`cost`\): the account's daily model allowance on AgentMesh's model door, 0\.50 USD a day, which AgentMesh pays\. Settled by AgentMesh Build an agent, from the platform's spending rules\.(?: Cited by decision \d+\.)?$/m);
+  assert.doesNotMatch(r.record, /^### Decision \d+\. Limit what the agent spends/m, "the settled limit is the cost driver, never a decision");
+  assert.match(r.record, /^cost_limit: "the account's daily model allowance/m, "the Design still reads it from the header");
   assert.match(r.record, /^### Decision \d+\. Reach a model only through AgentMesh's model door, and name no model system$/m);
   assert.match(r.record, /^### Decision \d+\. The agent reaches nothing outside AgentMesh$/m);
   assert.match(r.record, /^\*\*plugin-on-harness\*\*: AgentMesh Build an agent settled it \(the build's settled defaults\)/m);
@@ -115,7 +116,7 @@ test("a revision with the settled answers attached again keeps them, and answers
   const answer = answerFile(ws, "hyphen", doc);
   const first = buildJob(ws, { name: "a", answers: [answer] });
   const revised = readJson(countWords);
-  revised.decisions.push({ decided: "Count a hyphenated word as one word", why: "The person said so in an answer (hyphenated-words: one)." });
+  revised.decisions.push({ decided: "Count a hyphenated word as one word", context: "The person was asked how a hyphenated word counts.", drivers: ["speed"], why: "The person said so in an answer (hyphenated-words: one).", alternatives: [{ option: "Count it as two words", why_not: "the person said one" }], consequences: ["The word counter treats a hyphen as part of a word."] });
   const second = runJob({
     ws, name: "b", text: "hyphenated-words: one",
     files: [[join(first.job, "out", "architecture-record.md"), "text/markdown"], [SETTLED, SETTLED_KIND]],
@@ -125,7 +126,7 @@ test("a revision with the settled answers attached again keeps them, and answers
   const h = parseRecord(second.record);
   assert.equal(h.done, true, second.record);
   assert.deepEqual(h.systems, []);
-  assert.match(second.record, /\*\*Cost\*\*: the account's daily model allowance/);
+  assert.match(second.record, /\*\*Cost\*\* \(`cost`\): the account's daily model allowance/);
 });
 
 test("without settled answers nothing changes: a spending limit nobody stated is still asked", () => {
@@ -159,8 +160,8 @@ test("both offerings declare the build's settled answers, given by an agent, as 
     assert.equal(input.given_by, "agent");
     assert.equal(input.required, false);
   }
-  assert.equal(d.agent_version, "0.4.0");
-  assert.equal(readJson(join(ROOT, "plugin.json")).version, "0.4.0");
+  assert.equal(d.agent_version, "0.5.0");
+  assert.equal(readJson(join(ROOT, "plugin.json")).version, "0.5.0");
 });
 
 test("the architecture standard says a settled answer is used with its source, and the House Stack names no provider", () => {

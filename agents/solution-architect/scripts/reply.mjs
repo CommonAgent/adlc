@@ -40,7 +40,7 @@ export function replyText({ recordText, checks = {}, wentWithout = "", changed =
   const questions = questionsIn(recordText);
   const lines = [];
   const systems = header.systems.length ? `names ${many(header.systems.length, "system")} (${list(header.systems)})` : "names no system";
-  lines.push(`The architecture record ${systems} for ${list(header.environments)}, with the agent's kind (${header.kind}), its dependencies, limits, egress, formats and settings, and every decision with its reason.`);
+  lines.push(`The architecture record ${systems} for ${list(header.environments)}, with the agent's kind (${header.kind}), its components and what each is responsible for, the connectors between them, how it runs in each environment, its data flow, the drivers its decisions answer, its dependencies, egress, formats and settings, and every decision with its reason.`);
   if (changed) lines.push(`This revises the earlier record: ${many(changed.changed_lines ?? 0, "line")} changed and ${many(changed.changed_decisions ?? 0, "decision")} with ${changed.changed_decisions === 1 ? "its" : "their"} reason, listed in what changed.`);
   lines.push(bindingLine(header));
   if (!header.done && !questions.length) {

@@ -37,11 +37,13 @@ test("answering the questions finishes the record, and what changed lists the li
   assert.equal(second.steps.check.status, 0, JSON.stringify(second.steps));
   const h = parseRecord(second.record);
   assert.equal(h.done, true);
-  assert.match(second.record, /\*\*Cost\*\*: at most 2 USD a day/);
+  assert.match(second.record, /\*\*Cost\*\* \(`cost`\): at most 2 USD a day/);
+  assert.doesNotMatch(second.record, /^### Decision \d+\. Limit what the agent spends/m, "a limit is a driver, never a decision");
   assert.match(second.record, /\(granted by the person\)/);
   const changed = readFileSync(join(second.job, "out", "what-changed.md"), "utf8");
-  assert.match(changed, /## Changed lines[\s\S]*now: - \*\*Cost\*\*: at most 2 USD a day/);
-  assert.match(changed, /## Why[\s\S]*Limit what the agent spends/);
+  assert.match(changed, /## Changed lines[\s\S]*now: - \*\*Cost\*\* \(`cost`\): at most 2 USD a day/);
+  assert.match(changed, /## Why[\s\S]*- the cost driver, now at most 2 USD a day: The person set it in an answer \(limit-cost: at most 2 USD a day\)/);
+  assert.match(changed, /^changed_drivers: 1$/m);
   assert.deepEqual(checkDelivered(second.job), []);
   assert.match(second.reply, /The record is finished/);
 });
@@ -75,7 +77,16 @@ const roleAnswer = {
   ],
   kind: { kind: "plugin-on-harness", why: "A short program; nothing needs its own network code." },
   dependencies: [], limits: { cost: null }, egress: [], formats: [], settings: [],
-  decisions: [{ decided: "Read the list, never write it", why: "The statement only reads it." }],
+  skills: [{ name: "customer-emails", responsibility: "Reads the customer list and sends each customer an email." }],
+  parts: [
+    { id: "list-reader", name: "list reader", responsibility: "Reads the customers from the list.", reaches: "database" },
+    { id: "mailer", name: "mailer", responsibility: "Sends each customer's email.", reaches: "mail" },
+  ],
+  flow: [
+    { from: "database", to: "list-reader", data: "the customers", says: "The reader reads the list." },
+    { from: "mailer", to: "mail", data: "each email", says: "The mailer sends each email." },
+  ],
+  decisions: [{ decided: "Read the list, never write it", context: "The job only needs the customers.", drivers: ["data"], why: "The statement only reads it.", alternatives: [{ option: "Read and write the list", why_not: "nothing in the statement writes it" }], consequences: ["The database is reached with access read."] }],
   questions: [],
 };
 const roleDefaults = (drop = null) => {
@@ -172,6 +183,6 @@ test("a third round with only a change keeps what the second settled, and stays 
   const c = runJob({ ws, name: "c", text: "Revise: the key points should be at most five.", files: [[join(b.job, "out", "architecture-record.md"), "text/markdown"]], answers: [keyPoints] });
   const h = parseRecord(c.record);
   assert.equal(h.done, true, c.record);
-  assert.match(c.record, /\*\*Cost\*\*: at most 2 USD a day/);
+  assert.match(c.record, /\*\*Cost\*\* \(`cost`\): at most 2 USD a day/);
   assert.match(c.record, /\(granted by the person\)/);
 });

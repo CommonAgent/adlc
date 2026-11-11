@@ -1,21 +1,149 @@
 {
   "title": "Hacker News topic digest",
-  "environments": ["dev", "test", "production"],
-  "systems": [
-    {"name": "text-reasoning", "plain": "text reasoning", "capability": "text", "access": "trigger", "why": "To write the one plain sentence on why each story matters.", "called_for": "one plain sentence on why it matters"}
+  "environments": [
+    "dev",
+    "test",
+    "production"
   ],
-  "kind": {"kind": "plugin-on-harness", "why": "One job a harness runs, with the reading and filtering in a script and one model call per story's sentence."},
+  "systems": [
+    {
+      "name": "text-reasoning",
+      "plain": "text reasoning",
+      "capability": "text",
+      "access": "trigger",
+      "why": "To write the one plain sentence on why each story matters.",
+      "called_for": "one plain sentence on why it matters"
+    }
+  ],
+  "kind": {
+    "kind": "plugin-on-harness",
+    "why": "One job a harness runs, with the reading and filtering in a script and one model call per story's sentence."
+  },
   "dependencies": [],
-  "limits": {"cost": {"limit": "1 USD per day on the model", "why": "The statement sets a spending ceiling of 1 USD per day."}, "speed": {"limit": "A digest within a minute", "why": "It reads at most 100 stories and writes a few sentences."}, "data": {"limit": "Only public Hacker News stories", "why": "It reads nothing private and keeps nothing between jobs."}, "trust": {"limit": "Reads only; never posts, votes or comments", "why": "The statement refuses posting, voting and commenting."}},
+  "limits": {
+    "cost": {
+      "limit": "1 USD per day on the model",
+      "why": "The statement sets a spending ceiling of 1 USD per day."
+    },
+    "speed": {
+      "limit": "A digest within a minute",
+      "why": "It reads at most 100 stories and writes a few sentences."
+    },
+    "data": {
+      "limit": "Only public Hacker News stories",
+      "why": "It reads nothing private and keeps nothing between jobs."
+    },
+    "trust": {
+      "limit": "Reads only; never posts, votes or comments",
+      "why": "The statement refuses posting, voting and commenting."
+    }
+  },
   "egress": [
-    {"destination": "the public Hacker News API", "why": "To read the current top stories and each story's details.", "service": {"name": "hacker-news", "access": "read", "address": "https://hacker-news.firebaseio.com/v0"}}
+    {
+      "destination": "the public Hacker News API",
+      "why": "To read the current top stories and each story's details.",
+      "service": {
+        "name": "hacker-news",
+        "access": "read",
+        "address": "https://hacker-news.firebaseio.com/v0"
+      }
+    }
   ],
   "formats": [
-    {"piece": "topic", "direction": "in", "kind": "text/plain", "convention": "", "given_by": "either", "why": "The subject the caller names."},
-    {"piece": "digest", "direction": "out", "kind": "text/markdown", "convention": "A heading for the topic, then one item per story: title as a link, points, one sentence.", "given_by": "agent", "why": "A person reads it."}
+    {
+      "piece": "topic",
+      "direction": "in",
+      "kind": "text/plain",
+      "convention": "",
+      "given_by": "either",
+      "why": "The subject the caller names."
+    },
+    {
+      "piece": "digest",
+      "direction": "out",
+      "kind": "text/markdown",
+      "convention": "A heading for the topic, then one item per story: title as a link, points, one sentence.",
+      "given_by": "agent",
+      "why": "A person reads it."
+    }
   ],
   "settings": [],
   "decisions": [
-    {"decided": "Read the official Hacker News API and nothing else", "why": "The statement refuses writing about stories it did not read from Hacker News.", "weighed": "Scraping the site's pages", "follows": "Every story in a digest comes from an API answer."}
+    {
+      "decided": "Read the official Hacker News API and nothing else",
+      "why": "The statement refuses writing about stories it did not read from Hacker News.",
+      "weighed": "Scraping the site's pages",
+      "follows": "Every story in a digest comes from an API answer.",
+      "context": "The digest must stand for what Hacker News actually shows.",
+      "drivers": [
+        "trust"
+      ],
+      "alternatives": [
+        {
+          "option": "Scraping the site's pages",
+          "why_not": "Pages change and carry no points or ids a reader can check."
+        }
+      ],
+      "consequences": [
+        "Every story in a digest comes from an API answer."
+      ]
+    }
+  ],
+  "drivers": [
+    {
+      "key": "readable",
+      "quality": "usability",
+      "says": "A person reads the digest.",
+      "from": "one plain sentence on why it matters"
+    }
+  ],
+  "skills": [
+    {
+      "name": "topic-digest",
+      "responsibility": "Takes a topic and answers with a digest of the top stories about it.",
+      "script": "Reads the top stories, keeps those about the topic, and writes the digest."
+    }
+  ],
+  "parts": [
+    {
+      "id": "hn-client",
+      "name": "Hacker News client",
+      "within": "topic-digest",
+      "responsibility": "Reads the top story ids and each story from the API.",
+      "reaches": "hacker-news"
+    },
+    {
+      "id": "sentence-writer",
+      "name": "sentence writer",
+      "within": "topic-digest",
+      "responsibility": "Asks the model for one plain sentence per story.",
+      "reaches": "text-reasoning"
+    },
+    {
+      "id": "digest-writer",
+      "name": "digest writer",
+      "within": "topic-digest",
+      "responsibility": "Writes the stories about the topic as the Markdown digest."
+    }
+  ],
+  "flow": [
+    {
+      "from": "caller",
+      "to": "harness",
+      "data": "the topic",
+      "says": "The caller names a topic."
+    },
+    {
+      "from": "harness",
+      "to": "topic-digest",
+      "data": "the topic",
+      "says": "The harness runs the skill with the topic."
+    },
+    {
+      "from": "topic-digest",
+      "to": "caller",
+      "data": "the digest",
+      "says": "The skill answers with the digest."
+    }
   ]
 }

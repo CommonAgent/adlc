@@ -6,15 +6,41 @@ role: the Architecture part of the Architecture and Design stage of the
 comes before the Design, which the [spec writer](../spec-writer) and the
 [solution planner](../solution-planner) hold.
 
-It takes the statement of a job and the organization's stack, and writes the
-architecture record: the systems the agent reaches, in plain system words; the
-product bound to each in dev, test and production, the organization's choice
-first and the platform's default for the rest; the agent's dependencies, its
-kind, its limits on cost, speed, data and trust, its egress per environment,
-the formats at its edge and its settings; and every decision with its reason.
-It asks what only a person can commit to (a binding nobody chose, a spending
-limit, a destination beyond the derived set, access the statement never asked
-for) and fills none of it in. It designs nothing.
+It takes the statement of a job (or the spec), and the organization's stack,
+and writes the architecture record. The record says what the agent stands
+on: the systems it reaches, in plain system words, and the product bound to
+each in dev, test and production, the organization's choice first and the
+platform's default for the rest. It says what the agent is made of, which is
+its software architecture: its components and what each is responsible for
+(the harness, each skill and its script, the parts of each script, and the
+systems outside), the connectors between them and to each system, how it runs
+and is deployed in each environment, and its data flow. It carries the
+drivers its decisions answer: the limits on cost, speed, data and trust, the
+spec's constraints, and any other quality requirement the statement states.
+It records each decision about the agent's structure in the manner of an
+architecture decision record, with its context, drivers, alternatives and
+consequences, and then the rulings: each binding, each grant and each
+settled answer. It also gives the dependencies, the kind, the egress per
+environment, the formats at the agent's edge and its settings. It asks what
+only a person can commit to (a binding nobody chose, a spending limit, a
+destination beyond the derived set, access the statement never asked for)
+and fills none of it in. It sets the structure and designs nothing a later
+stage owns.
+
+From 0.5.0 (architecture standard 2.0.0) code draws what code can know, and
+the model writes what is judgment. The carrier comes from the kind, the
+skills from the spec's offerings (or the skills the model names when no spec
+came), a script for each skill, the outside systems from the record, and the
+connectors from the systems and their bindings: a model through the shared
+caller and its four settings, a keyless public service at the address its
+binding names, any other system through its bound product. The model writes
+each responsibility, the parts of each script, the flow's wording and the
+decisions' text. The check holds that every component has a responsibility,
+every connector names both ends, the flow has steps, every decision about
+structure cites its drivers, weighs an alternative and says its
+consequences, and that no limit appears as a decision. A spending limit is
+the cost driver, and the header still carries it as `cost_limit` for the
+Design.
 
 A keyless public service the agent reaches at one fixed address, such as the
 Hacker News API, is asked like any destination, with its address in the
@@ -30,8 +56,9 @@ When the request comes from a build that has already settled some of those
 answers (AgentMesh's Build an agent settles the kind, that a person's agent
 reaches nothing outside AgentMesh and a model only through AgentMesh's model
 door, and the platform's own spending rules), the build attaches them as
-`the build's settled answers`. Each is used as a decision that says where it
-came from, never asked again and never contradicted; where the architect
+`the build's settled answers`. Each is used as a ruling that says where it
+came from (a settled spending limit as the cost driver), never asked again
+and never contradicted; where the architect
 would have chosen otherwise, the decision says so as a note, not a binding.
 It asks only what nobody else can answer.
 
@@ -73,11 +100,15 @@ bindings:
 ```
 
 then the fixed headings `## Statement`, `## Systems`, `## Bindings`,
-`## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`,
-`## Standing assets`, `## Settings`, `## Decisions` and `## Questions`.
+`## Dependencies`, `## Kind`, `## Components`, `## Connectors`,
+`## Runtime and deployment`, `## Data flow`, `## Drivers`, `## Egress`,
+`## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and
+`## Questions`.
 [references/a-record-that-works.md](references/a-record-that-works.md) is a
 whole one. `scripts/architecture-record.mjs` writes and reads the form; the
 spec writer carries a copy to read the record its Design is given.
+`scripts/views.mjs` draws the components, connectors, runtime, data flow and
+drivers, and holds them to the standard's sections 12 to 17.
 
 ## What it needs
 

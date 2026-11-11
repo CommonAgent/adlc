@@ -20,7 +20,7 @@ when somebody has a statement of what an agent is for, and the systems it stands
 
 ## What a good result looks like
 
-The architecture record: every system the agent reaches named in plain system words, each bound to a product in dev, test and production with the organization's choice first and a platform default marked as one, the dependencies, the kind, the limits on cost, speed, data and trust, the egress per environment, the formats at its edge (Markdown with a convention for what a person reads, a vendor JSON kind only for typed data code reads, who gives each input), the settings with their defaults, and every decision with its reason. A model is a bound system stated by capability, and no model is named anywhere. Beside it, the questions only a person can answer, each under a key the answer goes back with.
+The architecture record: every system the agent reaches named in plain system words, each bound to a product in dev, test and production with the organization's choice first and a platform default marked as one, the dependencies, the kind, the components and what each is responsible for, the connectors between them, how it runs in each environment, the data flow, the drivers its decisions answer (the limits on cost, speed, data and trust among them, never a decision), the egress per environment, the formats at its edge (Markdown with a convention for what a person reads, a vendor JSON kind only for typed data code reads, who gives each input), the settings with their defaults, every decision about structure with its context, drivers, alternatives and consequences, and every ruling with its reason. A model is a bound system stated by capability, and no model is named anywhere. Beside it, the questions only a person can answer, each under a key the answer goes back with.
 
 ## What it produces
 
@@ -75,6 +75,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/went-without.mjs
 - scripts/settled.mjs
 - scripts/no-provider.mjs
+- scripts/views.mjs
 
 ## References
 

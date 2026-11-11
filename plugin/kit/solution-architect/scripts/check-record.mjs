@@ -18,9 +18,10 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PUBLIC_ADDRESS, bodyOf, parseRecord, renderRecord } from "./architecture-record.mjs";
-import { ADDRESS_RE, CREDENTIAL_RE, MODEL_NAME_RE, productWords } from "./standard.mjs";
+import { ADDRESS_RE, CREDENTIAL_RE, MODEL_NAME_RE, productWords, publicServiceOf } from "./standard.mjs";
 import { loadSchemas, standardAt, standingAssetsOf, standingProblems } from "./standing.mjs";
 import { customerProducts, providersIn, withoutProviders } from "./no-provider.mjs";
+import { componentsOf, connectorsOf, decisionOf, driversOf, flowOf, runtimeOf, skillsOf, viewProblems } from "./views.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -45,6 +46,17 @@ export function recordOf({ asked, named, bound, table = loadSchemas() }) {
     said.add(k);
     decisions.push(d);
   }
+  // The views (the architecture standard, sections 12 to 17): code draws the
+  // carrier, the skills and their scripts, the systems and the connectors;
+  // the answer gave the parts, the responsibilities, the flow and the
+  // decisions' words. A keyless public service still asked is drawn as
+  // asked, so the flow reads before the owner answers.
+  const kind = trim(arch.kind?.kind) || "plugin-on-harness";
+  const asked_services = (arch.egress ?? []).map((d) => { const s = publicServiceOf(d); return s && !d.granted ? { ...s, key: trim(d.asked), plain: trim(d.destination), why: trim(d.why) } : null; }).filter(Boolean);
+  const skills = skillsOf(arch, asked.spec ?? null);
+  const components = componentsOf({ kind, skills, parts: arch.parts ?? [], systems: bound.systems ?? [], asked: asked_services, responsibilities: arch.responsibilities ?? {} });
+  const { flow, left } = flowOf(arch.flow ?? [], components);
+  const connectors = connectorsOf({ kind, components, systems: bound.systems ?? [], asked: asked_services, formats: arch.formats ?? [], settings: arch.settings ?? [], flow });
   const rec = {
     title: trim(arch.title) || "an agent",
     // The person's words are quoted, minus anything a record never carries.
@@ -62,8 +74,16 @@ export function recordOf({ asked, named, bound, table = loadSchemas() }) {
     formats: arch.formats ?? [],
     standing_assets: standingAssetsOf(arch.formats ?? [], table, asked.answers?.["standing-assets"]),
     settings: arch.settings ?? [],
-    decisions,
+    components,
+    connectors,
+    runtime: runtimeOf({ kind, systems: bound.systems ?? [], environments: bound.environments ?? [], note: arch.runtime?.note }),
+    flow,
+    drivers: driversOf({ limits: arch.limits ?? {}, spec: asked.spec ?? null, extra: arch.drivers ?? [] }),
+    decisions: decisions.map(decisionOf),
     questions,
+    // What the views could not draw: flow steps whose ends are not
+    // components of this record (a service the owner said no to, say).
+    views_left_out: left,
   };
   rec.done = doneOf(rec).done;
   return rec;
@@ -82,6 +102,10 @@ export function doneOf(rec, vocabulary = [], table = loadSchemas()) {
     }
   }
   for (const d of rec.decisions ?? []) if (!trim(d.why)) problems.push(`the decision "${trim(d.decided)}" has no reason`);
+  // The views: every component has a responsibility, every connector names
+  // both ends, the flow has steps, every decision about structure has its
+  // drivers, an alternative and its consequences, and no limit is a decision.
+  problems.push(...viewProblems(rec));
   // A record that could not decide them (the list was not read) is not done.
   problems.push(...standingProblems(rec.standing_assets, table));
   if (!trim(rec.kind?.kind)) problems.push("the kind is not settled");
@@ -164,13 +188,17 @@ export function whatChanged(beforeText, afterText, rec) {
   const changes = lineChanges(bodyOf(beforeText), bodyOf(afterText));
   const before = bodyOf(beforeText);
   const changedDecisions = (rec.decisions ?? []).filter((d) => !before.includes(trim(d.decided)));
-  const lines = ["---", `record: what-changed-v1`, `changed_lines: ${changes.length}`, `changed_decisions: ${changedDecisions.length}`, "---", "", "# What changed in the architecture record", "", "## Changed lines", ""];
+  // A driver changed when what it says is not in the earlier record: a
+  // spending limit set in an answer, say. Its reason is said as a decision's is.
+  const changedDrivers = (rec.drivers ?? []).filter((d) => trim(d.says) && !before.includes(trim(d.says)));
+  const lines = ["---", `record: what-changed-v1`, `changed_lines: ${changes.length}`, `changed_decisions: ${changedDecisions.length}`, `changed_drivers: ${changedDrivers.length}`, "---", "", "# What changed in the architecture record", "", "## Changed lines", ""];
   if (!changes.length) lines.push("None. The record reads as it did.");
   for (const c of changes) lines.push(c.now !== undefined ? `- now: ${trim(c.now)}` : `- was: ${trim(c.was)}`);
   lines.push("", "## Why", "");
-  if (!changedDecisions.length) lines.push("No decision changed.");
+  if (!changedDecisions.length && !changedDrivers.length) lines.push("No decision or driver changed.");
+  for (const d of changedDrivers) lines.push(`- the ${d.key} driver, now ${trim(d.says)}: ${trim(d.why) || "no reason given"}`);
   for (const d of changedDecisions) lines.push(`- ${trim(d.decided)}: ${trim(d.why)}`);
-  return { text: lines.join("\n") + "\n", lines: changes.length, decisions: changedDecisions.length };
+  return { text: lines.join("\n") + "\n", lines: changes.length, decisions: changedDecisions.length, drivers: changedDrivers.length };
 }
 
 /** What is still open, as Markdown, for the person to answer. */
@@ -227,9 +255,11 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     writeFileSync(join(RECORDS, "checks.json"), JSON.stringify({
       checks: "v1", done: done.done, problems: done.problems, systems: header.systems, environments: header.environments,
       standing_assets: header.standing_assets,
+      components: rec.components.map((c) => c.id), connectors: rec.connectors.length, flow_steps: rec.flow.length,
+      ...(rec.views_left_out.length ? { views_left_out: rec.views_left_out } : {}),
       standards: standardsCited(),
       record_sha256: createHash("sha256").update(text).digest("hex"),
-      ...(changed ? { changed_lines: changed.lines, changed_decisions: changed.decisions } : {}),
+      ...(changed ? { changed_lines: changed.lines, changed_decisions: changed.decisions, changed_drivers: changed.drivers } : {}),
     }, null, 2) + "\n");
     console.log(JSON.stringify({ ok: true, code: 0, record: join(RECORDS, "record.md"), done: done.done, problems: done.problems }));
   } catch (e) {

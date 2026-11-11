@@ -30,6 +30,7 @@ import { callerFor, cannotCall, replayCaller } from "./model-caller.mjs";
 import { carriedFrom, findingsOf, repaired, yesOrNo, KINDS } from "./standard.mjs";
 import { parseRecord } from "./architecture-record.mjs";
 import { applySettled, settledPart } from "./settled.mjs";
+import { specOfferings } from "./views.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const trim = (s) => String(s ?? "").trim();
@@ -54,7 +55,13 @@ What you decide, applying the standard:
 - Inputs are only the material the job is about. Anything that only shapes how the job runs (a voice, a tone, a length, a style, a format choice, anything with a fixed set of values or a default) is a setting, never an input, and brand, palette or template material is a standing asset the agent reads, never an input.
 - Settings the work needs, each a preference or a rule, with a "label" and an "about" for a person, a "default", its "allowed" choices with a label for each in "value_labels" (a number gets "min", "max" and "step" instead), all decided now and never left open. An address is never a setting, and the model is never a setting you declare: the text-reasoning binding places it.
 - The environments it will run in: dev, test and production unless the statement says otherwise.
-- Every choice above as a decision with its reason: what was decided, why, the options weighed, and what follows.
+
+What the agent is made of, which is the software architecture itself:
+- The skills a harness reads, each named in lowercase-hyphen words, with what it is responsible for. One skill per job a caller orders. Where a spec came with its offerings, those are the skills: give their responsibilities and add none. Each skill on a harness runs one script, scripts/<skill>.mjs; say in "script" what the script is responsible for.
+- The parts of each script: each a piece of the program with one responsibility (a client for a system it reads, a filter, a writer that calls the model, the part that puts the reply together), with "within" naming its skill and "reaches" naming the one system it reaches, if any. The harness, the skills, the scripts and the outside systems are drawn for you from the kind and the systems; you give the parts and the words.
+- The data flow: each step in order, from one component to the next, with what passes ("data") and one sentence saying how ("says"). Name the ends by the ids "caller" (whoever sent the job), "harness", a part's id, or a system's name.
+- The limits are drivers: quality requirements the decisions answer, never decisions themselves. Give any further driver the statement or the spec states (how readable, how testable, how private) under "drivers", each with a lowercase-hyphen key and the words it comes from.
+- The decisions about the agent's structure, in the manner of an architecture decision record: its "context" (the situation that called for it), the "drivers" it answers by key (cost, speed, data, trust, a spec constraint's id such as C1, or a key under "drivers"), "why", at least one of the "alternatives" weighed with why it was not chosen, and its "consequences". Decide how the work is controlled (a program that calls a model at named points, or a model in control), what carries it (a package on a harness, a long-running service, a container), how it reaches each system, how it reads and writes in bulk, and how it answers (synchronously, or by storing results). A decision never only states a limit ("spend at most 1 USD a day" is a driver, not a decision). Do not write the rulings: binding each system, granting or refusing a destination, and what the build settled are written for you.
 
 Put in "questions" only a real choice the rules leave open, such as where a person reviews the result. Do not ask about spending, egress, bindings or access there: those are asked for you, each once.
 
@@ -67,15 +74,34 @@ Answer with this JSON object:
  "kind": {"kind": "plugin-on-harness", "why": "..."},
  "dependencies": [{"name": "...", "what": "agent | service", "why": "..."}],
  "limits": {"cost": null, "speed": {"limit": "...", "why": "..."}, "data": {"limit": "...", "why": "..."}, "trust": {"limit": "...", "why": "..."}},
+ "drivers": [{"key": "lowercase-hyphen-key", "quality": "...", "says": "...", "from": "exact words of the statement or the spec"}],
  "egress": [{"destination": "...", "why": "...", "service": {"name": "...", "access": "read", "address": "<its address, with its scheme>"}}],
  "formats": [{"piece": "...", "direction": "in | out", "kind": "text/markdown", "convention": "...", "given_by": "person | agent | either", "why": "..."}],
  "settings": [{"name": "...", "kind": "preference | rule", "label": "...", "about": "...", "default": "...", "allowed": ["...", "..."], "value_labels": {"...": "..."}, "job_may_set": true, "why": "..."}],
- "decisions": [{"decided": "...", "why": "...", "weighed": "...", "follows": "..."}],
+ "skills": [{"name": "lowercase-hyphen-name", "responsibility": "...", "script": "what its script is responsible for"}],
+ "parts": [{"id": "lowercase-hyphen-id", "name": "...", "within": "<skill name>", "responsibility": "...", "reaches": "<system name, or leave it out>"}],
+ "flow": [{"from": "caller", "to": "harness", "data": "...", "says": "..."}],
+ "decisions": [{"decided": "...", "context": "...", "drivers": ["cost", "speed"], "why": "...", "alternatives": [{"option": "...", "why_not": "..."}], "consequences": ["..."]}],
  "questions": [{"key": "lowercase-hyphen-key", "question": "..."}]}`;
 
 /** The reserved systems, as the model reads them: name, purpose, promise. */
 export function vocabularyText(vocabulary = []) {
   return vocabulary.map((s) => `- ${s.name}: ${trim(s.purpose)} ${trim(s.promises)}${s.state === "reserved" ? " (reserved, not yet defined)" : ""}`).join("\n");
+}
+
+/** The part of the request that says what the spec settles for the
+ *  architecture: its offerings, which are the skills, and its constraints,
+ *  which are drivers the decisions cite by id. */
+export function specPart(spec) {
+  if (!spec || typeof spec !== "object") return "";
+  const offerings = specOfferings(spec);
+  const constraints = (spec.constraints ?? []).filter((c) => trim(c?.id));
+  if (!offerings.length && !constraints.length) return "";
+  return [
+    "--- WHAT THE SPEC SETTLES ---",
+    ...(offerings.length ? [`The skills are the spec's offerings: ${offerings.join(", ")}. Give each its responsibility and its script's, and add no other skill.`] : []),
+    ...(constraints.length ? ["The spec's constraints are drivers your decisions cite by id:", ...constraints.map((c) => `- ${trim(c.id)} (${trim(c.kind) || "constraint"}): ${trim(c.shall)}`)] : []),
+  ].join("\n");
 }
 
 /** The parts of the request, in order. Pure, so a test reads the whole prompt. */
@@ -85,6 +111,8 @@ export function requestParts({ asked, standard = "", example = "", findings = []
   parts.push(`--- THE SYSTEMS THE PLATFORM RESERVES ---\n${vocabularyText(asked?.defaults?.systems ?? [])}`);
   const settled = settledPart(asked?.settled);
   if (settled) parts.push(settled);
+  const spec = specPart(asked?.spec);
+  if (spec) parts.push(spec);
   if (asked?.revision && asked?.earlier) {
     parts.push(`--- THE RECORD YOU ARE REVISING ---\n${trim(asked.earlier.text)}`);
     const answers = Object.entries(asked.answers ?? {});
@@ -122,14 +150,14 @@ export function calledFor(arch, { statement = "", answers = {}, earlierSystems =
     const verdict = answer ? yesOrNo(answer) : null;
     const granted = verdict === "yes";
     if (verdict === "no") {
-      decisions.push({ decided: `The agent does not reach ${s.name}`, why: `The person said no in an answer (system-${s.name}: ${answer})`, follows: "Whatever needed it has to work without it, or the statement changes" });
+      decisions.push({ kind: "ruling", decided: `The agent does not reach ${s.name}`, why: `The person said no in an answer (system-${s.name}: ${answer})`, follows: "Whatever needed it has to work without it, or the statement changes" });
       continue;
     }
     if (!answer && refusedBefore.includes(s.name)) continue;
     // A public service the owner approved as a destination is called for by
     // that approval, and needs no quote of its own.
     if (s.public) { kept.push(s); continue; }
-    if (granted) decisions.push({ decided: `The agent reaches ${s.name}`, why: `The person granted it in an answer (system-${s.name}: ${answer})`, follows: `${s.name} is bound in each environment like any other system` });
+    if (granted) decisions.push({ kind: "ruling", decided: `The agent reaches ${s.name}`, why: `The person granted it in an answer (system-${s.name}: ${answer})`, follows: `${s.name} is bound in each environment like any other system` });
     const quote = norm(s.called_for);
     if (earlierSystems.includes(s.name) || granted || (quote.length >= 3 && words.includes(quote))) { kept.push(s); continue; }
     questions.push({
@@ -144,7 +172,7 @@ export function calledFor(arch, { statement = "", answers = {}, earlierSystems =
 export async function nameTheSystems({ ask, asked, standard = "", example = "", tries = TRIES } = {}) {
   if (typeof ask !== "function") throw new Error("nameTheSystems needs ask");
   const carried = asked?.revision && asked?.earlier ? carriedFrom(asked.earlier.text) : {};
-  const ctx = { statement: asked?.statement, answers: asked?.answers ?? {}, vocabulary: asked?.defaults?.systems ?? [], carried };
+  const ctx = { statement: asked?.statement, answers: asked?.answers ?? {}, vocabulary: asked?.defaults?.systems ?? [], carried, spec: asked?.spec ?? null };
   let findings = [];
   let doc = null;
   const used = [];

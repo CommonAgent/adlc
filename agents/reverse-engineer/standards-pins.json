@@ -2,6 +2,6 @@
   "standards_pins": "v1",
   "about": "The version of each file in the repository's standards/ folder this agent reads, as the sha256 digest of its bytes. The package carries those bytes; test/standards-pins.test.mjs fails when a file in standards/ no longer matches its pin, so a changed standard is adopted on purpose: re-pin, run the tests, release.",
   "pins": {
-    "architecture-standard.md": "sha256:bd0dabcc0be305a41ff023447e924b907441367b2fbaa1ec4317434406e12e2a"
+    "architecture-standard.md": "sha256:175940448b230b68ecc1a8e61fd908c0f9fa428de02679815036d161410b73e1"
   }
 }
