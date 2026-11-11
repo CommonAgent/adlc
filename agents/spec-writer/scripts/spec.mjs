@@ -115,6 +115,15 @@ demonstration or test). Each acceptance criterion is one Gherkin scenario,
 as text: a "Scenario:" line, then "Given", "When" and "Then" steps ("And" and
 "But" allowed), checking named requirement ids.
 
+Each feature lists what it takes in "inputs" and what it hands back in
+"outputs", each piece with its "name", its "kind" (text, url, identifier,
+document, or a media type such as text/markdown), its shape in words in
+"about" (for Markdown, its header's fields and each heading in backticks, as
+\`## Stories\`), and for an input whether it is "required" and who gives it in
+"given_by" (person, agent or either). Write "inputs": [] only where the
+person said the job takes nothing; where nobody said what it takes or hands
+back, leave it out and ask it in open.
+
 Three things you must never invent, because they are not yours to choose:
 the product's name, its price, and access to any system. Where the person
 did not settle one, leave it out and put it in open with the question. Never
@@ -172,7 +181,10 @@ requirement (F3.R2), a scenario (F3.A1), a constraint (C2), an interface
 only a feature's pieces (F3.pieces), set F3.pieces to {"inputs": [...],
 "outputs": [...]}, and nothing else of the feature changes. Where is features,
 constraints, interfaces, systems, settings, open, F3.requirements or
-F3.acceptance. Code gives every added item its id. When the words answer an
+F3.acceptance. Code gives every added item its id. Where the words name an
+input or an output (its name, kind, whether it is required, who gives it,
+its shape), set the pieces of the feature it belongs to, each piece written
+as the spec's features carry them. When the words answer an
 open question, remove it and set what it settles. Answer with one JSON
 object and nothing else: {"edits": [...], "notes": "what you changed and why"}`;
 

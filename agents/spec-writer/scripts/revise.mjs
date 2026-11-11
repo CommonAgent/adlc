@@ -85,6 +85,20 @@ export function namedTargets(words = "", spec = null) {
       .flatMap((n) => [n, n.replace(/\\/g, "/").split("/").pop().replace(/\.[a-z0-9]+$/i, "")]).filter((n) => n.length > 1);
     if (pieces.some((n) => renaming.some((x) => wordIn(n, x)))) out.add(`${trim(f.id)}.pieces`);
   }
+  // An input or an output the words name and the spec does not have yet
+  // ("The input is named topic", "the output is digest") opens the pieces of
+  // every feature, and nothing else of them. On hn-digest (2026-11-11) such
+  // an answer named nothing the spec had, so no edit could land, and the
+  // spec went to the Design with no pieces at all. A sentence that renames a
+  // piece is read above, and not here.
+  const have = new Set(features.flatMap((f) => [...list(f?.inputs), ...list(f?.outputs)])
+    .map((d) => trim(d?.name)).flatMap((n) => [n, n.replace(/\\/g, "/").split("/").pop().replace(/\.[a-z0-9]+$/i, "")]).map((n) => n.toLowerCase()));
+  const NOT_A_NAME = new Set(["a", "an", "the", "its", "plain", "markdown", "text", "json", "one", "each", "every"]);
+  const newPiece = sentences
+    .filter((x) => !/\brenam\w*\b|\binstead of\b/i.test(x))
+    .flatMap((x) => [...x.matchAll(/\b(?:inputs?|outputs?)\s+(?:is|are)\s+(?:(?:named|called)\s+)?[`"']?([A-Za-z][\w-]*)/gi)].map((m) => m[1].toLowerCase()))
+    .some((n) => !NOT_A_NAME.has(n) && !["named", "called"].includes(n) && !have.has(n));
+  if (newPiece) for (const f of features) out.add(`${trim(f.id)}.pieces`);
   if (settled.version || /\bversion\b/i.test(t)) out.add("product.version");
   if (settled.price || /\bprice\b|\bcosts?\b|\bfree\b/i.test(t)) out.add("price");
   if (/\bpurpose\b/i.test(t)) out.add("purpose");

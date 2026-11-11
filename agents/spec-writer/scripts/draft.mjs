@@ -625,9 +625,12 @@ export async function designFromSpec({
   const revision = Boolean(before);
   const said = words ?? personWords([asked?.said, ...Object.entries(isObj(answers) ? answers : {}).filter(([k, v]) => k !== "said" && typeof v === "string").map(([k, v]) => `${k}: ${v}`)].filter(Boolean).join("\n"));
   const carried = carriedProse(structure, before);
+  const fixed = new Set(built.fixed);
+  // What the spec fixes (a declaration, a piece's about) is the spec's, and an
+  // earlier draft's words for it are not carried over it.
+  for (const k of fixed) carried.delete(k);
   const base = structuredClone(structure);
   for (const [k, v] of carried) setProse(base, k, v);
-  const fixed = new Set(built.fixed);
   const slots = proseSlots(base).filter((k) => !fixed.has(k));
   const named = revision ? namedProse(said, base) : new Set(slots);
   const may = new Set(slots.filter((k) => named.has(k) || !carried.has(k)));
@@ -674,6 +677,9 @@ export async function designFromSpec({
   const withAssets = fitCanUse(fitted.spec, architecture, tbl);
   draft = withAssets.spec;
   const blanks = blanksOf(draft, modelBlanks);
+  // An offering the spec gives no output, or never says the input of, is
+  // asked, never delivered empty.
+  for (const a of list(built.asks)) if (!blanks.some((b) => b.key === a.key)) blanks.push(a);
   if (fitted.blank && !blanks.some((b) => b.key === "architecture")) blanks.push(fitted.blank);
   for (const b of fitToGiven(draft, given).blanks) if (!blanks.some((x) => x.key === b.key)) blanks.push(b);
   const askedKeys = blanks.map((b) => b.key);

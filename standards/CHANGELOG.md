@@ -101,6 +101,14 @@ Changes to the standards in this folder, newest first.
 
 ## spec.schema.json
 
+- **1.2.0**: each input and output of a feature (Data) may say whether it
+  is `required` and who gives it (`given_by`: person, agent or either), so
+  an offering's pieces are carried whole from what the person said to the
+  Design, which declares them. A feature's `inputs` absent means nobody has
+  said what it takes; an empty list means the person said it takes nothing.
+  The descriptions of Data and its `about` say what each holds. Additive. In
+  build b_393a1f45c7a4 (hn-digest) the person named the input and the
+  output, the spec carried neither, and the Design declared none.
 - **1.1.0**: interface kinds constant (an exported value, kept with its value) and
   declaration (a name or value the agent declares to the platform: offering and
   step ids, output names, labels, settings, kept with where they are declared);

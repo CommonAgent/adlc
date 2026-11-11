@@ -9,9 +9,9 @@
 // files disagreed with the spec. What is pinned: every structural field is
 // code's (a model that answers one is not heard); every declaration the
 // spec keeps is at its place in the files; the package maker takes them; a
-// revision that renames one output changes that output's name and about and
-// nothing else, the offering, steps, skill folders and run command staying
-// as they were; and words about the files alone leave the spec byte for byte.
+// revision that renames one output changes that output's name and nothing
+// else, its about staying the one the spec gives it (0.10.2), and the
+// offering, steps, skill folders and run command staying as they were; and words about the files alone leave the spec byte for byte.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -100,7 +100,10 @@ test("the model writes the prose, and only the prose: a structural field it answ
   const out = await designFromSpec({ spec, call, table: null });
   assert.equal(out.calls, 1);
   assert.match(prompts[0], /Code has already written every structural field/);
-  assert.deepEqual(keysAsked(prompts[0]), proseSlots(structureOf(spec).draft));
+  // A piece's about that the spec gives is the spec's, and is not asked.
+  const built = structureOf(spec);
+  assert.ok(built.fixed.includes("job:read-the-tides.outputs:tides.about"));
+  assert.deepEqual(keysAsked(prompts[0]), proseSlots(built.draft).filter((k) => !built.fixed.includes(k)));
   assert.deepEqual(out.spec.jobs.map((j) => j.slug), ["read-the-tides", "fetch-the-table", "write-the-tides"]);
   assert.equal(out.spec.jobs[0].title, "Read the tides");
   assert.equal(out.spec.offerings, undefined);
@@ -155,7 +158,7 @@ test("the round trip's case: a revision renaming one output leaves the offering,
   const prompts = [];
   const call = async (req) => { prompts.push(promptOf(req)); return greedy(" (again)")(req); };
   const second = await designFromSpec({ spec: revised.spec, call, earlier: first.spec, words, table: null });
-  assert.deepEqual(keysAsked(prompts[0]), ["job:read-the-tides.outputs:next-tides.about"], "the model is asked for the renamed output's about and nothing else");
+  assert.equal(prompts.length, 0, "the renamed output's about is the spec's, so the model is asked nothing");
   const a = agentFilesOf(first.spec);
   const b = agentFilesOf(second.spec);
   assert.deepEqual(Object.keys(b), Object.keys(a), "the same files: the same skill folders");
@@ -163,15 +166,14 @@ test("the round trip's case: a revision renaming one output leaves the offering,
   const db = JSON.parse(b["agent-descriptor.json"]);
   assert.deepEqual([db.offerings[0].id, db.offerings[0].name, db.offerings[0].steps.map((s) => s.id)], [da.offerings[0].id, da.offerings[0].name, da.offerings[0].steps.map((s) => s.id)]);
   assert.equal(db.offerings[0].outputs[0].name, "next-tides");
-  assert.match(db.offerings[0].outputs[0].about, /\(again\)/);
+  assert.equal(db.offerings[0].outputs[0].about, da.offerings[0].outputs[0].about, "the about is the spec's, as it was");
   db.offerings[0].outputs[0].name = da.offerings[0].outputs[0].name;
-  db.offerings[0].outputs[0].about = da.offerings[0].outputs[0].about;
   assert.ok(same(db, da), "nothing else in the descriptor changed");
   assert.equal(b["agent-runtime-requirements.json"], a["agent-runtime-requirements.json"], "the run command and everything the host reads are as they were");
   for (const k of Object.keys(a).filter((k) => k.endsWith("SKILL.md") && !k.includes("read-the-tides"))) assert.equal(b[k], a[k], `${k} is byte for byte`);
   assert.deepEqual(declarationProblems(revised.spec, b), []);
   assert.deepEqual(second.findings, []);
-  assert.deepEqual(second.design.prose_written, ["job:read-the-tides.outputs:next-tides.about"]);
+  assert.deepEqual(second.design.prose_written, []);
   assert.deepEqual(second.design.structure_changed, ["jobs"]);
 });
 
@@ -197,7 +199,8 @@ test("with no declaration, a rename of one output opens only that feature's piec
   assert.equal(second.spec.jobs[0].outputs[0].schema.properties.format.const, "tides-v1", "the renamed piece keeps its schema");
   assert.deepEqual(Object.keys(agentFilesOf(second.spec)), Object.keys(agentFilesOf(first.spec)));
   assert.equal(agentFilesOf(second.spec)["agent-runtime-requirements.json"], agentFilesOf(first.spec)["agent-runtime-requirements.json"]);
-  assert.deepEqual(second.design.prose_written, ["job:read-the-tides.outputs:next-tides.about"]);
+  assert.equal(second.spec.jobs[0].outputs[0].about, first.spec.jobs[0].outputs[0].about, "the renamed piece keeps the about the spec gives it");
+  assert.deepEqual(second.design.prose_written, []);
 });
 
 test("words about the files alone leave the spec byte for byte and change only the prose they name", async () => {

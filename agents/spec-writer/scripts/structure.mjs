@@ -37,6 +37,7 @@ import { declarationsOf, isProductField } from "./declared.mjs";
 import { priceNamed } from "./given.mjs";
 import { STAND_IN_NAME } from "./seed.mjs";
 import { hostOf, sameAddress } from "./reaches.mjs";
+import { conventionHeadings } from "./check-spec.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -182,7 +183,15 @@ function piecesOf(spec, features, side) {
       if (out.some((x) => x.name === piece)) continue;
       const kind = trim(d.kind) || (file ? kindOfFile(name) : side === "inputs" ? "text" : "text/markdown");
       const schema = d.schema !== undefined ? d.schema : file?.schema;
-      out.push({ name: piece, kind, ...(schema !== undefined ? { schema } : {}) });
+      // What the spec says of the piece beside its name and kind (spec-v1
+      // 1.2.0): its shape in words, and for an input whether it is required
+      // and who gives it.
+      const said = {
+        ...(trim(d.about) ? { about: trim(d.about) } : {}),
+        ...(typeof d.required === "boolean" ? { required: d.required } : {}),
+        ...(["person", "agent", "either"].includes(trim(d.given_by)) ? { given_by: trim(d.given_by) } : {}),
+      };
+      out.push({ name: piece, kind, ...(schema !== undefined ? { schema } : {}), ...said });
     }
   }
   return out;
@@ -456,8 +465,10 @@ function proseKeyOf(d, at) {
 
 /** The structure of the agent's own files, written from the spec by code,
  *  with every prose field empty: a draft in the shape files.mjs projects.
- *  Returns { draft, notes, problems }: what code derived that a reader
- *  should check, and what it could not place. Pure. */
+ *  Returns { draft, notes, problems, fixed, asks }: what code derived that a
+ *  reader should check, what it could not place, the prose keys the spec or
+ *  a declaration fixes, and the questions for an offering the spec gives no
+ *  input or no output. Pure. */
 export function structureOf(spec, { architecture = null } = {}) {
   const notes = [];
   const problems = [];
@@ -474,6 +485,8 @@ export function structureOf(spec, { architecture = null } = {}) {
   const reachesModel = systems.some((s) => s.kind === "model");
   const how = { control: "script", intelligence: reachesModel ? "called" : "none", cost: reachesModel ? "metered" : "none", contract: "full" };
   const jobs = [];
+  const fromSpec = [];
+  const asks = [];
   shape.forEach((o, i) => {
     const mine = featuresOf(o.slug);
     const job = { slug: o.slug, title: titleOf(o.slug), offered: true };
@@ -492,17 +505,30 @@ export function structureOf(spec, { architecture = null } = {}) {
         // the spec renamed keeps its schema.
         const ofKind = derived.filter((x) => trim(p.kind) && x.kind === trim(p.kind));
         const same = derived.find((x) => x.name === trim(p.name)) ?? (ofKind.length === 1 ? ofKind[0] : undefined);
-        return { name: trim(p.name), kind: trim(p.kind) || same?.kind || (side === "inputs" ? "text" : "text/markdown"), ...(same?.schema !== undefined ? { schema: same.schema } : {}) };
+        const said = Object.fromEntries(Object.entries(same ?? {}).filter(([k]) => ["about", "required", "given_by"].includes(k)));
+        return { name: trim(p.name), kind: trim(p.kind) || same?.kind || (side === "inputs" ? "text" : "text/markdown"), ...(same?.schema !== undefined ? { schema: same.schema } : {}), ...said };
       });
     };
     const inputs = sideOf("inputs");
     const outputs = sideOf("outputs");
-    job.inputs = inputs.map((p) => ({ name: p.name, kind: p.kind, required: true, given_by: "either", about: "" }));
+    job.inputs = inputs.map((p) => ({ name: p.name, kind: p.kind, required: p.required ?? true, given_by: p.given_by ?? "either", about: p.about ?? "" }));
     job.outputs = outputs.map((p) => {
-      const out = { name: p.name, kind: p.kind, when: "per_task", about: "" };
+      const out = { name: p.name, kind: p.kind, when: "per_task", about: p.about ?? "" };
       if (p.schema !== undefined) { const s = schemaWithoutAddresses(p.schema); out.schema = s.schema; if (s.taken) notes.push(`The schema of ${p.name} carries an address the spec keeps; the files carry the schema without it, because the package maker refuses a descriptor that carries one.`); }
       return out;
     });
+    // The about the spec gives a piece is the piece's about, and the model
+    // does not write it again, unless it is Markdown whose about sketches no
+    // convention, which the model then writes from the spec's words.
+    for (const side of ["inputs", "outputs"]) {
+      for (const p of job[side]) if (trim(p.about) && (!/^text\/markdown\b/i.test(p.kind) || conventionHeadings(p.about).length)) fromSpec.push(`job:${o.slug}.${side}:${p.name}.about`);
+    }
+    // An offering with nothing it hands back, or one whose spec never says
+    // what it takes, is asked, never delivered empty (hn-digest,
+    // 2026-11-11: the spec named neither, and the files declared neither).
+    // An inputs list the spec states empty says the job takes nothing.
+    if (!outputs.length) asks.push({ key: `outputs-${o.slug}`, question: `The spec names nothing ${o.slug} hands back, so its files declare no output. What does it hand back? For each piece say its name, its kind (Markdown, plain text, a JSON shape, a file type), and its shape in words, such as a Markdown header and its headings.` });
+    if (!inputs.length && !mine.some((f) => Array.isArray(f?.inputs))) asks.push({ key: `inputs-${o.slug}`, question: `The spec does not say what ${o.slug} takes, so its files declare no input. What does a caller give it? For each piece say its name, its kind (plain text, a URL, Markdown, a file type), whether it is required, who gives it (a person, an agent or either) and its shape in words. If it takes nothing, say so.` });
     job.how = { ...how };
     const command = commands[i];
     if (command) {
@@ -568,7 +594,7 @@ export function structureOf(spec, { architecture = null } = {}) {
     if (Array.isArray(j.outputs)) j.outputs = j.outputs.map((p) => ({ ...p, ...("when" in p ? {} : { when: "per_task" }), ...("about" in p ? {} : { about: "" }) }));
   }
   for (const s of list(draft.systems)) delete s.from;
-  return { draft: placed.draft, notes, problems, fixed: placed.placed };
+  return { draft: placed.draft, notes, problems, fixed: [...placed.placed, ...fromSpec], asks };
 }
 
 // ---------- the prose: what the model writes ----------
