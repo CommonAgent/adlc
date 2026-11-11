@@ -28,6 +28,25 @@ Every feature has requirements and at least one acceptance scenario. A
 feature with neither cannot be tested, and a feature that cannot be tested is
 a wish.
 
+## Inputs and outputs
+
+Each feature lists the pieces it takes in `inputs` and the pieces it hands
+back in `outputs`, because the Design declares an offering's inputs and
+outputs from them and from nothing else. Each piece has its `name`, its
+`kind` (`text`, `url`, `identifier`, `document`, or a media type such as
+`text/markdown`), and its shape in words in `about`: for Markdown, its
+header's fields and each fixed heading in backticks. An input also says
+whether it is `required` and who gives it in `given_by` (`person`, `agent`
+or `either`), spec-v1 1.2.0. "The input is named topic: plain text, one
+subject such as databases" is
+`{"name": "topic", "kind": "text", "required": true, "given_by": "either", "about": "One subject, such as databases."}`.
+
+The pieces are written wherever the person names them: in the request, or in
+an answer to a revision. `"inputs": []` says the job takes nothing, and is
+written only where the person said so. Where nobody said what a job takes or
+hands back, leave it out and ask it in `open`; the Design asks it too, and
+never delivers an offering with no inputs or no outputs in silence.
+
 ## Requirements
 
 Each requirement carries the attributes ISO/IEC/IEEE 29148:2018 (section 5.2)

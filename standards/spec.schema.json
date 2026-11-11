@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/CommonAgent/adlc/main/standards/spec.schema.json",
   "title": "The spec (spec-v1)",
-  "version": "1.1.0",
-  "description": "What the Requirements stage hands back (stages.json 1.6.0): the analysis of a product's functional requirements and capabilities. It says what the product must do and how anyone can tell that it does, in a form a test writer can write tests from without guessing. It is not the agent's descriptor or any other file a package is built from: those are made at Design, from this spec. Three existing standards are used as they are. Each requirement carries the attributes ISO/IEC/IEEE 29148:2018 (section 5.2) names for a requirement: an identifier, a statement written with shall, a rationale, a priority, its source for traceability, and its verification method, one of that standard's four (inspection, analysis, demonstration, test). Each acceptance criterion is a Gherkin scenario (the Cucumber Gherkin reference), kept as Gherkin text. Each input, output and interface shape is a JSON Schema (2020-12). Where the spec differs from those standards it says so here: requirements are grouped under features (29148 does not group them), the requirement's kind is a list of our own, and exact holds the words and patterns a requirement fixes so that a check can find them byte for byte. Every id is stable across versions of the spec, so tests, findings and history can name it. Version 1.1.0 (additive) adds two kinds of interface, constant (a value a module exports, kept with its value) and declaration (a name or value the agent declares to the platform, such as an offering id, a step id, an output's name, a label or a setting, kept with its value and where it is declared), the flags a command requires, and the allowed values of a field.",
+  "version": "1.2.0",
+  "description": "What the Requirements stage hands back (stages.json 1.6.0): the analysis of a product's functional requirements and capabilities. It says what the product must do and how anyone can tell that it does, in a form a test writer can write tests from without guessing. It is not the agent's descriptor or any other file a package is built from: those are made at Design, from this spec. Three existing standards are used as they are. Each requirement carries the attributes ISO/IEC/IEEE 29148:2018 (section 5.2) names for a requirement: an identifier, a statement written with shall, a rationale, a priority, its source for traceability, and its verification method, one of that standard's four (inspection, analysis, demonstration, test). Each acceptance criterion is a Gherkin scenario (the Cucumber Gherkin reference), kept as Gherkin text. Each input, output and interface shape is a JSON Schema (2020-12). Where the spec differs from those standards it says so here: requirements are grouped under features (29148 does not group them), the requirement's kind is a list of our own, and exact holds the words and patterns a requirement fixes so that a check can find them byte for byte. Every id is stable across versions of the spec, so tests, findings and history can name it. Version 1.1.0 (additive) adds two kinds of interface, constant (a value a module exports, kept with its value) and declaration (a name or value the agent declares to the platform, such as an offering id, a step id, an output's name, a label or a setting, kept with its value and where it is declared), the flags a command requires, and the allowed values of a field. Version 1.2.0 (additive) gives each input and output of a feature (Data) whether it is required and who gives it, so an offering's pieces are carried whole from what the person said to the Design.",
   "type": "object",
   "required": [
     "format",
@@ -233,13 +233,15 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Data"
-          }
+          },
+          "description": "What the feature takes. Absent when nobody has said; an empty list when the person said the job takes nothing."
         },
         "outputs": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/Data"
-          }
+          },
+          "description": "What the feature hands back."
         },
         "requirements": {
           "type": "array",
@@ -404,9 +406,23 @@
           "description": "A JSON Schema (2020-12) for its shape, inline, when it is structured data."
         },
         "about": {
-          "type": "string"
+          "type": "string",
+          "description": "Its shape in words: what it holds and how it is laid out, such as a Markdown piece's header and headings."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "For an input: whether the job cannot run without it. Added in 1.2.0."
+        },
+        "given_by": {
+          "enum": [
+            "person",
+            "agent",
+            "either"
+          ],
+          "description": "For an input: who gives it. Added in 1.2.0."
         }
-      }
+      },
+      "description": "One piece a feature takes (inputs) or hands back (outputs): its name, its kind, its shape in words (about), and for structured data its JSON Schema. The Design declares each one on the offering the feature belongs to."
     },
     "Interface": {
       "type": "object",

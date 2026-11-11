@@ -104,6 +104,17 @@ binding's address as its default. And the record's `cost_limit` is the
 model system's ceiling in Common Agent's shape (Section 12.4, item 4), read
 by `ceilingOf` in `scripts/structure.mjs`.
 
+From 0.10.2 an offering's inputs and outputs go from the person's words to
+the files whole. The spec step writes each piece in its feature's `inputs`
+or `outputs` (spec-v1 1.2.0: name, kind, whether it is required, who gives
+it, its shape in words in `about`), whether the person names it in the
+request or in an answer to a revision: words that name a piece the spec does
+not have open the features' pieces (`namedTargets` in `scripts/revise.mjs`).
+The Design declares every piece the spec carries, with the spec's `about`,
+which the model does not write again. An offering the spec gives no output,
+or never says the input of, is asked in blanks and in still-open.md
+(`outputs-<offering>`, `inputs-<offering>`), never delivered empty.
+
 `scripts/spec-check.mjs` holds every spec to the schema (`scripts/spec-v1.mjs`
 validates it with no dependencies), to a scenario per feature that checks
 requirement ids it has and is Gherkin, to every quote, rule value and
