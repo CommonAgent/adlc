@@ -1,0 +1,162 @@
+{
+  "format": "spec-v1",
+  "product": {
+    "name": "hn-digest",
+    "version": "1.0.0",
+    "kind": "agent"
+  },
+  "purpose": "Reads the current top stories on Hacker News and writes a short digest of the ones about a topic the caller names.",
+  "features": [
+    {
+      "id": "F1",
+      "name": "Topic Digest",
+      "does": "Reads top stories from Hacker News and generates a short digest matching a caller-named topic.",
+      "inputs": [
+        {
+          "name": "topic",
+          "kind": "text",
+          "about": "The subject to filter the Hacker News stories by.",
+          "required": true,
+          "given_by": "either"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "digest",
+          "kind": "text/markdown",
+          "about": "A short digest of the matching stories. Each story includes its title, link, points, and one plain sentence on why it matters."
+        }
+      ],
+      "requirements": [
+        {
+          "id": "F1.R1",
+          "shall": "The agent shall read the current top stories on Hacker News.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "Reads the current top stories on Hacker News"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R2",
+          "shall": "The agent shall write a short digest of the stories about a topic the caller names.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "writes a short digest of the ones about a topic the caller names"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R3",
+          "shall": "The agent shall include each story's title, link, points and one plain sentence on why it matters.",
+          "kind": "output",
+          "priority": "must",
+          "source": {
+            "said": "each story's title, link, points and one plain sentence on why it matters."
+          },
+          "verify": "inspection"
+        },
+        {
+          "id": "F1.R4",
+          "shall": "The agent shall refuse writing about stories it did not read from Hacker News.",
+          "kind": "refusal",
+          "priority": "must",
+          "source": {
+            "said": "Writing about stories it did not read from Hacker News"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R5",
+          "shall": "The agent shall refuse inventing points, links or comments.",
+          "kind": "refusal",
+          "priority": "must",
+          "source": {
+            "said": "inventing points, links or comments"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R6",
+          "shall": "The agent shall refuse posting, voting or commenting on Hacker News.",
+          "kind": "refusal",
+          "priority": "must",
+          "source": {
+            "said": "posting, voting or commenting on Hacker News"
+          },
+          "verify": "test"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": "F1.A1",
+          "gherkin": "Scenario: Creating a topic digest\n  Given a topic named \"databases\"\n  When the agent reads the current top stories on Hacker News\n  Then it writes a short digest of the ones about the topic\n  And each story has its title, link, points and one plain sentence on why it matters",
+          "checks": [
+            "F1.R1",
+            "F1.R2",
+            "F1.R3"
+          ]
+        },
+        {
+          "id": "F1.A2",
+          "gherkin": "Scenario: Refusing disallowed actions\n  Given a request to comment on a story\n  When the agent processes the request\n  Then it refuses to post, vote or comment on Hacker News",
+          "checks": [
+            "F1.R4",
+            "F1.R5",
+            "F1.R6"
+          ]
+        }
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C1",
+      "shall": "The agent shall hold the model used to write the sentences to a spending ceiling of 1 USD per day.",
+      "kind": "limit",
+      "exact": [
+        "1"
+      ],
+      "priority": "must",
+      "source": {
+        "said": "spending ceiling of 1 USD per day"
+      },
+      "verify": "test"
+    }
+  ],
+  "systems": [
+    {
+      "name": "Hacker News API",
+      "reach": "read",
+      "why": "To retrieve the current top stories (the official Firebase API: /topstories.json and /item/<id>.json, read only, no key).",
+      "address": "https://hacker-news.firebaseio.com/v0"
+    }
+  ],
+  "settings": [
+    {
+      "name": "top_stories_to_read",
+      "kind": "preference",
+      "default": 30,
+      "min": 10,
+      "max": 100,
+      "set_by": "either",
+      "about": "How many top stories to read from Hacker News."
+    },
+    {
+      "name": "stories_in_digest",
+      "kind": "preference",
+      "default": 5,
+      "min": 1,
+      "max": 10,
+      "set_by": "either",
+      "about": "How many stories to put in the digest."
+    }
+  ],
+  "open": [],
+  "source": {
+    "kind": "account"
+  },
+  "price": "Free"
+}

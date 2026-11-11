@@ -1,0 +1,170 @@
+// The generators: the architecture record and the agent's own files, written
+// from the approved spec, so no fact is typed twice.
+//
+// The builder writes only what needs judgement, and in one place each:
+//   architecture.json  the facts the solution architect's model used to
+//                      answer with (`node .adlc/generate.mjs brief` prints
+//                      the shape and the rules)
+//   prose.json         the words of the agent's files, by key
+// Everything else is the ADLC agents' own code, carried into this kit byte for
+// byte (plugin/sync.mjs): the architect's naming, binding and record, and the
+// spec writer's structure and files. Where those agents asked a model, the
+// builder's file is the answer, read once and checked the same way.
+//
+//   needs: node >= 22
+//   node .adlc/generate.mjs brief    what architecture.json holds
+//   node .adlc/generate.mjs record   spec.json + architecture.json -> architecture-record.md
+//   node .adlc/generate.mjs files    spec.json + architecture-record.md + prose.json -> the agent's files
+//
+// Run in the build folder. `record` also reads answers.json (the person's
+// answers to the record's questions, by key), stack.json (the organization's
+// stack) and request.md (the person's own words), each when it is there.
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { INSTRUCTION, nameTheSystems, referenceAt } from "./solution-architect/scripts/name.mjs";
+import { bindAll, houseAt, stackOf } from "./solution-architect/scripts/bind.mjs";
+import { doneOf, forbiddenIn, publicAddressesOf, recordOf, stillOpenText } from "./solution-architect/scripts/check-record.mjs";
+import { renderRecord } from "./solution-architect/scripts/architecture-record.mjs";
+import { customerProducts } from "./solution-architect/scripts/no-provider.mjs";
+import { parseRecord } from "./spec-writer/scripts/architecture-record.mjs";
+import { proseAt, proseSlots, setProse, structureOf } from "./spec-writer/scripts/structure.mjs";
+import { agentFilesOf } from "./spec-writer/scripts/files.mjs";
+
+const KIT = dirname(fileURLToPath(import.meta.url));
+const trim = (s) => String(s ?? "").trim();
+
+export const FILES = {
+  spec: "spec.json",
+  architecture: "architecture.json",
+  answers: "answers.json",
+  stack: "stack.json",
+  request: "request.md",
+  record: "architecture-record.md",
+  open: "still-open.md",
+  prose: "prose.json",
+};
+
+/** The statement the record quotes: the person's own words where the build
+ *  kept them, otherwise the spec's purpose and every phrase of the person's
+ *  the spec quotes as a source. A system is kept only where these words call
+ *  for it (the architect's calledFor). */
+export function statementOf(spec, request = "") {
+  if (trim(request)) return trim(request);
+  const lines = [trim(spec?.purpose)].filter(Boolean);
+  const add = (s) => { const t = trim(s); if (t && !lines.some((l) => l.toLowerCase().includes(t.toLowerCase()))) lines.push(t); };
+  for (const f of spec?.features ?? []) for (const r of f?.requirements ?? []) add(r?.source?.said);
+  for (const c of spec?.constraints ?? []) add(c?.source?.said);
+  return lines.join("\n");
+}
+
+/** The architecture record from the builder's facts: the architect's own
+ *  repair, called-for and settled steps (nameTheSystems, with the builder's
+ *  file as the one answer), its binding (bindAll) and its record (recordOf).
+ *  Returns the record's text and every reason it is not finished. */
+export async function recordFrom({ spec, named, answers = {}, request = "", stack = null, defaults = null, earlier = "" }) {
+  const house = defaults ?? JSON.parse(readFileSync(houseAt(join(KIT, "solution-architect", "scripts")), "utf8"));
+  // An answer is read against the record that asked it: the architect keys a
+  // destination's question by its place in that record, so a record already
+  // written is the earlier record and this run is its revision.
+  const asked = { statement: statementOf(spec, request), answers, defaults: house, stack, ...(trim(earlier) ? { revision: true, earlier: { text: earlier } } : {}) };
+  const out = await nameTheSystems({ ask: async () => ({ text: JSON.stringify(named) }), asked, tries: 1 });
+  if (out.declined) throw new Error(`architecture.json declines (${out.declined}): it holds the architecture and nothing else`);
+  const vocabulary = house.systems ?? [];
+  const bound = bindAll(out.architecture, { stack: stackOf(stack), vocabulary, answers, targets: house.targets ?? {} });
+  const rec = recordOf({ asked, named: { architecture: out.architecture, questions: out.questions }, bound });
+  const done = doneOf(rec, vocabulary);
+  rec.done = done.done;
+  const text = renderRecord(rec);
+  const open = rec.questions.length ? stillOpenText(rec) : "";
+  const forbidden = forbiddenIn(`${text}\n${open}`, undefined, { vocabulary, allowed: customerProducts(bound.systems), addresses: publicAddressesOf(rec) });
+  return { text, open, done: done.done, problems: done.problems, findings: out.findings, notes: out.notes, questions: rec.questions, forbidden };
+}
+
+const isEmpty = (v) => v == null || (typeof v === "string" && !v.trim()) || (Array.isArray(v) && !v.some((x) => trim(x)));
+// What the refusals are is a list of sentences; every other prose key is one.
+const shapeOf = (key) => (key === "refuses" ? [] : "");
+const fitsShape = (key, v) => (key === "refuses" ? Array.isArray(v) && v.every((x) => typeof x === "string") : typeof v === "string");
+
+/** The agent's own files: the structure from the spec and the record by code,
+ *  the words from prose.json by key. A key the spec fixes is the spec's, and
+ *  a key the files do not have is named, never guessed at. */
+export function filesFrom({ spec, recordText = "", prose = {} }) {
+  const architecture = trim(recordText) ? parseRecord(recordText) : null;
+  const built = structureOf(spec, { architecture });
+  const draft = structuredClone(built.draft);
+  const fixed = new Set(built.fixed);
+  const slots = proseSlots(draft);
+  const unknown = [];
+  const refused = [];
+  const misshapen = [];
+  for (const [k, v] of Object.entries(prose ?? {})) {
+    if (!slots.includes(k)) unknown.push(k);
+    else if (fixed.has(k)) refused.push(k);
+    else if (isEmpty(v)) continue;
+    else if (!fitsShape(k, v)) misshapen.push(k);
+    else setProse(draft, k, k === "refuses" ? v.map(trim).filter(Boolean) : v);
+  }
+  const writable = slots.filter((k) => !fixed.has(k));
+  const empty = writable.filter((k) => isEmpty(proseAt(draft, k)));
+  // prose.json as it should stand: the builder's words kept, every key the
+  // files now have laid out, and a key they no longer have left for the
+  // builder to move or delete, never dropped here.
+  const laidOut = { ...Object.fromEntries(writable.map((k) => [k, prose?.[k] ?? shapeOf(k)])), ...Object.fromEntries(unknown.map((k) => [k, prose[k]])) };
+  return { files: agentFilesOf(draft), notes: built.notes, problems: built.problems, asks: built.asks, slots: writable, fixed: [...fixed], empty, unknown, refused, misshapen, laidOut };
+}
+
+const readJson = (dir, name) => (existsSync(join(dir, name)) ? JSON.parse(readFileSync(join(dir, name), "utf8")) : null);
+const readText = (dir, name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), "utf8") : "");
+
+async function main(cmd, dir) {
+  if (cmd === "brief") {
+    const std = referenceAt("architecture-standard.md", join(KIT, "solution-architect", "scripts"));
+    const example = referenceAt("a-record-that-works.md", join(KIT, "solution-architect", "scripts"));
+    console.log(`Write ${FILES.architecture} as the solution architect's answer below asks. Read the standard first: ${std}\nA record that works: ${example}\n\n${INSTRUCTION}`);
+    return 0;
+  }
+  const spec = readJson(dir, FILES.spec);
+  if (!spec) { console.error(`${FILES.spec} is not in ${dir}: the generators write from the approved spec`); return 2; }
+  if (cmd === "record") {
+    const named = readJson(dir, FILES.architecture);
+    if (!named) { console.error(`${FILES.architecture} is not in ${dir}: run \`node .adlc/generate.mjs brief\` for what it holds`); return 2; }
+    const r = await recordFrom({ spec, named, answers: readJson(dir, FILES.answers) ?? {}, request: readText(dir, FILES.request), stack: readJson(dir, FILES.stack), earlier: readText(dir, FILES.record) });
+    if (r.forbidden.length) {
+      console.log(JSON.stringify({ ok: false, wrote: [], refused: r.forbidden.map((f) => `the record would carry ${f}; a record names no model, model provider, address or credential`) }, null, 2));
+      return 1;
+    }
+    writeFileSync(join(dir, FILES.record), r.text);
+    if (r.open) writeFileSync(join(dir, FILES.open), r.open);
+    else rmSync(join(dir, FILES.open), { force: true });
+    console.log(JSON.stringify({ ok: true, wrote: [FILES.record, ...(r.open ? [FILES.open] : [])], done: r.done, problems: r.problems, findings: r.findings, notes: r.notes, questions: r.questions }, null, 2));
+    return 0;
+  }
+  if (cmd === "files") {
+    const prose = readJson(dir, FILES.prose) ?? {};
+    const r = filesFrom({ spec, recordText: readText(dir, FILES.record), prose });
+    for (const [rel, text] of Object.entries(r.files)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), text);
+    }
+    writeFileSync(join(dir, FILES.prose), JSON.stringify(r.laidOut, null, 2) + "\n");
+    const ok = !r.empty.length && !r.unknown.length && !r.refused.length && !r.misshapen.length && !r.problems.length;
+    console.log(JSON.stringify({
+      ok, wrote: Object.keys(r.files), record: Boolean(readText(dir, FILES.record)),
+      empty: r.empty, unknown: r.unknown.map((k) => `${k} is not a key of the agent's files; move its words to the key that is, or delete it`),
+      refused: r.refused.map((k) => `${k} is fixed by the spec; change the spec, not the prose`),
+      misshapen: r.misshapen.map((k) => (k === "refuses" ? "refuses is a list of sentences" : `${k} is one string`)),
+      problems: r.problems, notes: r.notes, asks: r.asks,
+    }, null, 2));
+    return ok ? 0 : 1;
+  }
+  console.error("usage: node .adlc/generate.mjs brief | record | files");
+  return 2;
+}
+
+const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
+if (thisFile === "generate.mjs" && import.meta.url.endsWith("/generate.mjs")) {
+  const dirAt = process.argv.indexOf("--dir");
+  const dir = dirAt > 0 ? process.argv[dirAt + 1] : process.cwd();
+  main(process.argv[2], dir).then((code) => { process.exitCode = code; }, (e) => { console.error(e.message); process.exitCode = 1; });
+}

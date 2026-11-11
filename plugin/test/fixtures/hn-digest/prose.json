@@ -1,0 +1,16 @@
+{
+  "description": "Reads the current top stories on Hacker News and writes a short digest of the ones about a topic you name.",
+  "refuses": [
+    "Writing about stories it did not read from Hacker News.",
+    "Inventing points, links or comments.",
+    "Posting, voting or commenting on Hacker News."
+  ],
+  "job:topic-digest.does": "Reads the current top stories on Hacker News, keeps the ones about the topic, and writes a short digest of them.",
+  "job:topic-digest.when": "When someone wants to know what Hacker News is saying about one topic right now.",
+  "job:topic-digest.good": "A short digest: each story's title as a link, its points, and one plain sentence on why it matters, for the stories about the topic and no others.",
+  "job:topic-digest.empty": "When no top story is about the topic, the digest says so in one sentence and lists nothing.",
+  "job:topic-digest.instructions": "Run the job's script with the topic. It reads the top stories, keeps those about the topic, and asks the model for one sentence per story.",
+  "job:topic-digest.outputs:digest.about": "The digest, in Markdown: one item per story, with its title as a link, its points and one sentence on why it matters.",
+  "system:hacker-news.needs": "The public Hacker News API, read only, for the top stories and each story's details.",
+  "system:text-reasoning.needs": "A model that writes one plain sentence on why each story matters."
+}

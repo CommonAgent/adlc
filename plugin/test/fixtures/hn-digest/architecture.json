@@ -1,0 +1,21 @@
+{
+  "title": "Hacker News topic digest",
+  "environments": ["dev", "test", "production"],
+  "systems": [
+    {"name": "text-reasoning", "plain": "text reasoning", "capability": "text", "access": "trigger", "why": "To write the one plain sentence on why each story matters.", "called_for": "one plain sentence on why it matters"}
+  ],
+  "kind": {"kind": "plugin-on-harness", "why": "One job a harness runs, with the reading and filtering in a script and one model call per story's sentence."},
+  "dependencies": [],
+  "limits": {"cost": {"limit": "1 USD per day on the model", "why": "The statement sets a spending ceiling of 1 USD per day."}, "speed": {"limit": "A digest within a minute", "why": "It reads at most 100 stories and writes a few sentences."}, "data": {"limit": "Only public Hacker News stories", "why": "It reads nothing private and keeps nothing between jobs."}, "trust": {"limit": "Reads only; never posts, votes or comments", "why": "The statement refuses posting, voting and commenting."}},
+  "egress": [
+    {"destination": "the public Hacker News API", "why": "To read the current top stories and each story's details.", "service": {"name": "hacker-news", "access": "read", "address": "https://hacker-news.firebaseio.com/v0"}}
+  ],
+  "formats": [
+    {"piece": "topic", "direction": "in", "kind": "text/plain", "convention": "", "given_by": "either", "why": "The subject the caller names."},
+    {"piece": "digest", "direction": "out", "kind": "text/markdown", "convention": "A heading for the topic, then one item per story: title as a link, points, one sentence.", "given_by": "agent", "why": "A person reads it."}
+  ],
+  "settings": [],
+  "decisions": [
+    {"decided": "Read the official Hacker News API and nothing else", "why": "The statement refuses writing about stories it did not read from Hacker News.", "weighed": "Scraping the site's pages", "follows": "Every story in a digest comes from an API answer."}
+  ]
+}
