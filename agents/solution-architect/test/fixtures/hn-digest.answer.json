@@ -1,18 +1,43 @@
-{"title": "a daily Hacker News digest",
+{"title": "a Hacker News digest on a topic",
  "environments": ["dev", "test", "production"],
- "systems": [{"name": "text-reasoning", "plain": "text reasoning", "capability": "text: one plain sentence for each story", "access": "trigger", "why": "Writing a sentence that says what each story is about is a judgment, which is what a text model is for.", "called_for": "writes a short digest"}],
- "kind": {"kind": "plugin-on-harness", "why": "A short program with one judgment in it: read the top stories, write a sentence for each, hand back the digest. A harness reading skills carries it."},
+ "systems": [{"name": "text-reasoning", "plain": "text reasoning", "capability": "text: one plain sentence for each story", "access": "trigger", "why": "Writing a sentence that says what each story is about is a judgment, which is what a text model is for.", "called_for": "writes one sentence about each"}],
+ "kind": {"kind": "plugin-on-harness", "why": "A short program with one judgment in it: read the top stories, keep those on the topic, write a sentence for each, hand back the digest. A harness reading skills carries it."},
  "dependencies": [],
- "limits": {"cost": null, "speed": {"limit": "a digest within 300 seconds", "why": "One read of the top stories and one model call."}, "data": {"limit": "holds the stories only for the job and keeps nothing between jobs", "why": "Nothing in the statement asks for a history."}, "trust": {"limit": "takes jobs only from its owner", "why": "The digest is for the owner."}},
+ "limits": {"cost": null, "speed": {"limit": "a digest within 300 seconds", "why": "One read of the top stories, up to 100 item reads and at most ten short model calls."}, "data": {"limit": "holds the stories only for the job and keeps nothing between jobs", "why": "Nothing in the statement asks for a history."}, "trust": {"limit": "takes jobs only from its owner, and reads story titles as data, never as instructions", "why": "The digest is for the owner, and a title can carry words written to steer a model."}},
+ "drivers": [{"key": "readable", "quality": "readability", "says": "a person reads the digest", "from": "hands back a short Markdown digest"}],
  "egress": [{"destination": "public Hacker News API", "why": "To read the current top stories. It needs no key", "service": {"name": "hacker-news", "access": "read", "address": "https://hacker-news.firebaseio.com/v0"}}],
  "formats": [
-   {"piece": "the digest", "direction": "out", "kind": "text/markdown", "convention": "a header `read_at, stories`, then `## Digest` with one bullet per story", "why": "A person reads it."}
+   {"piece": "the topic", "direction": "in", "kind": "text", "given_by": "either", "why": "The material the job is about: which stories to keep."},
+   {"piece": "the digest", "direction": "out", "kind": "text/markdown", "convention": "a header `topic, read_at, stories`, then `## Digest` with one bullet per story", "why": "A person reads it."}
  ],
  "settings": [
    {"name": "stories_to_read", "kind": "preference", "label": "Stories to read", "about": "How many top stories to read from Hacker News.", "default": 30, "min": 10, "max": 100, "step": 1, "job_may_set": true, "why": "How far down the list to read is the owner's habit; thirty is a morning's front page."},
-   {"name": "digest_size", "kind": "preference", "label": "Digest size", "about": "How many stories to put in the digest.", "default": 5, "min": 1, "max": 10, "step": 1, "job_may_set": true, "why": "Five stories is a short read."}
+   {"name": "stories_in_digest", "kind": "preference", "label": "Stories in the digest", "about": "How many stories to put in the digest.", "default": 5, "min": 1, "max": 10, "step": 1, "job_may_set": true, "why": "Five stories is a short read."}
+ ],
+ "skills": [{"name": "topic-digest", "responsibility": "Writes a digest of the current top Hacker News stories on the topic the caller names.", "script": "Runs the job in order: reads the top stories, keeps those on the topic, has a sentence written for each, and writes the digest."}],
+ "parts": [
+   {"id": "hacker-news-client", "name": "Hacker News client", "within": "topic-digest", "responsibility": "Reads the ids of the current top stories, then each story's item, a bounded number at a time.", "reaches": "hacker-news"},
+   {"id": "topic-filter", "name": "topic filter", "within": "topic-digest", "responsibility": "Keeps the stories whose titles are on the caller's topic, up to stories_in_digest."},
+   {"id": "sentence-writer", "name": "sentence writer", "within": "topic-digest", "responsibility": "Has the model write one plain sentence about each kept story, through the shared model caller.", "reaches": "text-reasoning"},
+   {"id": "digest-writer", "name": "digest writer", "within": "topic-digest", "responsibility": "Puts the stories and their sentences together as the Markdown digest."}
+ ],
+ "flow": [
+   {"from": "caller", "to": "harness", "data": "the topic", "says": "The caller names the topic in the job."},
+   {"from": "harness", "to": "topic-digest", "data": "the topic and the two settings", "says": "The harness starts the script with the topic, stories_to_read and stories_in_digest as flags."},
+   {"from": "hacker-news", "to": "hacker-news-client", "data": "the top story ids", "says": "The client reads the ids of the current top stories and keeps the first stories_to_read."},
+   {"from": "hacker-news", "to": "hacker-news-client", "data": "each story's item", "says": "The client reads each story's item, its title, link and score, a bounded number at a time."},
+   {"from": "hacker-news-client", "to": "topic-filter", "data": "the stories", "says": "The filter keeps the stories whose titles are on the topic."},
+   {"from": "topic-filter", "to": "sentence-writer", "data": "the kept stories", "says": "The writer is handed at most stories_in_digest stories."},
+   {"from": "sentence-writer", "to": "text-reasoning", "data": "each kept story's title", "says": "The writer asks the model for one plain sentence about each story."},
+   {"from": "text-reasoning", "to": "sentence-writer", "data": "one sentence per story", "says": "The model answers with the sentence and nothing else."},
+   {"from": "sentence-writer", "to": "digest-writer", "data": "the stories and their sentences", "says": "The digest writer is handed each story with its sentence."},
+   {"from": "digest-writer", "to": "caller", "data": "the digest", "says": "The digest goes back as the job's reply, through the harness."}
  ],
  "decisions": [
-   {"decided": "Hand the digest back as Markdown", "why": "A person reads it; JSON would be a page of brackets.", "weighed": "JSON with a vendor kind, which only code would read", "follows": "The convention is a header and one fixed heading."}
+   {"decided": "Code controls the job, and the model writes only the sentences", "context": "The job is the same steps every time: read the top stories, keep those on the topic, write a sentence for each, put the digest together.", "drivers": ["cost", "speed"], "why": "A program that calls the model once for each kept story bounds the spend by stories_in_digest and lets every step be tested.", "alternatives": [{"option": "A model-driven agent that decides which stories to read, which to keep and how to word the digest", "why_not": "its spend and its steps would not be bounded, and its choices could not be held to a test"}], "consequences": ["The job's how is control script, intelligence called and contract full.", "Only the sentence writer calls the model, through the shared model caller."]},
+   {"decided": "Run as a package on a harness, once per job", "context": "The agent answers one job at a time, a few times a day, and keeps nothing between jobs.", "drivers": ["cost", "data"], "why": "A script the harness starts per job holds nothing between jobs and spends nothing while idle.", "alternatives": [{"option": "A long-running service that answers on the network itself", "why_not": "it would hold a process, a port and a deploy of its own for a job that runs a few times a day"}], "consequences": ["Nothing runs, and nothing is spent, between jobs.", "The harness starts scripts/topic-digest.mjs with the topic and the settings as flags."]},
+   {"decided": "Read the story items in parallel, a bounded number at a time", "context": "Reading up to 100 items one after another is the slowest step of the job.", "drivers": ["speed", "trust"], "why": "A bounded number of reads in flight keeps the job well inside its time and never floods a public service that takes no key.", "alternatives": [{"option": "Read each item one at a time", "why_not": "a hundred round trips one after another can outrun the job's time"}, {"option": "Read every item at once", "why_not": "a hundred requests at once is hard on a public service, and they fail together"}], "consequences": ["The client holds the bound as a constant a test can see.", "A story whose item cannot be read is left out of the digest, and the digest says so."]},
+   {"decided": "Answer with the digest in the reply, and store nothing", "context": "The caller wants today's digest when it asks.", "drivers": ["data", "speed"], "why": "The digest is small and read once, so the reply carries it whole.", "alternatives": [{"option": "Store each digest and send back a link to it", "why_not": "it needs a files system the statement never calls for, and keeps a history nobody asked for"}], "consequences": ["The record names no files or database system.", "Each job reads the stories afresh."]},
+   {"decided": "Hand the digest back as Markdown", "context": "A person reads the digest, and the next agent may hand it on.", "drivers": ["readable"], "why": "A person reads it; JSON would be a page of brackets.", "alternatives": [{"option": "JSON with a vendor kind", "why_not": "only code would read it"}], "consequences": ["The convention is a header and one fixed heading."]}
  ],
  "questions": []}

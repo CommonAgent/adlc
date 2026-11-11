@@ -13,7 +13,7 @@ once the request is recorded, to say what the agent stands on
 
 ## What a good result looks like
 
-The systems in plain system words, each with its access and the words of the statement that call for it, a model system stated by capability, the kind, the dependencies, the limits, the egress, the formats at the agent's edge, the settings with their defaults, and every decision with its reason, checked against the architecture standard.
+The systems in plain system words, each with its access and the words of the statement that call for it, a model system stated by capability, the kind, the dependencies, the limits and further drivers, the egress, the formats at the agent's edge, the settings with their defaults, the skills and the parts of each script with what each is responsible for, the data flow, and every decision about structure with its context, drivers, alternatives and consequences, checked against the architecture standard.
 
 ## When it comes back empty
 
@@ -36,6 +36,7 @@ Run these from this skill's folder; each one says what it needs at the top.
 - scripts/architecture-record.mjs
 - scripts/settled.mjs
 - scripts/no-provider.mjs
+- scripts/views.mjs
 
 ## References
 

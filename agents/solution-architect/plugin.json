@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "solution-architect",
-  "version": "0.4.0",
-  "description": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks only what nobody else can answer: what the build that sent it already settled is used, with where it came from. Designs nothing.",
+  "version": "0.5.0",
+  "description": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies and kind, its components and what each is responsible for, the connectors between them and to each system, how it runs and is deployed in each environment, its data flow, the drivers its decisions answer (the limits among them), its egress, formats and settings, and every decision about its structure with its context, drivers, alternatives and consequences. Asks only what nobody else can answer: what the build that sent it already settled is used, with where it came from. Designs nothing.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
@@ -37,7 +37,8 @@
               "scripts/pieces.mjs",
               "scripts/went-without.mjs",
               "scripts/settled.mjs",
-              "scripts/no-provider.mjs"
+              "scripts/no-provider.mjs",
+              "scripts/views.mjs"
             ],
             "references": [
               "../../standards/architecture-standard.md",
@@ -62,7 +63,8 @@
               "scripts/pieces.mjs",
               "scripts/went-without.mjs",
               "scripts/settled.mjs",
-              "scripts/no-provider.mjs"
+              "scripts/no-provider.mjs",
+              "scripts/views.mjs"
             ],
             "references": [
               "../../standards/architecture-standard.md",
@@ -93,7 +95,8 @@
               "scripts/options.mjs",
               "scripts/architecture-record.mjs",
               "scripts/settled.mjs",
-              "scripts/no-provider.mjs"
+              "scripts/no-provider.mjs",
+              "scripts/views.mjs"
             ],
             "references": [
               "../../standards/architecture-standard.md",
@@ -117,7 +120,8 @@
               "scripts/architecture-record.mjs",
               "scripts/standard.mjs",
               "scripts/options.mjs",
-              "scripts/no-provider.mjs"
+              "scripts/no-provider.mjs",
+              "scripts/views.mjs"
             ],
             "references": [
               "../../standards/architecture-standard.md",

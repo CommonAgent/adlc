@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.4.0",
+  "agent_version": "0.5.0",
   "name": "Solution architect",
   "summary": "Writes the architecture record for a new agent: the systems it reaches, the product bound to each, and every decision with its reason.",
   "will_not": [
@@ -12,7 +12,7 @@
     "It will not say which provider or model stands behind the House Stack: a House Stack model is bound as the platform's.",
     "It will not ask what the build that sent the request already settled, or contradict it."
   ],
-  "does": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks only what nobody else can answer: what the build that sent it already settled is used, with where it came from. Designs nothing.",
+  "does": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies and kind, its components and what each is responsible for, the connectors between them and to each system, how it runs and is deployed in each environment, its data flow, the drivers its decisions answer (the limits among them), its egress, formats and settings, and every decision about its structure with its context, drivers, alternatives and consequences. Asks only what nobody else can answer: what the build that sent it already settled is used, with where it came from. Designs nothing.",
   "offerings": [
     {
       "id": "write-the-architecture",
@@ -45,7 +45,7 @@
           "kind": "application/vnd.agentmesh.settled-answers+json",
           "required": false,
           "given_by": "agent",
-          "about": "What the build that sends this already settled, `{settled_answers, by, answers}`, each answer `{key, answer, from, why}`: the kind (kind), what it reaches (reaches: nothing-outside-agentmesh), how it reaches a model (model: model-door), the spending limit (limit-cost), whether anybody attends a job (attended) and the environments (environments). Each is used as a decision that says where it came from, its question is never asked, and where the architect would have chosen otherwise it is a note, never a binding. Exact typed data the scripts read; any other key is kept in the records and changes nothing."
+          "about": "What the build that sends this already settled, `{settled_answers, by, answers}`, each answer `{key, answer, from, why}`: the kind (kind), what it reaches (reaches: nothing-outside-agentmesh), how it reaches a model (model: model-door), the spending limit (limit-cost), whether anybody attends a job (attended) and the environments (environments). Each is used as a ruling that says where it came from (the spending limit as the cost driver, never a decision), its question is never asked, and where the architect would have chosen otherwise it is a note, never a binding. Exact typed data the scripts read; any other key is kept in the records and changes nothing."
         }
       ],
       "outputs": [
@@ -53,7 +53,7 @@
           "name": "the architecture record",
           "kind": "text/markdown",
           "when": "per_task",
-          "about": "Markdown: a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings`, then `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`. The header's bindings give the product and who provides it for each system in each environment, for the Design and a test to read."
+          "about": "Markdown: a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings`, then `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`, `## Components`, `## Connectors`, `## Runtime and deployment`, `## Data flow`, `## Drivers`, `## Egress`, `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`. The header's bindings give the product and who provides it for each system in each environment, for the Design and a test to read."
         },
         {
           "name": "what is still open",
@@ -83,7 +83,7 @@
         {
           "id": "name-the-systems",
           "name": "Name the systems",
-          "does": "Calls the text-reasoning service once, twice at most, to read the statement and name the systems, the capability each model system needs, the kind, the dependencies, the limits, the egress, the formats and each decision with its reason; then puts right in code what a record must never carry asks every commitment the answer filled in, and uses each answer the build already settled, saying where it came from, instead of asking it.",
+          "does": "Calls the text-reasoning service once, twice at most, to read the statement and name the systems, the capability each model system needs, the kind, the dependencies, the limits and further drivers, the egress, the formats, the skills and the parts of each script with what each is responsible for, the data flow, and each decision about structure with its context, drivers, alternatives and consequences; then puts right in code what a record must never carry asks every commitment the answer filled in, and uses each answer the build already settled, saying where it came from, instead of asking it.",
           "how": {
             "control": "script",
             "intelligence": "called",
@@ -105,7 +105,7 @@
         {
           "id": "check-the-record",
           "name": "Check the record",
-          "does": "Writes the record and holds it to the Architecture part's done-when: every system named and bound in each environment, every decision with its reason, no model name, address or credential; in a revision it also writes what changed.",
+          "does": "Draws the components, connectors and runtime from the kind, the skills and the systems, writes the record and holds it to the Architecture part's done-when: every system named and bound in each environment, every decision with its reason, every component with a responsibility, every connector with both ends, every decision about structure with its drivers, an alternative and its consequences, no limit as a decision, no model name, address or credential; in a revision it also writes what changed.",
           "how": {
             "control": "script",
             "intelligence": "none",
@@ -186,7 +186,7 @@
           "kind": "application/vnd.agentmesh.settled-answers+json",
           "required": false,
           "given_by": "agent",
-          "about": "What the build that sends this already settled, `{settled_answers, by, answers}`, each answer `{key, answer, from, why}`: the kind (kind), what it reaches (reaches: nothing-outside-agentmesh), how it reaches a model (model: model-door), the spending limit (limit-cost), whether anybody attends a job (attended) and the environments (environments). Each is used as a decision that says where it came from, its question is never asked, and where the architect would have chosen otherwise it is a note, never a binding. Exact typed data the scripts read; any other key is kept in the records and changes nothing."
+          "about": "What the build that sends this already settled, `{settled_answers, by, answers}`, each answer `{key, answer, from, why}`: the kind (kind), what it reaches (reaches: nothing-outside-agentmesh), how it reaches a model (model: model-door), the spending limit (limit-cost), whether anybody attends a job (attended) and the environments (environments). Each is used as a ruling that says where it came from (the spending limit as the cost driver, never a decision), its question is never asked, and where the architect would have chosen otherwise it is a note, never a binding. Exact typed data the scripts read; any other key is kept in the records and changes nothing."
         }
       ],
       "outputs": [
@@ -194,13 +194,13 @@
           "name": "the architecture record",
           "kind": "text/markdown",
           "when": "per_task",
-          "about": "Markdown: a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings`, then `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`. The header's bindings give the product and who provides it for each system in each environment, for the Design and a test to read."
+          "about": "Markdown: a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings`, then `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`, `## Components`, `## Connectors`, `## Runtime and deployment`, `## Data flow`, `## Drivers`, `## Egress`, `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`. The header's bindings give the product and who provides it for each system in each environment, for the Design and a test to read."
         },
         {
           "name": "what changed",
           "kind": "text/markdown",
           "when": "per_task",
-          "about": "Markdown: a front matter header `record, changed_lines, changed_decisions`, then `## Changed lines` (each line now or was) and `## Why`, the reason for each decision that changed."
+          "about": "Markdown: a front matter header `record, changed_lines, changed_decisions, changed_drivers`, then `## Changed lines` (each line now or was) and `## Why`, the reason for each driver and each decision that changed."
         },
         {
           "name": "what is still open",
@@ -230,7 +230,7 @@
         {
           "id": "name-the-systems",
           "name": "Name the systems",
-          "does": "Calls the text-reasoning service once, twice at most, to read the statement and name the systems, the capability each model system needs, the kind, the dependencies, the limits, the egress, the formats and each decision with its reason; then puts right in code what a record must never carry asks every commitment the answer filled in, and uses each answer the build already settled, saying where it came from, instead of asking it.",
+          "does": "Calls the text-reasoning service once, twice at most, to read the statement and name the systems, the capability each model system needs, the kind, the dependencies, the limits and further drivers, the egress, the formats, the skills and the parts of each script with what each is responsible for, the data flow, and each decision about structure with its context, drivers, alternatives and consequences; then puts right in code what a record must never carry asks every commitment the answer filled in, and uses each answer the build already settled, saying where it came from, instead of asking it.",
           "how": {
             "control": "script",
             "intelligence": "called",
@@ -252,7 +252,7 @@
         {
           "id": "check-the-record",
           "name": "Check the record",
-          "does": "Writes the record and holds it to the Architecture part's done-when: every system named and bound in each environment, every decision with its reason, no model name, address or credential; in a revision it also writes what changed.",
+          "does": "Draws the components, connectors and runtime from the kind, the skills and the systems, writes the record and holds it to the Architecture part's done-when: every system named and bound in each environment, every decision with its reason, every component with a responsibility, every connector with both ends, every decision about structure with its drivers, an alternative and its consequences, no limit as a decision, no model name, address or credential; in a revision it also writes what changed.",
           "how": {
             "control": "script",
             "intelligence": "none",

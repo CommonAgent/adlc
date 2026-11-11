@@ -152,7 +152,7 @@ lists the features of a product made before them. Version 0.4.6 starts a build f
 existing code. Version 0.4.7 starts a build from the as-built record of code
 kept elsewhere, and adds the action back_to_requirements. Version 0.4.8 adds the spec.
 Version 0.4.9 adds the skills of a stage's holder. Version 0.4.10 makes each feature of a
-version in a run of its own. Version 0.4.11 adds a product's documents. Version 0.4.12 gives the security statement and the architecture record their parts. Version 0.4.13 says which Common Agent rules each artifact was checked against. Version 0.4.14 writes the spec of a version built before specs. Its `operations` list names the
+version in a run of its own. Version 0.4.11 adds a product's documents. Version 0.4.12 gives the security statement and the architecture record their parts. Version 0.4.13 says which Common Agent rules each artifact was checked against. Version 0.4.14 writes the spec of a version built before specs. Version 0.4.15 gives the architecture record its views. Its `operations` list names the
 definition each request and answer must match.
 
 **Lifecycle stages.** An organization chooses which of the stages its
@@ -239,6 +239,26 @@ holds that a reach without a reason is listed in `no_reason_recorded`, that a
 statement with any such permission has not passed (the stage's done-when),
 that every binding is for a system the record names, and that every decision
 carries its reason.
+
+**The architecture record's views.** From version 0.4.15 an
+`ArchitectureSummary` may also give what the agent is made of, as
+architecture-standard.md 2.0.0 (sections 12 to 17) has the record say it:
+`components`, each with its `id`, `name`, `kind` (`harness`, `service`,
+`container`, `skill`, `script`, `part` or `system`), the component it sits
+`within` and its `responsibility`; `connectors`, each `from` one component
+`to` another (or the `caller`, whoever sent the job), with `how` they are
+joined, the `access` where it reaches a system, and what it `carries`;
+`runtime`, how it `runs` and each environment's systems with their bindings;
+`flow`, the data flow step by step; and `drivers`, the quality requirements
+the decisions answer, `cost`, `speed`, `data` and `trust` first. A decision
+says its `kind`: `structure` gives its `context`, the `drivers` it answers,
+its `alternatives` and its `consequences`, and `ruling` (a binding, a grant,
+a settled answer) keeps `options` and `follows`. `limits` stays for a client
+that reads it. For a record that gives its views, `checkArtifacts` holds that
+every component has a responsibility, every connector and flow step names
+both of its ends, every system has a component, every decision about
+structure cites drivers the record lists, weighs an alternative and says its
+consequences, and no decision only states a limit.
 
 **The spec of a version built before specs.** A version built by a spec
 writer from before stages.json 1.6.0 has the agent's own files and no spec.

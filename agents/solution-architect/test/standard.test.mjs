@@ -79,7 +79,8 @@ test("a spending limit the statement did not state is taken out and asked; one i
   assert.ok(!r2.questions.some((q) => q.key === "limit-cost"));
   const r3 = repaired(good(), { ...ctx, answers: { "limit-cost": "1 USD per job" } });
   assert.equal(r3.arch.limits.cost.limit, "1 USD per job");
-  assert.ok(r3.arch.decisions.some((d) => /Limit what the agent spends to 1 USD per job/.test(d.decided)));
+  assert.match(r3.arch.limits.cost.why, /limit-cost: 1 USD per job/);
+  assert.ok(!r3.arch.decisions.some((d) => /Limit what the agent spends/.test(d.decided)), "a limit is a driver, never a decision");
 });
 
 test("every destination beyond the derived set is asked, until a person answers it", () => {

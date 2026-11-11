@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { parseRecord, questionsIn } from "../scripts/architecture-record.mjs";
 import { ROOT, fixture, runJob, workspace } from "./helpers.mjs";
 
-const STATEMENT = "An agent that reads the top stories on Hacker News each morning and writes a short digest of them.";
+const STATEMENT = "An agent that reads the current top stories on Hacker News, keeps the ones about a topic the caller names, writes one sentence about each, and hands back a short Markdown digest.";
 const ANSWER = fixture("hn-digest.answer.json");
 const HN = "https://hacker-news.firebaseio.com/v0";
 const BOUND = { public: true, product: "itself", address: HN, key: "none", access: "read", approved: "egress-1" };
@@ -60,6 +60,39 @@ test("after egress-1: yes the record names hacker-news, bound to itself in every
   let theirs = null;
   try { theirs = readFileSync(join(ROOT, "..", "spec-writer", "test", "fixtures", "hn-digest", "architecture-record.md"), "utf8"); } catch { return; }
   assert.equal(theirs, second.record);
+});
+
+// The record describes the software architecture (the standard's 2.0.0,
+// sections 12 to 17): its components, connectors, runtime, data flow,
+// drivers and decisions about structure, with no limit as a decision.
+test("the finished record carries the components, connectors, runtime, data flow, drivers and decisions about structure", () => {
+  const { second } = twoRounds("egress-1: yes\nlimit-cost: 1 USD per day, across every job");
+  const r = second.record;
+  const section = (h) => r.split(`\n## ${h}\n`)[1].split("\n## ")[0];
+  const components = section("Components");
+  for (const id of ["harness", "skill-topic-digest", "script-topic-digest", "hacker-news-client", "topic-filter", "sentence-writer", "digest-writer", "text-reasoning", "hacker-news"]) assert.match(components, new RegExp(`\\(\`${id}\`\\)`), id);
+  assert.match(components, /^ {4}- \*\*scripts\/topic-digest\.mjs\*\* \(`script-topic-digest`\), a script:/m, "the script sits within its skill");
+  const connectors = section("Connectors");
+  assert.match(connectors, /^- `harness` to `script-topic-digest`: by command: node scripts\/topic-digest\.mjs, started once per job, with the job's input and the settings stories_to_read and stories_in_digest as flags/m);
+  assert.match(connectors, /^- `hacker-news-client` to `hacker-news`, read: over HTTPS, with no key/m);
+  assert.match(connectors, /^- `sentence-writer` to `text-reasoning`, trigger: through the shared model caller \(scripts\/model-caller\.mjs\) and its four settings, MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL/m);
+  assert.match(connectors, /^- `script-topic-digest` to `caller`: .*the digest \(`text\/markdown`\)\.$/m);
+  const runtime = section("Runtime and deployment");
+  assert.match(runtime, /no service of its own/);
+  for (const env of ["dev", "test", "production"]) assert.match(runtime, new RegExp(`^- ${env}: \`text-reasoning\` on platform \\(AgentMesh's models\\), a platform default; \`hacker-news\` on the service itself at ${HN.replace(/[./]/g, "\\$&")}, no key, read\\.$`, "m"));
+  assert.deepEqual([...section("Data flow").matchAll(/^\d+\. `[^`]+` to `[^`]+`, ([^:]+):/gm)].map((m) => m[1]), ["the topic", "the topic and the two settings", "the top story ids", "each story's item", "the stories", "the kept stories", "each kept story's title", "one sentence per story", "the stories and their sentences", "the digest"]);
+  assert.match(section("Drivers"), /^- \*\*Cost\*\* \(`cost`\): 1 USD per day, across every job\. The person set it in an answer \(limit-cost: 1 USD per day, across every job\)\. Cited by decisions 1 and 2\.$/m);
+  const decisions = section("Decisions");
+  assert.match(decisions, /^Decisions 1 to 5 choose the agent's structure\. Decisions 6 to 8 are rulings/m);
+  for (const d of ["Code controls the job, and the model writes only the sentences", "Run as a package on a harness, once per job", "Read the story items in parallel, a bounded number at a time", "Answer with the digest in the reply, and store nothing"]) {
+    const one = decisions.split(`. ${d}\n`)[1].split("\n### ")[0];
+    assert.match(one, /^Context: /m, d);
+    assert.match(one, /^Drivers: `[a-z]+` \(/m, d);
+    assert.match(one, /^Alternatives:\n\n- .+: not chosen, because /m, d);
+    assert.match(one, /^Consequences:\n\n- /m, d);
+  }
+  assert.doesNotMatch(r, /^### Decision \d+\. Limit what the agent spends/m, "a limit is a driver, never a decision");
+  assert.match(r, /^cost_limit: "1 USD per day, across every job"$/m, "the Design still reads the cost limit from the header");
 });
 
 test("egress-1: no leaves the service out, and the record is finished without it", () => {
