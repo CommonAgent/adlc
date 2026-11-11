@@ -239,10 +239,13 @@ So:
   the spec lists none; an address sits only in that setting's default. Each
   model system the architecture record names is declared, as kind model with
   its protocols, even where the spec does not list it, so the install places
-  its four settings (Common Agent Section 12.4.1). A service the record does
-  not name as a system is kept when a destination its egress grants names
-  it, because the architect asks the owner for a keyless public service as
-  egress and not as a system;
+  its four settings (Common Agent Section 12.4.1). A keyless public service
+  the record binds to itself is declared as a service whose address setting
+  has the binding's address as its default, matched to the spec's service by
+  the host of its address, even where the spec does not list it. The
+  record's cost limit is the model system's ceiling (Common Agent Section
+  12.4, item 4): the system says it spends, in the limit's currency, and
+  `ceilings` names it, per task or day, with the number as `suggested`;
 - each run command is the declared one, else the command interface the spec
   keeps, in the packaged form `{home}/{package}/skills/<slug>/scripts/...`,
   with each flag and what the host puts after it (`--job {job_dir}`, `--records
@@ -382,10 +385,10 @@ When an architecture record came with the request, what it reaches is
 settled already: the draft's systems are the record's, by name and access,
 and a step that needs another is asked of the architect rather than declared
 (the Architecture stage's standard, standards/architecture-standard.md). A
-service of the spec that a destination the record's egress grants names
-("public Hacker News API (granted by the person)") is the one exception: the
-owner granted it at Architecture, so it is declared with its address
-setting.
+keyless public service the owner approved is one of the record's systems,
+bound to the service itself (`itself at <address>, no key, read, approved by
+the owner in egress-1`), so it is declared like the rest, with that address
+as its address setting's default.
 The same holds for its standing assets: the draft's `can_use` is exactly the
 record's "Standing assets", one entry per schema, each with `reads` (the
 fields the agent reads), `required` (false unless the job cannot be done

@@ -32,7 +32,7 @@
           "kind": "text/markdown",
           "required": false,
           "given_by": "either",
-          "about": "The Architecture stage's record (the solution architect's): Markdown with a front matter header `record, statement, environments, kind, done, questions, systems, bindings`. The draft declares exactly its systems, and a step that needs another goes back to the architect as a question."
+          "about": "The Architecture stage's record (the solution architect's): Markdown with a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings`. The draft declares exactly its systems, and a step that needs another goes back to the architect as a question."
         },
         {
           "name": "an existing spec",

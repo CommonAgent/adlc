@@ -24,7 +24,7 @@ What a person reviews, and what one agent hands another, is Markdown with a ligh
 
 ## Addresses and settings
 
-An address is never a setting: a caller's address is an input of kind `url`, a bound product's address comes with the binding at install. A setting is declared with its default, and whether it is a preference or a rule, and whether a sender may set it for one job.
+An address is never a setting a person types: a caller's address is an input of kind `url`, a bound product's address comes with the binding at install. A keyless public service the agent reaches at one fixed address, such as the Hacker News API, is asked as a destination with its address in the question; the owner's yes makes it a system of the record bound to the service itself (`itself at <address>, no key, read, approved by the owner in egress-1`), a no leaves it out, and the record is finished with that binding (standards/architecture-standard.md, section 2). A setting is declared with its default, and whether it is a preference or a rule, and whether a sender may set it for one job.
 
 ## Commitments are asked
 
@@ -52,4 +52,4 @@ A job that went ahead without something it takes says so in the reply. Without t
 
 ## Never
 
-Never write a record yourself, and never open or edit one with your own file tools: a record changed after the check wrote it is refused at delivery. Never fill a question the person left. Never name a model. Never put an address, a credential or an account identifier into a record. Never add a system on a designer's word. Never ask a model for an architecture a third time.
+Never write a record yourself, and never open or edit one with your own file tools: a record changed after the check wrote it is refused at delivery. Never fill a question the person left. Never name a model. Never put an address, a credential or an account identifier into a record, except the address a keyless public service is bound at. Never add a system on a designer's word. Never ask a model for an architecture a third time.

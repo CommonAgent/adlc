@@ -1,4 +1,4 @@
-# spec-writer 0.10.1: the Design keeps the settings, the model system and a granted service
+# spec-writer 0.10.1: the Design declares the record's systems, the settings and the ceiling
 
 Date: 2026-11-11.
 
@@ -7,42 +7,48 @@ Date: 2026-11-11.
 In build b_6e496a709479 (hn-digest) the approved spec listed two counts,
 `stories_to_read` and `digest_size`, of kind `integer` and set by either, and
 the public Hacker News API at its address. The architecture record named one
-system, `text-reasoning`, and asked the Hacker News API as egress, which the
-owner granted ("egress-1: yes"). The Design wrote agent-runtime-requirements.json
-with no systems and an agent-descriptor.json with no run config. The code
-critic and the security reviewer then refused the code, which read the model
+system, `text-reasoning`, and asked for the Hacker News API as egress, which
+the owner granted ("egress-1: yes"), with a limit of 1 USD per day. The
+Design wrote agent-runtime-requirements.json with no systems and no
+ceilings, and an agent-descriptor.json with no run config. The code critic
+and the security reviewer then refused the code, which read the model
 settings and the two counts with nothing declaring them and carried the
-Hacker News address written into it. Three gaps, each in the Design:
+Hacker News address written into it.
 
-1. `isRunConfig` took only the kinds run-config, preference and rule, so a
-   setting of kind integer was dropped.
-2. `systemsOf` built systems only from the spec's systems, so a model system
-   the record names and the spec does not list was never declared.
-3. `fitToArchitecture` dropped every system the record does not name, and
-   the architect records a keyless public service as egress, not as a
-   system.
+Jeff decided how a keyless public service is recorded: it is a system of the
+record, bound to the service itself (architecture standard 1.1.0, section
+2), and the Design declares exactly the record's systems.
 
 ## What changed (from 0.10.0)
 
-- scripts/structure.mjs: a setting a person or a job sets (`set_by` person
-  or either) whose kind the install does not place (address, environment,
-  credential) is a run-config preference, with its default, range, values
-  and step. Each model system the record names is declared as kind model
-  with its protocols where the spec lists none, and a job then says
-  intelligence called and cost metered. A service with a fixed address and
-  no address setting in the spec gets one named for it
-  (`PUBLIC_HACKER_NEWS_API_ADDRESS`), with the address as its default.
-  `withGrantedServices` adds to the record's systems each service of the
-  spec that a destination the record's egress grants names.
-- scripts/asked.mjs: `grantedEgressIn` reads the destinations the record's
-  Egress section marks "(granted by the person)", and the reading of a
-  record carries them as `egress_granted`.
-- scripts/draft.mjs: `designFromSpec` holds the files to the record with its
-  granted services, and the notes say which were kept and why.
+- scripts/structure.mjs:
+  - a setting a person or a job sets (`set_by` person or either) whose kind
+    the install does not place (address, environment, credential) is a
+    run-config preference, with its default, range, values and step;
+  - every system the record names is declared: a model system as kind model
+    with its protocols, and a public service bound to itself as a service
+    whose address setting (`HACKER_NEWS_ADDRESS`) has the binding's address
+    as its default, matched to the spec's service by the host of its
+    address, even where the spec lists neither. A job then says
+    intelligence called and cost metered;
+  - a service with a fixed address and no address setting in the spec gets
+    one named for it;
+  - the record's `cost_limit` is the model system's ceiling (Common Agent
+    Section 12.4, item 4): `spends` in the limit's currency, and
+    `ceilings[]` naming the system, per task or day, with the number as
+    `suggested` (`ceilingOf`).
+- scripts/files.mjs: a model system's ceiling says `enforced_by: runtime`,
+  as the package maker derives it.
+- scripts/asked.mjs: the reading of a record carries its `cost_limit`.
+- scripts/architecture-record.mjs: the solution architect's copy, with the
+  public binding and the `cost_limit` header field.
 - references/what-a-good-spec-carries.md: the spec part names the six kinds
-  a setting may have; the Design part says what the structure now declares.
-- rules.md and README.md say the same.
-- test/design-keeps-systems.test.mjs: six tests, on the hn-digest case.
+  a setting may have; the Design part says what the structure declares.
+- rules.md, README.md and the descriptor say the same.
+- test/design-keeps-systems.test.mjs: seven tests on the hn-digest case,
+  from the record the solution architect writes for it
+  (test/fixtures/hn-digest), whose files the security reviewer's test
+  reviews.
 
-321 tests, 320 pass, 1 skipped. The standards' 168 pass. Written by the
-harness (Claude Code) directly; no model was run.
+322 tests, 321 pass, 1 skipped. Written by the harness (Claude Code)
+directly; no model was run.

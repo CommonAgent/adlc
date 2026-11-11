@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { agentFilesAmong, layOutAgentFiles, skillSlugOf, specOfFolder } from "./agent-folder.mjs";
-import { bodyOf, parseRecord } from "./architecture-record.mjs";
+import { parseRecord } from "./architecture-record.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const sha = (b) => createHash("sha256").update(b).digest("hex");
@@ -275,32 +275,12 @@ export function readingOf({ text = "", files = [], io = {} } = {}) {
 
 /** The architecture record among the attachments, read: the file's name and
  *  its header (systems, environments, kind, whether it is finished, how many
- *  questions it leaves open), with the destinations its egress grants. Empty
- *  when none came. */
+ *  questions it leaves open, the spending limit it sets). Empty when none
+ *  came. */
 export function architectureOf(attached = []) {
   const a = attached.find((x) => x.kind === "an architecture record" && typeof x.text === "string");
   const h = a ? parseRecord(a.text) : null;
-  return h ? { architecture: { from: a.name, systems: h.systems, environments: h.environments, kind: h.kind, done: h.done, questions: h.questions, bindings: h.bindings, standing_assets: h.standing_assets, egress_granted: grantedEgressIn(a.text) } } : {};
-}
-
-/** The destinations a record's egress grants, by what each is: every one the
- *  Egress section marks "(granted by the person)". The header does not carry
- *  them, so they are read from the body, in the form the solution architect
- *  writes it (architecture-record.mjs, egressSection): "Beyond the derived
- *  set (...): <destination> (granted by the person), <why>; ...". */
-export function grantedEgressIn(text = "") {
-  const body = bodyOf(text);
-  const at = body.search(/^## Egress\s*$/m);
-  if (at < 0) return [];
-  const out = [];
-  for (const line of body.slice(at).split(/\r?\n/).slice(1)) {
-    if (/^## /.test(line)) break;
-    for (const m of line.matchAll(/(?:: |; )([^;]+?) \(granted by the person\)/g)) {
-      const d = trim(m[1]);
-      if (d && !out.includes(d)) out.push(d);
-    }
-  }
-  return out;
+  return h ? { architecture: { from: a.name, systems: h.systems, environments: h.environments, kind: h.kind, done: h.done, questions: h.questions, bindings: h.bindings, standing_assets: h.standing_assets, cost_limit: h.cost_limit } } : {};
 }
 
 /** What this step says out loud. Not the reply to the buyer, which the last

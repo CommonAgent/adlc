@@ -7,6 +7,7 @@ done: yes
 questions: 0
 systems: [database, mail, text-reasoning]
 standing_assets: [https://schemas.agentmesh.ai/brand/v1, https://schemas.agentmesh.ai/style-guide/v1]
+cost_limit: "at most 5 USD a day"
 bindings:
   database:
     dev: supabase (customer)

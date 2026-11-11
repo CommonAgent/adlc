@@ -16,6 +16,16 @@ It asks what only a person can commit to (a binding nobody chose, a spending
 limit, a destination beyond the derived set, access the statement never asked
 for) and fills none of it in. It designs nothing.
 
+A keyless public service the agent reaches at one fixed address, such as the
+Hacker News API, is asked like any destination, with its address in the
+question. From 0.4.0 the owner's yes makes it a system of the record, bound
+to the service itself in every environment
+(`itself at <address>, no key, read, approved by the owner in egress-1`),
+and the record is finished with that binding; a no leaves it out
+(architecture standard 1.1.0, section 2). The header also carries
+`cost_limit`, the spending limit in the words it was set in, which the Design
+declares as the model system's ceiling.
+
 When the request comes from a build that has already settled some of those
 answers (AgentMesh's Build an agent settles the kind, that a person's agent
 reaches nothing outside AgentMesh and a model only through AgentMesh's model

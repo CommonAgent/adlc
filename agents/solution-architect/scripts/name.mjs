@@ -49,6 +49,7 @@ What you decide, applying the standard:
 - The dependencies on other agents and services, each with why. None is a real answer.
 - The limits on cost, speed, data and trust. A spending limit is a commitment: write one only when the statement states it, in its own numbers; otherwise leave cost null. Speed, data and trust you may draft from the statement, each with its reason.
 - The egress: each destination the agent must reach on the network beyond its systems, the mesh, the registrar and its model, named by what it is (never by address) and why. Reading pages at addresses a caller gives is such a destination. Never grant one: list it, and it will be asked.
+- Where a destination is one public service at one fixed address that takes no key (a public API such as the Hacker News API), say so in its "service": a system name in plain lowercase-hyphen words (hacker-news), the access ("read", "write" or "read-write"), and its address, as the statement gives it or as the service itself publishes it. It is still a destination, and still asked: the owner's yes makes it a system of the record, bound to the service itself. This address is the only one you may write.
 - The formats of what the agent takes and hands back at its edge. Content a person reviews or an agent hands on is text/markdown with a light convention: a short header of named fields, then fixed headings, sketched in "convention". JSON only for exact typed data code consumes, with a vendor kind such as application/vnd.agentmesh.<name>+json, never a bare application/json. Every input says who gives it: "person", "agent" or "either".
 - Inputs are only the material the job is about. Anything that only shapes how the job runs (a voice, a tone, a length, a style, a format choice, anything with a fixed set of values or a default) is a setting, never an input, and brand, palette or template material is a standing asset the agent reads, never an input.
 - Settings the work needs, each a preference or a rule, with a "label" and an "about" for a person, a "default", its "allowed" choices with a label for each in "value_labels" (a number gets "min", "max" and "step" instead), all decided now and never left open. An address is never a setting, and the model is never a setting you declare: the text-reasoning binding places it.
@@ -66,7 +67,7 @@ Answer with this JSON object:
  "kind": {"kind": "plugin-on-harness", "why": "..."},
  "dependencies": [{"name": "...", "what": "agent | service", "why": "..."}],
  "limits": {"cost": null, "speed": {"limit": "...", "why": "..."}, "data": {"limit": "...", "why": "..."}, "trust": {"limit": "...", "why": "..."}},
- "egress": [{"destination": "...", "why": "..."}],
+ "egress": [{"destination": "...", "why": "...", "service": {"name": "...", "access": "read", "address": "<its address, with its scheme>"}}],
  "formats": [{"piece": "...", "direction": "in | out", "kind": "text/markdown", "convention": "...", "given_by": "person | agent | either", "why": "..."}],
  "settings": [{"name": "...", "kind": "preference | rule", "label": "...", "about": "...", "default": "...", "allowed": ["...", "..."], "value_labels": {"...": "..."}, "job_may_set": true, "why": "..."}],
  "decisions": [{"decided": "...", "why": "...", "weighed": "...", "follows": "..."}],
@@ -125,6 +126,9 @@ export function calledFor(arch, { statement = "", answers = {}, earlierSystems =
       continue;
     }
     if (!answer && refusedBefore.includes(s.name)) continue;
+    // A public service the owner approved as a destination is called for by
+    // that approval, and needs no quote of its own.
+    if (s.public) { kept.push(s); continue; }
     if (granted) decisions.push({ decided: `The agent reaches ${s.name}`, why: `The person granted it in an answer (system-${s.name}: ${answer})`, follows: `${s.name} is bound in each environment like any other system` });
     const quote = norm(s.called_for);
     if (earlierSystems.includes(s.name) || granted || (quote.length >= 3 && words.includes(quote))) { kept.push(s); continue; }

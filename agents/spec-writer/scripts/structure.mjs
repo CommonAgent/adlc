@@ -273,42 +273,62 @@ function runSettingOf(s) {
  *  "public-hacker-news-api" is PUBLIC_HACKER_NEWS_API_ADDRESS. */
 export const addressEnvOf = (name) => `${slugOf(name, "service").toUpperCase().replace(/-/g, "_").slice(0, 55).replace(/_+$/, "")}_ADDRESS`;
 
+/** A record's public binding of a system, the service bound to itself
+ *  (the architecture standard, section 2), or null. */
+const publicBindingOf = (architecture, name) => Object.values(architecture?.bindings?.[name] ?? {}).find((b) => b?.public && trim(b.address)) ?? null;
+
 /** The systems the files declare: each system the spec reaches, as a
  *  service (or a model system, by its reserved name), with the address
  *  setting the spec lists for its address, under the name the architecture
  *  record gives it when one came. A system of reach none is no system. A
  *  service whose fixed address no setting of the spec holds gets one, named
  *  for the service, with the address as its default: the one place a file
- *  may carry an address (Common Agent Section 12.6, rule 2). Each model
- *  system the record names is declared too, where the spec lists none. */
+ *  may carry an address (Common Agent Section 12.6, rule 2). Every system
+ *  the record names is declared too: a model system as kind model with its
+ *  protocols, and a keyless public service the record binds to itself as a
+ *  service with the address its binding names, even where the spec lists
+ *  neither. */
 function systemsOf(spec, architecture = null) {
   const settings = list(spec?.settings);
   const named = Array.isArray(architecture?.systems) ? architecture.systems.map(trim) : [];
+  const publics = named.map((n) => ({ name: n, b: publicBindingOf(architecture, n) })).filter((p) => p.b);
+  const addressSetting = (system, said, address) => {
+    const st = settings.find((x) => trim(x?.kind) === "address" && typeof x.default === "string" && sameAddress(x.default) === sameAddress(address));
+    return st
+      ? { env: trim(st.name), purpose: trim(st.about) || `where ${said} answers, its base address`, default: st.default }
+      : { env: addressEnvOf(system), purpose: `where ${said} answers, its base address`, default: address };
+  };
   const out = [];
   for (const s of list(spec?.systems)) {
     if (!isObj(s) || trim(s.reach) === "none" || !trim(s.name)) continue;
     const slug = slugOf(s.name, "service");
     const model = MODEL_SYSTEMS.find((m) => slugOf(s.name) === m || trim(s.name).toLowerCase() === m);
-    const fromRecord = named.find((n) => n === slug) ?? named.find((n) => n === model);
+    // A service the record binds to itself is that system of the record: the
+    // one at the host of the spec's address, or else the one its name holds
+    // ("public Hacker News API" is hacker-news). Its address and its access
+    // are the binding's, which the owner approved.
+    const pub = model ? null : publics.find((p) => trim(s.address) && hostOf(s.address) === hostOf(p.b.address)) ?? publics.find((p) => slug === p.name || slug.includes(p.name));
+    const fromRecord = pub?.name ?? named.find((n) => n === slug) ?? named.find((n) => n === model);
     const name = fromRecord ?? model ?? slug;
+    if (out.some((x) => x.name === name)) continue;
     if (model) { out.push({ name, kind: "model", access: "trigger", protocols: [...MODEL_PROTOCOLS], needs: "", from: s.name }); continue; }
-    const e = { name, kind: "service", access: { read: "read", write: "write", "read-write": "read-write" }[trim(s.reach)] ?? "read", needs: "", from: s.name };
-    if (trim(s.address)) {
-      const st = settings.find((x) => trim(x?.kind) === "address" && typeof x.default === "string" && sameAddress(x.default) === sameAddress(s.address));
-      e.settings = [st
-        ? { env: trim(st.name), purpose: trim(st.about) || `where ${trim(s.name)} answers, its base address`, default: st.default }
-        : { env: addressEnvOf(name), purpose: `where ${trim(s.name)} answers, its base address`, default: trim(s.address) }];
-    }
+    const e = { name, kind: "service", access: pub ? pub.b.access : { read: "read", write: "write", "read-write": "read-write" }[trim(s.reach)] ?? "read", needs: "", from: s.name };
+    const address = pub ? trim(pub.b.address) : trim(s.address);
+    if (address) e.settings = [addressSetting(name, trim(s.name), address)];
     out.push(e);
   }
-  // A model system the record names and the spec does not list is declared
-  // all the same. The install places MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY
-  // and MODEL_PROTOCOL only for a declared system of kind model (Common Agent
-  // Section 12.4.1); in hn-digest (2026-11-11) the record named text-reasoning,
-  // the spec listed only the Hacker News API, and the scripts read four
-  // settings nothing declared.
+  // A system the record names and the spec does not list is declared all the
+  // same, because the Design declares exactly the record's systems. The
+  // install places MODEL_NAME, MODEL_ENDPOINT, MODEL_KEY and MODEL_PROTOCOL
+  // only for a declared system of kind model (Common Agent Section 12.4.1);
+  // in hn-digest (2026-11-11) the record named text-reasoning, the spec listed
+  // only the Hacker News API, and the scripts read four settings nothing
+  // declared.
   for (const m of named.filter((n) => MODEL_SYSTEMS.includes(n))) {
     if (!out.some((x) => x.name === m)) out.push({ name: m, kind: "model", access: "trigger", protocols: [...MODEL_PROTOCOLS], needs: "", from: m });
+  }
+  for (const p of publics) {
+    if (!out.some((x) => x.name === p.name)) out.push({ name: p.name, kind: "service", access: p.b.access, needs: "", settings: [addressSetting(p.name, p.name, trim(p.b.address))], from: p.name });
   }
   // A setting the code reads from its environment is declared on the first
   // service, the one place a descriptor carries a variable, when its name is
@@ -319,37 +339,18 @@ function systemsOf(spec, architecture = null) {
   return out;
 }
 
-/** Whether two names of a destination name the same thing, read the way the
- *  solution architect matches an answer to its destination (its
- *  scripts/standard.mjs, sameThing): one contains the other, case and
- *  punctuation aside. */
-export function sameDestination(x, y) {
-  const n = (s) => trim(s).toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
-  const a = n(x), b = n(y);
-  if (a.length < 3 || b.length < 3) return false;
-  return a === b || a.includes(b) || b.includes(a);
-}
-
-/** The record as the Design is held to it: its systems, and each service
- *  of the spec that a destination the person granted in the record's egress
- *  names, under the service's own name. The architect records a keyless
- *  public service as a destination beyond the derived set and asks the
- *  owner for it (the architecture standard, section 1, item 7, and section
- *  7), so the owner's yes is the grant, and the service is not added on the
- *  Design's word alone. Returns the record unchanged when it grants none, or
- *  a copy with the names added to `systems` and listed again under
- *  `granted_services`. */
-export function withGrantedServices(architecture = null, spec = null) {
-  if (!architecture || !Array.isArray(architecture.systems)) return architecture;
-  const granted = list(architecture.egress_granted).map(trim).filter(Boolean);
-  const add = [];
-  for (const s of list(spec?.systems)) {
-    if (!isObj(s) || trim(s.reach) === "none" || !trim(s.name)) continue;
-    const slug = slugOf(s.name, "service");
-    if (MODEL_SYSTEMS.includes(slug) || architecture.systems.includes(slug) || add.includes(slug)) continue;
-    if (granted.some((g) => sameDestination(g, s.name))) add.push(slug);
-  }
-  return add.length ? { ...architecture, systems: [...architecture.systems, ...add], granted_services: add } : architecture;
+/** A spending limit in words as a ceiling Common Agent Section 12.4, item 4
+ *  reads: the currency it spends in, what it is per (a task or a day), and
+ *  the number, as `suggested`. "1 USD per day, across every job" is
+ *  { unit: "USD", per: "day", suggested: 1 }. Null when the words say no
+ *  amount, currency and period code can read. */
+export function ceilingOf(words = "") {
+  const m = /(?:([$€£])\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(usd|eur|gbp|dollars?|euros?|pounds?)\b)\s*(?:a|an|per|each|every)\s+(day|job|task|run)\b/i.exec(trim(words));
+  if (!m) return null;
+  const unit = m[1] ? { "$": "USD", "€": "EUR", "£": "GBP" }[m[1]] : { usd: "USD", dollar: "USD", dollars: "USD", eur: "EUR", euro: "EUR", euros: "EUR", gbp: "GBP", pound: "GBP", pounds: "GBP" }[m[4].toLowerCase()];
+  const suggested = Number(m[2] ?? m[3]);
+  if (!(suggested > 0) || !unit) return null;
+  return { unit, per: m[5].toLowerCase() === "day" ? "day" : "task", suggested };
 }
 
 /** The runtimes the spec's constraints name, and node wherever a command
@@ -532,6 +533,22 @@ export function structureOf(spec, { architecture = null } = {}) {
   const ships = jobs.some((j) => list(j.scripts).some((f) => f.endsWith("went-without.mjs")));
   draft.records = [...(ships ? [{ ...WENT_WITHOUT_RECORD }] : []), { ...MANIFEST_RECORD }];
   draft.systems = systems;
+  // The record's spending limit is the ceiling of the model system it bounds
+  // (the architecture standard, section 9; Common Agent Section 12.4, item
+  // 4): the system says it spends, in the limit's currency, and ceilings[]
+  // names it, per task or day, with the number as suggested, which binds
+  // nothing until the owner's instruction adopts it.
+  const limit = trim(architecture?.cost_limit);
+  if (limit) {
+    const c = ceilingOf(limit);
+    const spender = systems.find((s) => s.kind === "model");
+    if (c && spender) {
+      spender.spends = { unit: c.unit };
+      draft.ceilings = [{ system: spender.name, per: c.per, suggested: c.suggested }];
+    } else {
+      notes.push(`The architecture record's cost limit, ${JSON.stringify(limit)}, ${c ? "bounds no model system the files declare" : "does not say an amount, a currency and per day or per job in words code reads"}, so the files declare no ceiling for it.`);
+    }
+  }
   const run = list(spec?.settings).filter(isRunConfig);
   if (run.length) {
     // The declared order first, by the name each index declares, then the rest.

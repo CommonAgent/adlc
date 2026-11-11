@@ -1,28 +1,32 @@
 // The Design keeps what the spec and the record settle: the settings, the
-// model system and an outside service the owner granted.
+// model system, the public service the record binds to itself, and the
+// spending limit as a ceiling.
 //   node --test test/design-keeps-systems.test.mjs
 //
 // No model and no network: the stand-in model is the fixture's prose writer.
 // In build b_6e496a709479 (hn-digest, 2026-11-11) the spec listed two counts
 // of kind integer, set by either, and the public Hacker News API at its
-// address; the architecture record named text-reasoning as its one system and
-// granted the Hacker News API as egress. The Design wrote no settings, no
-// systems and no run config, and the code critic and the security reviewer
-// refused the code that read them. What is pinned: a value kind a person or a
-// job sets is a run-config preference with its default and range; a model
-// system the record names is declared as kind model with its protocols; and
-// a service the record's egress grants is declared with its address setting,
-// while one it only asks about is still taken out and asked; and the package
-// maker takes the files.
+// address; the architecture record named text-reasoning and asked for the
+// Hacker News API, which the owner granted, with a limit of 1 USD per day.
+// The Design wrote no settings, no systems, no ceilings and no run config,
+// and the code critic and the security reviewer refused the code that read
+// them. The record here is the one the solution architect writes for that
+// case after "egress-1: yes" (its test/hn-digest.test.mjs holds the two
+// equal). What is pinned: a value kind a person or a job sets is a
+// run-config preference; every system the record names is declared,
+// text-reasoning as kind model with its protocols and hacker-news as a
+// service with its address as a setting's default; the cost limit is the
+// model system's ceiling in Common Agent's shape; a service the record does
+// not name is still taken out and asked; the files are the ones the security
+// reviewer's test reviews; and the package maker takes them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { grantedEgressIn, readingOf } from "../scripts/asked.mjs";
-import { renderRecord } from "../scripts/architecture-record.mjs";
-import { MODEL_PROTOCOLS, structureOf, withGrantedServices } from "../scripts/structure.mjs";
+import { readingOf } from "../scripts/asked.mjs";
+import { MODEL_PROTOCOLS, ceilingOf, structureOf } from "../scripts/structure.mjs";
 import { designFromSpec } from "../scripts/draft.mjs";
 import { agentFilesOf } from "../scripts/files.mjs";
 import { reachProblems } from "../scripts/reaches.mjs";
@@ -30,8 +34,10 @@ import { checkBuilds } from "../scripts/builds.mjs";
 import { proseFor } from "./as-built-fixture.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const FIX = join(HERE, "fixtures", "hn-digest");
 const BUILD_PY = join(HERE, "..", "..", "package-maker", "build.py");
 const HN = "https://hacker-news.firebaseio.com/v0";
+const RECORD = readFileSync(join(FIX, "architecture-record.md"), "utf8");
 
 /** The parts of spec-v1 that hn-digest's spec carried and the Design reads. */
 const SPEC = () => ({
@@ -55,25 +61,6 @@ const SPEC = () => ({
   open: [],
 });
 
-const PLATFORM = { product: "platform", provided_by: "platform" };
-
-/** The record the solution architect wrote for hn-digest, after the owner
- *  answered "egress-1: yes" and "limit-cost: 1 USD per day, across every
- *  job". `granted` false is the record before the answer. */
-const RECORD = ({ granted = true } = {}) => renderRecord({
-  title: "a daily Hacker News digest",
-  statement: "An agent that reads the top stories on Hacker News and writes a short digest.",
-  environments: ["dev", "test", "production"],
-  kind: { kind: "plugin-on-harness", why: "A short program with one judgment." },
-  done: granted,
-  questions: granted ? [] : [{ key: "egress-1", question: "May this agent reach public Hacker News API on the network in dev, test and production?" }],
-  systems: [{ name: "text-reasoning", plain: "text reasoning", capability: "text", access: "trigger", why: "Writing each sentence is a judgment.", bindings: { dev: PLATFORM, test: PLATFORM, production: PLATFORM } }],
-  limits: { cost: { limit: "1 USD per day, across every job", why: "The person set it in an answer" } },
-  egress_policy: { dev: "open", test: "open", production: "open" },
-  egress: [{ destination: "public Hacker News API", why: "To read the current top stories", granted }],
-  decisions: [{ decided: "The agent may reach public Hacker News API", why: "The person granted it in an answer (egress-1: yes)" }],
-});
-
 const askedWith = (record) => {
   const dir = mkdtempSync(join(tmpdir(), "spec-keeps-"));
   const at = join(dir, "architecture-record.md");
@@ -82,6 +69,7 @@ const askedWith = (record) => {
 };
 
 const prose = async (req) => ({ text: JSON.stringify(proseFor(req.body.contents[0].parts.map((p) => p.text).join("\n\n"))) });
+const design = (record = RECORD) => designFromSpec({ spec: SPEC(), asked: askedWith(record), call: prose, table: null });
 
 test("a spec's integer settings, set by a person or a job, are run-config preferences with their default, range and step", () => {
   const { draft } = structureOf(SPEC());
@@ -89,8 +77,6 @@ test("a spec's integer settings, set by a person or a job, are run-config prefer
     { name: "stories_to_read", kind: "preference", label: "Stories to read", about: "How many top stories to read from Hacker News.", default: 30, min: 10, max: 100, step: 1, job_may_set: true },
     { name: "digest_size", kind: "preference", label: "Digest size", about: "How many stories to put in the digest.", default: 5, min: 1, max: 10, step: 1, job_may_set: true },
   ]);
-  const desc = JSON.parse(agentFilesOf(draft)["agent-descriptor.json"]);
-  assert.deepEqual(desc.run_config.settings.map((s) => s.name), ["stories_to_read", "digest_size"]);
   // What the install places is not a run config, whatever its value type.
   const spec = SPEC();
   spec.settings.push({ name: "BATCH", kind: "integer", default: 2, set_by: "install", about: "x" }, { name: "HN_ADDRESS", kind: "address", default: HN, set_by: "either", about: "x" });
@@ -104,39 +90,52 @@ test("a model system the record names is declared as kind model with its protoco
   const { draft } = structureOf(SPEC(), { architecture: { systems: ["text-reasoning"] } });
   assert.deepEqual(draft.systems.find((s) => s.name === "text-reasoning"), { name: "text-reasoning", kind: "model", access: "trigger", protocols: MODEL_PROTOCOLS, needs: "" });
   assert.deepEqual(draft.jobs[0].how, { control: "script", intelligence: "called", cost: "metered", contract: "full" });
-  const runtime = JSON.parse(agentFilesOf(draft)["agent-runtime-requirements.json"]);
-  assert.deepEqual(runtime.systems.find((s) => s.name === "text-reasoning"), { name: "text-reasoning", kind: "model", protocols: MODEL_PROTOCOLS });
 });
 
-test("the destinations a record's egress grants are read from its body, and one only asked is not", () => {
-  assert.deepEqual(grantedEgressIn(RECORD()), ["public Hacker News API"]);
-  assert.deepEqual(grantedEgressIn(RECORD({ granted: false })), []);
-  assert.deepEqual(askedWith(RECORD()).architecture.egress_granted, ["public Hacker News API"]);
-  const held = withGrantedServices({ systems: ["text-reasoning"], egress_granted: ["public Hacker News API"] }, SPEC());
-  assert.deepEqual(held.systems, ["text-reasoning", "public-hacker-news-api"]);
-  assert.deepEqual(held.granted_services, ["public-hacker-news-api"]);
+test("a spending limit in words is a ceiling: its currency, per task or day, and its number", () => {
+  assert.deepEqual(ceilingOf("1 USD per day, across every job"), { unit: "USD", per: "day", suggested: 1 });
+  assert.deepEqual(ceilingOf("at most 2 USD a day"), { unit: "USD", per: "day", suggested: 2 });
+  assert.deepEqual(ceilingOf("$0.50 per job"), { unit: "USD", per: "task", suggested: 0.5 });
+  assert.equal(ceilingOf("whatever the owner thinks is fair"), null);
 });
 
-test("the hn-digest case: the granted Hacker News API survives the Design as a declared service with its address setting, beside text-reasoning", async () => {
-  const out = await designFromSpec({ spec: SPEC(), asked: askedWith(RECORD()), call: prose, table: null });
-  assert.deepEqual(out.spec.systems.map((s) => [s.name, s.kind]), [["public-hacker-news-api", "service"], ["text-reasoning", "model"]]);
+test("the record's header gives the Design the public binding and the cost limit", () => {
+  const a = askedWith(RECORD).architecture;
+  assert.deepEqual(a.systems, ["text-reasoning", "hacker-news"]);
+  assert.deepEqual(a.bindings["hacker-news"].production, { public: true, product: "itself", address: HN, key: "none", access: "read", approved: "egress-1" });
+  assert.equal(a.cost_limit, "1 USD per day, across every job");
+});
+
+test("the hn-digest case: the files declare hacker-news with its address setting, text-reasoning with its ceiling, and the two settings", async () => {
+  const out = await design();
+  assert.deepEqual(out.spec.systems.map((s) => [s.name, s.kind]), [["hacker-news", "service"], ["text-reasoning", "model"]]);
   const hn = out.spec.systems[0];
-  assert.deepEqual(hn.settings, [{ env: "PUBLIC_HACKER_NEWS_API_ADDRESS", purpose: "where public Hacker News API answers, its base address", default: HN }]);
+  assert.equal(hn.access, "read");
+  assert.deepEqual(hn.settings, [{ env: "HACKER_NEWS_ADDRESS", purpose: "where public Hacker News API answers, its base address", default: HN }]);
   assert.match(hn.needs, /hacker-news\.firebaseio\.com/);
   assert.deepEqual(reachProblems(out.spec), []);
   assert.equal(out.blanks.some((b) => b.key === "architecture"), false, "nothing goes back to the architect");
-  assert.deepEqual(out.findings.filter((f) => /architecture record/.test(f)), []);
+  assert.deepEqual(out.findings.filter((f) => /declares the system|names the system/.test(f)), []);
   assert.deepEqual(out.spec.run_config.settings.map((s) => s.name), ["stories_to_read", "digest_size"]);
-  assert.match(out.notes, /public-hacker-news-api is declared because the architecture record's egress grants it/);
-  // The install file carries the setting's variable and purpose, and the
-  // address only in the spec and the draft's default.
-  const runtime = JSON.parse(agentFilesOf(out.spec)["agent-runtime-requirements.json"]);
-  assert.deepEqual(runtime.systems.map((s) => s.name), ["public-hacker-news-api", "text-reasoning"]);
-  assert.deepEqual(runtime.systems[0].settings, [{ env: "PUBLIC_HACKER_NEWS_API_ADDRESS", purpose: "where public Hacker News API answers, its base address" }]);
+  const files = agentFilesOf(out.spec);
+  const runtime = JSON.parse(files["agent-runtime-requirements.json"]);
+  assert.deepEqual(runtime.systems, [
+    { name: "hacker-news", kind: "service", settings: [{ env: "HACKER_NEWS_ADDRESS", purpose: "where public Hacker News API answers, its base address" }] },
+    { name: "text-reasoning", kind: "model", protocols: MODEL_PROTOCOLS, spends: { unit: "USD" } },
+  ]);
+  // Common Agent Section 12.4, item 4: the spending system, per what, the
+  // side that applies it, and the number the owner's instruction may adopt.
+  assert.deepEqual(runtime.ceilings, [{ system: "text-reasoning", per: "day", enforced_by: "runtime", suggested: 1 }]);
+  const desc = JSON.parse(files["agent-descriptor.json"]);
+  assert.deepEqual(desc.systems.map((s) => s.name), ["hacker-news", "text-reasoning"]);
+  assert.deepEqual(desc.run_config.settings.map((s) => s.name), ["stories_to_read", "digest_size"]);
+  // These are the files the security reviewer's test reviews.
+  for (const f of ["agent-descriptor.json", "agent-runtime-requirements.json"]) assert.equal(files[f], readFileSync(join(FIX, f), "utf8"), f);
 });
 
-test("a service the record only asks about is still taken out of the files and asked of the architect", async () => {
-  const out = await designFromSpec({ spec: SPEC(), asked: askedWith(RECORD({ granted: false })), call: prose, table: null });
+test("a service the record does not name is still taken out of the files and asked of the architect", async () => {
+  const without = RECORD.replace("systems: [text-reasoning, hacker-news]", "systems: [text-reasoning]").replace(/\n  hacker-news:\n(?: {4}.+\n)+/, "\n");
+  const out = await design(without);
   assert.deepEqual(out.spec.systems.map((s) => s.name), ["text-reasoning"]);
   assert.match(out.blanks.find((b) => b.key === "architecture")?.question ?? "", /public-hacker-news-api, which the architecture record does not name/);
 });
@@ -144,7 +143,7 @@ test("a service the record only asks about is still taken out of the files and a
 test("the package maker takes the hn-digest files", async () => {
   const dir = mkdtempSync(join(tmpdir(), "spec-keeps-build-"));
   try {
-    const out = await designFromSpec({ spec: SPEC(), asked: askedWith(RECORD()), call: prose, table: null });
+    const out = await design();
     const built = checkBuilds({ spec: out.spec, env: { BUILD_PY }, keep: join(dir, "agent") });
     assert.equal(built.checked, true, "the builder ran");
     assert.deepEqual(built.problems, []);

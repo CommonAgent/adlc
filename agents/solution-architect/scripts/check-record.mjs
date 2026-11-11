@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { bodyOf, parseRecord, renderRecord } from "./architecture-record.mjs";
+import { PUBLIC_ADDRESS, bodyOf, parseRecord, renderRecord } from "./architecture-record.mjs";
 import { ADDRESS_RE, CREDENTIAL_RE, MODEL_NAME_RE, productWords } from "./standard.mjs";
 import { loadSchemas, standardAt, standingAssetsOf, standingProblems } from "./standing.mjs";
 import { customerProducts, providersIn, withoutProviders } from "./no-provider.mjs";
@@ -89,6 +89,15 @@ export function doneOf(rec, vocabulary = [], table = loadSchemas()) {
   return { done: problems.length === 0, problems };
 }
 
+/** The addresses of the keyless public services a record carries: each
+ *  public binding's, and each destination's service that is still asked. */
+export function publicAddressesOf(rec) {
+  const out = new Set();
+  for (const s of rec?.systems ?? []) for (const b of Object.values(s?.bindings ?? {})) if (b?.public && trim(b.address)) out.add(trim(b.address));
+  for (const d of rec?.egress ?? []) if (trim(d?.service?.address)) out.add(trim(d.service.address));
+  return [...out];
+}
+
 /** The standards this record was written under, as a run record cites a
  *  standing asset: its schema, the digest of the bytes read, and its layer. */
 export function standardsCited() {
@@ -112,12 +121,15 @@ export function standardsCited() {
  *  the organization bound itself, the only provider words a record may
  *  carry. The findings never repeat a model's or a provider's name: they are
  *  handed back in the reply. */
-export function forbiddenIn(text, table = loadSchemas(), { vocabulary = [], allowed = [] } = {}) {
+export function forbiddenIn(text, table = loadSchemas(), { vocabulary = [], allowed = [], addresses = [] } = {}) {
   const out = [];
   // A standing asset's schema is a name with the version in it, never an
   // address the agent reaches: the known kinds are taken out before the
   // address check reads the text.
   for (const k of table?.schemas ?? []) text = String(text).split(k.schema).join("(schema)");
+  // A keyless public service's address is the one address a record carries,
+  // in its binding and in the question that asks the owner for it.
+  for (const a of addresses) if (PUBLIC_ADDRESS.test(a)) text = String(text).split(a).join("(the public service's address)");
   const models = [...String(text).matchAll(MODEL_NAME_RE)].length;
   if (models) out.push(`the record names a model ${models === 1 ? "once" : `${models} times`}`);
   const providers = providersIn(text, { vocabulary, allowed }).length;
@@ -185,7 +197,7 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
     // name, and the House Stack's above all, never leaves this agent.
     const vocabulary = asked.defaults?.systems ?? [];
     const allowed = customerProducts(bound.systems);
-    const forbidden = forbiddenIn(`${text}\n${open}`, undefined, { vocabulary, allowed });
+    const forbidden = forbiddenIn(`${text}\n${open}`, undefined, { vocabulary, allowed, addresses: publicAddressesOf(rec) });
     if (forbidden.length) {
       console.log(JSON.stringify({ ok: false, code: 1, reply: `The record was not delivered, because ${forbidden.join("; ")}. Nothing a record carries may be a model's or a model provider's name, an address or a credential; this is a fault in this agent, not in what you sent.` }));
       process.exit(1);
@@ -198,8 +210,9 @@ if (thisFile && import.meta.url.endsWith(thisFile)) {
       changed = whatChanged(asked.earlier.text, text, rec);
       // The earlier record may be a person's edited file: what is quoted from it
       // carries nothing a record never carries.
-      // A known standing-asset schema is a name and is kept as it is.
-      const schemas = (loadSchemas()?.schemas ?? []).map((k) => k.schema);
+      // A known standing-asset schema is a name and is kept as it is, and so
+      // is the address of a public service this record binds or asks.
+      const schemas = [...(loadSchemas()?.schemas ?? []).map((k) => k.schema), ...publicAddressesOf(rec)];
       let scrubbed = changed.text;
       const mark = (i) => `\u0000schema ${i}\u0000`;
       schemas.forEach((x, i) => { scrubbed = scrubbed.split(x).join(mark(i)); });

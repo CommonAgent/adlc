@@ -15,6 +15,7 @@
 //   needs: node >= 22. Pure: nothing here reads a file or the network.
 import { inputIs, settingMissing } from "./options.mjs";
 import { providersIn, withoutProviders } from "./no-provider.mjs";
+import { PUBLIC_ACCESS, PUBLIC_ADDRESS, parseRecord } from "./architecture-record.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 
@@ -102,6 +103,10 @@ const addressesIn = (s) => [...String(s).matchAll(ADDRESS_RE)].map((m) => m[0]);
 const credentialsIn = (s) => [...String(s).matchAll(CREDENTIAL_RE)].map((m) => m[0]);
 const numbersIn = (s) => [...String(s).matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => m[0].replace(",", "."));
 
+/** Where an answer may carry a keyless public service's address: a
+ *  destination's service, and a public system made from one. */
+export const PUBLIC_AT = /^(?:egress\[\d+\]\.service\.address|systems\[\d+\]\.public\.address)$/;
+
 /** The findings the drafting answer carries, as sentences the second go is
  *  handed. `ctx` is {statement, answers, vocabulary, environments}. */
 export function findingsOf(arch, ctx = {}) {
@@ -120,7 +125,7 @@ export function findingsOf(arch, ctx = {}) {
     if (products.has(name) || name.split("-").some((w) => products.has(w) && !reserved.has(name))) {
       out.push(`the system ${name} is named by its product; name the system (${systemForProduct(name, vocab) ?? "the reserved word for what it is"}) and keep the product in the binding`);
     }
-    if (!ACCESS.includes(s?.access)) out.push(`the system ${name} has no access (read, write or trigger)`);
+    if (!ACCESS.includes(s?.access) && !(s?.public && PUBLIC_ACCESS.includes(s?.access))) out.push(`the system ${name} has no access (read, write or trigger)`);
     if (MODEL_SYSTEMS.includes(name)) {
       if (s.access !== "trigger") out.push(`the system ${name} is a model, reached with access trigger`);
       if (!trim(s.capability)) out.push(`the system ${name} does not say the capability the work needs (text, vision, long context, speech)`);
@@ -160,6 +165,9 @@ export function findingsOf(arch, ctx = {}) {
   }
   for (const [at, s] of stringsIn(arch)) {
     for (const m of modelNamesIn(s)) out.push(`${at} names the model ${m}; state the capability and leave the model to the binding`);
+    // The one address a record carries: a keyless public service's, which
+    // its binding names (the architecture standard, section 2).
+    if (PUBLIC_AT.test(at) && PUBLIC_ADDRESS.test(trim(s))) continue;
     for (const a of addressesIn(s)) out.push(`${at} carries the address ${a}; the record carries no address, and the owner's instruction supplies it at Deploy`);
     if (credentialsIn(s).length) out.push(`${at} carries something that looks like a credential; the record carries none`);
   }
@@ -188,18 +196,37 @@ export function sameThing(x, y) {
 
 /** What an earlier round of a record settled that the next round keeps: the
  *  spending limit, the destinations granted and refused (from its decisions),
- *  and which destination each open egress question asked about. */
+ *  which destination each open egress question asked about, and each public
+ *  service it bound to itself, by system name. */
 export function carriedFrom(text = "") {
   const t = String(text ?? "");
   const decided = [...t.matchAll(/^### Decision \d+\. (.+)$/gm)].map((m) => m[1].trim());
   const cost = decided.map((d) => /^Limit what the agent spends to (.+)$/.exec(d)?.[1]).find(Boolean)
     ?? /^- \*\*Cost\*\*: (?!not set)(.+?)\. [A-Z]/m.exec(t)?.[1] ?? "";
+  const publicServices = {};
+  for (const [name, envs] of Object.entries(parseRecord(t)?.bindings ?? {})) {
+    const b = Object.values(envs ?? {}).find((x) => x?.public);
+    if (b) publicServices[name] = { address: b.address, access: b.access, approved: b.approved ?? "" };
+  }
   return {
+    public: publicServices,
     cost: trim(cost),
     granted: decided.map((d) => /^The agent may reach (.+)$/.exec(d)?.[1]).filter(Boolean),
     refused: decided.map((d) => /^The agent does not reach (.+)$/.exec(d)?.[1]).filter(Boolean),
     asked_egress: [...t.matchAll(/^- (egress-\d+): May this agent reach (.+?) on the network in /gm)].map((m) => ({ key: m[1], destination: m[2] })),
   };
+}
+
+/** A destination's keyless public service, when it names one whole: a
+ *  system name in plain words, its access, and an address that carries no
+ *  credential. Null otherwise, and the destination stays egress. */
+export function publicServiceOf(d) {
+  const s = d?.service;
+  if (!s || typeof s !== "object") return null;
+  const name = trim(s.name).toLowerCase();
+  const address = trim(s.address);
+  if (!/^[a-z][a-z0-9-]*$/.test(name) || MODEL_SYSTEMS.includes(name) || !PUBLIC_ADDRESS.test(address)) return null;
+  return { name, access: PUBLIC_ACCESS.includes(trim(s.access)) ? trim(s.access) : "read", address };
 }
 
 const andList = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
@@ -229,6 +256,14 @@ export function repaired(arch, ctx = {}) {
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrub(x)]));
     return v;
   };
+  // A keyless public service's address is the one address an answer may
+  // carry, in its destination's service (the architecture standard, section
+  // 2). It is kept out of the scrub and put back after it, and one that could
+  // carry a credential (a user before the host, a query) is not kept.
+  const publicAddresses = (Array.isArray(a.egress) ? a.egress : []).map((d) => {
+    const v = trim(d?.service?.address);
+    return d?.service && typeof d.service === "object" && PUBLIC_ADDRESS.test(v) && !credentialsIn(v).length ? v : "";
+  });
   const before = JSON.stringify(a);
   const clean = scrub(a);
   if (JSON.stringify(clean) !== before) notes.push("took a model's name, an address or a credential out of the answer");
@@ -249,6 +284,11 @@ export function repaired(arch, ctx = {}) {
   Object.assign(a, unnamed(a));
   if (Array.isArray(a.systems)) a.systems.forEach((s, i) => { if (s && typeof s === "object") s.name = names[i]; });
   if (JSON.stringify(a) !== named) notes.push("took a model provider's name out of the answer");
+  (Array.isArray(a.egress) ? a.egress : []).forEach((d, i) => {
+    if (!d?.service || typeof d.service !== "object") return;
+    if (publicAddresses[i]) d.service.address = publicAddresses[i];
+    else delete d.service.address;
+  });
 
   // A system named by its product is renamed to the system, where the
   // vocabulary says which.
@@ -293,7 +333,11 @@ export function repaired(arch, ctx = {}) {
   }
 
   // Every destination beyond the derived set is asked, unless a person's
-  // answer granted it.
+  // answer granted it. A destination that is one keyless public service at
+  // one address (its `service`: a system name, the access and the address)
+  // is asked the same way, with the address in the question, and once the
+  // owner says yes it is a system of the record, bound to the service itself
+  // (the architecture standard, sections 2 and 7). A no leaves it out.
   // An answer is matched to its destination by what the destination is, not
   // by where it stood in a list: the earlier record's question under each
   // key names the destination it asked about. A destination granted or
@@ -305,14 +349,23 @@ export function repaired(arch, ctx = {}) {
   let next = 1;
   const freshKey = () => { while (used.has(`egress-${next}`)) next += 1; used.add(`egress-${next}`); return `egress-${next}`; };
   const envs = andList(a.environments?.length ? a.environments : ["dev", "test", "production"]);
+  const carriedPublic = carried.public ?? {};
+  const madeSystems = [];
   for (const d of a.egress) {
     const dest = trim(d.destination);
     const earlier = askedBefore.find((x) => sameThing(x.destination, dest));
     const key = earlier?.key;
     const answer = key ? trim(ctx.answers?.[key]) : "";
     const verdict = answer ? yesOrNo(answer) : null;
-    if (verdict === "yes" || (!answer && (carried.granted ?? []).some((g) => sameThing(g, dest)))) {
+    const svc = publicServiceOf(d);
+    const boundBefore = svc && !answer ? carriedPublic[svc.name] : null;
+    if (verdict === "yes" || boundBefore || (!answer && (carried.granted ?? []).some((g) => sameThing(g, dest)))) {
       d.granted = true;
+      if (svc) {
+        madeSystems.push({ d, system: { name: svc.name, plain: dest, access: svc.access, why: trim(d.why) || `To reach ${dest}`, public: { address: svc.address, approved: key ?? boundBefore?.approved ?? "" } } });
+        if (verdict === "yes") a.decisions.push({ decided: `The agent may reach ${dest}`, why: `The person granted it in an answer (${key}: ${answer})`, follows: `${dest} is the system ${svc.name}, bound to the service itself at the address the owner approved, with no key; the Design declares that address as a setting whose default it is, and the scripts hold no address of their own` });
+        continue;
+      }
       if (verdict === "yes") a.decisions.push({ decided: `The agent may reach ${dest}`, why: `The person granted it in an answer (${key}: ${answer})`, follows: "The offering declares reaches-network, and the destination is named in the egress of each environment" });
       continue;
     }
@@ -326,9 +379,28 @@ export function repaired(arch, ctx = {}) {
     const named = dest.includes("(an address, supplied at Deploy)")
       ? `a destination the drafting named only by its address (${trim(d.why) || "no reason given"})`
       : dest;
-    questions.push({ key: k, question: `May this agent reach ${named} on the network in ${envs}? It is beyond the derived set (its systems, the network, the registrar and its model), so it is a commitment: the offering must declare reaches-network, and the owner says yes or no.${answer ? ` "${answer}" did not say which.` : ""} Answer "${k}: yes" or "${k}: no".` });
+    const what = svc
+      ? ` (a public service with no key at ${svc.address}, reached to ${svc.access === "read-write" ? "read and write" : svc.access})`
+      : "";
+    const then = svc
+      ? `With a yes it becomes the system ${svc.name}, bound to the service itself at that address.`
+      : "It is beyond the derived set (its systems, the network, the registrar and its model), so it is a commitment: the offering must declare reaches-network, and the owner says yes or no.";
+    questions.push({ key: k, question: `May this agent reach ${named}${what} on the network in ${envs}? ${then}${answer ? ` "${answer}" did not say which.` : ""} Answer "${k}: yes" or "${k}: no".` });
   }
-  a.egress = a.egress.filter((d) => !refused.includes(d));
+  a.egress = a.egress.filter((d) => !refused.includes(d) && !madeSystems.some((m) => m.d === d));
+  // Each approved public service is a system of the record. A system the
+  // answer already names (a revision that kept it) takes the approval.
+  for (const { system } of madeSystems) {
+    const same = a.systems.find((s) => trim(s?.name) === system.name);
+    if (same) Object.assign(same, { public: system.public, access: PUBLIC_ACCESS.includes(same.access) ? same.access : system.access });
+    else a.systems.push(system);
+  }
+  // A system the earlier round bound to itself keeps its binding when the
+  // answer names it as a system and no longer as a destination.
+  for (const s of a.systems) {
+    const b = carriedPublic[trim(s?.name)];
+    if (b && !s.public) Object.assign(s, { public: { address: b.address, approved: b.approved }, access: PUBLIC_ACCESS.includes(s.access) ? s.access : b.access });
+  }
 
   // Decisions without a reason are not delivered: each is asked.
   a.decisions = a.decisions.filter((d) => trim(d?.decided));

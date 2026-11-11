@@ -1,6 +1,7 @@
 ---
 schema: https://schemas.agentmesh.ai/architecture-standard/v1
 name: Architecture standard
+version: 1.1.0
 owner: agentmesh.ai
 layer: publisher
 approved_by: null
@@ -37,7 +38,8 @@ Seven things, as the role defines them, and nothing a later stage owns.
    environment the agent will run in, spelled the way the deploy into it
    spells it: `dev`, `test`, `production` (Common Agent 8.3). Each binding
    says whether the organization chose it (`customer`) or a platform default
-   filled it (`platform`), as the deployment record's `provided_by` does.
+   filled it (`platform`), as the deployment record's `provided_by` does. A
+   keyless public service is bound to the service itself (section 2).
 3. **The dependencies.** The other agents and services the agent depends on,
    each named, with why.
 4. **The kind.** What the agent's inside is made of: skills a harness reads
@@ -91,6 +93,18 @@ A binding names a product. It never carries a credential, an address, a key
 store or an account identifier: those are what an install needs, and the
 owner's instruction supplies them at Deploy (Common Agent 12.6 rule 3).
 
+**A keyless public service.** A service the agent reaches at one fixed
+address that takes no key, such as the Hacker News API, is a system of the
+record like any other, named in plain system words (`hacker-news`). Nobody
+chooses a product for it, so it is bound to the service itself, and that is
+a valid binding with no product behind it. The binding names the address,
+says it takes no key, gives the access (`read`, `write` or `read-write`) and
+records the owner's approval, in every environment:
+`itself at <address>, no key, read, approved by the owner in egress-1`. The
+architect asks the owner for it as it asks for any destination (section 7),
+with the address in the question; a yes makes it a system bound this way,
+and a no leaves it out. This address is the one address a record carries.
+
 ## 3. Models are bound systems
 
 A model is a system like any other, stated by the capability the agent needs
@@ -142,10 +156,13 @@ Readable formats by default.
 
 ## 5. Addresses and settings
 
-- **Addresses are never settings.** An address the caller gives is an input
-  of kind `url`. An address of a product somebody binds comes with the
-  binding at install. A keyless public read keeps its address as a constant
-  in the script. None of them is a setting a person types.
+- **Addresses are never settings a person types.** An address the caller
+  gives is an input of kind `url`. An address of a product somebody binds
+  comes with the binding at install. A keyless public service's address is
+  the one its binding names (section 2): the Design declares it as the
+  service's address setting, whose default is that address, and the install
+  places it. No script holds an address of its own; each reads the setting
+  (Common Agent Section 12.6, rule 2).
 - **Settings are declared with defaults.** A value that shapes the work is a
   setting the agent declares, with its default, whether it is a preference
   (the closest layer wins) or a rule (the tightest layer wins), and whether a
@@ -180,7 +197,9 @@ A spending limit, a product that neither the organization chose nor the
 platform offers, access to a system the statement does not call for, and a
 network destination beyond the derived set are commitments somebody would be
 held to. The architect asks for each and fills none of them in, unless the
-build that asked has already settled it (section 11). A step of the
+build that asked has already settled it (section 11). A keyless public
+service is asked as a destination, and the owner's yes makes it a system of
+the record (section 2). A step of the
 design that needs a system the record does not name comes back to the
 architect as a question, and the record is revised before the design goes
 on; the system is never added on the designer's word alone.
@@ -188,7 +207,8 @@ on; the system is never added on the designer's word alone.
 ## 8. Done
 
 The Architecture part is done when every system is named and bound in each
-environment the agent will run in, every decision has a reason, every kind
+environment the agent will run in (a keyless public service bound to itself
+is bound), every decision has a reason, every kind
 of output a person reads has its standing assets decided (section 10), and
 every step of the design uses only systems the record named. The architect checks
 the first two before it delivers, and says the record is not finished while
@@ -202,8 +222,14 @@ The record is a Markdown document for the person, with a structured header
 for the bindings, so the next stage and a test can read the bindings without
 parsing prose. The header is front matter: `record`, `statement`,
 `environments`, `kind`, `done`, `questions`, `systems`, `standing_assets`
-(the schemas section 10 decided, or `none`), and `bindings`, one line per
-system and environment. The body quotes the statement it answers under
+(the schemas section 10 decided, or `none`), `cost_limit` (the spending
+limit in the words it was set in, or `not set`), and `bindings`, one line
+per system and environment. The Design declares the cost limit as the
+ceiling of the spending system it bounds, in the shape of Common Agent
+Section 12.4, item 4: the model system says it spends, in the limit's
+currency, and `ceilings[]` names that system, `per` task or day, with the
+limit's number as `suggested`, which the owner's instruction adopts at
+install. The body quotes the statement it answers under
 `## Statement`, then carries the fixed headings `## Systems`, `## Bindings`,
 `## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`,
 `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`, in

@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.3.1",
+  "agent_version": "0.4.0",
   "name": "Solution architect",
   "summary": "Writes the architecture record for a new agent: the systems it reaches, the product bound to each, and every decision with its reason.",
   "will_not": [
@@ -53,7 +53,7 @@
           "name": "the architecture record",
           "kind": "text/markdown",
           "when": "per_task",
-          "about": "Markdown: a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, bindings`, then `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`. The header's bindings give the product and who provides it for each system in each environment, for the Design and a test to read."
+          "about": "Markdown: a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings`, then `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`. The header's bindings give the product and who provides it for each system in each environment, for the Design and a test to read."
         },
         {
           "name": "what is still open",
@@ -151,7 +151,7 @@
           "kind": "text/markdown",
           "required": false,
           "given_by": "either",
-          "about": "An architecture record this role wrote: Markdown with a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, bindings`. Absent, the newest record an earlier job wrote is revised."
+          "about": "An architecture record this role wrote: Markdown with a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings`. Absent, the newest record an earlier job wrote is revised."
         },
         {
           "name": "what to change",
@@ -194,7 +194,7 @@
           "name": "the architecture record",
           "kind": "text/markdown",
           "when": "per_task",
-          "about": "Markdown: a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, bindings`, then `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`. The header's bindings give the product and who provides it for each system in each environment, for the Design and a test to read."
+          "about": "Markdown: a front matter header `record, statement, environments, kind, done, questions, systems, standing_assets, cost_limit, bindings`, then `## Statement`, `## Systems`, `## Bindings`, `## Dependencies`, `## Kind`, `## Limits`, `## Egress`, `## Formats`, `## Standing assets`, `## Settings`, `## Decisions` and `## Questions`. The header's bindings give the product and who provides it for each system in each environment, for the Design and a test to read."
         },
         {
           "name": "what changed",
