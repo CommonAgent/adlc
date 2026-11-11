@@ -315,3 +315,24 @@ test("from 1.5.0 an as-built record of code kept elsewhere is a starting point, 
   assert.match(byId("requirements").given, /where code already exists, or where a build starts from the as-built record of code kept elsewhere, the as-built record/);
   assert.match(byId("test").given, /where a build starts from the as-built record of code kept elsewhere, the same parts and the interfaces \(part 3\)/);
 });
+
+// Version 1.7.0: one holder may hold several stages, and each writing stage
+// names the check that decides it.
+test("from 1.7.0 one holder may hold several stages, and each writing stage names the check that decides it", () => {
+  const [major, minor] = data.version.split(".").map(Number);
+  assert.ok(major > 1 || (major === 1 && minor >= 7), `version ${data.version} carries checked_by, so it is 1.7.0 or later`);
+  assert.match(data.about, /one holder may hold several stages: what must be separate is each stage's check, not its author/);
+  const want = { requirements: ["requirements"], architecture: ["architecture", "files"], test: ["test"], code: ["code"] };
+  for (const [id, stages] of Object.entries(want)) {
+    const s = byId(id);
+    assert.deepEqual(s.checked_by.map((c) => c.stage), stages, id);
+    for (const c of s.checked_by) {
+      assert.equal(c.check, "node .adlc/check.mjs", id);
+      assert.ok(c.asks.length > 40, `${id}: what the check asks is said`);
+    }
+  }
+  assert.match(byId("requirements").done_when, /the refusals|what the agent refuses/);
+  assert.match(byId("requirements").done_when, /the person has approved it$/);
+  assert.match(byId("code").done_when, /read only the variables the agent's files declare/);
+  for (const s of data.stages) if (!want[s.id]) assert.equal(s.checked_by, undefined, `${s.id} names no check of the plugin`);
+});

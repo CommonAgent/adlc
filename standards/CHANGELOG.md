@@ -47,6 +47,24 @@ Changes to the standards in this folder, newest first.
 
 ## stages.json
 
+- **1.7.0**: one holder may hold several stages, as in the ADLC One-Builder
+  Plan: one builder writes the spec, the architecture, the agent's files, the
+  tests and the code, and what must be separate is each stage's check, not its
+  author. Each writing stage names in `checked_by` the check that decides it,
+  which its holder does not control: `node .adlc/check.mjs` in the build
+  folder (the ADLC plugin), with the stage it answers for and what it asks.
+  Requirements, Test and Code have one; Architecture and Design has two, the
+  record and the agent's own files. Each one's `done_when` now says what that
+  check holds: at Requirements, every requirement checked by a scenario, the
+  refusals, the empty case and the failure case stated, and the person's
+  approval; at Architecture and Design, the record and the files are what
+  the generators write, the spec and the record name the same systems, and
+  the packer accepts the files; at Test, every test named for an approved
+  scenario, requirement or constraint and none failing on its own mistake; at
+  Code, every script written, reading only declared variables, and the
+  packer accepting the folder. Stage ids, numbers and roles are unchanged.
+  Proven on hn-digest and release-notes (AgentMesh-Dev-Test/adlc-plugin-proof
+  #1 and #2).
 - **1.6.0**: Requirements hands back the spec (`spec.schema.json`, spec-v1),
   the analysis of the product's functional requirements and capabilities: each
   feature with its requirements, its inputs and outputs, and acceptance
