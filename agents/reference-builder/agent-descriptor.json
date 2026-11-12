@@ -1,6 +1,6 @@
 {
   "format": "agent-descriptor-v1",
-  "agent_version": "0.1.0",
+  "agent_version": "0.2.0",
   "does": "Builds an agent from a person's request through the ADLC, by running a coding harness with the ADLC plugin and stopping to ask the person at each decision that is theirs.",
   "offerings": [
     {
@@ -21,7 +21,7 @@
           "name": "reply",
           "kind": "text/markdown",
           "when": "per_task",
-          "about": "The reply, in Markdown: a short header with `build` and `stage`, then what the harness said, ending with the person's question when one is theirs."
+          "about": "The reply, in Markdown: a short header with `build`, `phase` and `where` (where the build is, in the words of its own check), then what the harness said, ending with the person's question when one is theirs."
         }
       ],
       "how": {

@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { filesFrom, recordFrom, standardTestsOf } from "../kit/generate.mjs";
+import { answerValues } from "../kit/answers.mjs";
 import { runTests, undeclaredReads } from "../kit/stages.mjs";
 
 const AT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "agents", "reference-builder");
@@ -17,7 +18,7 @@ const read = (n) => readFileSync(join(AT, n), "utf8");
 const json = (n) => JSON.parse(read(n));
 
 test("the reference builder's record is what the generator writes from its facts and answers", async () => {
-  const r = await recordFrom({ spec: json("spec.json"), named: json("architecture.json"), answers: json("answers.json"), request: read("request.md") });
+  const r = await recordFrom({ spec: json("spec.json"), named: json("architecture.json"), answers: answerValues(json("answers.json")), request: read("request.md") });
   assert.equal(r.done, true);
   assert.equal(r.text, read("architecture-record.md"));
 });

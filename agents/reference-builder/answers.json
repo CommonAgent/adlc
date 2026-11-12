@@ -1,5 +1,8 @@
 {
   "name": "reference-builder",
   "price": "Free",
-  "limit-cost": "None of its own: it spends nothing itself, and what the harness spends is the harness's."
+  "limit-cost": {
+    "answer": "None of its own: it spends nothing itself, and what the harness spends is the harness's.",
+    "said": "the model is the harness's. It is free."
+  }
 }

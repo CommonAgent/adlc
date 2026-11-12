@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "reference-builder",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Builds an agent from a person's request through the ADLC, by running a coding harness with the ADLC plugin and stopping to ask the person at each decision that is theirs.",
   "author": {
     "name": "Agent Builder"
