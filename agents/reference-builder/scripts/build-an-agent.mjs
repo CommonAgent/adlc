@@ -22,7 +22,7 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const trim = (s) => String(s ?? "").trim();
 const HARNESS = "coding-harness";
@@ -44,7 +44,10 @@ export function parseMessage(text) {
 
 function argsOf(argv) {
   const at = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : ""; };
-  return { job: at("--job"), records: at("--records"), work: at("--work"), textFile: at("--text-file") };
+  // Each folder is made absolute where the job starts: the harness runs inside
+  // the build's folder, so a relative path to its prompt would not be found.
+  const folder = (k) => { const p = at(k); return p ? resolve(p) : ""; };
+  return { job: folder("--job"), records: folder("--records"), work: folder("--work"), textFile: at("--text-file") };
 }
 
 const buildsIn = (work) => join(work, "builds");
@@ -138,7 +141,7 @@ export async function runJob({ argv = [], spawn = spawnSync, newId = () => `b-${
   const a = argsOf(argv);
   const said = a.textFile && existsSync(a.textFile) ? readFileSync(a.textFile, "utf8") : "";
   const msg = parseMessage(said);
-  const work = a.work || ".";
+  const work = a.work || resolve(".");
   const none = (id, where, words) => `build: ${id}\nphase: none\nwhere: ${where}\n\n## What the build did\n\n${words}\n`;
   if (msg.kind === "empty") {
     return deliver(a.job, 3, none("none", "No build was started.", "Nothing yet. Tell me what the agent should do, in your own words, and I will start a build from it."));

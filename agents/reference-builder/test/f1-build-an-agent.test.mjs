@@ -19,7 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { checkDelivered } from "./delivered-formats.test.mjs";
 import { parseMessage, runJob, whereOf } from "../scripts/build-an-agent.mjs";
 
@@ -90,6 +90,36 @@ test("[F1.A1] a request starts a build folder with /adlc:start, runs the coding 
     assert.match(out.reply, /^where: The spec waits for the person's approval\.$/m);
     assert.deepEqual(checkDelivered(at.job), []);
   } finally { rmSync(at.root, { recursive: true, force: true }); }
+});
+
+test("[F1.A1] a build runs with relative folders: each is made absolute, so the harness finds its prompt from inside the build's folder", async () => {
+  const at = job("Build an agent that turns meeting notes into tasks.");
+  const started = process.cwd();
+  try {
+    // The agent starts in the job's root and is given each folder by a path
+    // relative to it.
+    process.chdir(at.root);
+    const rel = (p) => relative(at.root, p);
+    const argv = ["--job", rel(at.job), "--records", rel(at.records), "--work", rel(at.work), "--text-file", rel(join(at.job, "message.txt"))];
+    assert.ok(!isAbsolute(argv[1]) && !isAbsolute(argv[5]), "the folders are given relative");
+    const p = programs();
+    const out = await runJob({ argv, spawn: p.spawn, newId: () => "b-abc123" });
+    assert.equal(out.code, 0);
+    const h = harnessCalls(p.calls)[0];
+    const promptFile = h.args[h.args.indexOf("--prompt-file") + 1];
+    assert.ok(isAbsolute(promptFile), `the prompt file is given as ${promptFile}`);
+    assert.ok(isAbsolute(h.cwd), `the harness runs in ${h.cwd}`);
+    assert.equal(readFileSync(resolve(h.cwd, promptFile), "utf8"), h.prompt, "the harness finds the prompt from where it runs");
+    assert.ok(existsSync(join(at.work, "builds", "b-abc123", "build.json")), "the build is kept under the work folder");
+    assert.match(out.reply, /^build: b-abc123$/m);
+    assert.deepEqual(checkDelivered(at.job), []);
+    // An answer to the same build, with the same relative folders, resumes it.
+    writeFileSync(join(at.job, "message.txt"), "b-abc123: yes, to the author");
+    const next = await runJob({ argv, spawn: p.spawn, now: NOW });
+    assert.equal(next.code, 0);
+    const h2 = harnessCalls(p.calls).at(-1);
+    assert.equal(readFileSync(resolve(h2.cwd, h2.args[h2.args.indexOf("--prompt-file") + 1]), "utf8"), "yes, to the author");
+  } finally { process.chdir(started); rmSync(at.root, { recursive: true, force: true }); }
 });
 
 test("[F1.A2] the harness's question is the reply, and an answer naming the build resumes the same session", async () => {
