@@ -1,6 +1,6 @@
 // The start of a build: the folder is laid out with the check, the
-// instructions and the kit pinned; and every command the instructions name is
-// one the kit answers.
+// instructions and the kit, which can no longer change; and every command the
+// instructions name is one the kit answers.
 //
 //   node --test plugin/test/
 import { test } from "node:test";
@@ -15,7 +15,7 @@ import { checkFolder } from "../kit/check.mjs";
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL = readFileSync(join(PLUGIN, "skills", "adlc", "SKILL.md"), "utf8");
 
-test("a new build folder has the check, the instructions, and the kit pinned", async () => {
+test("a new build folder has the check, the instructions, and the kit fixed, and starts in the spec", async () => {
   const dir = join(mkdtempSync(join(tmpdir(), "adlc-start-")), "agent");
   try {
     assert.equal(start(dir).ok, true);
@@ -27,7 +27,7 @@ test("a new build folder has the check, the instructions, and the kit pinned", a
     assert.ok(".adlc/stages.mjs" in lock.digests);
     assert.deepEqual(lock.gates, {});
     const r = await checkFolder(dir);
-    assert.equal(r.stage, "requirements");
+    assert.equal(r.phase, "spec");
     assert.match(r.problems[0], /^spec\.json is not in the folder/);
     assert.equal(start(dir).ok, false);
     appendFileSync(join(dir, ".adlc", "packer.mjs"), "\n");
@@ -35,13 +35,13 @@ test("a new build folder has the check, the instructions, and the kit pinned", a
   } finally { rmSync(dirname(dir), { recursive: true, force: true }); }
 });
 
-test("updating a folder's kit replaces and re-pins it, and keeps every other pin and every stage passed", () => {
+test("updating a folder's kit replaces it and fixes it again, and keeps every other fixed file and every phase passed", () => {
   const dir = join(mkdtempSync(join(tmpdir(), "adlc-update-")), "agent");
   try {
     start(dir);
     const before = JSON.parse(readFileSync(join(dir, "build.lock.json"), "utf8"));
     before.digests["spec.json"] = "sha256:abc";
-    before.gates = { requirements: { passed: true, by: "the person" } };
+    before.gates = { spec: { passed: true, by: "the person" } };
     writeFileSync(join(dir, "build.lock.json"), JSON.stringify(before));
     appendFileSync(join(dir, ".adlc", "packer.mjs"), "\n// an old kit\n");
     assert.equal(update(dir).ok, true);

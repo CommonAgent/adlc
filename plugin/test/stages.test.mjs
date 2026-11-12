@@ -1,8 +1,8 @@
-// The check and the person's word at Requirements, on the Hacker News digest.
-// The approved spec has its refusals and no empty or failure case, so the
-// check holds it on those two; with both stated it waits on the person, their
-// approval pins the spec, a pin that moves stops the check, and sending the
-// build back takes the pins off.
+// The two phases, on the Hacker News digest. In the spec, the check holds the
+// approved spec on its missing empty case and failure case; with both stated
+// it waits on the person, whose approval fixes the spec. In the build, every
+// gate is checked together, the code is judged only once the tests pass, and
+// from then on the tests are fixed. Sending back reopens the spec or the build.
 //
 //   node --test plugin/test/
 import { test } from "node:test";
@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkFolder } from "../kit/check.mjs";
 import { approve, sendBackTo } from "../kit/approve.mjs";
-import { architectureProblems, codeProblems, coverageProblems, filesProblems, lockOf, ownerOf, stageOf, testProblems } from "../kit/stages.mjs";
+import { architectureProblems, buildGates, codeProblems, coverageProblems, filesProblems, lockOf, ownerOf, phaseOf, pinProblems, testProblems } from "../kit/stages.mjs";
 import { filesFrom, recordFrom, standardTestsOf } from "../kit/generate.mjs";
 
 const AT = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "hn-digest");
@@ -46,7 +46,7 @@ test("the approved digest spec is held on its empty case and its failure case, a
   const dir = folder();
   try {
     const r = await checkFolder(dir);
-    assert.equal(r.stage, "requirements");
+    assert.equal(r.phase, "spec");
     assert.equal(r.code, 1);
     assert.equal(r.problems.length, 2);
     assert.match(r.problems[0], /^the empty case is not stated/);
@@ -60,19 +60,19 @@ test("a requirement no scenario checks is named", () => {
   assert.deepEqual(coverageProblems(s), ["requirement F1.R8 is checked by no scenario; every requirement has a scenario a test can be written from"]);
 });
 
-test("a spec the check passes waits on the person, and the person's approval pins it", async () => {
+test("a spec the check passes waits on the person, and the person's approval fixes it and starts the build", async () => {
   const dir = folder(complete());
   try {
     const waiting = await checkFolder(dir);
     assert.equal(waiting.code, 4);
     assert.equal(waiting.waiting, true);
-    assert.equal(stageOf(lockOf(dir)), "requirements");
+    assert.equal(phaseOf(lockOf(dir)), "spec");
     const ok = await approve(dir);
     assert.equal(ok.code, 0);
     const lock = lockOf(dir);
     assert.deepEqual(Object.keys(lock.digests), ["request.md", "spec.json"]);
-    assert.equal(lock.gates.requirements.by, "the person");
-    assert.equal(stageOf(lock), "architecture");
+    assert.equal(lock.gates.spec.by, "the person");
+    assert.equal(phaseOf(lock), "build");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -81,26 +81,27 @@ test("a spec the check holds is not approved", async () => {
   try {
     const r = await approve(dir);
     assert.equal(r.code, 1);
-    assert.equal(lockOf(dir).gates.requirements, undefined);
+    assert.equal(lockOf(dir).gates.spec, undefined);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("a pinned file that moves stops the check, and sending back takes the pins off", async () => {
+test("an approved spec that changes stops the check, and sending back to the spec reopens it", async () => {
   const dir = folder(complete());
   try {
     await approve(dir);
     appendFileSync(join(dir, "spec.json"), " ");
     const moved = await checkFolder(dir);
     assert.equal(moved.code, 3);
-    assert.match(moved.problems[0], /^spec\.json is pinned and changed/);
-    assert.equal(sendBackTo(dir, "requirements").code, 0);
+    assert.match(moved.problems[0], /^spec\.json can no longer change, and it changed/);
+    assert.equal(sendBackTo(dir, "test").code, 2, "send back is to the spec or the build only");
+    assert.equal(sendBackTo(dir, "spec").code, 0);
     const lock = lockOf(dir);
     assert.deepEqual(lock.digests, {});
     assert.deepEqual(lock.gates, {});
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-/** A folder past Requirements, with the record written from the builder's
+/** A folder in the build, with the record written from the builder's
  *  facts and the person's yes to the one service. */
 async function approvedFolder() {
   const dir = folder(complete());
@@ -131,14 +132,19 @@ test("a spec system the record knows under another name is named at Architecture
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("Architecture passes on the generated, finished record, and pins it", async () => {
+test("in the build every gate is checked together: the record passes while the rest say what they need, and nothing more is fixed", async () => {
   const dir = await approvedFolder();
   try {
     assert.deepEqual(await architectureProblems(dir), []);
     const r = await checkFolder(dir);
-    assert.equal(r.stage, "architecture");
-    assert.equal(r.passed, true);
-    assert.ok("architecture-record.md" in lockOf(dir).digests);
+    assert.equal(r.phase, "build");
+    assert.equal(r.passed, false);
+    assert.deepEqual(r.gates.architecture, []);
+    assert.ok(r.gates.files.length > 0, "the agent's files are not written yet");
+    assert.match(r.gates.test[0], /^waits for the agent's files/);
+    assert.match(r.gates.code[0], /^waits for the tests to pass their gate/);
+    assert.deepEqual(Object.keys(lockOf(dir).digests), ["request.md", "spec.json"], "only the approved spec is fixed");
+    assert.equal(lockOf(dir).tests_fixed, undefined);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -281,14 +287,14 @@ test("a script the suite does not notice blanked sends the build back to Test, a
     const calls = [];
     const p = codeProblems(dir, null, { packer: accepts, spawn: fake(calls) });
     assert.match(p[0], /^scripts\/topic-digest\.mjs, blanked, is not noticed by the suite/);
-    assert.match(p[0], /--send-back test/);
+    assert.match(p[0], /--send-back build/);
     assert.equal(calls.length, 2);
     const refuses = () => ({ ok: false, ran: true, refused: "skills/topic-digest: the script is missing", warnings: [] });
     assert.match(codeProblems(dir, null, { packer: refuses })[0], /refuses the folder with its scripts: skills\/topic-digest: the script is missing$/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("a pinned file git checked out with CRLF line ends is still the pinned file", async () => {
+test("a fixed file git checked out with CRLF line ends is still the fixed file", async () => {
   const dir = folder(complete());
   try {
     await approve(dir);
@@ -310,10 +316,25 @@ test("a script that reads a variable the files do not declare, or a run setting 
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("each pinned path belongs to the stage that wrote it", () => {
-  assert.equal(ownerOf("spec.json"), "requirements");
-  assert.equal(ownerOf("architecture-record.md"), "architecture");
-  assert.equal(ownerOf("skills/topic-digest/SKILL.md"), "files");
-  assert.equal(ownerOf("test/f1.test.mjs"), "test");
-  assert.equal(ownerOf("scripts/topic-digest.mjs"), null);
+test("the code is judged only once the tests pass; then the tests are fixed, and a changed test is caught", async () => {
+  const dir = await codeFolder();
+  try {
+    writeFileSync(join(dir, "scripts", "topic-digest.mjs"), SCRIPT);
+    const r = await buildGates(dir, lockOf(dir), { packer: accepts });
+    assert.deepEqual(r.problems, [], r.problems.join("\n"));
+    assert.ok(r.lock.tests_fixed, "the tests became fixed when the code was judged");
+    assert.ok(`test/f1-topic-digest.test.mjs` in r.lock.digests);
+    appendFileSync(join(dir, "test", "f1-topic-digest.test.mjs"), "\n// changed to fit the code\n");
+    assert.match(pinProblems(dir, r.lock)[0], /^test\/f1-topic-digest\.test\.mjs can no longer change, and it changed; .*--send-back build/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("each file belongs to the phase that fixes it", () => {
+  assert.equal(ownerOf("spec.json"), "spec");
+  assert.equal(ownerOf("request.md"), "spec");
+  assert.equal(ownerOf("architecture-record.md"), "build");
+  assert.equal(ownerOf("skills/topic-digest/SKILL.md"), "build");
+  assert.equal(ownerOf("test/f1.test.mjs"), "build");
+  assert.equal(ownerOf("scripts/topic-digest.mjs"), "build");
+  assert.equal(ownerOf(".adlc/check.mjs"), null);
 });
