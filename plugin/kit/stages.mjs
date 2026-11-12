@@ -381,7 +381,7 @@ export function undeclaredReads(dir) {
       seen.add(name);
       const why = runNames.has(name)
         ? "it is a declared run setting, and a run setting arrives in the job's run-context.json (Common Agent 5.8), never as a variable"
-        : "the agent's files do not declare it, so no install sets it; if a system needs it (an address, a key), it goes into the spec and the build goes back to Requirements";
+        : "the agent's files do not declare it, so no install sets it; if a system needs it (an address, a key), it goes into the spec, and the person sends the build back to the spec (--send-back spec)";
       out.push(`scripts/${rel} reads ${name} from the environment: ${why}`);
     }
   }
