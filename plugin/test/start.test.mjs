@@ -54,6 +54,42 @@ test("updating a folder's kit replaces it and fixes it again, and keeps every ot
   } finally { rmSync(dirname(dir), { recursive: true, force: true }); }
 });
 
+test("a folder built in the five stages is brought to the two phases: the approved spec stays approved, the build is checked again", () => {
+  const dir = join(mkdtempSync(join(tmpdir(), "adlc-migrate-")), "agent");
+  try {
+    start(dir);
+    const old = JSON.parse(readFileSync(join(dir, "build.lock.json"), "utf8"));
+    old.scripts = [];
+    old.digests = { ...old.digests, "spec.json": "sha256:s", "request.md": "sha256:r", "architecture-record.md": "sha256:a", "test/f1.test.mjs": "sha256:t", "plugin.json": "sha256:p" };
+    old.gates = { requirements: { passed: true, by: "the person", at: "2026-11-11" }, architecture: { passed: true }, files: { passed: true }, test: { passed: true } };
+    writeFileSync(join(dir, "build.lock.json"), JSON.stringify(old));
+    const r = update(dir);
+    assert.equal(r.moved, true);
+    assert.match(r.said, /the approved spec stays approved, and the build is checked again/);
+    const now = JSON.parse(readFileSync(join(dir, "build.lock.json"), "utf8"));
+    assert.deepEqual(now.gates, { spec: { passed: true, by: "the person", at: "2026-11-11" } });
+    assert.equal(now.digests["spec.json"], "sha256:s");
+    assert.equal(now.digests["request.md"], "sha256:r");
+    for (const p of ["architecture-record.md", "test/f1.test.mjs", "plugin.json"]) assert.equal(now.digests[p], undefined, `${p} is free to change again`);
+    assert.equal(now.scripts, undefined);
+    assert.equal(now.tests_fixed, undefined);
+    assert.equal(update(dir).moved, false, "a lock already in the two phases is left as it is");
+  } finally { rmSync(dirname(dir), { recursive: true, force: true }); }
+});
+
+test("a folder whose spec was never approved comes over with nothing approved", () => {
+  const dir = join(mkdtempSync(join(tmpdir(), "adlc-migrate-")), "agent");
+  try {
+    start(dir);
+    const old = JSON.parse(readFileSync(join(dir, "build.lock.json"), "utf8"));
+    old.gates = { architecture: { passed: true } };
+    writeFileSync(join(dir, "build.lock.json"), JSON.stringify(old));
+    const r = update(dir);
+    assert.match(r.said, /the spec waits for the person's approval/);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "build.lock.json"), "utf8")).gates, {});
+  } finally { rmSync(dirname(dir), { recursive: true, force: true }); }
+});
+
 test("AGENTS.md is the skill's own text, without its front matter", () => {
   assert.ok(SKILL.startsWith("---\nname: adlc\n"));
   assert.ok(instructionsOf(SKILL).startsWith("# Building an agent through the ADLC\n"));

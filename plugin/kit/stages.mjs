@@ -100,6 +100,25 @@ export function lockOf(dir) {
 
 export const writeLock = (dir, lock) => writeFileSync(join(dir, LOCK_FILE), JSON.stringify(lock, null, 2) + "\n");
 
+/** The five stage gates a lock carried before the two phases. */
+export const OLD_STAGES = ["requirements", "architecture", "files", "test", "code"];
+
+/** A lock written in the five stages, brought to the two phases: an approved
+ *  spec stays approved and fixed; every later stage's pass is dropped, so the
+ *  build is checked again by its gates, and its files and the tests are free
+ *  to change until the code is judged. A lock already in the two phases comes
+ *  back as it was. Returns { lock, moved }. */
+export function migrateLock(lock) {
+  const gates = lock.gates ?? {};
+  if (!OLD_STAGES.some((s) => s in gates)) return { lock, moved: false };
+  const next = { ...lock, gates: {} };
+  delete next.scripts;
+  delete next.tests_fixed;
+  if (gates.requirements) next.gates.spec = { ...gates.requirements };
+  next.digests = Object.fromEntries(Object.entries(lock.digests ?? {}).filter(([p]) => ownerOf(p) !== "build" && (ownerOf(p) !== "spec" || gates.requirements)));
+  return { lock: next, moved: true };
+}
+
 /** The phase the folder is in: the first not passed, or null when both have. */
 export const phaseOf = (lock) => PHASES.find((p) => !lock.gates?.[p]) ?? null;
 
