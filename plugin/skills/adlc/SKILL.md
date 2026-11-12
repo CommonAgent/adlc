@@ -47,7 +47,7 @@ The check's gates, in the build:
 
 The code is judged only once the tests pass their gate, and from then on the tests are fixed. If a test then turns out to be wrong, say which test and which requirement, and ask the person to send the build back (`node .adlc/approve.mjs --send-back build`, which is theirs to run). If the spec turns out to be wrong, ask them to send it back to the spec (`--send-back spec`). When the build has been sent back, the check holds it until something in it has changed, so make the change the person asked for; it never passes the build or fixes the tests again on the files as they were.
 
-When the check says the build has passed, commit the folder and open the pull request.
+When the check says the build has passed, commit the folder and open the pull request. Whenever you commit the folder, `said.md` goes in with it: you never write it, but the words an answer quotes must be wherever the folder is checked, a pull request's check or a service reading the branch included.
 
 ## The rules
 
