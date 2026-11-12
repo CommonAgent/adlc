@@ -28,7 +28,7 @@ Run every command from the build folder (the one that holds `.adlc/`). Run the c
 
 Write these in any order. The check judges them together.
 
-**The architecture record.** Run `node .adlc/generate.mjs brief` for what `architecture.json` holds and the standard it is held to, and read that standard. Write `architecture.json`: the systems the agent stands on (a model only by capability, never by name or provider), the kind, dependencies, limits, egress, formats and settings; what the agent is made of (its skills and their parts, and the data flow from the caller and back); the drivers beyond the four limits; and each decision with its context, the drivers it answers, the alternatives weighed and its consequences. Then `node .adlc/generate.mjs record` writes `architecture-record.md` and, where only the person can answer, `still-open.md`. Ask them each question there, put their answers in `answers.json` under the key the question gives, and write the record again. Never edit the record by hand.
+**The architecture record.** Run `node .adlc/generate.mjs brief` for what `architecture.json` holds and the standard it is held to, and read that standard. Write `architecture.json`: the systems the agent stands on (a model only by capability, never by name or provider), the kind, dependencies, limits, egress, formats and settings; what the agent is made of (its skills and their parts, and the data flow from the caller and back); the drivers beyond the four limits; and each decision with its context, the drivers it answers, the alternatives weighed and its consequences. Then `node .adlc/generate.mjs record` writes `architecture-record.md` and, where only the person can answer, `still-open.md`. Each question there is the person's to answer. Where their words already answer one, in `request.md` or in what they have told you since (the plugin keeps that in `said.md`, which you never write), put the answer in `answers.json` under the key the question gives, with those words exactly: `{"answer": "yes", "said": "It reaches one system, the public npm registry"}`. Ask them every other question and wait, then put their reply the same way. The check finds those words in `request.md` or `said.md`, and an answer whose words are in neither is one they have not given. Then write the record again. Never edit the record by hand.
 
 **The agent's files.** `node .adlc/generate.mjs files` writes them from the spec and the record, and lays out `prose.json` with every key whose words are yours. Write those words: what the agent does, when to use each job, what a good result is, what comes back empty, the refusals (a list, each the act, then why, then what happens instead), each output's convention and what each system is needed for. Generate the files again after any change. Never edit a generated file by hand.
 
@@ -40,7 +40,7 @@ The check's gates, in the build:
 
 | Gate | It passes when |
 |---|---|
-| Architecture | The record is the one the generator writes from `architecture.json` and the person's answers, it is complete, and it names the same systems as the spec. |
+| Architecture | The record is the one the generator writes from `architecture.json` and the person's answers, every answer carries words the person said, it is complete, and it names the same systems as the spec. |
 | The agent's files | Every file is what the generators write from the spec, the record and `prose.json`, and the Common Agent packer accepts them. |
 | Test | Every scenario has a test, every test belongs to the spec, the suite fails against empty scripts, and no test fails on a mistake of its own. |
 | Code | The suite passes, every script is needed by some test, the scripts read only what the agent's files declare, and the packer accepts the folder with its scripts. |
@@ -51,7 +51,7 @@ When the check says the build has passed, commit the folder and open the pull re
 
 ## The rules
 
-1. Never change the approved spec, the fixed tests, the lock file `build.lock.json`, or anything under `.adlc/`. To change the spec or a fixed test, the person sends the build back.
+1. Never change the approved spec, the fixed tests, the lock file `build.lock.json`, `said.md`, or anything under `.adlc/`. To change the spec or a fixed test, the person sends the build back.
 2. Node 22 or later, ES modules (`.mjs`), nothing outside node: no npm packages, no other language.
 3. A model is reached only through its four settings, read from the environment on every run: `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` (may be empty) and `MODEL_PROTOCOL` (`anthropic-messages`, `openai-chat` or `gemini`). No model's name, and no provider, is written anywhere.
 4. No address in a script: a system's address is a declared setting, read from the environment. No credential anywhere, and nothing that looks like one. A script reads from the environment only what `agent-runtime-requirements.json` declares, the model's settings, and the job's folders; a run setting (`run_config` in the descriptor) arrives in the job's `run-context.json`, never as a variable. A key or an address the spec does not provide for is the spec's to add, so ask the person to send the build back to the spec.

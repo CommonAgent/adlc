@@ -4,6 +4,10 @@
 //         approve.mjs; and no edit of a file that can no longer change (the
 //         approved spec, the fixed tests), of the lock file build.lock.json,
 //         or of the check itself under .adlc/
+//   said  (UserPromptSubmit) what the person says is kept, as they said it, in
+//         said.md in each build folder still being built, so an answer the
+//         builder writes for them can be checked against their own words;
+//         the builder never writes said.md
 //   stop  (Stop) no stopping while such a file has changed, or while the
 //         tests are fixed and the build still fails its check; asked once, so
 //         the assistant can still say what blocks it
@@ -16,13 +20,14 @@
 // request check holds the same folder (the plan's step 6).
 //
 //   needs: node >= 22
-//   node hooks/guard.mjs pre|stop   reads the hook's JSON on stdin
+//   node hooks/guard.mjs pre|said|stop   reads the hook's JSON on stdin
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const LOCK = "build.lock.json";
+const SAID = "said.md";
 const posix = (p) => p.split(sep).join("/");
 
 /** The build folder at or above a path, or null. */
@@ -46,6 +51,7 @@ export function writeRefusal(file, cwd) {
   if (!dir) return null;
   const rel = posix(relative(dir, abs));
   if (rel === LOCK) return `${LOCK} is the build's lock file; only the check and the person's approval write it.`;
+  if (rel === SAID) return `${SAID} is the person's own words, kept by the plugin as they say them; the builder does not write it.`;
   if (rel === ".adlc" || rel.startsWith(".adlc/")) return `${rel} is the ADLC check, and the builder does not change the check it is held to.`;
   const lock = readJson(join(dir, LOCK));
   if (lock?.digests && rel in lock.digests) {
@@ -63,6 +69,7 @@ export function commandRefusal(command, cwd) {
   const c = String(command ?? "");
   if (!buildFolderOf(cwd) && !/\.adlc[\\/]/.test(c)) return null;
   if (APPROVE.test(c)) return "approve.mjs is the person's approval, and the assistant never runs it. Show them what is ready and ask them to run it themselves.";
+  if (c.includes(SAID) && WRITES.test(c)) return `${SAID} is the person's own words, kept by the plugin as they say them; the builder does not write it.`;
   if (c.includes(LOCK) && WRITES.test(c)) return `${LOCK} is the build's lock file; only the check and the person's approval write it.`;
   if (/\.adlc[\\/]/.test(c) && WRITES.test(c) && !/node\s+(?:\S*[\\/])?\.adlc[\\/]/.test(c)) return "the files under .adlc/ are the ADLC check, and the builder does not change the check it is held to.";
   return null;
@@ -91,6 +98,43 @@ export function pre(event) {
   return {};
 }
 
+const SKIP = new Set([".git", "node_modules", ".adlc"]);
+
+/** The build folders the person may be talking to: the one at or above the
+ *  working directory, or else those below it (three folders deep), leaving
+ *  out any whose build has passed. */
+export function openFoldersFrom(cwd) {
+  const up = buildFolderOf(cwd);
+  const found = up ? [up] : [];
+  const down = (at, depth) => {
+    if (depth > 3) return;
+    let entries = [];
+    try { entries = readdirSync(at, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory() || SKIP.has(e.name)) continue;
+      const sub = join(at, e.name);
+      if (existsSync(join(sub, ".adlc", "check.mjs"))) found.push(sub);
+      else down(sub, depth + 1);
+    }
+  };
+  if (!up) down(resolve(cwd ?? "."), 1);
+  return found.filter((d) => readJson(join(d, LOCK))?.gates?.build?.passed !== true);
+}
+
+/** Keep what the person said in said.md of each open build folder. Returns
+ *  the folders written to. */
+export function keepSaid(event, { now = () => new Date().toISOString() } = {}) {
+  const words = String(event.prompt ?? "").trim();
+  if (!words) return [];
+  const dirs = openFoldersFrom(event.cwd ?? process.cwd());
+  for (const d of dirs) {
+    const first = !existsSync(join(d, SAID));
+    const head = first ? "# What the person said\n\nKept by the plugin as the person said it, after request.md. The builder does not write this file.\n\n" : "";
+    appendFileSync(join(d, SAID), `${head}## ${now()}\n\n${words}\n\n`);
+  }
+  return dirs;
+}
+
 /** The stop decision: { block: reason } or {}. */
 export function stop(event, { run = spawnSync } = {}) {
   if (event.stop_hook_active) return {};
@@ -107,14 +151,16 @@ export function stop(event, { run = spawnSync } = {}) {
 }
 
 const mode = process.argv[2];
-if (mode === "pre" || mode === "stop") {
+if (mode === "pre" || mode === "said" || mode === "stop") {
   let text = "";
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (c) => { text += c; });
   process.stdin.on("end", () => {
     let event = {};
     try { event = JSON.parse(text || "{}"); } catch { event = {}; }
-    if (mode === "pre") {
+    if (mode === "said") {
+      try { keepSaid(event); } catch { /* never stand between the person and the session */ }
+    } else if (mode === "pre") {
       const d = pre(event);
       if (d.deny) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: d.deny } }));
     } else {

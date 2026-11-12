@@ -6,10 +6,29 @@
 //   node --test plugin/test/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildFolderOf, commandRefusal, pre, stop, writeRefusal } from "../hooks/guard.mjs";
+import { buildFolderOf, commandRefusal, keepSaid, pre, stop, writeRefusal } from "../hooks/guard.mjs";
+
+test("what the person says is kept in said.md of each build folder still being built, and the builder never writes it", () => {
+  const root = mkdtempSync(join(tmpdir(), "adlc-said-"));
+  try {
+    const open = join(root, "agents", "a");
+    const done = join(root, "agents", "b");
+    for (const d of [open, done]) { mkdirSync(join(d, ".adlc"), { recursive: true }); writeFileSync(join(d, ".adlc", "check.mjs"), ""); }
+    writeFileSync(join(open, "build.lock.json"), JSON.stringify({ build_lock: "v1", digests: {}, gates: { spec: { passed: true } } }));
+    writeFileSync(join(done, "build.lock.json"), JSON.stringify({ build_lock: "v1", digests: {}, gates: { spec: { passed: true }, build: { passed: true } } }));
+    assert.deepEqual(keepSaid({ cwd: root, prompt: "0 USD per job." }, { now: () => "2026-11-12T19:00:00Z" }), [open]);
+    assert.match(readFileSync(join(open, "said.md"), "utf8"), /## 2026-11-12T19:00:00Z\n\n0 USD per job\.\n/);
+    assert.equal(existsSync(join(done, "said.md")), false, "a build that has passed is not being talked to");
+    mkdirSync(join(open, "scripts"));
+    keepSaid({ cwd: join(open, "scripts"), prompt: "Yes." });
+    assert.match(readFileSync(join(open, "said.md"), "utf8"), /0 USD per job\.[\s\S]*Yes\./);
+    assert.match(writeRefusal(join(open, "said.md"), root), /^said\.md is the person's own words/);
+    assert.match(commandRefusal("echo yes >> said.md", open), /^said\.md is the person's own words/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 function folder() {
   const dir = mkdtempSync(join(tmpdir(), "adlc-guard-"));

@@ -38,6 +38,7 @@ import { bracketIdsOf, scenariosOf, specFindings } from "./test-writer/scripts/s
 import { testNamesIn } from "./test-writer/scripts/suite-rules.mjs";
 import { loadSpec } from "./test-writer/scripts/agent-folder.mjs";
 import { PACKER, pack } from "./packer.mjs";
+import { answersOf } from "./answers.mjs";
 
 const trim = (s) => String(s ?? "").trim();
 const list = (v) => (Array.isArray(v) ? v : []);
@@ -195,7 +196,7 @@ export function requirementsProblems(dir) {
   if (!spec) return ["spec.json is not in the folder, or is not JSON; write the spec first"];
   const request = existsSync(join(dir, "request.md")) ? readFileSync(join(dir, "request.md"), "utf8") : "";
   if (!trim(request)) return ["request.md is not in the folder; keep the person's own words there first, because every requirement comes from them"];
-  const answers = readJson(join(dir, "answers.json")) ?? {};
+  const answers = answersOf(dir).values;
   const person = Object.fromEntries(["name", "version", "price"].filter((k) => trim(answers[k])).map((k) => [k, trim(answers[k])]));
   const corpus = corpusOf({ said: request }, answers);
   return specProblems(spec, { corpus, person });
@@ -214,17 +215,19 @@ export async function architectureProblems(dir) {
   if (!named) return ["architecture.json is not in the folder; run `node .adlc/generate.mjs brief` for what it holds, write it, then `node .adlc/generate.mjs record`"];
   const text = existsSync(join(dir, "architecture-record.md")) ? readFileSync(join(dir, "architecture-record.md"), "utf8") : "";
   if (!trim(text)) return ["architecture-record.md is not in the folder; run `node .adlc/generate.mjs record`"];
+  const given = answersOf(dir);
   const r = await recordFrom({
     spec, named,
-    answers: readJson(join(dir, "answers.json")) ?? {},
+    answers: given.values,
     request: existsSync(join(dir, "request.md")) ? readFileSync(join(dir, "request.md"), "utf8") : "",
     stack: readJson(join(dir, "stack.json")),
   });
-  const out = [];
+  // An answer the person's words do not hold up is one they have not given.
+  const out = [...given.problems];
   if (r.text !== text) out.push(`architecture-record.md is not what the generator writes from architecture.json and answers.json; run \`node .adlc/generate.mjs record\`, and ${NOT_BY_HAND}`);
   for (const f of r.forbidden) out.push(`the record would carry ${f}; a record names no model, model provider, address or credential`);
   for (const f of r.findings) out.push(`architecture.json: ${f}`);
-  for (const q of r.questions) out.push(`the person has not answered ${q.key}: ${q.question} Ask them, and put their answer in answers.json under ${q.key}`);
+  for (const q of r.questions) out.push(`the person has not answered ${q.key}: ${q.question} Ask them, and put their answer in answers.json under ${q.key} with their words: {"answer": ..., "said": "<their words, exactly>"}`);
   if (!r.questions.length) for (const p of r.problems) out.push(`the record is not finished: ${p}`);
   // The spec and the record name the same systems: the files are made from
   // both, and a spec system the record knows under another name would

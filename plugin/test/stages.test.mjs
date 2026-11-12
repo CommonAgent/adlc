@@ -15,6 +15,7 @@ import { checkFolder } from "../kit/check.mjs";
 import { approve, sendBackTo } from "../kit/approve.mjs";
 import { architectureProblems, buildGates, codeProblems, coverageProblems, filesProblems, lockOf, ownerOf, phaseOf, pinProblems, testProblems } from "../kit/stages.mjs";
 import { filesFrom, recordFrom, standardTestsOf } from "../kit/generate.mjs";
+import { answerValues } from "../kit/answers.mjs";
 
 const AT = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "hn-digest");
 const spec = JSON.parse(readFileSync(join(AT, "spec.json"), "utf8"));
@@ -109,11 +110,24 @@ async function approvedFolder() {
   copyFileSync(join(AT, "architecture.json"), join(dir, "architecture.json"));
   const named = JSON.parse(readFileSync(join(AT, "architecture.json"), "utf8"));
   const request = readFileSync(join(AT, "request.md"), "utf8");
-  const answers = { name: "hn-digest", price: "Free", "egress-1": "yes" };
+  const answers = { name: "hn-digest", price: "Free", "egress-1": { answer: "yes", said: "It reaches one system, the public Hacker News API (read only, no key)." } };
   writeFileSync(join(dir, "answers.json"), JSON.stringify(answers) + "\n");
-  writeFileSync(join(dir, "architecture-record.md"), (await recordFrom({ spec: complete(), named, request, answers })).text);
+  writeFileSync(join(dir, "architecture-record.md"), (await recordFrom({ spec: complete(), named, request, answers: answerValues(answers) })).text);
   return dir;
 }
+
+test("an answer given after the spec stands on the person's words, from request.md or said.md, never the builder's", async () => {
+  const dir = await approvedFolder();
+  try {
+    const answersAre = (a) => writeFileSync(join(dir, "answers.json"), JSON.stringify({ name: "hn-digest", price: "Free", ...a }) + "\n");
+    answersAre({ "egress-1": "yes" });
+    assert.match((await architectureProblems(dir))[0], /^answers\.json: egress-1 has no words from the person under it/);
+    answersAre({ "egress-1": { answer: "yes", said: "You may reach the Hacker News API." } });
+    assert.match((await architectureProblems(dir))[0], /^answers\.json: the words under egress-1 are not in request\.md or said\.md/);
+    writeFileSync(join(dir, "said.md"), "# What the person said\n\n## 2026-11-12T19:00:00Z\n\nYes, you may reach the Hacker   News API.\n\n");
+    assert.deepEqual(await architectureProblems(dir), [], "the words are the person's, whatever the spacing");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
 const writeFiles = (dir, prose) => {
   writeFileSync(join(dir, "prose.json"), JSON.stringify(prose, null, 2) + "\n");
