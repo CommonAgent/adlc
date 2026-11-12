@@ -1,11 +1,12 @@
 // The plugin's hooks: what the assistant may not do in a build folder.
 //
 //   pre   (PreToolUse) the person's approval is theirs: no command that runs
-//         approve.mjs; and no edit of a pinned file, of the pin file
-//         build.lock.json, or of the check itself under .adlc/
-//   stop  (Stop) no stopping while a pinned file has moved, or while the
-//         build is at Code and its check fails; asked once, so the assistant
-//         can still say what blocks it
+//         approve.mjs; and no edit of a file that can no longer change (the
+//         approved spec, the fixed tests), of the lock file build.lock.json,
+//         or of the check itself under .adlc/
+//   stop  (Stop) no stopping while such a file has changed, or while the
+//         tests are fixed and the build still fails its check; asked once, so
+//         the assistant can still say what blocks it
 //
 // A build folder is the nearest folder above the file or the working
 // directory that holds .adlc/check.mjs. Outside one, every hook allows.
@@ -48,8 +49,8 @@ export function writeRefusal(file, cwd) {
   if (rel === ".adlc" || rel.startsWith(".adlc/")) return `${rel} is the ADLC check, and the builder does not change the check it is held to.`;
   const lock = readJson(join(dir, LOCK));
   if (lock?.digests && rel in lock.digests) {
-    const owner = Object.keys(lock.gates ?? {}).length ? "an earlier stage" : "the spec";
-    return `${rel} is pinned by ${owner}. Change it only after the person sends the build back (node .adlc/approve.mjs --send-back <stage>, which is theirs to run).`;
+    const back = /^(spec\.json|spec\.md|request\.md)$/.test(rel) ? "spec" : "build";
+    return `${rel} can no longer change. Change it only after the person sends the build back (node .adlc/approve.mjs --send-back ${back}, which is theirs to run).`;
   }
   return null;
 }
@@ -99,8 +100,9 @@ export function stop(event, { run = spawnSync } = {}) {
   let doc = null;
   try { doc = JSON.parse(String(r.stdout ?? "")); } catch { return {}; }
   const listed = (doc.problems ?? []).map((p) => `- ${p}`).join("\n");
-  if (doc.code === 3) return { block: `A pinned file moved, so the build cannot stop here:\n${listed}\nPut it back, or tell the person and ask them to send the build back.` };
-  if (doc.stage === "code" && doc.code === 1) return { block: `The build is at Code and its check fails, so it is not done:\n${listed}\nFix what it names, or tell the person plainly what blocks you.` };
+  if (doc.code === 3) return { block: `A file that can no longer change was changed, so the build cannot stop here:\n${listed}\nPut it back, or tell the person and ask them to send the build back.` };
+  // The code is being judged against fixed tests and still fails: the build is not done.
+  if (doc.phase === "build" && doc.code === 1 && doc.tests_fixed) return { block: `The tests are fixed and the build still fails its check, so it is not done:\n${listed}\nFix what it names, or tell the person plainly what blocks you.` };
   return {};
 }
 
