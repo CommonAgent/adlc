@@ -45,7 +45,7 @@ export function writeRefusal(file, cwd) {
   const dir = buildFolderOf(dirname(abs));
   if (!dir) return null;
   const rel = posix(relative(dir, abs));
-  if (rel === LOCK) return `${LOCK} is the build's pin file; only the check and the person's approval write it.`;
+  if (rel === LOCK) return `${LOCK} is the build's lock file; only the check and the person's approval write it.`;
   if (rel === ".adlc" || rel.startsWith(".adlc/")) return `${rel} is the ADLC check, and the builder does not change the check it is held to.`;
   const lock = readJson(join(dir, LOCK));
   if (lock?.digests && rel in lock.digests) {
@@ -63,7 +63,7 @@ export function commandRefusal(command, cwd) {
   const c = String(command ?? "");
   if (!buildFolderOf(cwd) && !/\.adlc[\\/]/.test(c)) return null;
   if (APPROVE.test(c)) return "approve.mjs is the person's approval, and the assistant never runs it. Show them what is ready and ask them to run it themselves.";
-  if (c.includes(LOCK) && WRITES.test(c)) return `${LOCK} is the build's pin file; only the check and the person's approval write it.`;
+  if (c.includes(LOCK) && WRITES.test(c)) return `${LOCK} is the build's lock file; only the check and the person's approval write it.`;
   if (/\.adlc[\\/]/.test(c) && WRITES.test(c) && !/node\s+(?:\S*[\\/])?\.adlc[\\/]/.test(c)) return "the files under .adlc/ are the ADLC check, and the builder does not change the check it is held to.";
   return null;
 }

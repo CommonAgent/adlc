@@ -3,8 +3,9 @@
 // The folder gets the check and the generators under .adlc/ (this kit, copied
 // whole), AGENTS.md with the builder's instructions (the adlc skill's own
 // text, so Cursor, Codex or a person can work the folder without the plugin),
-// CLAUDE.md pointing to it, and build.lock.json with the kit pinned from the
-// start: a check that changed is caught like any other pin.
+// CLAUDE.md pointing to it, and the lock file build.lock.json, in which the
+// kit is fixed from the start: a check that changed is caught like any other
+// file that can no longer change.
 //
 // The person's own words go in request.md, written by the builder from what
 // the person said, before anything else.
@@ -44,14 +45,14 @@ export function start(folder, { kit = KIT, skill = SKILL } = {}) {
   writeFileSync(join(dir, "AGENTS.md"), instructionsOf(readFileSync(skill, "utf8")));
   if (!existsSync(join(dir, "CLAUDE.md"))) writeFileSync(join(dir, "CLAUDE.md"), "@AGENTS.md\n");
   const digests = Object.fromEntries(walk(join(dir, ".adlc")).sort().map((r) => [`.adlc/${r}`, digestOf(readFileSync(join(dir, ".adlc", r)))]));
-  writeFileSync(join(dir, LOCK_FILE), JSON.stringify({ build_lock: "v1", digests, scripts: [], gates: {} }, null, 2) + "\n");
+  writeFileSync(join(dir, LOCK_FILE), JSON.stringify({ build_lock: "v1", digests, gates: {} }, null, 2) + "\n");
   return { ok: true, dir, said: `The build folder is ${dir}. Write the person's own words to request.md there, then follow AGENTS.md from the start.` };
 }
 
 /** Bring a build folder's kit up to this plugin's: .adlc/ replaced whole,
- *  AGENTS.md rewritten, and the kit pinned again. Every other pin and every
- *  stage passed stay as they were, so nothing the build settled moves; a
- *  stage's check that is now stricter says so the next time it runs. */
+ *  AGENTS.md rewritten, and the kit fixed again. Every other fixed file and
+ *  every phase passed stay as they were, so nothing the build settled moves;
+ *  a gate that is now stricter says so the next time the check runs. */
 export function update(folder, { kit = KIT, skill = SKILL } = {}) {
   const dir = resolve(folder);
   if (!existsSync(join(dir, ".adlc"))) return { ok: false, said: `${dir} is not a build folder; start one with start.mjs <folder>.` };

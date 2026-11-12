@@ -46,10 +46,10 @@ test("the approved spec, a fixed test, the lock file and the check are not edite
   try {
     assert.match(pre({ cwd: dir, tool_name: "Edit", tool_input: { file_path: join(dir, "spec.json") } }).deny, /^spec\.json can no longer change\. .*--send-back spec/);
     assert.match(pre({ cwd: dir, tool_name: "Edit", tool_input: { file_path: join(dir, "test", "a.test.mjs") } }).deny, /^test\/a\.test\.mjs can no longer change\. .*--send-back build/);
-    assert.match(pre({ cwd: dir, tool_name: "Write", tool_input: { file_path: join(dir, "build.lock.json") } }).deny, /pin file/);
+    assert.match(pre({ cwd: dir, tool_name: "Write", tool_input: { file_path: join(dir, "build.lock.json") } }).deny, /lock file/);
     assert.match(pre({ cwd: dir, tool_name: "Edit", tool_input: { file_path: join(dir, ".adlc", "stages.mjs") } }).deny, /the ADLC check/);
     assert.deepEqual(pre({ cwd: dir, tool_name: "Write", tool_input: { file_path: join(dir, "scripts", "a.mjs") } }), {});
-    assert.match(pre({ cwd: dir, tool_name: "Bash", tool_input: { command: "echo {} > build.lock.json" } }).deny, /pin file/);
+    assert.match(pre({ cwd: dir, tool_name: "Bash", tool_input: { command: "echo {} > build.lock.json" } }).deny, /lock file/);
     assert.match(pre({ cwd: dir, tool_name: "PowerShell", tool_input: { command: "Set-Content .adlc/check.mjs ''" } }).deny, /the ADLC check/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

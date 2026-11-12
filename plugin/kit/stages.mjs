@@ -95,7 +95,7 @@ export function pinsOf(phase, dir) {
 /** The lock as it stands, or a new one. */
 export function lockOf(dir) {
   const lock = readJson(join(dir, LOCK_FILE));
-  return lock && lock.build_lock === "v1" ? { digests: {}, scripts: [], gates: {}, ...lock } : { build_lock: "v1", digests: {}, scripts: [], gates: {} };
+  return lock && lock.build_lock === "v1" ? { digests: {}, gates: {}, ...lock } : { build_lock: "v1", digests: {}, gates: {} };
 }
 
 export const writeLock = (dir, lock) => writeFileSync(join(dir, LOCK_FILE), JSON.stringify(lock, null, 2) + "\n");
@@ -103,21 +103,21 @@ export const writeLock = (dir, lock) => writeFileSync(join(dir, LOCK_FILE), JSON
 /** The phase the folder is in: the first not passed, or null when both have. */
 export const phaseOf = (lock) => PHASES.find((p) => !lock.gates?.[p]) ?? null;
 
-/** Whether a file is the one pinned: its bytes, or its bytes with git's
- *  CRLF line ends on checkout turned back into LF. */
-export function sameAsPinned(bytes, want) {
+/** Whether a file is the one fixed in the lock: its bytes, or its bytes with
+ *  git's CRLF line ends on checkout turned back into LF. */
+export function sameAsFixed(bytes, want) {
   if (digestOf(bytes) === want) return true;
   const text = bytes.toString("utf8");
   return text.includes("\r\n") && digestOf(Buffer.from(text.replace(/\r\n/g, "\n"), "utf8")) === want;
 }
 
-/** Every pinned file that changed or went, against the lock. */
+/** Every file that can no longer change and changed or went, against the lock. */
 export function pinProblems(dir, lock) {
   const out = [];
   for (const [p, want] of Object.entries(lock.digests ?? {})) {
     const back = ownerOf(p) === "spec" ? "spec" : "build";
     if (!existsSync(join(dir, p))) out.push(`${p} can no longer change, and it is gone; put it back, or ask the person to send the build back (--send-back ${back})`);
-    else if (!sameAsPinned(readFileSync(join(dir, p)), want)) out.push(`${p} can no longer change, and it changed; put it back, or ask the person to send the build back (--send-back ${back})`);
+    else if (!sameAsFixed(readFileSync(join(dir, p)), want)) out.push(`${p} can no longer change, and it changed; put it back, or ask the person to send the build back (--send-back ${back})`);
   }
   return out;
 }
@@ -208,8 +208,8 @@ export async function architectureProblems(dir) {
   for (const q of r.questions) out.push(`the person has not answered ${q.key}: ${q.question} Ask them, and put their answer in answers.json under ${q.key}`);
   if (!r.questions.length) for (const p of r.problems) out.push(`the record is not finished: ${p}`);
   // The spec and the record name the same systems: the files are made from
-  // both, and a spec system the record knows under another name would only be
-  // found at the agent's files, after the record is pinned. The mapping is
+  // both, and a spec system the record knows under another name would
+  // otherwise be found only at the agent's files. The mapping is
   // the files generator's own (a public service by its host, else by name).
   const record = parseRecord(text);
   if (Array.isArray(record?.systems)) {
