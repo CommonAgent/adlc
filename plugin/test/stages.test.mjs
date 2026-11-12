@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkFolder } from "../kit/check.mjs";
 import { approve, sendBackTo } from "../kit/approve.mjs";
-import { architectureProblems, buildGates, codeProblems, coverageProblems, filesProblems, lockOf, ownerOf, phaseOf, pinProblems, testProblems } from "../kit/stages.mjs";
+import { architectureProblems, buildGates, codeProblems, coverageProblems, filesProblems, lockOf, ownerOf, phaseOf, pinProblems, sendBack, testProblems, unchangedSinceSentBack } from "../kit/stages.mjs";
 import { filesFrom, recordFrom, standardTestsOf } from "../kit/generate.mjs";
 import { answerValues } from "../kit/answers.mjs";
 
@@ -351,4 +351,25 @@ test("each file belongs to the phase that fixes it", () => {
   assert.equal(ownerOf("test/f1.test.mjs"), "build");
   assert.equal(ownerOf("scripts/topic-digest.mjs"), "build");
   assert.equal(ownerOf(".adlc/check.mjs"), null);
+});
+
+test("a build sent back is not passed again, nor its tests fixed, until something in it has changed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "adlc-sent-back-"));
+  try {
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    mkdirSync(join(dir, "test"), { recursive: true });
+    writeFileSync(join(dir, "scripts", "a.mjs"), "export const a = 1;\n");
+    writeFileSync(join(dir, "test", "a.test.mjs"), "// [F1.A1]\n");
+    const passed = { build_lock: "v1", digests: {}, gates: { spec: { passed: true }, build: { passed: true } }, tests_fixed: { at: "2026-11-12" } };
+    const back = sendBack(dir, passed, "build");
+    assert.deepEqual(Object.keys(back.gates), ["spec"]);
+    assert.equal(back.tests_fixed, undefined);
+    assert.ok(back.sent_back?.files["scripts/a.mjs"] && back.sent_back.files["test/a.test.mjs"], "the build's files as they were");
+    const held = await buildGates(dir, back);
+    assert.match(held.problems[0], /^Architecture: the person sent the build back, and nothing in it has changed since/);
+    assert.equal(held.lock, back, "nothing is fixed or passed");
+    writeFileSync(join(dir, "test", "a.test.mjs"), "// [F1.A1] and the empty passage\n");
+    assert.equal(unchangedSinceSentBack(dir, back), false, "a changed test opens the build to the check again");
+    assert.equal(sendBack(dir, passed, "spec").sent_back, undefined, "a spec sent back waits on the person's approval instead");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
