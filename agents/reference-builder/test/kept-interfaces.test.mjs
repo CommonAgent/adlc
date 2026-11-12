@@ -62,7 +62,7 @@ const ROOT = join(HERE, "..");
 const trim = (s) => String(s ?? "").trim();
 
 /** The spec these interfaces were copied from. */
-export const FROM = {"product":"reference-builder","version":"0.1.0"};
+export const FROM = {"product":"reference-builder","version":"0.2.0"};
 
 /** The interfaces the spec keeps, as the test writer copied them: id, kind,
  *  name, and module, signature, flags or schema as the spec gives them; test

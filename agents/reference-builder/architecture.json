@@ -15,7 +15,7 @@
     "cost": null,
     "speed": {
       "limit": "One harness run per message, up to the harness's own limit",
-      "why": "Each message moves the build to its next person gate or to the end."
+      "why": "Each message moves the build to the person's next decision or to the end."
     },
     "data": {
       "limit": "Only the build folders it keeps, under its work folder",
@@ -32,6 +32,12 @@
       "quality": "integrity",
       "says": "The harness and the plugin are the only authors of a build's files.",
       "from": "It is a harness, not a second author: it writes nothing the plugin does not."
+    },
+    {
+      "key": "the-persons-words",
+      "quality": "integrity",
+      "says": "Only the person's words are kept as theirs, so the check can find the words an answer quotes.",
+      "from": "The person's words are theirs"
     }
   ],
   "egress": [],
@@ -48,7 +54,7 @@
       "piece": "reply",
       "direction": "out",
       "kind": "text/markdown",
-      "convention": "A short header with `build` and `stage`, then what the harness said.",
+      "convention": "A short header with `build`, `phase` (spec, build or none) and `where` (where the build is, in the words of its own check), then `## What the build did` with what the harness said, then what the person may reply.",
       "given_by": "agent",
       "why": "A person reads it."
     }
@@ -57,8 +63,8 @@
   "skills": [
     {
       "name": "build-an-agent",
-      "responsibility": "Takes the person's words and moves one build to its next person gate or to the end.",
-      "script": "Starts or resumes the harness on a build folder, passes the person's approval through only on their word, and reads the folder's check."
+      "responsibility": "Takes the person's words and moves one build to the person's next decision or to the end.",
+      "script": "Starts or resumes the harness on a build folder, keeps the person's words in the folder's said.md before handing them on, passes the person's approval through only on their word, and reads the folder's check for the phase it is in."
     }
   ],
   "parts": [
@@ -69,16 +75,22 @@
       "responsibility": "Keeps each build's folder and harness session under its id."
     },
     {
+      "id": "said-keeper",
+      "name": "said keeper",
+      "within": "build-an-agent",
+      "responsibility": "Adds the person's message for a build to the folder's said.md under a heading with the time, and puts said.md back as it was when the harness cannot be run."
+    },
+    {
       "id": "harness-runner",
       "name": "harness runner",
       "within": "build-an-agent",
-      "responsibility": "Runs the coding harness headless with the plugin and reads its answer."
+      "responsibility": "Runs the coding harness headless with the plugin, always with ADLC_NOT_THE_PERSON=1, and reads its answer."
     },
     {
       "id": "gate-reader",
-      "name": "gate reader",
+      "name": "phase reader",
       "within": "build-an-agent",
-      "responsibility": "Reads the build folder's own check for the stage it is at."
+      "responsibility": "Reads the build folder's own check for the phase it is in and what it still has missing, and says so in the check's words."
     }
   ],
   "flow": [
@@ -90,15 +102,33 @@
     },
     {
       "from": "harness",
-      "to": "build-an-agent",
+      "to": "builds",
       "data": "the person's words",
-      "says": "The harness runs the skill with the message."
+      "says": "The harness runs the skill with the message, and the build keeper finds or starts the build."
     },
     {
-      "from": "build-an-agent",
+      "from": "builds",
+      "to": "said-keeper",
+      "data": "the person's answer",
+      "says": "An answer for a build is added to its said.md first."
+    },
+    {
+      "from": "said-keeper",
+      "to": "harness-runner",
+      "data": "the prompt",
+      "says": "The harness runner hands the coding harness the prompt in the build's session."
+    },
+    {
+      "from": "harness-runner",
+      "to": "gate-reader",
+      "data": "what the harness said",
+      "says": "After the run, the phase reader reads the folder's own check."
+    },
+    {
+      "from": "gate-reader",
       "to": "caller",
       "data": "the reply",
-      "says": "The skill answers with where the build stands or the person's question."
+      "says": "The skill answers with where the build is, in the check's words, and the person's question."
     }
   ],
   "decisions": [
@@ -133,7 +163,62 @@
         }
       ],
       "consequences": [
-        "A build waits at Requirements until the person says approve."
+        "A build waits in the spec phase until the person says approve.",
+        "The approval is offered in the reply only when the check says the spec waits for the person."
+      ]
+    },
+    {
+      "decided": "Read the phase and what is missing from the build folder's own check, and say it in the check's words",
+      "context": "The plugin works in two phases, the spec and the build, and its check names the phase and what each still needs.",
+      "drivers": [
+        "trust",
+        "one-author"
+      ],
+      "why": "The check is the judge of a build; a reply that judged for itself could say a build passed when it has not.",
+      "alternatives": [
+        {
+          "option": "Read the harness's own words for where the build is",
+          "why_not": "The harness can say it is done when the check does not."
+        }
+      ],
+      "consequences": [
+        "The reply says the build has passed only when the check says so.",
+        "When the check does not answer, the reply says it could not tell."
+      ]
+    },
+    {
+      "decided": "Once the spec is approved, ask the harness to carry on until the check says the build has passed",
+      "context": "In the build phase the builder writes everything in any order and the check judges it together.",
+      "drivers": [
+        "speed"
+      ],
+      "why": "One run carries the build to its end or to something only the person can decide.",
+      "alternatives": [
+        {
+          "option": "Ask the harness for one stage at a time",
+          "why_not": "The build has no stages any more, only gates judged together."
+        }
+      ],
+      "consequences": [
+        "A message after the approval usually ends with the build passed, or with the person's question."
+      ]
+    },
+    {
+      "decided": "Keep the person's words in said.md itself, and run the harness with ADLC_NOT_THE_PERSON=1",
+      "context": "The plugin keeps what is typed at the harness in said.md as the person's, unless the program typing says it is not the person.",
+      "drivers": [
+        "the-persons-words"
+      ],
+      "why": "The prompts this agent writes are not the person's, so the plugin must not keep them; the person's own answers are added by the agent before it hands them on.",
+      "alternatives": [
+        {
+          "option": "Let the plugin keep every prompt",
+          "why_not": "The agent's own prompts would read as the person's words."
+        }
+      ],
+      "consequences": [
+        "An answer the builder writes for the person can be checked against what they really said.",
+        "When the harness cannot be run, said.md is put back as it was."
       ]
     }
   ]

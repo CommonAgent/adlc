@@ -1,11 +1,18 @@
 // The plugin's hooks: what the assistant may not do in a build folder.
 //
 //   pre   (PreToolUse) the person's approval is theirs: no command that runs
-//         approve.mjs; and no edit of a pinned file, of the pin file
-//         build.lock.json, or of the check itself under .adlc/
-//   stop  (Stop) no stopping while a pinned file has moved, or while the
-//         build is at Code and its check fails; asked once, so the assistant
-//         can still say what blocks it
+//         approve.mjs; and no edit of a file that can no longer change (the
+//         approved spec, the fixed tests), of the lock file build.lock.json,
+//         or of the check itself under .adlc/
+//   said  (UserPromptSubmit) what the person says is kept, as they said it, in
+//         said.md in each build folder still being built, so an answer the
+//         builder writes for them can be checked against their own words;
+//         the builder never writes said.md. A program that types the
+//         prompts for the person sets ADLC_NOT_THE_PERSON=1, and nothing is
+//         kept: it writes the person's own replies to said.md itself
+//   stop  (Stop) no stopping while such a file has changed, or while the
+//         tests are fixed and the build still fails its check; asked once, so
+//         the assistant can still say what blocks it
 //
 // A build folder is the nearest folder above the file or the working
 // directory that holds .adlc/check.mjs. Outside one, every hook allows.
@@ -15,13 +22,14 @@
 // request check holds the same folder (the plan's step 6).
 //
 //   needs: node >= 22
-//   node hooks/guard.mjs pre|stop   reads the hook's JSON on stdin
+//   node hooks/guard.mjs pre|said|stop   reads the hook's JSON on stdin
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const LOCK = "build.lock.json";
+const SAID = "said.md";
 const posix = (p) => p.split(sep).join("/");
 
 /** The build folder at or above a path, or null. */
@@ -44,12 +52,13 @@ export function writeRefusal(file, cwd) {
   const dir = buildFolderOf(dirname(abs));
   if (!dir) return null;
   const rel = posix(relative(dir, abs));
-  if (rel === LOCK) return `${LOCK} is the build's pin file; only the check and the person's approval write it.`;
+  if (rel === LOCK) return `${LOCK} is the build's lock file; only the check and the person's approval write it.`;
+  if (rel === SAID) return `${SAID} is the person's own words, kept by the plugin as they say them; the builder does not write it.`;
   if (rel === ".adlc" || rel.startsWith(".adlc/")) return `${rel} is the ADLC check, and the builder does not change the check it is held to.`;
   const lock = readJson(join(dir, LOCK));
   if (lock?.digests && rel in lock.digests) {
-    const owner = Object.keys(lock.gates ?? {}).length ? "an earlier stage" : "the spec";
-    return `${rel} is pinned by ${owner}. Change it only after the person sends the build back (node .adlc/approve.mjs --send-back <stage>, which is theirs to run).`;
+    const back = /^(spec\.json|spec\.md|request\.md)$/.test(rel) ? "spec" : "build";
+    return `${rel} can no longer change. Change it only after the person sends the build back (node .adlc/approve.mjs --send-back ${back}, which is theirs to run).`;
   }
   return null;
 }
@@ -62,7 +71,8 @@ export function commandRefusal(command, cwd) {
   const c = String(command ?? "");
   if (!buildFolderOf(cwd) && !/\.adlc[\\/]/.test(c)) return null;
   if (APPROVE.test(c)) return "approve.mjs is the person's approval, and the assistant never runs it. Show them what is ready and ask them to run it themselves.";
-  if (c.includes(LOCK) && WRITES.test(c)) return `${LOCK} is the build's pin file; only the check and the person's approval write it.`;
+  if (c.includes(SAID) && WRITES.test(c)) return `${SAID} is the person's own words, kept by the plugin as they say them; the builder does not write it.`;
+  if (c.includes(LOCK) && WRITES.test(c)) return `${LOCK} is the build's lock file; only the check and the person's approval write it.`;
   if (/\.adlc[\\/]/.test(c) && WRITES.test(c) && !/node\s+(?:\S*[\\/])?\.adlc[\\/]/.test(c)) return "the files under .adlc/ are the ADLC check, and the builder does not change the check it is held to.";
   return null;
 }
@@ -90,6 +100,46 @@ export function pre(event) {
   return {};
 }
 
+const SKIP = new Set([".git", "node_modules", ".adlc"]);
+
+/** The build folders the person may be talking to: the one at or above the
+ *  working directory, or else those below it (three folders deep), leaving
+ *  out any whose build has passed. */
+export function openFoldersFrom(cwd) {
+  const up = buildFolderOf(cwd);
+  const found = up ? [up] : [];
+  const down = (at, depth) => {
+    if (depth > 3) return;
+    let entries = [];
+    try { entries = readdirSync(at, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory() || SKIP.has(e.name)) continue;
+      const sub = join(at, e.name);
+      if (existsSync(join(sub, ".adlc", "check.mjs"))) found.push(sub);
+      else down(sub, depth + 1);
+    }
+  };
+  if (!up) down(resolve(cwd ?? "."), 1);
+  return found.filter((d) => readJson(join(d, LOCK))?.gates?.build?.passed !== true);
+}
+
+/** Keep what the person said in said.md of each open build folder. Returns
+ *  the folders written to. */
+export function keepSaid(event, { now = () => new Date().toISOString(), env = process.env } = {}) {
+  // A program that types the prompts (a factory running the builder for the
+  // person) says so, and keeps the person's words itself: its prompts are not theirs.
+  if (env.ADLC_NOT_THE_PERSON === "1") return [];
+  const words = String(event.prompt ?? "").trim();
+  if (!words) return [];
+  const dirs = openFoldersFrom(event.cwd ?? process.cwd());
+  for (const d of dirs) {
+    const first = !existsSync(join(d, SAID));
+    const head = first ? "# What the person said\n\nKept by the plugin as the person said it, after request.md. The builder does not write this file.\n\n" : "";
+    appendFileSync(join(d, SAID), `${head}## ${now()}\n\n${words}\n\n`);
+  }
+  return dirs;
+}
+
 /** The stop decision: { block: reason } or {}. */
 export function stop(event, { run = spawnSync } = {}) {
   if (event.stop_hook_active) return {};
@@ -99,20 +149,23 @@ export function stop(event, { run = spawnSync } = {}) {
   let doc = null;
   try { doc = JSON.parse(String(r.stdout ?? "")); } catch { return {}; }
   const listed = (doc.problems ?? []).map((p) => `- ${p}`).join("\n");
-  if (doc.code === 3) return { block: `A pinned file moved, so the build cannot stop here:\n${listed}\nPut it back, or tell the person and ask them to send the build back.` };
-  if (doc.stage === "code" && doc.code === 1) return { block: `The build is at Code and its check fails, so it is not done:\n${listed}\nFix what it names, or tell the person plainly what blocks you.` };
+  if (doc.code === 3) return { block: `A file that can no longer change was changed, so the build cannot stop here:\n${listed}\nPut it back, or tell the person and ask them to send the build back.` };
+  // The code is being judged against fixed tests and still fails: the build is not done.
+  if (doc.phase === "build" && doc.code === 1 && doc.tests_fixed) return { block: `The tests are fixed and the build still fails its check, so it is not done:\n${listed}\nFix what it names, or tell the person plainly what blocks you.` };
   return {};
 }
 
 const mode = process.argv[2];
-if (mode === "pre" || mode === "stop") {
+if (mode === "pre" || mode === "said" || mode === "stop") {
   let text = "";
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (c) => { text += c; });
   process.stdin.on("end", () => {
     let event = {};
     try { event = JSON.parse(text || "{}"); } catch { event = {}; }
-    if (mode === "pre") {
+    if (mode === "said") {
+      try { keepSaid(event); } catch { /* never stand between the person and the session */ }
+    } else if (mode === "pre") {
       const d = pre(event);
       if (d.deny) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: d.deny } }));
     } else {

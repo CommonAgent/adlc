@@ -39,7 +39,8 @@ a package that validates.
 ## Building an agent in Claude Code
 
 The ADLC plugin lets one coding assistant build an agent from a request to a
-package, with every stage checked from the first draft. Install it in Claude
+package, in two phases: the spec, which the person approves, then everything
+else in any order, with every gate checked from the first draft. Install it in Claude
 Code:
 
 ```
@@ -49,7 +50,7 @@ Code:
 Then `/adlc:start <folder> <what the agent should do>`. The folder it lays out
 carries its instructions as `AGENTS.md`, so another coding assistant or a
 person can work it the same way, and `node .adlc/check.mjs` says, at any
-moment, which stage the folder is at and what is missing there. Approving the
+moment, which phase the folder is in and what each gate still needs. Approving the
 spec is the person's, with `node .adlc/approve.mjs`.
 
 ## The agents in this repository
@@ -60,7 +61,7 @@ replaced by any agent that holds the same role.
 
 | Stage | Role | Folder | Runs on its own? |
 |---|---|---|---|
-| Requirements through Code, one builder | the builder (the spec writer, solution architect, test writer and code writer roles, held together) | [agents/reference-builder](agents/reference-builder) | Yes, with the coding harness command and the ADLC plugin; the plugin's check holds every stage |
+| Requirements through Code, one builder | the builder (the spec writer, solution architect, test writer and code writer roles, held together) | [agents/reference-builder](agents/reference-builder) | Yes, with the coding harness command and the ADLC plugin; the plugin's check runs every gate |
 | Reverse engineering (when needed) | [reverse engineer](https://agentroles.ai/reverse-engineer.html) | [agents/reverse-engineer](agents/reverse-engineer) | Yes, with a model endpoint (the four model settings) and git; running the code's tests is optional |
 | Architecture and Design (architecture) | [solution architect](https://agentroles.ai/solution-architect.html) | [agents/solution-architect](agents/solution-architect) | Yes, with a model endpoint (the four model settings) |
 | Requirements, Architecture and Design (design) | [spec writer](https://agentroles.ai/spec-writer.html) | [agents/spec-writer](agents/spec-writer) | Yes, with a model endpoint (the four model settings) |

@@ -322,15 +322,22 @@ test("from 1.7.0 one holder may hold several stages, and each writing stage name
   const [major, minor] = data.version.split(".").map(Number);
   assert.ok(major > 1 || (major === 1 && minor >= 7), `version ${data.version} carries checked_by, so it is 1.7.0 or later`);
   assert.match(data.about, /one holder may hold several stages: what must be separate is each stage's check, not its author/);
-  const want = { requirements: ["requirements"], architecture: ["architecture", "files"], test: ["test"], code: ["code"] };
-  for (const [id, stages] of Object.entries(want)) {
+  // From 1.8.0 the writing stages are in two phases: the spec, then the build,
+  // whose gates are checked together. A check names its phase and its gate,
+  // never a stage it answers for alone, and nothing is fixed stage by stage.
+  assert.match(data.about, /two phases by one builder: the spec \(Requirements\), which the person approves before anything is built on it; and the build/);
+  const want = { requirements: [["spec", "spec"]], architecture: [["build", "architecture"], ["build", "files"]], test: [["build", "test"]], code: [["build", "code"]] };
+  for (const [id, gates] of Object.entries(want)) {
     const s = byId(id);
-    assert.deepEqual(s.checked_by.map((c) => c.stage), stages, id);
+    assert.deepEqual(s.checked_by.map((c) => [c.phase, c.gate]), gates, id);
     for (const c of s.checked_by) {
       assert.equal(c.check, "node .adlc/check.mjs", id);
+      assert.equal(c.stage, undefined, `${id}: a check names its phase and gate, not a stage`);
       assert.ok(c.asks.length > 40, `${id}: what the check asks is said`);
+      assert.doesNotMatch(c.asks, /pinned|Then the pull request opens/, `${id}: nothing is fixed stage by stage`);
     }
   }
+  assert.match(byId("code").done_when, /the approved spec and the tests, once fixed, have not changed/);
   assert.match(byId("requirements").done_when, /the refusals|what the agent refuses/);
   assert.match(byId("requirements").done_when, /the person has approved the spec$/);
   assert.match(byId("code").done_when, /read only the settings the agent's files declare/);

@@ -81,6 +81,18 @@ Changes to the standards in this folder, newest first.
 
 ## stages.json
 
+- **1.8.0**: the writing stages in two phases, as the ADLC One-Builder Plan
+  says: the spec (Requirements), which the person approves before anything is
+  built on it, and the build (Architecture and Design, Test and Code), whose
+  gates the check runs together over the result in whatever order the builder
+  writes it. 1.7.0 tied each check to one stage and ended each with "Then it is
+  pinned", which made the builder pass five stages in a fixed order; that was
+  not the plan. Each `checked_by` entry now names its `phase` (`spec` or
+  `build`) and its `gate` (`spec`, `architecture`, `files`, `test`, `code`) in
+  place of `stage`, and says nothing is fixed stage by stage. The tests are
+  fixed the first time the code is judged, so Code's `done_when` now says the
+  approved spec and the tests, once fixed, have not changed. Stage ids, roles
+  and every other stage are unchanged.
 - **1.7.0**: one holder may hold several stages, as in the ADLC One-Builder
   Plan: one builder writes the spec, the architecture, the agent's files, the
   tests and the code, and what must be separate is each stage's check, not its

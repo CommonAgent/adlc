@@ -1,20 +1,42 @@
-// The hooks: the person's approval is never the assistant's, a pinned file,
-// the pin file and the check are not edited, and the build does not stop with
-// a pin moved or with Code failing.
+// The hooks: the person's approval is never the assistant's; the approved
+// spec, the fixed tests, the lock file and the check are not edited; and the
+// build does not stop with such a file changed, or while the tests are fixed
+// and the build still fails.
 //
 //   node --test plugin/test/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildFolderOf, commandRefusal, pre, stop, writeRefusal } from "../hooks/guard.mjs";
+import { buildFolderOf, commandRefusal, keepSaid, pre, stop, writeRefusal } from "../hooks/guard.mjs";
+
+test("what the person says is kept in said.md of each build folder still being built, and the builder never writes it", () => {
+  const root = mkdtempSync(join(tmpdir(), "adlc-said-"));
+  try {
+    const open = join(root, "agents", "a");
+    const done = join(root, "agents", "b");
+    for (const d of [open, done]) { mkdirSync(join(d, ".adlc"), { recursive: true }); writeFileSync(join(d, ".adlc", "check.mjs"), ""); }
+    writeFileSync(join(open, "build.lock.json"), JSON.stringify({ build_lock: "v1", digests: {}, gates: { spec: { passed: true } } }));
+    writeFileSync(join(done, "build.lock.json"), JSON.stringify({ build_lock: "v1", digests: {}, gates: { spec: { passed: true }, build: { passed: true } } }));
+    assert.deepEqual(keepSaid({ cwd: root, prompt: "0 USD per job." }, { now: () => "2026-11-12T19:00:00Z" }), [open]);
+    assert.match(readFileSync(join(open, "said.md"), "utf8"), /## 2026-11-12T19:00:00Z\n\n0 USD per job\.\n/);
+    assert.equal(existsSync(join(done, "said.md")), false, "a build that has passed is not being talked to");
+    mkdirSync(join(open, "scripts"));
+    keepSaid({ cwd: join(open, "scripts"), prompt: "Yes." });
+    assert.match(readFileSync(join(open, "said.md"), "utf8"), /0 USD per job\.[\s\S]*Yes\./);
+    assert.deepEqual(keepSaid({ cwd: root, prompt: "Follow AGENTS.md in this folder." }, { env: { ADLC_NOT_THE_PERSON: "1" } }), [], "a program's prompts are not the person's");
+    assert.doesNotMatch(readFileSync(join(open, "said.md"), "utf8"), /Follow AGENTS\.md/);
+    assert.match(writeRefusal(join(open, "said.md"), root), /^said\.md is the person's own words/);
+    assert.match(commandRefusal("echo yes >> said.md", open), /^said\.md is the person's own words/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 function folder() {
   const dir = mkdtempSync(join(tmpdir(), "adlc-guard-"));
   mkdirSync(join(dir, ".adlc"), { recursive: true });
   writeFileSync(join(dir, ".adlc", "check.mjs"), "");
-  writeFileSync(join(dir, "build.lock.json"), JSON.stringify({ build_lock: "v1", digests: { "spec.json": "sha256:x" }, gates: { requirements: { passed: true } } }));
+  writeFileSync(join(dir, "build.lock.json"), JSON.stringify({ build_lock: "v1", digests: { "spec.json": "sha256:x", "test/a.test.mjs": "sha256:y" }, gates: { spec: { passed: true } }, tests_fixed: { at: "2026-11-12" } }));
   mkdirSync(join(dir, "scripts"), { recursive: true });
   return dir;
 }
@@ -31,7 +53,7 @@ test("the build folder is found from a file or a folder inside it, and nothing o
 test("the assistant never runs the person's approval", () => {
   const dir = folder();
   try {
-    for (const c of ["node .adlc/approve.mjs", "node .adlc\\approve.mjs --send-back test", "cd x && node ./.adlc/approve.mjs"]) {
+    for (const c of ["node .adlc/approve.mjs", "node .adlc\\approve.mjs --send-back build", "cd x && node ./.adlc/approve.mjs"]) {
       assert.match(commandRefusal(c, dir), /is the person's approval/, c);
     }
     assert.equal(commandRefusal("node .adlc/check.mjs", dir), null);
@@ -40,26 +62,28 @@ test("the assistant never runs the person's approval", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("a pinned file, the pin file and the check are not edited; scripts are", () => {
+test("the approved spec, a fixed test, the lock file and the check are not edited; scripts are", () => {
   const dir = folder();
   try {
-    assert.match(pre({ cwd: dir, tool_name: "Edit", tool_input: { file_path: join(dir, "spec.json") } }).deny, /^spec\.json is pinned/);
-    assert.match(pre({ cwd: dir, tool_name: "Write", tool_input: { file_path: join(dir, "build.lock.json") } }).deny, /pin file/);
+    assert.match(pre({ cwd: dir, tool_name: "Edit", tool_input: { file_path: join(dir, "spec.json") } }).deny, /^spec\.json can no longer change\. .*--send-back spec/);
+    assert.match(pre({ cwd: dir, tool_name: "Edit", tool_input: { file_path: join(dir, "test", "a.test.mjs") } }).deny, /^test\/a\.test\.mjs can no longer change\. .*--send-back build/);
+    assert.match(pre({ cwd: dir, tool_name: "Write", tool_input: { file_path: join(dir, "build.lock.json") } }).deny, /lock file/);
     assert.match(pre({ cwd: dir, tool_name: "Edit", tool_input: { file_path: join(dir, ".adlc", "stages.mjs") } }).deny, /the ADLC check/);
     assert.deepEqual(pre({ cwd: dir, tool_name: "Write", tool_input: { file_path: join(dir, "scripts", "a.mjs") } }), {});
-    assert.match(pre({ cwd: dir, tool_name: "Bash", tool_input: { command: "echo {} > build.lock.json" } }).deny, /pin file/);
+    assert.match(pre({ cwd: dir, tool_name: "Bash", tool_input: { command: "echo {} > build.lock.json" } }).deny, /lock file/);
     assert.match(pre({ cwd: dir, tool_name: "PowerShell", tool_input: { command: "Set-Content .adlc/check.mjs ''" } }).deny, /the ADLC check/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("the build does not stop with a pin moved or with Code failing, and is asked only once", () => {
+test("the build does not stop with a fixed file changed, or while the tests are fixed and it still fails; asked only once", () => {
   const dir = folder();
   try {
     const answer = (doc) => () => ({ stdout: JSON.stringify(doc) });
-    assert.match(stop({ cwd: dir }, { run: answer({ code: 3, stage: "test", problems: ["spec.json is pinned and changed"] }) }).block, /A pinned file moved/);
-    assert.match(stop({ cwd: dir }, { run: answer({ code: 1, stage: "code", problems: ["the suite fails"] }) }).block, /at Code and its check fails/);
-    assert.deepEqual(stop({ cwd: dir }, { run: answer({ code: 1, stage: "requirements", problems: ["the empty case is not stated"] }) }), {});
-    assert.deepEqual(stop({ cwd: dir }, { run: answer({ code: 4, stage: "requirements", problems: [] }) }), {});
-    assert.deepEqual(stop({ cwd: dir, stop_hook_active: true }, { run: answer({ code: 3, stage: "code", problems: ["x"] }) }), {});
+    assert.match(stop({ cwd: dir }, { run: answer({ code: 3, phase: "build", problems: ["spec.json can no longer change, and it changed"] }) }).block, /A file that can no longer change was changed/);
+    assert.match(stop({ cwd: dir }, { run: answer({ code: 1, phase: "build", tests_fixed: true, problems: ["Code: the suite fails"] }) }).block, /The tests are fixed and the build still fails its check/);
+    assert.deepEqual(stop({ cwd: dir }, { run: answer({ code: 1, phase: "build", tests_fixed: false, problems: ["Architecture: the person has not answered egress-1"] }) }), {}, "the builder may stop to ask the person while it builds");
+    assert.deepEqual(stop({ cwd: dir }, { run: answer({ code: 1, phase: "spec", problems: ["the empty case is not stated"] }) }), {});
+    assert.deepEqual(stop({ cwd: dir }, { run: answer({ code: 4, phase: "spec", problems: [] }) }), {});
+    assert.deepEqual(stop({ cwd: dir, stop_hook_active: true }, { run: answer({ code: 3, phase: "build", problems: ["x"] }) }), {});
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

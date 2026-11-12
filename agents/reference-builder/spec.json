@@ -2,7 +2,7 @@
   "format": "spec-v1",
   "product": {
     "name": "reference-builder",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "kind": "agent"
   },
   "purpose": "Takes a person's request for an agent and builds it through the ADLC with a coding harness and the ADLC plugin, stopping to ask the person at each decision that is theirs, until the build's check passes.",
@@ -24,7 +24,7 @@
         {
           "name": "reply",
           "kind": "text/markdown",
-          "about": "What the build did, the stage it is at, and the question for the person when one is theirs."
+          "about": "What the build did, where the build is in the words of its own check (the spec still has things missing, the spec waits for the person's approval, the build has things missing and how many, or the build has passed), and the question for the person when one is theirs."
         }
       ],
       "requirements": [
@@ -107,6 +107,76 @@
             "said": "When the harness cannot be run, it stops and says so, and writes nothing"
           },
           "verify": "test"
+        },
+        {
+          "id": "F1.R9",
+          "shall": "The agent shall read the build folder's own check after each run and say in its reply where the build is in the check's words: the spec still has things missing, the spec waits for the person's approval, the build has things missing and how many, or the build has passed.",
+          "kind": "output",
+          "priority": "must",
+          "source": {
+            "said": "Its reply says where the build is in those words: the spec still has things missing, the spec waits for the person's approval, the build has things missing (and how many), or the build has passed"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R10",
+          "shall": "The agent shall never say the build has passed when the build folder's check does not say so, and shall say the check could not tell when the check does not answer.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "It never says the build has passed when the check does not"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R11",
+          "shall": "The agent shall offer the person the approval of the spec only when the build folder's check says the spec waits for the person.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "It offers the person the approval of the spec only when the check says the spec waits for the person"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R12",
+          "shall": "The agent shall, once the spec is approved, ask the harness to carry on with the build until the check says the build has passed, not stage by stage.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "Once the spec is approved, it asks the harness to carry on with the build until the check says the build has passed, not stage by stage"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R13",
+          "shall": "The agent shall add a person's message for a build to that build folder's said.md, under a heading with the time, before it hands the message to the harness.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "when it hands the harness a person's message for a build, it first adds those words to the build folder's said.md, under a heading with the time"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R14",
+          "shall": "The agent shall run the coding harness with ADLC_NOT_THE_PERSON=1 on every run.",
+          "kind": "behavior",
+          "priority": "must",
+          "source": {
+            "said": "The prompts it writes itself are not the person's, so it runs the harness with ADLC_NOT_THE_PERSON=1"
+          },
+          "verify": "test"
+        },
+        {
+          "id": "F1.R15",
+          "shall": "The agent shall leave the build folder's said.md as it was when the harness cannot be run on the person's message.",
+          "kind": "error",
+          "priority": "must",
+          "source": {
+            "said": "When the harness cannot be run, it stops and says so, and writes nothing"
+          },
+          "verify": "test"
         }
       ],
       "acceptance": [
@@ -127,7 +197,7 @@
         },
         {
           "id": "F1.A3",
-          "gherkin": "Scenario: Only the person's word approves the spec\n  Given a build waiting for the person's approval\n  When the person's message names the build and says approve\n  Then the spec is approved and the build carries on\n  And a message that does not say approve approves nothing",
+          "gherkin": "Scenario: Only the person's word approves the spec\n  Given a build waiting for the person's approval\n  When the person's message names the build and says approve\n  Then the spec is approved and the build carries on until its check says it has passed\n  And a message that does not say approve approves nothing",
           "checks": [
             "F1.R4"
           ]
@@ -146,6 +216,37 @@
           "gherkin": "Scenario: The harness cannot be run\n  Given a coding harness that cannot be run\n  When the agent is sent a request\n  Then it says the harness could not be run and writes nothing",
           "checks": [
             "F1.R8"
+          ]
+        },
+        {
+          "id": "F1.A6",
+          "gherkin": "Scenario: The reply says where the build is in the check's words\n  Given a build folder whose own check names its phase\n  When the agent has run the harness on it\n  Then its reply says the spec still has things missing, the spec waits for the person's approval, the build has things missing and how many, or the build has passed, as the check says\n  And it says the build has passed only when the check says so\n  And when the check does not answer, it says the check could not tell",
+          "checks": [
+            "F1.R9",
+            "F1.R10"
+          ]
+        },
+        {
+          "id": "F1.A7",
+          "gherkin": "Scenario: The approval is offered only when the spec waits for the person\n  Given a build folder whose check says the spec waits for the person's approval\n  When the agent replies\n  Then its reply offers the person the approval of the spec\n  Given a build folder whose check says anything else\n  When the agent replies\n  Then its reply does not offer the approval",
+          "checks": [
+            "F1.R11"
+          ]
+        },
+        {
+          "id": "F1.A8",
+          "gherkin": "Scenario: Once approved, the build carries on until it passes\n  Given the person's message names the build and says approve\n  When the spec is approved\n  Then the agent asks the harness to carry on with the build until the check says the build has passed\n  And it does not ask for one stage at a time",
+          "checks": [
+            "F1.R12"
+          ]
+        },
+        {
+          "id": "F1.A9",
+          "gherkin": "Scenario: The person's words are kept as theirs\n  Given a person's message that names a build it keeps\n  When the agent hands the message to the harness\n  Then the words were first added to the build folder's said.md under a heading with the time\n  And every run of the harness has ADLC_NOT_THE_PERSON=1\n  When the harness cannot be run\n  Then said.md is as it was",
+          "checks": [
+            "F1.R13",
+            "F1.R14",
+            "F1.R15"
           ]
         }
       ]
