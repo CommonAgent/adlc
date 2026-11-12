@@ -25,6 +25,8 @@ test("what the person says is kept in said.md of each build folder still being b
     mkdirSync(join(open, "scripts"));
     keepSaid({ cwd: join(open, "scripts"), prompt: "Yes." });
     assert.match(readFileSync(join(open, "said.md"), "utf8"), /0 USD per job\.[\s\S]*Yes\./);
+    assert.deepEqual(keepSaid({ cwd: root, prompt: "Follow AGENTS.md in this folder." }, { env: { ADLC_NOT_THE_PERSON: "1" } }), [], "a program's prompts are not the person's");
+    assert.doesNotMatch(readFileSync(join(open, "said.md"), "utf8"), /Follow AGENTS\.md/);
     assert.match(writeRefusal(join(open, "said.md"), root), /^said\.md is the person's own words/);
     assert.match(commandRefusal("echo yes >> said.md", open), /^said\.md is the person's own words/);
   } finally { rmSync(root, { recursive: true, force: true }); }

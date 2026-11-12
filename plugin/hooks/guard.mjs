@@ -7,7 +7,9 @@
 //   said  (UserPromptSubmit) what the person says is kept, as they said it, in
 //         said.md in each build folder still being built, so an answer the
 //         builder writes for them can be checked against their own words;
-//         the builder never writes said.md
+//         the builder never writes said.md. A program that types the
+//         prompts for the person sets ADLC_NOT_THE_PERSON=1, and nothing is
+//         kept: it writes the person's own replies to said.md itself
 //   stop  (Stop) no stopping while such a file has changed, or while the
 //         tests are fixed and the build still fails its check; asked once, so
 //         the assistant can still say what blocks it
@@ -123,7 +125,10 @@ export function openFoldersFrom(cwd) {
 
 /** Keep what the person said in said.md of each open build folder. Returns
  *  the folders written to. */
-export function keepSaid(event, { now = () => new Date().toISOString() } = {}) {
+export function keepSaid(event, { now = () => new Date().toISOString(), env = process.env } = {}) {
+  // A program that types the prompts (a factory running the builder for the
+  // person) says so, and keeps the person's words itself: its prompts are not theirs.
+  if (env.ADLC_NOT_THE_PERSON === "1") return [];
   const words = String(event.prompt ?? "").trim();
   if (!words) return [];
   const dirs = openFoldersFrom(event.cwd ?? process.cwd());
