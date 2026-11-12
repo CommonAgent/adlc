@@ -1,18 +1,21 @@
-// The stages a build folder passes, what each one's check asks, and what each
-// one pins once it passes.
+// The two phases of a build, and the gates the check runs over the result.
 //
-// One pin file, build.lock.json: the code writer's lock (its `digests` are the
-// files nobody may change, and its check enforces them at Code), with `gates`
-// beside them saying which stage passed, when, and on whose word. A stage's
-// files are pinned when it passes, so a later stage can never move what an
-// earlier one settled; to change one, the person sends the build back
-// (`node .adlc/approve.mjs --send-back <stage>`), which takes the pins off from
-// that stage on.
+// One builder writes the whole agent. There are two phases:
+//   1. The spec. The builder writes it from the person's words, and the person
+//      approves it. Nothing is built on a spec the person has not approved.
+//   2. The build. The builder writes everything else (the architecture record,
+//      the agent's files, the tests and the code) in whatever order it works
+//      best. The check runs every gate over the folder and names what is still
+//      missing at each one.
 //
-// The order is stages.json's writing stages as one builder holds them:
-// Requirements, Architecture, the agent's files (the Design), Test, Code.
-// Requirements alone passes on the person's word; each later stage passes when
-// its check does, because the check is the gate and the builder cannot change it.
+// Only two things have a fixed order: the person's approval of the spec comes
+// before the build, and the tests are fixed the first time the code is judged,
+// so they cannot be changed to fit the code. To change either afterwards, the
+// person sends the build back (`node .adlc/approve.mjs --send-back spec` or
+// `build`).
+//
+// The lock file, build.lock.json, records what can no longer change (`digests`)
+// and which phases have passed (`gates`).
 //
 //   needs: node >= 22
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -39,19 +42,25 @@ import { PACKER, pack } from "./packer.mjs";
 const trim = (s) => String(s ?? "").trim();
 const list = (v) => (Array.isArray(v) ? v : []);
 
-export const STAGES = ["requirements", "architecture", "files", "test", "code"];
-export const TITLES = { requirements: "Requirements", architecture: "Architecture", files: "The agent's files", test: "Test", code: "Code" };
-export const BY_PERSON = new Set(["requirements"]);
+export const PHASES = ["spec", "build"];
+export const TITLES = { spec: "The spec", build: "The build" };
+export const BY_PERSON = new Set(["spec"]);
 
-/** The files each stage pins, as paths in the folder; a pattern ending in /
- *  is every file under it. Only the files that are there are pinned. */
+/** The gates of the build phase. They are checked together, in no order the
+ *  builder must follow; a gate that needs another's output says so. */
+export const GATES = ["architecture", "files", "test", "code"];
+export const GATE_TITLES = { architecture: "Architecture", files: "The agent's files", test: "Test", code: "Code" };
+
+/** The files each phase fixes when it passes, as paths in the folder; a
+ *  pattern ending in / is every file under it. Only the files that are there
+ *  are fixed. */
 export const PINS = {
-  requirements: ["spec.json", "spec.md", "request.md"],
-  architecture: ["architecture.json", "answers.json", "stack.json", "architecture-record.md"],
-  files: ["prose.json", "agent-descriptor.json", "agent-runtime-requirements.json", "plugin.json", "skills/*/SKILL.md"],
-  test: ["test/"],
-  code: [],
+  spec: ["spec.json", "spec.md", "request.md"],
+  build: ["architecture.json", "answers.json", "stack.json", "architecture-record.md", "prose.json", "agent-descriptor.json", "agent-runtime-requirements.json", "plugin.json", "skills/*/SKILL.md", "test/", "scripts/"],
 };
+
+/** The tests, fixed the first time the code is judged. */
+export const TEST_FILES = "test/";
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
 const posix = (p) => p.split(sep).join("/");
@@ -67,10 +76,10 @@ function walk(dir, base = dir) {
   return out;
 }
 
-/** The files a stage pins that are in the folder now. */
-export function pinsOf(stage, dir) {
+/** The files a phase fixes that are in the folder now. */
+export function pinsOf(phase, dir) {
   const out = [];
-  for (const p of PINS[stage] ?? []) {
+  for (const p of PINS[phase] ?? []) {
     if (p.endsWith("/")) out.push(...walk(join(dir, p)).map((r) => `${p}${r}`));
     else if (p.includes("*")) {
       const [head, , tail] = p.split("/");
@@ -91,8 +100,8 @@ export function lockOf(dir) {
 
 export const writeLock = (dir, lock) => writeFileSync(join(dir, LOCK_FILE), JSON.stringify(lock, null, 2) + "\n");
 
-/** The first stage not passed: the one the folder is at. */
-export const stageOf = (lock) => STAGES.find((s) => !lock.gates?.[s]) ?? null;
+/** The phase the folder is in: the first not passed, or null when both have. */
+export const phaseOf = (lock) => PHASES.find((p) => !lock.gates?.[p]) ?? null;
 
 /** Whether a file is the one pinned: its bytes, or its bytes with git's
  *  CRLF line ends on checkout turned back into LF. */
@@ -106,37 +115,49 @@ export function sameAsPinned(bytes, want) {
 export function pinProblems(dir, lock) {
   const out = [];
   for (const [p, want] of Object.entries(lock.digests ?? {})) {
-    if (!existsSync(join(dir, p))) out.push(`${p} is pinned and is gone; put it back, or ask the person to send the build back to the stage that wrote it`);
-    else if (!sameAsPinned(readFileSync(join(dir, p)), want)) out.push(`${p} is pinned and changed; put it back, or ask the person to send the build back to the stage that wrote it`);
+    const back = ownerOf(p) === "spec" ? "spec" : "build";
+    if (!existsSync(join(dir, p))) out.push(`${p} can no longer change, and it is gone; put it back, or ask the person to send the build back (--send-back ${back})`);
+    else if (!sameAsPinned(readFileSync(join(dir, p)), want)) out.push(`${p} can no longer change, and it changed; put it back, or ask the person to send the build back (--send-back ${back})`);
   }
   return out;
 }
 
-/** The lock with a stage passed: its gate, and its files pinned. */
-export function pass(dir, lock, stage, { by = "check", at = new Date().toISOString() } = {}) {
+const sortedDigests = (d) => Object.fromEntries(Object.entries(d).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+
+/** The lock with a phase passed: its gate, and its files fixed. */
+export function pass(dir, lock, phase, { by = "check", at = new Date().toISOString() } = {}) {
   const digests = { ...lock.digests };
-  for (const p of pinsOf(stage, dir)) digests[p] = digestOf(readFileSync(join(dir, p)));
-  const sorted = Object.fromEntries(Object.entries(digests).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-  return { ...lock, digests: sorted, gates: { ...lock.gates, [stage]: { passed: true, by, at } } };
+  for (const p of pinsOf(phase, dir)) digests[p] = digestOf(readFileSync(join(dir, p)));
+  return { ...lock, digests: sortedDigests(digests), gates: { ...lock.gates, [phase]: { passed: true, by, at } } };
 }
 
-/** The lock sent back to a stage: that stage and every one after it open
- *  again, and their files no longer pinned. */
-export function sendBack(dir, lock, stage) {
-  const i = STAGES.indexOf(stage);
-  if (i < 0) throw new Error(`${stage} is not a stage; the stages are ${STAGES.join(", ")}`);
-  const reopened = new Set(STAGES.slice(i));
+/** The lock with the tests fixed: done the first time the code is judged,
+ *  so the tests cannot then be changed to fit the code. */
+export function fixTests(dir, lock, { at = new Date().toISOString() } = {}) {
+  const digests = { ...lock.digests };
+  for (const r of walk(join(dir, TEST_FILES))) digests[`${TEST_FILES}${r}`] = digestOf(readFileSync(join(dir, TEST_FILES, r)));
+  return { ...lock, digests: sortedDigests(digests), tests_fixed: { at } };
+}
+
+/** The lock sent back to a phase: that phase, and the build after it, open
+ *  again, the tests no longer fixed, and their files free to change. */
+export function sendBack(dir, lock, phase) {
+  const i = PHASES.indexOf(phase);
+  if (i < 0) throw new Error(`${phase} is not a phase; the phases are ${PHASES.join(" and ")}`);
+  const reopened = new Set(PHASES.slice(i));
   const digests = Object.fromEntries(Object.entries(lock.digests ?? {}).filter(([p]) => !reopened.has(ownerOf(p))));
   const gates = Object.fromEntries(Object.entries(lock.gates ?? {}).filter(([s]) => !reopened.has(s)));
-  return { ...lock, digests, gates };
+  const { tests_fixed: _dropped, ...rest } = lock;
+  return { ...rest, digests, gates };
 }
 
 const matches = (pattern, p) => (pattern.endsWith("/") ? p.startsWith(pattern)
   : pattern.includes("*") ? new RegExp(`^${pattern.replace(/[.]/g, "\\.").replace(/\*/g, "[^/]+")}$`).test(p)
   : p === pattern);
 
-/** The stage that pins a path, or null for a file no stage pins. */
-export const ownerOf = (p) => STAGES.find((s) => (PINS[s] ?? []).some((x) => matches(x, p))) ?? null;
+/** The phase that fixes a path, or null for a file no phase fixes (the kit
+ *  under .adlc/, fixed from the start). */
+export const ownerOf = (p) => PHASES.find((s) => (PINS[s] ?? []).some((x) => matches(x, p))) ?? null;
 
 // ---------- Requirements ----------
 
@@ -194,7 +215,7 @@ export async function architectureProblems(dir) {
   if (Array.isArray(record?.systems)) {
     const named = new Set(record.systems);
     for (const s of list(structureOf(spec, { architecture: record }).draft?.systems)) {
-      if (!named.has(s.name)) out.push(`the spec's system ${JSON.stringify(s.from ?? s.name)} is ${s.name} in the files, and the record names no ${s.name}${record.systems.length ? ` (it names ${record.systems.join(", ")})` : ""}; name it the same in both, in plain system words: in architecture.json, or, since the spec is pinned, by asking the person to send the build back to Requirements`);
+      if (!named.has(s.name)) out.push(`the spec's system ${JSON.stringify(s.from ?? s.name)} is ${s.name} in the files, and the record names no ${s.name}${record.systems.length ? ` (it names ${record.systems.join(", ")})` : ""}; name it the same in both, in plain system words: in architecture.json, or, since the approved spec can no longer change, by asking the person to send the build back to the spec (--send-back spec)`);
     }
   }
   return out;
@@ -300,7 +321,7 @@ export function testProblems(dir, _lock, { spawn } = {}) {
 
 // ---------- Code ----------
 
-/** The Code check: nothing pinned changed (held before any stage's check),
+/** The Code gate: nothing fixed changed (checked before any gate),
  *  the whole suite passes over the real scripts, each script the agent's
  *  files name, blanked in turn, is noticed by the suite, and the packer
  *  accepts the folder with its scripts. The code writer's own check is not
@@ -318,10 +339,10 @@ export function codeProblems(dir, _lock, { env = process.env, packer = pack, spa
   if (run.timed_out) return ["the suite did not finish in time over the scripts; a script waits on something that never comes"];
   if (run.fails) {
     const failing = run.failing.filter((n) => !/^test[\\/]/.test(n) || run.failing.length === 1).slice(0, 20);
-    return [`the suite fails over the scripts: ${run.fail} of ${run.tests}. The tests are pinned, so the scripts change, never the tests${failing.length ? `:\n${failing.map((n) => `      not ok: ${n}`).join("\n")}` : ""}`];
+    return [`the suite fails over the scripts: ${run.fail} of ${run.tests}. The tests are fixed, so the scripts change, never the tests${failing.length ? `:\n${failing.map((n) => `      not ok: ${n}`).join("\n")}` : ""}`];
   }
   for (const b of blankEach(dir, scripts, paths, spawn)) {
-    if (!b.noticed) out.push(`${b.script}, blanked, is not noticed by the suite: nothing tests it. The tests are pinned, so ask the person to send the build back to Test (\`node .adlc/approve.mjs --send-back test\`)`);
+    if (!b.noticed) out.push(`${b.script}, blanked, is not noticed by the suite: nothing tests it. The tests are fixed, so ask the person to send the build back (\`node .adlc/approve.mjs --send-back build\`) to add one`);
   }
   if (out.length) return out;
   const packed = packer(dir, { env });
@@ -435,11 +456,36 @@ function blankEach(dir, scripts, paths, spawn) {
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }
 
-/** Each stage's check, by name. A stage without one here is not built yet. */
+// ---------- The build: every gate over the folder ----------
+
+/** Every gate of the build over the folder as it stands. The builder may write
+ *  in any order; each gate says what is missing, and a gate that needs another
+ *  gate's output says it waits for it. The code is judged only once the tests
+ *  pass their gate, and the first time it is, the tests are fixed in the lock.
+ *  Returns { gates: {gate: problems}, problems, lock }, where `problems` is
+ *  every gate's, each named with its gate, and `lock` is the lock as it now
+ *  stands. */
+export async function buildGates(dir, lock, opts = {}) {
+  const gates = {};
+  gates.architecture = await architectureProblems(dir);
+  gates.files = existsSync(join(dir, "architecture-record.md"))
+    ? await filesProblems(dir, lock, opts)
+    : ["waits for the architecture record, which the agent's files are generated from"];
+  gates.test = existsSync(join(dir, "agent-descriptor.json"))
+    ? testProblems(dir, lock, opts)
+    : ["waits for the agent's files, which the tests run beside"];
+  let next = lock;
+  if (gates.test.length) gates.code = ["waits for the tests to pass their gate; the code is judged against tests that are fixed"];
+  else {
+    if (!lock.tests_fixed) next = fixTests(dir, lock);
+    gates.code = codeProblems(dir, next, opts);
+  }
+  const problems = GATES.flatMap((g) => gates[g].map((p) => `${GATE_TITLES[g]}: ${p}`));
+  return { gates, problems, lock: next };
+}
+
+/** Each phase's check: the spec's problems, or the build's from every gate. */
 export const CHECKS = {
-  requirements: requirementsProblems,
-  architecture: architectureProblems,
-  files: filesProblems,
-  test: testProblems,
-  code: codeProblems,
+  spec: requirementsProblems,
+  build: buildGates,
 };
