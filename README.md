@@ -44,7 +44,8 @@ else in any order, with every gate checked from the first draft. Install it in C
 Code:
 
 ```
-/plugin install adlc --marketplace CommonAgent/adlc
+/plugin marketplace add CommonAgent/adlc
+/plugin install adlc@adlc
 ```
 
 Then `/adlc:start <folder> <what the agent should do>`. The folder it lays out
@@ -52,6 +53,13 @@ carries its instructions as `AGENTS.md`, so another coding assistant or a
 person can work it the same way, and `node .adlc/check.mjs` says, at any
 moment, which phase the folder is in and what each gate still needs. Approving the
 spec is the person's, with `node .adlc/approve.mjs`.
+
+When the build has passed, `node .adlc/deploy.mjs put --email <address> --repo
+<owner/name>` puts the agent on AgentMesh, the public one unless `--instance`
+names another. It pushes the agent to a public GitHub repository, and AgentMesh
+emails the person a link whose page has one button; nothing is installed until
+they press it. `wait` follows it until it runs, and `try` sends it one message
+and shows the reply.
 
 ## The agents in this repository
 
