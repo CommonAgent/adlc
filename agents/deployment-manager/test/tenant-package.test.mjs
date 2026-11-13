@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import {
-  TENANT_IMAGE_FILES, TENANT_READY_LINE, installPackage, packageServiceDeployArgv, readPackageInstruction, readTarball, tenantLayer, tenantSettings, tenantFacts,
+  NAME_RE, TENANT_IMAGE_FILES, TENANT_READY_LINE, installPackage, packageServiceDeployArgv, readPackageInstruction, readTarball, tenantLabel, tenantLayer, tenantSettings, tenantFacts,
 } from "../service.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -68,7 +68,7 @@ function tarGz(files, extra = []) {
   return gzipSync(Buffer.concat(blocks));
 }
 
-function packageFiles({ run = true, systems = [] } = {}) {
+function packageFiles({ run = true, systems = [], version = "0.1.0" } = {}) {
   const install = {
     format: "agent-install-v1",
     runtimes: [{ name: "node", version: ">=22", purpose: "runs its script" }],
@@ -77,7 +77,7 @@ function packageFiles({ run = true, systems = [] } = {}) {
     ...(run ? { run: { answer: { command: ["node", "{home}/{package}/skills/answer/scripts/answer.mjs", "--job", "{job_dir}"], reply: "stdout" } } } : {}),
   };
   const descriptor = { format: "agent-descriptor-v1", does: "Answers a question in one sentence.", offerings: [{ id: "answer", name: "Answer" }] };
-  const manifest = { name: "helper", version: "0.1.0", extensions: { "net.agentdoc.package": { descriptor: { path: "descriptor.json" }, install: { path: "install.json" } } } };
+  const manifest = { name: "helper", version, extensions: { "net.agentdoc.package": { descriptor: { path: "descriptor.json" }, install: { path: "install.json" } } } };
   return {
     "helper/plugin.json": JSON.stringify(manifest),
     "helper/descriptor.json": JSON.stringify(descriptor),
@@ -111,7 +111,7 @@ const args = (sha, over = {}) => ({
   boot_token: "dr-abcdefghijkl", interaction: "service", admit: [], tenant: "t-0a1b2c3d4e5f", instructed_by: "person@example.com", ...over,
 });
 
-function fakes(tgz, { handle = "helper.person@example.com", rows = [] } = {}) {
+function fakes(tgz, { handle = "helper.person@example.com", rows = [], buildStatus = "SUCCESS" } = {}) {
   const calls = [];
   let inventory = rows;
   const tokens = new Map([["/t/dr-abcdefghijkl.token", "am_single_use_token\n"]]);
@@ -128,7 +128,7 @@ function fakes(tgz, { handle = "helper.person@example.com", rows = [] } = {}) {
       built.config = JSON.parse(readFileSync(argv[argv.indexOf("--config") + 1], "utf8"));
       return j({ id: "build-1" });
     }
-    if (a === "builds" && b === "describe") return j({ status: "SUCCESS", results: { images: [{ digest: DIGEST }] } });
+    if (a === "builds" && b === "describe") return j({ status: buildStatus, results: { images: [{ digest: DIGEST }] } });
     if (a === "iam" && c === "describe") return { code: 1, stdout: "", stderr: "NOT_FOUND" };
     if (a === "secrets" && b === "describe") return { code: 1, stdout: "", stderr: "NOT_FOUND" };
     if (a === "run" && b === "deploy") { revision++; built.env = JSON.parse(readFileSync(argv[argv.indexOf("--env-vars-file") + 1], "utf8")); return j({ status: { url: RUN_URL } }); }
@@ -224,7 +224,7 @@ test("a person's package is built on the tenant base with the tenant host, and r
   assert.ok(f.built.dockerfile.endsWith(tenantLayer()));
   assert.ok(f.built.host, "the tenant host and the supervisor are in the context");
   assert.deepEqual(JSON.parse(f.built.tenant).descriptor, "descriptor.json");
-  assert.match(f.built.config.images[0], /^us-east1-docker\.pkg\.dev\/example-tenants\/agents\/helper:0\.1\.0-/);
+  assert.match(f.built.config.images[0], /^us-east1-docker\.pkg\.dev\/example-tenants\/agents\/helper-[0-9a-f]{8}:0\.1\.0-/);
   // The service: tenant-vpc, the agent's tags, the key as one variable, and
   // asleep until woken: nothing runs while idle, CPU only during a request,
   // an address only the waker's signed request gets through.
@@ -243,14 +243,15 @@ test("a person's package is built on the tenant base with the tenant host, and r
   assert.equal(f.records.deploy.target.shape.wake.by, WAKER);
   assert.equal(deploy[deploy.indexOf("--network") + 1], "tenant-vpc");
   assert.equal(deploy[deploy.indexOf("--network-tags") + 1], "tenant-agent,t-0a1b2c3d4e5f");
-  assert.equal(deploy[deploy.indexOf("--set-secrets") + 1], "AGENTMESH_CREDENTIALS_JSON=mesh-agent-helper:latest");
+  const label = tenantLabel("helper", "helper.person@example.com");
+  assert.equal(deploy[deploy.indexOf("--set-secrets") + 1], `AGENTMESH_CREDENTIALS_JSON=mesh-agent-${label}:latest`);
   assert.equal(deploy[deploy.indexOf("--ingress") + 1], "all");
   assert.deepEqual(f.built.env, { TENANT_AGENT_NAME: "helper", TENANT_AGENT_HANDLE: "helper.person@example.com", TENANT_WAKER: WAKER, TENANT_WAKE_IDLE_SECONDS: "120", TENANT_WAKE_MAX_SECONDS: "3300" });
   // Its ready line was waited for, and both records name what was placed.
   assert.ok(f.calls.some((a) => a[0] === "logging" && a.join(" ").includes(TENANT_READY_LINE)));
   assert.equal(f.records.deploy.subject.kind, "package");
   assert.equal(f.records.deploy.target.shape.tenant, "t-0a1b2c3d4e5f");
-  assert.deepEqual(f.records.deploy.credentials_placed, ["mesh-agent-helper"]);
+  assert.deepEqual(f.records.deploy.credentials_placed, [`mesh-agent-${label}`]);
   assert.equal(f.inventory()[0].state, "running");
   assert.equal(f.inventory()[0].kind, "package");
 });
@@ -286,8 +287,115 @@ test("a key the platform did not name as asked is not started", NEEDS_SUPERVISOR
   assert.equal(out.ok, false);
   assert.equal(out.step, "name");
   assert.ok(!f.calls.some((a) => a[0] === "run" && a[1] === "deploy"));
-  assert.match(out.state, /retire helper to clean/);
+  assert.match(out.state, /retire helper-[0-9a-f]{8} to clean/);
   assert.equal(out.agent_key, KEY, "the key made before the stop is named, so it can be retired");
+});
+
+test("an agent's label is its name and its handle's digest, fits a service account, and differs per person", () => {
+  const a = tenantLabel("helper", "helper.person@example.com");
+  const b = tenantLabel("helper", "helper.other@example.com");
+  assert.notEqual(a, b);
+  assert.match(a, /^helper-[0-9a-f]{8}$/);
+  const long = tenantLabel("a-very-long-agent-name-x", "a-very-long-agent-name-x.person@example.com");
+  assert.ok(NAME_RE.test(long), long);
+  assert.ok(`agent-${long}`.length <= 30, long);
+  assert.ok(!/--/.test(tenantLabel("abcdefghijklmn-p", "abcdefghijklmn-p.x@example.com")), "a name cut at a hyphen loses the hyphen");
+});
+
+/** A first install of helper 0.1.0 for this handle, done, and its inventory. */
+async function installedFirst(handle = "helper.person@example.com") {
+  const tgz = tarGz(packageFiles());
+  const f = fakes(tgz, { handle });
+  const out = await quietly(() => installPackage(args(sha(tgz), { handle }), f.deps));
+  assert.equal(out.ok, true, JSON.stringify(out).slice(0, 600));
+  return f.inventory();
+}
+
+test("two people's agents of the same name each get their own service, account, secret and image", NEEDS_SUPERVISOR, async () => {
+  const rows = await installedFirst();
+  const tgz = tarGz(packageFiles());
+  const f = fakes(tgz, { handle: "helper.other@example.com", rows });
+  const out = await quietly(() => installPackage(args(sha(tgz), { handle: "helper.other@example.com", tenant: "t-9z8y7x6w5v4u" }), f.deps));
+  assert.equal(out.ok, true, JSON.stringify(out).slice(0, 600));
+  assert.equal(out.act, "deploy");
+  const [mine, theirs] = ["helper.person@example.com", "helper.other@example.com"].map((h) => f.inventory().find((r) => r.handle === h));
+  assert.ok(mine && theirs, "both rows are kept");
+  for (const k of ["name", "service", "service_account", "secret"]) assert.notEqual(mine[k], theirs[k], k);
+  assert.equal(theirs.agent_name, "helper");
+});
+
+test("a new version of a person's agent is a new revision of its service, under the same key", NEEDS_SUPERVISOR, async () => {
+  const rows = await installedFirst();
+  const first = rows[0];
+  const tgz = tarGz(packageFiles({ version: "0.2.0" }));
+  const f = fakes(tgz, { rows });
+  const out = await quietly(() => installPackage(args(sha(tgz), { request_id: "dr_mnopqrstuvwx" }), f.deps));
+  assert.equal(out.ok, true, JSON.stringify(out).slice(0, 600));
+  assert.equal(out.act, "update");
+  assert.equal(out.agent_key, first.agent_key);
+  assert.equal(out.service, first.service);
+  assert.equal(out.previous.version, "0.1.0");
+  // No new account, key, secret version or name: only the image and the revision.
+  assert.ok(!f.calls.some((a) => a[0] === "iam" || a[0] === "secrets"), JSON.stringify(f.calls.filter((a) => a[0] === "iam" || a[0] === "secrets")));
+  assert.ok(!f.fetched.some((x) => x.url.endsWith("/v1/bootstrap")), "no key is traded");
+  const deploy = f.calls.find((a) => a[0] === "run" && a[1] === "deploy");
+  assert.equal(deploy[2], first.service);
+  assert.match(deploy[deploy.indexOf("--image") + 1], /@sha256:/);
+  assert.equal(f.inventory().length, 1);
+  const row = f.inventory()[0];
+  assert.equal(row.state, "running");
+  assert.equal(row.source.version, "0.2.0");
+  assert.equal(row.request_id, "dr_mnopqrstuvwx");
+  assert.equal(row.updating_to, undefined);
+  assert.equal(f.records.update.subject.kind, "package");
+});
+
+test("the same package again is refused, and nothing is built", NEEDS_SUPERVISOR, async () => {
+  const rows = await installedFirst();
+  const tgz = tarGz(packageFiles());
+  const f = fakes(tgz, { rows });
+  const out = await quietly(() => installPackage(args(sha(tgz)), f.deps));
+  assert.equal(out.ok, false);
+  assert.match(out.error, /already runs this package/);
+  assert.equal(f.calls.length, 0);
+});
+
+test("a failed update leaves the agent running as it was, and names no key to retire", NEEDS_SUPERVISOR, async () => {
+  const rows = await installedFirst();
+  const tgz = tarGz(packageFiles({ version: "0.2.0" }));
+  const f = fakes(tgz, { rows, buildStatus: "FAILURE" });
+  const out = await quietly(() => installPackage(args(sha(tgz)), f.deps));
+  assert.equal(out.ok, false);
+  assert.equal(out.act, "update");
+  assert.equal(out.agent_key, undefined);
+  assert.match(out.state, /was serving before still serves/);
+  const row = f.inventory()[0];
+  assert.equal(row.state, "running");
+  assert.equal(row.source.version, "0.1.0");
+  assert.equal(row.updating_to, undefined);
+});
+
+test("an agent installed before labels is found by its handle and updated where it stands", NEEDS_SUPERVISOR, async () => {
+  const rows = (await installedFirst()).map((r) => ({ ...r, name: "helper", service: "agent-helper", secret: "mesh-agent-helper", service_account: "agent-helper@example-tenants.iam.gserviceaccount.com" }));
+  const tgz = tarGz(packageFiles({ version: "0.2.0" }));
+  const f = fakes(tgz, { rows });
+  const out = await quietly(() => installPackage(args(sha(tgz)), f.deps));
+  assert.equal(out.ok, true, JSON.stringify(out).slice(0, 600));
+  assert.equal(out.service, "agent-helper");
+  const deploy = f.calls.find((a) => a[0] === "run" && a[1] === "deploy");
+  assert.equal(deploy[2], "agent-helper");
+  assert.equal(deploy[deploy.indexOf("--set-secrets") + 1], "AGENTMESH_CREDENTIALS_JSON=mesh-agent-helper:latest");
+  assert.deepEqual(f.inventory().map((r) => r.name), ["helper"]);
+});
+
+test("an install that failed part way is not installed over: it is retired first", NEEDS_SUPERVISOR, async () => {
+  const rows = (await installedFirst()).map((r) => ({ ...r, state: "failed at name" }));
+  const tgz = tarGz(packageFiles({ version: "0.2.0" }));
+  const f = fakes(tgz, { rows });
+  const out = await quietly(() => installPackage(args(sha(tgz)), f.deps));
+  assert.equal(out.ok, false);
+  assert.match(out.error, /retire helper-[0-9a-f]{8} to clean it/);
+  assert.equal(f.calls.length, 0);
 });
 
 test("the service shape carries the key as one variable and nothing mounted", () => {
