@@ -49,6 +49,19 @@ The code is judged only once the tests pass their gate, and from then on the tes
 
 When the check says the build has passed, commit the folder and open the pull request. Whenever you commit the folder, `said.md` goes in with it: you never write it, but the words an answer quotes must be wherever the folder is checked, a pull request's check or a service reading the branch included. When the person wants the package itself, `node .adlc/packer.mjs --out <folder>` writes it there, outside the build folder; never commit it.
 
+## Putting it on AgentMesh
+
+When the build has passed and the person wants the agent running where others can call it, put it on AgentMesh: the public one, unless they name their own.
+
+1. Ask for the public GitHub repository it goes in (`owner/name`), the email address the approval goes to, and their name as the agent's public card should show who runs it. Tell them, before you run anything, that the repository will be public, that AgentMesh will email that address a link, and that nothing is installed until they open it and press its button themselves. Wait for their yes.
+2. Run `node .adlc/deploy.mjs put --email <address> --name "<their name>" --repo <owner/name>`, with `--instance <url>` when they named their own AgentMesh. It pushes the agent to the repository and files it. Tell them to check their email.
+3. Run `node .adlc/deploy.mjs wait`. It says each change until the agent is running, and stops after nine minutes; run it again while they have not pressed the button yet. Never press the button for them, open the link, or read their email to find it.
+4. When it is running, run `node .adlc/deploy.mjs try --text "<a message a real caller would send>"` and show the person the reply and the agent's handle, which is how anyone reaches it on AgentMesh.
+
+For a new version later, raise the version through the build as usual (the person sends the spec back), then run `put` again: it files the new version with the ticket it kept, and AgentMesh asks the person again only when the version asks for something new. The ticket is in `.agentmesh/`, which git ignores; never commit it or show it.
+
+An agent that needs keys of its own (a service's credential, an MCP server) cannot be put on AgentMesh this way yet, and `put` says so. Tell the person; never ask them for a key.
+
 ## The rules
 
 1. Never change the approved spec, the fixed tests, the lock file `build.lock.json`, `said.md`, or anything under `.adlc/`. To change the spec or a fixed test, the person sends the build back.

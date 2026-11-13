@@ -601,7 +601,7 @@ export function buildSubmitArgv(ins, configPath, uploaded = null) {
 /** The labels a service and its secret carry, for billing by tenant. */
 export function labelsFor(ins) {
   return ins.tenant
-    ? `managed-by=deploymgr,agent=${ins.name},workload=tenant,tenant=${ins.tenant}`
+    ? `managed-by=deploymgr,agent=${ins.label ?? ins.name},workload=tenant,tenant=${ins.tenant}`
     : `managed-by=deploymgr,agent=${ins.name}`;
 }
 
@@ -1588,15 +1588,28 @@ export function readPackageInstruction(args, s = SETTINGS) {
     cpu: "1", memory: "1Gi", claims: [], settings: {}, secrets: {}, ready_line: TENANT_READY_LINE,
     instructed_by: String(a.instructed_by ?? "the owner").slice(0, 200),
     source: { package_url: url, sha256 },
+    label: tenantLabel(name, handle),
   };
 }
 
+/** What a person's agent is called on this host: its name and a short digest
+ *  of its handle. Its mesh name is <name>.<email>, so two people may each
+ *  have an agent of the same name, and they must never share a service, an
+ *  account, a secret, an image or an inventory row. At most 24 characters,
+ *  because the service account is agent-<label> and may have 30. */
+export function tenantLabel(name, handle) {
+  const digest = createHash("sha256").update(String(handle).toLowerCase()).digest("hex").slice(0, 8);
+  return `${String(name).slice(0, 15).replace(/-+$/, "")}-${digest}`;
+}
+
 /** The names of what one package install makes, as for a container agent,
- *  with the image tagged by the package's version and digest. */
+ *  under the agent's label, with the image tagged by the package's version
+ *  and digest. */
 export function packageResources(ins, version) {
   const tag = `${String(version).replace(/[^0-9A-Za-z._-]/g, "-").slice(0, 40)}-${ins.sha256.slice(0, 12)}`;
-  const base = resourcesFor({ ...ins, source: { commit: "0".repeat(40) } });
-  return { ...base, image: `${ins.registry}/${ins.name}:${tag}` };
+  const label = ins.label ?? ins.name;
+  const base = resourcesFor({ ...ins, name: label, source: { commit: "0".repeat(40) } });
+  return { ...base, image: `${ins.registry}/${label}:${tag}` };
 }
 
 /**
@@ -1731,7 +1744,7 @@ export function packageBuildConfig(ins, image, version) {
   const tail = {
     images: [image],
     options: { requestedVerifyOption: "VERIFIED", logging: "CLOUD_LOGGING_ONLY" },
-    tags: ["deploymgr", `agent-${ins.name}`, ins.tenant],
+    tags: ["deploymgr", `agent-${ins.label ?? ins.name}`, ins.tenant],
   };
   if (!ins.worker_pool) {
     return { steps: [{ name: "gcr.io/cloud-builders/docker", args: ["build", ...labels, "-t", image, "."] }], ...tail };
@@ -1868,18 +1881,33 @@ async function buildPackageInCloud(ins, res, version, ctx, deps) {
     provenance: { attached: false, why: "a build from uploaded source is not tied to a repository commit; the package's digest is in the image's labels and in this record", verify_option: "VERIFIED" } };
 }
 
-/** One install of a person's package, start to finish (see the section's head). */
+/** One install or update of a person's package, start to finish (see the
+ *  section's head). The agent is found by its handle, the name the mesh
+ *  knows it by, so a row from before labels (named by the agent's name
+ *  alone) is found the same way. An update is a new revision of the service
+ *  that stands, under the same account, secret and key, as install()'s is. */
 export async function installPackage(args, deps) {
   let ins;
   let row = null;
   let work = null;
+  let updating = false;
   const rows = () => deps.inventory.load();
   const save = (r) => deps.inventory.save([...rows().filter((x) => x.name !== r.name), r]);
   try {
     ins = readPackageInstruction(args, deps.settings ?? SETTINGS);
-    const before = rows().find((x) => x.name === ins.name) ?? null;
-    if (before) stop("validate", `${ins.name} is already in the inventory (${before.state}); a person's agent is installed once here, and a new version of it is not built yet`);
-    const over = checkTenantLimits(ins, rows(), (deps.settings ?? SETTINGS).tenant.limits);
+    const before = rows().find((x) => x.kind === "package" && x.handle === ins.handle) ?? null;
+    updating = !!(before && before.state === "running" && before.agent_key);
+    if (before && !updating) stop("validate", `${ins.handle} is in the inventory as ${before.name}, ${before.state}; retire ${before.name} to clean it before installing again`);
+    if (updating) {
+      if ((before.tenant ?? null) !== ins.tenant) stop("validate", `${ins.handle} runs for ${before.tenant}; an update does not move it`);
+      if (before.source?.sha256 === ins.sha256) stop("validate", `${ins.handle} already runs this package (sha256 ${ins.sha256.slice(0, 12)}); an update is a new version`);
+      ins.label = before.name;
+      if (before.project) ins.project = before.project;
+      if (before.region) ins.region = before.region;
+    }
+    const taken = rows().find((x) => x.name === ins.label && x.handle !== ins.handle);
+    if (taken) stop("validate", `${ins.label} is in the inventory for ${taken.handle}`);
+    const over = checkTenantLimits({ ...ins, name: ins.label }, rows(), (deps.settings ?? SETTINGS).tenant.limits);
     if (over) stop("limits", `refused: ${over}`);
     deps = tenantDeps(deps, ins.deployer);
 
@@ -1891,14 +1919,16 @@ export async function installPackage(args, deps) {
     const res = packageResources(ins, version);
     ins.source = { package: work.pkg.name, version, sha256: ins.sha256, package_url: ins.package_url };
     const now = deps.now();
-    row = { name: ins.name, handle: ins.handle, kind: "package", request_id: ins.request_id, project: ins.project, region: ins.region,
-      service: res.service, service_account: res.service_account, secret: res.secret, source: ins.source, images: [],
-      claims: [], ready_line: TENANT_READY_LINE, state: "installing", installed_at: now, tenant: ins.tenant, cpu: ins.cpu, memory: ins.memory, wake: true };
+    row = updating
+      ? { ...before, state: "updating", updating_to: ins.source }
+      : { name: ins.label, agent_name: ins.name, handle: ins.handle, kind: "package", request_id: ins.request_id, project: ins.project, region: ins.region,
+          service: res.service, service_account: res.service_account, secret: res.secret, source: ins.source, images: [],
+          claims: [], ready_line: TENANT_READY_LINE, state: "installing", installed_at: now, tenant: ins.tenant, cpu: ins.cpu, memory: ins.memory, wake: true };
     save(row);
 
     // 3. The image, built in the tenant project.
     const build = await buildPackageInCloud(ins, res, version, work.ctx, deps);
-    row.images = [build.pinned];
+    row.images = [...new Set([...(row.images ?? []), build.pinned])];
     save(row);
     const signer = deps.signer();
     const bRec = signRecord({ ...buildRecord(ins, build, deps.now()),
@@ -1907,25 +1937,29 @@ export async function installPackage(args, deps) {
     }, BUILD_TAG, signer.sign, signer.by);
     const bRecSha = createHash("sha256").update(canonical(bRec)).digest("hex");
 
-    // 4. The account, the key (which binds the name), the secret.
-    if (deps.gcloud(["iam", "service-accounts", "describe", res.service_account, "--project", ins.project, "--format", "json"]).code !== 0) {
-      must(deps, ["iam", "service-accounts", "create", res.service_account_id, "--project", ins.project,
-        "--display-name", `Agent ${ins.handle}`.slice(0, 100), "--description", `Runs ${ins.handle}, a person's own agent; reads only its own credential. Made by the deployment manager.`, "--quiet"], "account");
-    }
-    row.state = "account made";
-    save(row);
-    const made = await makeKeyIntoSecret(ins, res, deps);
-    row.agent_key = made.agent_key;
-    row.state = "key made";
-    save(row);
-    await bindReader(deps, res.secret, ins.project, res.service_account);
-    if (made.handle !== ins.handle) {
-      stop("name", made.handle
-        ? `the key was named ${made.handle}, not ${ins.handle}`
-        : `the key was not named ${ins.handle} when it joined, so it would not be let onto the mesh`);
-    }
-    row.state = "named";
-    save(row);
+    // 4. A new install: the account, the key (which binds the name), the
+    // secret. An update keeps all three.
+    const agentKey = updating ? before.agent_key : await (async () => {
+      if (deps.gcloud(["iam", "service-accounts", "describe", res.service_account, "--project", ins.project, "--format", "json"]).code !== 0) {
+        must(deps, ["iam", "service-accounts", "create", res.service_account_id, "--project", ins.project,
+          "--display-name", `Agent ${ins.handle}`.slice(0, 100), "--description", `Runs ${ins.handle}, a person's own agent; reads only its own credential. Made by the deployment manager.`, "--quiet"], "account");
+      }
+      row.state = "account made";
+      save(row);
+      const made = await makeKeyIntoSecret(ins, res, deps);
+      row.agent_key = made.agent_key;
+      row.state = "key made";
+      save(row);
+      await bindReader(deps, res.secret, ins.project, res.service_account);
+      if (made.handle !== ins.handle) {
+        stop("name", made.handle
+          ? `the key was named ${made.handle}, not ${ins.handle}`
+          : `the key was not named ${ins.handle} when it joined, so it would not be let onto the mesh`);
+      }
+      row.state = "named";
+      save(row);
+      return made.agent_key;
+    })();
 
     // 5. The service, then its ready line.
     const tmpd = deps.tmp();
@@ -1946,32 +1980,45 @@ export async function installPackage(args, deps) {
     row.state = "service started";
     save(row);
     const ready = await waitReady(ins, res, deps);
-    const custody = {
+    const custody = updating ? null : {
       minted: "generated",
-      held_by: [made.agent_key, `secret:${res.secret}`, `service-account:${res.service_account}`],
+      held_by: [agentKey, `secret:${res.secret}`, `service-account:${res.service_account}`],
       note: "The seed was generated in the deployment manager's memory on this host and went into the secret on stdin; it was never written to this host's disk. The secret is in the tenant project, where only the agent's own service account may read it; inside the container only the tenant host and the adapter hold it, never the package's work. The deployment manager can place it but not read it back. The project's owners can.",
     };
-    const r = { act: "deploy", image: build.image, image_digest: String(ready.running_digest ?? "").split("@").pop() || build.digest, build_id: build.id,
-      build_record_sha256: bRecSha, revision: ready.revision, agent_key: made.agent_key, handle: ins.handle, key_custody: custody, smoke: ready.smoke };
+    const act = updating ? "update" : "deploy";
+    const r = { act, image: build.image, image_digest: String(ready.running_digest ?? "").split("@").pop() || build.digest, build_id: build.id,
+      build_record_sha256: bRecSha, revision: ready.revision, agent_key: agentKey, handle: ins.handle, key_custody: custody, smoke: ready.smoke,
+      ...(updating ? { previous: { version: before.source?.version ?? null, sha256: before.source?.sha256 ?? null, image: before.image ?? null, image_digest: before.image_digest ?? null, revision: before.revision ?? null } } : {}) };
     const base = deploymentRecord(ins, res, r, deps.now());
     base.target.shape = { ...base.target.shape, min_instances: 0, max_instances: 1, cpu_always_allocated: false, ingress: "all", unauthenticated: false,
       default_url: true, wake: { by: ins.waker, idle_seconds: ins.wake_idle_seconds, max_seconds: ins.wake_max_seconds, request_seconds: WAKE_REQUEST_SECONDS } };
     const dRec = signRecord({ ...base, subject: { name: ins.name, kind: "package" } }, TAG, signer.sign, signer.by);
-    const done = { ...row, state: "running", image: build.pinned, image_digest: r.image_digest, revision: ready.revision, handle: ins.handle, build_id: build.id, updated_at: deps.now() };
+    const done = { ...row, state: "running", source: ins.source, request_id: ins.request_id, image: build.pinned, image_digest: r.image_digest, revision: ready.revision, handle: ins.handle, build_id: build.id, updated_at: deps.now() };
+    delete done.updating_to;
     save(done);
-    deps.saveRecord(ins.name, "build", bRec);
-    deps.saveRecord(ins.name, "deploy", dRec);
+    deps.saveRecord(ins.label, "build", bRec);
+    deps.saveRecord(ins.label, act, dRec);
     return out({
-      ok: true, act: "deploy", name: ins.name, handle: ins.handle, agent_key: made.agent_key, service: res.service, revision: ready.revision,
+      ok: true, act, name: ins.name, label: ins.label, handle: ins.handle, agent_key: agentKey, service: res.service, revision: ready.revision,
       package: work.pkg.name, version, sha256: ins.sha256, tenant: ins.tenant, wake_url: wakeUrl, wake: true,
       image: build.pinned, image_digest: r.image_digest, build_id: build.id, smoke: ready.smoke,
+      ...(updating ? { previous: r.previous } : {}),
       build_record: bRec, record: dRec,
-      state: `${ins.handle} is installed as ${res.service} in the tenant project and answers to its own key. It sleeps at no cost until mail waits for it, and the platform wakes it then`,
+      state: updating
+        ? `a new revision of ${res.service} runs ${work.pkg.name} ${version} under the same key; it sleeps at no cost until mail waits for it, and the platform wakes it then`
+        : `${ins.handle} is installed as ${res.service} in the tenant project and answers to its own key. It sleeps at no cost until mail waits for it, and the platform wakes it then`,
     });
   } catch (e) {
     if (!(e instanceof Stop)) e = new Stop("unexpected", String(e?.stack ?? e).slice(0, 600));
     let state = e.state ?? null;
-    if (row) {
+    if (row && updating) {
+      // The revision that served before still serves: a failed build or a
+      // revision that never became ready leaves Cloud Run on the old one.
+      const back = { ...row, state: "running" };
+      delete back.updating_to;
+      save(back);
+      state = `${state ? `${state}; ` : ""}the update did not complete, and the revision that was serving before still serves`;
+    } else if (row) {
       save({ ...row, state: `failed at ${e.step}` });
       state = `${state ? `${state}; ` : ""}${row.state === "installing" ? "nothing was started" : `left at "${row.state}"`}; run retire ${row.name} to clean`;
     }
@@ -1982,10 +2029,11 @@ export async function installPackage(args, deps) {
       refused: { step: e.step, reason: String(e.message).slice(0, 800), state: state ?? "nothing created", attempted: "install-package" },
       produced_at: deps.now(), signatures: [],
     }, TAG, signer.sign, signer.by);
-    if (ins) try { deps.saveRecord(ins.name, "refuse", refusal); } catch { /* the record is also in the answer */ }
+    if (ins) try { deps.saveRecord(ins.label ?? ins.name, "refuse", refusal); } catch { /* the record is also in the answer */ }
     // A key made before the stop is named, so the retire door can take it back
-    // (it is known to the platform only by what this result says).
-    return out({ ok: false, act: "install", step: e.step, error: String(e.message).slice(0, 800), state: state ?? "nothing created", ...(row?.agent_key ? { agent_key: row.agent_key } : {}), record: refusal });
+    // (it is known to the platform only by what this result says). A failed
+    // update made no key: the one it names still serves.
+    return out({ ok: false, act: updating ? "update" : "install", step: e.step, error: String(e.message).slice(0, 800), state: state ?? "nothing created", ...(row?.agent_key && !updating ? { agent_key: row.agent_key } : {}), record: refusal });
   } finally {
     if (work?.dir) deps.rmdir(work.dir);
   }
