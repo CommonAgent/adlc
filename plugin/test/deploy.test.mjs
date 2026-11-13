@@ -87,7 +87,7 @@ test("an unfinished build, or one needing its own keys, is not put on AgentMesh,
   for (const dir of [unfinished, keyed]) {
     const s = shell();
     const m = mesh({});
-    const r = await put(dir, { email: "dev@example.com", repo: "dev/tz", run: s.run, fetcher: m.fetcher, packer, env: {} });
+    const r = await put(dir, { email: "dev@example.com", name: "Dana Developer", repo: "dev/tz", run: s.run, fetcher: m.fetcher, packer, env: {} });
     assert.equal(r.code, 1);
     assert.equal(s.calls.length, 0);
     assert.equal(m.asked.length, 0);
@@ -138,10 +138,14 @@ test("the first put files by email and keeps the ticket out of git; the next fil
     "/v1/deploy/by-email": { status: 202, body: { ticket: TICKET, says: "We emailed dev@example.com." } },
     [`/v1/deploy/by-email/${TICKET}/update`]: { status: 202, body: { state: "installing", says: "It asks for nothing new." } },
   });
-  const first = await put(dir, { email: "dev@example.com", repo: "dev/tz", run: s.run, fetcher: m.fetcher, packer, env: {} });
+  const nameless = await put(dir, { email: "dev@example.com", repo: "dev/tz", run: s.run, fetcher: m.fetcher, packer, env: {} });
+  assert.equal(nameless.code, 2);
+  assert.match(nameless.said, /--name/);
+  assert.equal(m.asked.length, 0);
+  const first = await put(dir, { email: "dev@example.com", name: "Dana Developer", repo: "dev/tz", run: s.run, fetcher: m.fetcher, packer, env: {} });
   assert.equal(first.code, 0, first.said);
   assert.match(first.said, /public AgentMesh[\s\S]*Pushed to https:\/\/github\.com\/dev\/tz[\s\S]*We emailed dev@example\.com/);
-  assert.deepEqual(m.asked[0], { method: "POST", path: "/v1/deploy/by-email", body: { email: "dev@example.com", repo: "dev/tz" }, origin: PUBLIC });
+  assert.deepEqual(m.asked[0], { method: "POST", path: "/v1/deploy/by-email", body: { email: "dev@example.com", name: "Dana Developer", repo: "dev/tz" }, origin: PUBLIC });
   assert.deepEqual(savedOf(dir), { instance: PUBLIC, repo: "dev/tz", agent: "time-zone-converter", ticket: TICKET });
   assert.match(readFileSync(join(dir, ".gitignore"), "utf8"), /^\.agentmesh\/$/m);
 
@@ -156,7 +160,7 @@ test("the first put files by email and keeps the ticket out of git; the next fil
 test("AgentMesh's refusal is passed on in its words", async () => {
   const dir = built();
   const m = mesh({ "/v1/deploy/by-email": { status: 403, body: { error: "AgentMesh opens to organizations first." } } });
-  const r = await put(dir, { email: "dev@example.com", repo: "dev/tz", run: shell().run, fetcher: m.fetcher, packer, env: {} });
+  const r = await put(dir, { email: "dev@example.com", name: "Dana Developer", repo: "dev/tz", run: shell().run, fetcher: m.fetcher, packer, env: {} });
   assert.equal(r.code, 1);
   assert.match(r.said, /AgentMesh did not take it: AgentMesh opens to organizations first\./);
   assert.equal(savedOf(dir), null);

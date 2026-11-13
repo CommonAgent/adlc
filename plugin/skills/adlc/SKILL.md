@@ -53,8 +53,8 @@ When the check says the build has passed, commit the folder and open the pull re
 
 When the build has passed and the person wants the agent running where others can call it, put it on AgentMesh: the public one, unless they name their own.
 
-1. Ask for the public GitHub repository it goes in (`owner/name`) and the email address the approval goes to. Tell them, before you run anything, that the repository will be public, that AgentMesh will email that address a link, and that nothing is installed until they open it and press its button themselves. Wait for their yes.
-2. Run `node .adlc/deploy.mjs put --email <address> --repo <owner/name>`, with `--instance <url>` when they named their own AgentMesh. It pushes the agent to the repository and files it. Tell them to check their email.
+1. Ask for the public GitHub repository it goes in (`owner/name`), the email address the approval goes to, and their name as the agent's public card should show who runs it. Tell them, before you run anything, that the repository will be public, that AgentMesh will email that address a link, and that nothing is installed until they open it and press its button themselves. Wait for their yes.
+2. Run `node .adlc/deploy.mjs put --email <address> --name "<their name>" --repo <owner/name>`, with `--instance <url>` when they named their own AgentMesh. It pushes the agent to the repository and files it. Tell them to check their email.
 3. Run `node .adlc/deploy.mjs wait`. It says each change until the agent is running, and stops after nine minutes; run it again while they have not pressed the button yet. Never press the button for them, open the link, or read their email to find it.
 4. When it is running, run `node .adlc/deploy.mjs try --text "<a message a real caller would send>"` and show the person the reply and the agent's handle, which is how anyone reaches it on AgentMesh.
 
