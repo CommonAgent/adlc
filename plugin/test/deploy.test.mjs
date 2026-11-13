@@ -50,13 +50,15 @@ function shell({ exists = true, pushFails = false } = {}) {
 /** AgentMesh, standing in: answers by path, keeps every request. */
 function mesh(answers) {
   const asked = [];
+  const auths = [];
   const fetcher = async (url, init = {}) => {
     const u = new URL(url);
     asked.push({ method: init.method, path: u.pathname + u.search, body: init.body ? JSON.parse(init.body) : undefined, origin: u.origin });
+    auths.push(init.headers?.authorization ?? null);
     const a = typeof answers === "function" ? answers(u.pathname, asked.length) : answers[u.pathname];
     return new Response(JSON.stringify(a?.body ?? {}), { status: a?.status ?? 404 });
   };
-  return { fetcher, asked };
+  return { fetcher, asked, auths };
 }
 
 const TICKET = `${"a".repeat(12)}.${"b".repeat(32)}`;
@@ -165,6 +167,22 @@ test("the first put files by email and keeps the ticket out of git; the next fil
   assert.deepEqual(m.asked[1], { method: "POST", path: `/v1/deploy/by-email/${TICKET}/update`, body: undefined, origin: PUBLIC });
   assert.equal(readFileSync(join(dir, ".gitignore"), "utf8").match(/\.agentmesh\//g).length, 1);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("the operator's deploy key, when the shell holds one, goes with the filing as a bearer, and never otherwise", async () => {
+  const answer = { "/v1/deploy/by-email": { status: 202, body: { ticket: TICKET, state: "installing", says: "Approved with the platform's deploy key." } } };
+  const keyed = built();
+  const m = mesh(answer);
+  const r = await put(keyed, { email: "platform+tests@agentmesh.ai", name: "AgentMesh Platform", repo: "dev/tz", run: shell().run, fetcher: m.fetcher, packer, env: { AGENTMESH_DEPLOY_KEY: "the-operators-key " } });
+  assert.equal(r.code, 0, r.said);
+  assert.equal(r.state, "installing");
+  assert.deepEqual(m.auths, ["Bearer the-operators-key"]);
+  assert.ok(!r.said.includes("the-operators-key"), "the key is never printed");
+  const plain = built();
+  const p = mesh(answer);
+  await put(plain, { email: "dev@example.com", name: "Dana Developer", repo: "dev/tz", run: shell().run, fetcher: p.fetcher, packer, env: {} });
+  assert.deepEqual(p.auths, [null]);
+  for (const d of [keyed, plain]) rmSync(d, { recursive: true, force: true });
 });
 
 test("--local puts the built agent on the local mesh, starting the mesh first when it is not running, and pushes or files nothing", async () => {

@@ -58,6 +58,8 @@ When the build has passed and the person wants the agent running where others ca
 3. Run `node .adlc/deploy.mjs wait`. It says each change until the agent is running, and stops after nine minutes; run it again while they have not pressed the button yet. Never press the button for them, open the link, or read their email to find it.
 4. When it is running, run `node .adlc/deploy.mjs try --text "<a message a real caller would send>"` and show the person the reply and the agent's handle, which is how anyone reaches it on AgentMesh.
 
+The AgentMesh operator deploying under its own addresses holds the instance's deploy key in `AGENTMESH_DEPLOY_KEY`; with it in the shell, `put` is approved at once and nothing is emailed. Never ask a person for it, print it, or put it in a file or a command.
+
 If the install failed, fix what `wait` named, then run `put` again: it files the same version again, AgentMesh clears the failed install, and the person is asked by email again.
 
 For a new version later, raise the version through the build as usual (the person sends the spec back), then run `put` again: it files the new version with the ticket it kept, and AgentMesh asks the person again only when the version asks for something new. The ticket is in `.agentmesh/`, which git ignores; never commit it or show it.
