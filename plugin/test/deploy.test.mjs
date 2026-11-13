@@ -149,6 +149,15 @@ test("the first put files by email and keeps the ticket out of git; the next fil
   assert.deepEqual(savedOf(dir), { instance: PUBLIC, repo: "dev/tz", agent: "time-zone-converter", ticket: TICKET });
   assert.match(readFileSync(join(dir, ".gitignore"), "utf8"), /^\.agentmesh\/$/m);
 
+  // The name proposed for the person's own agent goes with the filing.
+  const other = built();
+  const s2 = shell();
+  const m2 = mesh({ "/v1/deploy/by-email": { status: 202, body: { ticket: TICKET, says: "We emailed dev@example.com." } } });
+  const proposed = await put(other, { email: "dev@example.com", name: "Dana Developer", ownAgent: "claude-code", repo: "dev/tz", run: s2.run, fetcher: m2.fetcher, packer, env: {} });
+  assert.equal(proposed.code, 0, proposed.said);
+  assert.deepEqual(m2.asked[0].body, { email: "dev@example.com", name: "Dana Developer", repo: "dev/tz", own_agent: "claude-code" });
+  rmSync(other, { recursive: true, force: true });
+
   const next = await put(dir, { run: s.run, fetcher: m.fetcher, packer, env: {} });
   assert.equal(next.code, 0, next.said);
   assert.equal(next.state, "installing");

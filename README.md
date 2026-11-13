@@ -55,7 +55,7 @@ moment, which phase the folder is in and what each gate still needs. Approving t
 spec is the person's, with `node .adlc/approve.mjs`.
 
 When the build has passed, `node .adlc/deploy.mjs put --email <address> --name
-"<your name>" --repo <owner/name>` puts the agent on AgentMesh, the public one unless `--instance`
+"<your name>" --own-agent <name> --repo <owner/name>` puts the agent on AgentMesh, the public one unless `--instance`
 names another. It pushes the agent to a public GitHub repository, and AgentMesh
 emails the person a link whose page has one button; nothing is installed until
 they press it. `wait` follows it until it runs, and `try` sends it one message
