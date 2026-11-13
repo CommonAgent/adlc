@@ -58,6 +58,8 @@ export const FLAG_VALUES = {
   "--sender": "{sender}", "--handle": "{handle}", "--message-id": "{message_id}", "--in-reply-to": "{in_reply_to}",
 };
 export const FILE_FLAGS = { "--file": "{file_path}::{file_media_type}" };
+/** The flags that hand a command the sender's text, as a file the host writes. */
+export const MESSAGE_FLAGS = ["--text-file", "--message-file"];
 
 /** The command a job runs when the spec names no command: the house form. */
 export const HOUSE_FLAGS = ["--job", "--records", "--work", "--text-file"];
@@ -228,12 +230,18 @@ export function runOf(slug, command) {
   const required = list(command.required_flags).map(String);
   const problems = [];
   const perFile = [];
+  let messageFile = null;
   for (const flag of [...flags, ...required.filter((r) => !flags.includes(r))]) {
     if (FLAG_VALUES[flag]) words.push(flag, FLAG_VALUES[flag]);
     else if (FILE_FLAGS[flag]) perFile.push(flag, FILE_FLAGS[flag]);
     else if (required.includes(flag)) problems.push(`the command ${trim(command.name)} (interface ${trim(command.id)}) requires ${flag}, and the host has nothing to put after it; say in the spec what it is given, or declare the run command`);
+    if (MESSAGE_FLAGS.includes(flag)) messageFile = FLAG_VALUES[flag];
   }
-  return { run: { command: words, ...(perFile.length ? { per_file: perFile } : {}), reply: "json:reply" }, problems };
+  // The host writes the sender's text only where message_file says (Common
+  // Agent, a job's run): a command handed {job_dir}/message.txt with no
+  // message_file reads a file nobody wrote, and answers every message as empty
+  // (2026-11-12, time-zone-converter on AgentMesh dev).
+  return { run: { command: words, ...(perFile.length ? { per_file: perFile } : {}), ...(messageFile ? { message_file: messageFile } : {}), reply: "json:reply" }, problems };
 }
 
 /** The house run for a job the spec names no command for. */
