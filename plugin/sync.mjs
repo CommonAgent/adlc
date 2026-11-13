@@ -47,6 +47,12 @@ export const REFERENCES = {
   "test-writer/references/kept-interfaces.test.mjs": "agents/test-writer/references/kept-interfaces.test.mjs",
   "test-writer/references/a-suite-that-works.test.mjs": "agents/test-writer/references/a-suite-that-works.test.mjs",
   "test-writer/references/what-a-good-suite-carries.md": "agents/test-writer/references/what-a-good-suite-carries.md",
+  // The image tools, for the local AgentMesh (kit/local.mjs): the emitter
+  // turns the package into an image's build context, with the entrypoint
+  // that answers one message and the lockfile check it copies in.
+  "image/emit-image.mjs": "agents/image/emit-image.mjs",
+  "image/one-message.mjs": "agents/image/one-message.mjs",
+  "image/check-lockfile.mjs": "agents/image/check-lockfile.mjs",
   "common-agent-pin.json": "standards/common-agent-pin.json",
   "stages.json": "standards/stages.json",
 };
