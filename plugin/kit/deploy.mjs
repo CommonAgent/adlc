@@ -19,7 +19,9 @@
 //
 //   needs: node >= 22, git; gh to create a repository that does not exist yet
 //   node .adlc/deploy.mjs put --email <address> --name "<your name>" --repo <owner/name> [--own-agent <name>] [--instance <url>]
-//   node .adlc/deploy.mjs put --local      the same agent on the local AgentMesh in Docker on this computer (local.mjs);
+//   AGENTMESH_DEPLOY_KEY in the environment: the AgentMesh operator's own deploy key, with which the operator's
+//                                          own addresses are approved at once and nothing is emailed
+//   node .adlc/deploy.mjs put --local     the same agent on the local AgentMesh in Docker on this computer (local.mjs);
 //                                          try --local and status --local follow it there
 //   node .adlc/deploy.mjs status
 //   node .adlc/deploy.mjs wait [--minutes <n>]
@@ -151,10 +153,10 @@ export function save(dir, value) {
   if (!lines.includes(".agentmesh/")) appendFileSync(ignore, `${lines.length && lines[lines.length - 1] !== "" ? "\n" : ""}.agentmesh/\n`);
 }
 
-async function call(fetcher, method, url, body) {
+async function call(fetcher, method, url, body, key = "") {
   let res;
   try {
-    res = await fetcher(url, { method, headers: { "content-type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+    res = await fetcher(url, { method, headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   } catch (err) {
     return { status: 0, body: { error: `AgentMesh could not be reached (${err.message}).` } };
   }
@@ -189,7 +191,9 @@ export async function put(dir, { email, name: publicName, ownAgent, repo, instan
 
   const r = saved?.ticket && saved.repo === to
     ? await call(fetcher, "POST", `${where.url}/v1/deploy/by-email/${saved.ticket}/update`)
-    : await call(fetcher, "POST", `${where.url}/v1/deploy/by-email`, { email, name: publicName.trim(), repo: to, ...(ownAgent?.trim() ? { own_agent: ownAgent.trim() } : {}) });
+    // The AgentMesh operator's own deploy key, when this shell holds one: its
+    // own addresses are approved at once, nothing emailed. Never printed.
+    : await call(fetcher, "POST", `${where.url}/v1/deploy/by-email`, { email, name: publicName.trim(), repo: to, ...(ownAgent?.trim() ? { own_agent: ownAgent.trim() } : {}) }, String(env.AGENTMESH_DEPLOY_KEY ?? "").trim());
   if (r.status !== 202) return { code: 1, said: [...lines, `AgentMesh did not take it: ${r.body.error ?? `it answered ${r.status}`}`].join("\n") };
   if (r.body.ticket) save(dir, { instance: where.url, repo: to, agent: name, ticket: r.body.ticket });
   lines.push(String(r.body.says ?? ""));
