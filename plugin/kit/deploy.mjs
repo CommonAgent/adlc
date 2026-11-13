@@ -18,7 +18,7 @@
 // hand AgentMesh a key. A model is not one: AgentMesh supplies it.
 //
 //   needs: node >= 22, git; gh to create a repository that does not exist yet
-//   node .adlc/deploy.mjs put --email <address> --name "<your name>" --repo <owner/name> [--instance <url>]
+//   node .adlc/deploy.mjs put --email <address> --name "<your name>" --repo <owner/name> [--own-agent <name>] [--instance <url>]
 //   node .adlc/deploy.mjs status
 //   node .adlc/deploy.mjs wait [--minutes <n>]
 //   node .adlc/deploy.mjs try [--text <words>] [--minutes <n>]
@@ -160,7 +160,7 @@ async function call(fetcher, method, url, body) {
  * Put the agent on AgentMesh: check the folder, push it, and file it. The
  * first time, by email; once AgentMesh has it, as its next version.
  */
-export async function put(dir, { email, name: publicName, repo, instance, fetcher = fetch, run = runCommand, packer = pack, env = process.env } = {}) {
+export async function put(dir, { email, name: publicName, ownAgent, repo, instance, fetcher = fetch, run = runCommand, packer = pack, env = process.env } = {}) {
   const lines = [];
   const problems = notReady(dir);
   if (problems.length) return { code: 1, said: `It can't be put on AgentMesh yet:\n${problems.map((p) => `  - ${p}`).join("\n")}` };
@@ -184,7 +184,7 @@ export async function put(dir, { email, name: publicName, repo, instance, fetche
 
   const r = saved?.ticket && saved.repo === to
     ? await call(fetcher, "POST", `${where.url}/v1/deploy/by-email/${saved.ticket}/update`)
-    : await call(fetcher, "POST", `${where.url}/v1/deploy/by-email`, { email, name: publicName.trim(), repo: to });
+    : await call(fetcher, "POST", `${where.url}/v1/deploy/by-email`, { email, name: publicName.trim(), repo: to, ...(ownAgent?.trim() ? { own_agent: ownAgent.trim() } : {}) });
   if (r.status !== 202) return { code: 1, said: [...lines, `AgentMesh did not take it: ${r.body.error ?? `it answered ${r.status}`}`].join("\n") };
   if (r.body.ticket) save(dir, { instance: where.url, repo: to, agent: name, ticket: r.body.ticket });
   lines.push(String(r.body.says ?? ""));
@@ -247,10 +247,10 @@ if (thisFile === "deploy.mjs" && import.meta.url.endsWith("/deploy.mjs")) {
   const dir = resolve(join(import.meta.dirname, ".."));
   const what = argv[2];
   const minutes = flag(argv, "--minutes") ? Number(flag(argv, "--minutes")) : undefined;
-  const run = what === "put" ? put(dir, { email: flag(argv, "--email"), name: flag(argv, "--name"), repo: flag(argv, "--repo"), instance: flag(argv, "--instance") })
+  const run = what === "put" ? put(dir, { email: flag(argv, "--email"), name: flag(argv, "--name"), ownAgent: flag(argv, "--own-agent"), repo: flag(argv, "--repo"), instance: flag(argv, "--instance") })
     : what === "status" ? status(dir)
     : what === "wait" ? wait(dir, minutes ? { minutes } : {})
     : what === "try" ? tryIt(dir, { text: flag(argv, "--text"), ...(minutes ? { minutes } : {}) })
-    : Promise.resolve({ code: 2, said: "usage: node .adlc/deploy.mjs put --email <address> --name \"<your name>\" --repo <owner/name> [--instance <url>] | status | wait [--minutes <n>] | try [--text <words>] [--minutes <n>]" });
+    : Promise.resolve({ code: 2, said: "usage: node .adlc/deploy.mjs put --email <address> --name \"<your name>\" --repo <owner/name> [--own-agent <name>] [--instance <url>] | status | wait [--minutes <n>] | try [--text <words>] [--minutes <n>]" });
   run.then((r) => { if (what !== "wait" || r.code !== 0) console.log(r.said); process.exitCode = r.code; }, (e) => { console.error(e.message); process.exitCode = 1; });
 }
