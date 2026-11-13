@@ -48,6 +48,9 @@ Code:
 /plugin install adlc@adlc
 ```
 
+On Windows, if a clone stops with "Filename too long", run
+`git config --global core.longpaths true` and clone again.
+
 Then `/adlc:start <folder> <what the agent should do>`. The folder it lays out
 carries its instructions as `AGENTS.md`, so another coding assistant or a
 person can work it the same way, and `node .adlc/check.mjs` says, at any

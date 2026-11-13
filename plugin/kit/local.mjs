@@ -22,7 +22,7 @@
 //
 // Everything is kept under ADLC_LOCAL_HOME (default ~/.agentmesh-local).
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +43,11 @@ export const CONTAINER_HOME_URL = "http://host.docker.internal:3005";
 const MODEL_VARS = ["MODEL_NAME", "MODEL_ENDPOINT", "MODEL_KEY", "MODEL_PROTOCOL"];
 const KEY_RE = /^am_\S+$/;
 const AGENT_ID_RE = /\b(U[A-Z2-7]{55})\b/;
+
+/** The kit's own files that go into the agent's image, beside the package. */
+export const LOCAL_FILES = ["bridge.mjs", "start.sh"];
+/** Text with LF line endings, whatever the checkout gave it. */
+export const lf = (text) => String(text).replace(/\r\n/g, "\n");
 
 export const localHome = (env = process.env) => resolve(env.ADLC_LOCAL_HOME || join(homedir(), ".agentmesh-local"));
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
@@ -155,7 +160,7 @@ export function runEnv({ name, key, directories, env }) {
 }
 
 /** Build this folder's agent and run it on the local mesh. */
-export async function put(dir, { env = process.env, run = runCommand, packer = pack, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), waitMs = 120_000 } = {}) {
+export async function put(dir, { env = process.env, run = runCommand, packer = pack, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), waitMs = 120_000, localDir = join(HERE, "local") } = {}) {
   const home = localHome(env);
   if (!existsSync(join(home, "mesh.json"))) return { code: 1, said: "The local mesh is not running. Run node .adlc/local.mjs up first." };
   const plugin = readJson(join(dir, "plugin.json")) ?? {};
@@ -175,7 +180,10 @@ export async function put(dir, { env = process.env, run = runCommand, packer = p
   let emitted;
   try { emitted = emit(packed.package_dir, ctx, { bases: join(HERE, "local", "bases.json"), force: true }); } catch (e) { return { code: 1, said: `Its image could not be laid out: ${e.message}` }; }
   mkdirSync(join(ctx, "local"), { recursive: true });
-  for (const f of ["bridge.mjs", "start.sh"]) cpSync(join(HERE, "local", f), join(ctx, "local", f));
+  // Git on Windows may have checked these out with CRLF line endings, which
+  // sh in the container cannot read (`set -eu\r` is an illegal option, and
+  // the container restarts forever); they go into the image with LF.
+  for (const f of LOCAL_FILES) writeFileSync(join(ctx, "local", f), lf(readFileSync(join(localDir, f), "utf8")));
   writeFileSync(join(ctx, "Dockerfile"), `${readFileSync(join(ctx, "Dockerfile"), "utf8")}${localLayer()}`);
   const image = `${PROJECT}/${name}:${version}`;
   const built = run("docker", ["build", "-q", "-t", image, ctx]);
