@@ -1,6 +1,6 @@
 {
   "name": "adlc",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Build an agent through the Agent Development Lifecycle in two phases: one builder writes the spec, which the person approves, then everything else in any order, and one check runs every gate over the result.",
   "author": { "name": "Common Agent" },
   "homepage": "https://agenticdevelopment.ai",

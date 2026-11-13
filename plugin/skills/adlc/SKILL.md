@@ -43,11 +43,11 @@ The check's gates, in the build:
 | Architecture | The record is the one the generator writes from `architecture.json` and the person's answers, every answer carries words the person said, it is complete, and it names the same systems as the spec. |
 | The agent's files | Every file is what the generators write from the spec, the record and `prose.json`, and the Common Agent packer accepts them. |
 | Test | Every scenario has a test, every test belongs to the spec, the suite fails against empty scripts, and no test fails on a mistake of its own. |
-| Code | The suite passes, every script is needed by some test, the scripts read only what the agent's files declare, and the packer accepts the folder with its scripts. |
+| Code | The suite passes, every script is needed by some test, the scripts read only what the agent's files declare, and the packer accepts the folder with its scripts and the package it makes carries every script each skill runs. |
 
 The code is judged only once the tests pass their gate, and from then on the tests are fixed. If a test then turns out to be wrong, say which test and which requirement, and ask the person to send the build back (`node .adlc/approve.mjs --send-back build`, which is theirs to run). If the spec turns out to be wrong, ask them to send it back to the spec (`--send-back spec`). When the build has been sent back, the check holds it until something in it has changed, so make the change the person asked for; it never passes the build or fixes the tests again on the files as they were.
 
-When the check says the build has passed, commit the folder and open the pull request. Whenever you commit the folder, `said.md` goes in with it: you never write it, but the words an answer quotes must be wherever the folder is checked, a pull request's check or a service reading the branch included.
+When the check says the build has passed, commit the folder and open the pull request. Whenever you commit the folder, `said.md` goes in with it: you never write it, but the words an answer quotes must be wherever the folder is checked, a pull request's check or a service reading the branch included. When the person wants the package itself, `node .adlc/packer.mjs --out <folder>` writes it there, outside the build folder; never commit it.
 
 ## The rules
 
