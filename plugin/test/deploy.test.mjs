@@ -102,6 +102,7 @@ test("the repository holds agent-repo.json, the package and the build folder, wi
   const into = mkdtempSync(join(tmpdir(), "adlc-laid-"));
   assert.equal(layOutRepo(dir, into, { packer }).ok, true);
   assert.deepEqual(JSON.parse(readFileSync(join(into, "agent-repo.json"), "utf8")), { format: "agent-repository-v1", package: "package", source: "source" });
+  assert.equal(readFileSync(join(into, ".gitattributes"), "utf8"), "*.sh text eol=lf\n", "shell scripts keep LF in a Windows checkout");
   assert.ok(existsSync(join(into, "package", "skills", "convert", "scripts", "convert.mjs")));
   assert.ok(existsSync(join(into, "source", "scripts", "convert.mjs")));
   for (const gone of [".git", "node_modules", ".agentmesh", ".pack"]) assert.ok(!existsSync(join(into, "source", gone)) && !existsSync(join(into, gone)), gone);

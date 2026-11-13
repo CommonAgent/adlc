@@ -88,6 +88,9 @@ export function layOutRepo(dir, into, { packer = pack } = {}) {
   rmSync(join(into, ".pack"), { recursive: true, force: true });
   mkdirSync(join(into, "source"), { recursive: true });
   for (const e of readdirSync(dir)) if (!NOT_SOURCE.has(e)) cpSync(join(dir, e), join(into, "source", e), { recursive: true });
+  // Shell scripts keep LF line endings in every checkout, Windows included:
+  // the kit's start script runs under sh in the local mesh's container.
+  writeFileSync(join(into, ".gitattributes"), "*.sh text eol=lf\n");
   writeFileSync(join(into, "agent-repo.json"), JSON.stringify({ format: "agent-repository-v1", package: "package", source: "source" }, null, 2) + "\n");
   writeFileSync(join(into, "README.md"), `# ${name}\n\nAn agent built through the Agent Development Lifecycle (https://agenticdevelopment.ai). The package AgentMesh installs is under package/; the build folder it was made from, with its spec, record, tests and code, is under source/.\n\nVersion ${version}.\n`);
   return { ok: true };

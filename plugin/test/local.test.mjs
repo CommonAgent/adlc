@@ -7,7 +7,11 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ADAPTER, CONTAINER_HOME_URL, SERVER, down, localLayer, localProblems, put, runEnv, serverEnv, status, tryIt, up } from "../kit/local.mjs";
+import { ADAPTER, CONTAINER_HOME_URL, LOCAL_FILES, SERVER, down, localLayer, localProblems, put, runEnv, serverEnv, status, tryIt, up } from "../kit/local.mjs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const KIT_LOCAL = join(dirname(fileURLToPath(import.meta.url)), "..", "kit", "local");
 import { entryOf, replyOf } from "../kit/local/bridge.mjs";
 
 const KEY = "am_local_single_use_key";
@@ -28,7 +32,13 @@ function docker({ dockerUp = true, volume = false } = {}) {
     if (cmd === "docker" && args[0] === "info") return dockerUp ? ok("29.0.0") : { status: 1, stdout: "", stderr: "Cannot connect" };
     if (cmd === "git" && args[0] === "clone") { mkdirSync(join(args.at(-1), "deploy", "compose", "nats"), { recursive: true }); return ok(); }
     if (cmd === "docker" && args.includes("mesh-admin") && args.includes("key")) return ok(`a key for the tenant:\n${KEY}\n`);
-    if (cmd === "docker" && args[0] === "build") { const ctx = args.at(-1); seen.dockerfile = readFileSync(join(ctx, "Dockerfile"), "utf8"); seen.local = existsSync(join(ctx, "local", "bridge.mjs")) && existsSync(join(ctx, "local", "start.sh")); return ok("sha256:abc"); }
+    if (cmd === "docker" && args[0] === "build") {
+      const ctx = args.at(-1);
+      seen.dockerfile = readFileSync(join(ctx, "Dockerfile"), "utf8");
+      seen.local = existsSync(join(ctx, "local", "bridge.mjs")) && existsSync(join(ctx, "local", "start.sh"));
+      if (seen.local) { seen.startSh = readFileSync(join(ctx, "local", "start.sh"), "utf8"); seen.bridge = readFileSync(join(ctx, "local", "bridge.mjs"), "utf8"); }
+      return ok("sha256:abc");
+    }
     if (cmd === "docker" && args[0] === "volume" && args[1] === "inspect") return volume ? ok("[]") : { status: 1, stdout: "", stderr: "no such volume" };
     if (cmd === "docker" && args[0] === "run" && args.includes("-d")) { const f = args[args.indexOf("--env-file") + 1]; seen.env = readFileSync(f, "utf8"); seen.envFile = f; return ok("c0ffee"); }
     if (cmd === "docker" && args[0] === "logs") return ok(`agentmesh: registered as ${ID}\n`);
@@ -134,6 +144,20 @@ test("put builds the package's image with the adapter and the bridge, runs it wi
   assert.ok(runLine.includes("--add-host host.docker.internal:host-gateway") && runLine.includes("-v agentmesh-local-time-zone-converter:/data"));
   assert.ok(!runLine.includes("sk-mine") && !runLine.includes(KEY), "no secret on the command line");
   assert.deepEqual(JSON.parse(readFileSync(join(home, "agents", "time-zone-converter", "agent.json"), "utf8")).id, ID);
+});
+
+test("the start script and the bridge go into the image with LF line endings, though Git on Windows checked them out with CRLF", async () => {
+  const home = tmp("adlc-local-home-");
+  writeFileSync(join(home, "mesh.json"), "{}");
+  const crlf = tmp("adlc-local-crlf-");
+  for (const f of LOCAL_FILES) writeFileSync(join(crlf, f), readFileSync(join(KIT_LOCAL, f), "utf8").replace(/\r?\n/g, "\r\n"));
+  assert.ok(readFileSync(join(crlf, "start.sh"), "utf8").includes("set -eu\r\n"), "the stand-in checkout has CRLF");
+  const d = docker();
+  const r = await put(folder(), { env: { ADLC_LOCAL_HOME: home }, run: d.run, packer: packer(), sleep: async () => {}, localDir: crlf });
+  assert.equal(r.code, 0, r.said);
+  assert.ok(!d.seen.startSh.includes("\r"), "start.sh has no carriage return in the image");
+  assert.ok(d.seen.startSh.includes("set -eu\n"));
+  assert.ok(!d.seen.bridge.includes("\r"));
 });
 
 test("a new version of an agent that ran here keeps its volume, so it is the same agent, and no key is made", async () => {
