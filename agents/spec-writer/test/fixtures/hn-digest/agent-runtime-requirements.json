@@ -72,7 +72,8 @@
         "--text-file",
         "{job_dir}/message.txt"
       ],
-      "reply": "json:reply"
+      "reply": "json:reply",
+      "message_file": "{job_dir}/message.txt"
     }
   }
 }

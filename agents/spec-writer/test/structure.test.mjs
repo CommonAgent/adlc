@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { recordOf, seedSpec } from "../scripts/seed.mjs";
 import { mergeFill, writeTheSpec } from "../scripts/spec.mjs";
 import { declarationProblems, parseDeclaredIn, valueAt } from "../scripts/declared.mjs";
-import { carriedProse, mergeProse, namedProse, proseSlots, proseUnchangedProblems, runOf, schemaWithoutAddresses, slugOf, structureOf } from "../scripts/structure.mjs";
+import { carriedProse, houseRun, mergeProse, namedProse, proseSlots, proseUnchangedProblems, runOf, schemaWithoutAddresses, slugOf, structureOf } from "../scripts/structure.mjs";
 import { designFromSpec } from "../scripts/draft.mjs";
 import { agentFilesOf } from "../scripts/files.mjs";
 import { checkBuilds } from "../scripts/builds.mjs";
@@ -113,6 +113,19 @@ test("with no declaration the offering comes from the features' offering, and a 
   assert.match(r.problems[0], /requires --colour, and the host has nothing to put after it/);
   assert.equal(slugOf("Arbitrary URLs supplied by the stories"), "arbitrary-urls-supplied-by-the-stories");
   assert.equal(schemaWithoutAddresses({ $schema: "https://json-schema.org/draft/2020-12/schema", enum: ["a", "https://x.example/"] }).taken, 1);
+});
+
+// 2026-11-12: time-zone-converter's command read {job_dir}/message.txt, and its
+// run named no message_file, so the host wrote the sender's text nowhere and the
+// installed agent answered every message as if it were empty.
+test("a command handed the sender's text declares message_file at the same path, and one without it declares none", () => {
+  const house = houseRun("convert");
+  assert.equal(house.message_file, "{job_dir}/message.txt");
+  assert.equal(house.command[house.command.indexOf("--text-file") + 1], house.message_file);
+  const named = runOf("x", { id: "I1", name: "scripts/x.mjs", flags: ["--job", "--message-file"] }).run;
+  assert.equal(named.message_file, "{job_dir}/message.txt");
+  const none = runOf("x", { id: "I2", name: "scripts/x.mjs", flags: ["--job", "--file"] }).run;
+  assert.equal("message_file" in none, false, "a command that is given only files names no message file");
 });
 
 test("the model writes the prose, and only the prose: a structural field it answers is not heard", async () => {
