@@ -1229,11 +1229,22 @@ function depsForRow(deps, row) {
 }
 
 export async function retire(name, reason, deps) {
-  const signer = deps.signer();
   if (!NAME_RE.test(String(name))) return out({ ok: false, act: "remove", step: "validate", error: `bad name ${JSON.stringify(name)}` });
   const row = deps.inventory.load().find((x) => x.name === name);
   if (!row) return out({ ok: false, act: "remove", step: "validate", error: `${name} is not in the container service inventory` });
-  try { deps = depsForRow(deps, row); } catch (e) { return out({ ok: false, act: "remove", step: e.step, error: e.message }); }
+  let r;
+  try { r = await removeRow(row, reason, deps); } catch (e) { return out({ ok: false, act: "remove", step: e.step ?? "unexpected", error: e.message }); }
+  return out({ ok: r.remaining.length === 0, act: "remove", name, removed: r.removed, remaining: r.remaining, key: r.key, record: r.record });
+}
+
+/** Everything one inventory row made, taken down (the service first), its
+ *  key retired on the platform, the row dropped and the removal recorded.
+ *  Says what was removed and what remains; never throws for a thing that
+ *  would not go. */
+async function removeRow(row, reason, deps) {
+  const name = row.name;
+  const signer = deps.signer();
+  deps = depsForRow(deps, row);
   const removed = [];
   const remaining = [];
   const quiet = (argv, what) => {
@@ -1263,7 +1274,7 @@ export async function retire(name, reason, deps) {
     produced_at: deps.now(), signatures: [],
   }, TAG, signer.sign, signer.by);
   deps.saveRecord(name, "remove", rec);
-  return out({ ok: remaining.length === 0, act: "remove", name, removed, remaining, key, record: rec });
+  return { removed, remaining, key, record: rec };
 }
 
 /** Retire a key that has no install here: a platform agent that was run by
@@ -1895,9 +1906,17 @@ export async function installPackage(args, deps) {
   const save = (r) => deps.inventory.save([...rows().filter((x) => x.name !== r.name), r]);
   try {
     ins = readPackageInstruction(args, deps.settings ?? SETTINGS);
-    const before = rows().find((x) => x.kind === "package" && x.handle === ins.handle) ?? null;
+    let before = rows().find((x) => x.kind === "package" && x.handle === ins.handle) ?? null;
+    // An install of this agent that failed part way is cleared first, key
+    // and all, so a person who tries again is not stuck behind it. One that
+    // is still going is not touched.
+    if (before && /^failed/.test(String(before.state ?? ""))) {
+      const cleared = await removeRow(before, `a failed install of ${ins.handle}, cleared before installing it again`, deps);
+      if (cleared.remaining.length) stop("validate", `the failed install of ${ins.handle} (${before.name}) could not be cleared: ${cleared.remaining.join("; ")}`);
+      before = null;
+    }
     updating = !!(before && before.state === "running" && before.agent_key);
-    if (before && !updating) stop("validate", `${ins.handle} is in the inventory as ${before.name}, ${before.state}; retire ${before.name} to clean it before installing again`);
+    if (before && !updating) stop("validate", `${ins.handle} is in the inventory as ${before.name}, ${before.state}, and is not finished yet; nothing was started`);
     if (updating) {
       if ((before.tenant ?? null) !== ins.tenant) stop("validate", `${ins.handle} runs for ${before.tenant}; an update does not move it`);
       if (before.source?.sha256 === ins.sha256) stop("validate", `${ins.handle} already runs this package (sha256 ${ins.sha256.slice(0, 12)}); an update is a new version`);

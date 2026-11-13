@@ -145,6 +145,7 @@ function fakes(tgz, { handle = "helper.person@example.com", rows = [], buildStat
     fetched.push({ url, auth: init.headers?.authorization ?? null });
     const ok = (o) => ({ ok: true, status: 200, json: async () => o });
     if (url === URL_) return { ok: true, status: 200, arrayBuffer: async () => tgz };
+    if (url.endsWith("/deploy-requests/retire-key")) return ok({ unlinked: true, deregistered: true, name_released: "no name answers to this key", credential_revoked: true });
     if (url.endsWith("/v1/bootstrap")) return ok({ creds: "test-creds-placeholder", mesh: { endpoints: ["wss://mesh.agentmesh.ai"] }, ...(handle ? { handle } : {}) });
     return { ok: false, status: 404, json: async () => ({}) };
   };
@@ -388,13 +389,32 @@ test("an agent installed before labels is found by its handle and updated where 
   assert.deepEqual(f.inventory().map((r) => r.name), ["helper"]);
 });
 
-test("an install that failed part way is not installed over: it is retired first", NEEDS_SUPERVISOR, async () => {
+test("an install that failed part way is cleared, key and all, and the agent installed again", NEEDS_SUPERVISOR, async () => {
   const rows = (await installedFirst()).map((r) => ({ ...r, state: "failed at name" }));
+  const failed = rows[0];
+  const tgz = tarGz(packageFiles());
+  const f = fakes(tgz, { rows });
+  const out = await quietly(() => installPackage(args(sha(tgz), { request_id: "dr_mnopqrstuvwx" }), f.deps));
+  assert.equal(out.ok, true, JSON.stringify(out).slice(0, 600));
+  assert.equal(out.act, "deploy");
+  // Its service went first, then the rest, and its key was retired.
+  const deletes = f.calls.filter((a) => a.includes("delete")).map((a) => a.slice(0, 3).join(" "));
+  assert.equal(deletes[0], `run services delete`);
+  assert.ok(f.fetched.some((x) => x.url.endsWith("/deploy-requests/retire-key")), "the failed install's key is retired");
+  assert.ok(f.records.remove, "the clearing is recorded");
+  // Then a fresh install: a new key, one row, running.
+  assert.ok(f.fetched.some((x) => x.url.endsWith("/v1/bootstrap")));
+  assert.deepEqual(f.inventory().map((r) => [r.name, r.state]), [[failed.name, "running"]]);
+  assert.equal(f.inventory()[0].request_id, "dr_mnopqrstuvwx");
+});
+
+test("an install of the same agent that is still going is not touched", NEEDS_SUPERVISOR, async () => {
+  const rows = (await installedFirst()).map((r) => ({ ...r, state: "service started" }));
   const tgz = tarGz(packageFiles({ version: "0.2.0" }));
   const f = fakes(tgz, { rows });
   const out = await quietly(() => installPackage(args(sha(tgz)), f.deps));
   assert.equal(out.ok, false);
-  assert.match(out.error, /retire helper-[0-9a-f]{8} to clean it/);
+  assert.match(out.error, /not finished yet; nothing was started/);
   assert.equal(f.calls.length, 0);
 });
 
