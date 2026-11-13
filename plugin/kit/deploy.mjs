@@ -19,6 +19,8 @@
 //
 //   needs: node >= 22, git; gh to create a repository that does not exist yet
 //   node .adlc/deploy.mjs put --email <address> --name "<your name>" --repo <owner/name> [--own-agent <name>] [--instance <url>]
+//   node .adlc/deploy.mjs put --local      the same agent on the local AgentMesh in Docker on this computer (local.mjs);
+//                                          try --local and status --local follow it there
 //   node .adlc/deploy.mjs status
 //   node .adlc/deploy.mjs wait [--minutes <n>]
 //   node .adlc/deploy.mjs try [--text <words>] [--minutes <n>]
@@ -241,16 +243,42 @@ function flag(argv, name) {
   return at > 0 ? argv[at + 1] : undefined;
 }
 
+/**
+ * The same steps with --local: on the local AgentMesh in Docker on this
+ * computer (local.mjs), which is started first when it is not running. The
+ * build must have passed, as for the public one; nothing is pushed or
+ * emailed, since running the command is the person's own approval.
+ */
+export async function onLocal(dir, what, { text, env = process.env, mod = null } = {}) {
+  const local = mod ?? (await import("./local.mjs"));
+  if (what === "put") {
+    const problems = notReady(dir);
+    if (problems.length) return { code: 1, said: `It can't run on the local mesh yet:\n${problems.map((p) => `  - ${p}`).join("\n")}` };
+    const lines = [];
+    if (!existsSync(join(local.localHome(env), "mesh.json"))) {
+      const started = await local.up({ env });
+      lines.push(started.said);
+      if (started.code !== 0) return { code: started.code, said: lines.join("\n") };
+    }
+    const r = await local.put(dir, { env });
+    return { ...r, said: [...lines, r.said].join("\n") };
+  }
+  if (what === "try") return local.tryIt(dir, { text, env });
+  if (what === "status" || what === "wait") return local.status({ env });
+  return { code: 2, said: "with --local: put | try [--text <words>] | status" };
+}
+
 const thisFile = process.argv[1] ? process.argv[1].replace(/\\/g, "/").split("/").pop() : "";
 if (thisFile === "deploy.mjs" && import.meta.url.endsWith("/deploy.mjs")) {
   const argv = process.argv;
   const dir = resolve(join(import.meta.dirname, ".."));
   const what = argv[2];
   const minutes = flag(argv, "--minutes") ? Number(flag(argv, "--minutes")) : undefined;
-  const run = what === "put" ? put(dir, { email: flag(argv, "--email"), name: flag(argv, "--name"), ownAgent: flag(argv, "--own-agent"), repo: flag(argv, "--repo"), instance: flag(argv, "--instance") })
+  const run = argv.includes("--local") ? onLocal(dir, what, { text: flag(argv, "--text") })
+    : what === "put" ? put(dir, { email: flag(argv, "--email"), name: flag(argv, "--name"), ownAgent: flag(argv, "--own-agent"), repo: flag(argv, "--repo"), instance: flag(argv, "--instance") })
     : what === "status" ? status(dir)
     : what === "wait" ? wait(dir, minutes ? { minutes } : {})
     : what === "try" ? tryIt(dir, { text: flag(argv, "--text"), ...(minutes ? { minutes } : {}) })
-    : Promise.resolve({ code: 2, said: "usage: node .adlc/deploy.mjs put --email <address> --name \"<your name>\" --repo <owner/name> [--own-agent <name>] [--instance <url>] | status | wait [--minutes <n>] | try [--text <words>] [--minutes <n>]" });
+    : Promise.resolve({ code: 2, said: "usage: node .adlc/deploy.mjs put --email <address> --name \"<your name>\" --repo <owner/name> [--own-agent <name>] [--instance <url>] | status | wait [--minutes <n>] | try [--text <words>] [--minutes <n>]; add --local to put, try or status for the local AgentMesh" });
   run.then((r) => { if (what !== "wait" || r.code !== 0) console.log(r.said); process.exitCode = r.code; }, (e) => { console.error(e.message); process.exitCode = 1; });
 }

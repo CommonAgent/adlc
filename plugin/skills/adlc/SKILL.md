@@ -64,6 +64,12 @@ For a new version later, raise the version through the build as usual (the perso
 
 An agent that needs keys of its own (a service's credential, an MCP server) cannot be put on AgentMesh this way yet, and `put` says so. Tell the person; never ask them for a key.
 
+## Running it on a local AgentMesh
+
+When the person wants the agent running on their own computer instead, with nothing sent anywhere, add `--local`: `node .adlc/deploy.mjs put --local` builds the agent's image and runs it on a local AgentMesh in Docker, which it starts the first time (the open-source Agent Messaging Server, from its public images). It needs Docker running and nothing else: no account, no email and no repository, because running the command on their own computer is their approval. Then `node .adlc/deploy.mjs try --local --text "<a message a real caller would send>"` sends it one message and shows the reply, and `status --local` says what runs. `node .adlc/local.mjs down` stops it all; what the agent keeps stays on its Docker volume, and a new version put the same way is the same agent.
+
+When the agent's code calls a model, it uses the person's own model settings from the shell it runs in: `MODEL_NAME`, `MODEL_ENDPOINT`, `MODEL_KEY` and `MODEL_PROTOCOL`. Ask the person to set them in their own shell; never ask for the key, and never write it into a file or a command.
+
 ## The rules
 
 1. Never change the approved spec, the fixed tests, the lock file `build.lock.json`, `said.md`, or anything under `.adlc/`. To change the spec or a fixed test, the person sends the build back.

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PUBLIC, SAVED, instanceOf, layOutRepo, notReady, ownKeys, publish, put, savedOf, tryIt, wait } from "../kit/deploy.mjs";
+import { PUBLIC, SAVED, instanceOf, layOutRepo, notReady, onLocal, ownKeys, publish, put, savedOf, tryIt, wait } from "../kit/deploy.mjs";
 
 const RUNTIME = { format: "agent-runtime-requirements-v1", systems: [{ name: "text-reasoning", kind: "model", protocols: ["anthropic-messages"] }] };
 
@@ -164,6 +164,30 @@ test("the first put files by email and keeps the ticket out of git; the next fil
   assert.deepEqual(m.asked[1], { method: "POST", path: `/v1/deploy/by-email/${TICKET}/update`, body: undefined, origin: PUBLIC });
   assert.equal(readFileSync(join(dir, ".gitignore"), "utf8").match(/\.agentmesh\//g).length, 1);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("--local puts the built agent on the local mesh, starting the mesh first when it is not running, and pushes or files nothing", async () => {
+  const home = mkdtempSync(join(tmpdir(), "adlc-local-home-"));
+  const did = [];
+  const mod = {
+    localHome: () => home,
+    up: async () => { did.push("up"); writeFileSync(join(home, "mesh.json"), "{}"); return { code: 0, said: "The local AgentMesh runs." }; },
+    put: async () => { did.push("put"); return { code: 0, said: "time-zone-converter runs on the local mesh." }; },
+    tryIt: async (_d, { text }) => { did.push(`try ${text}`); return { code: 0, said: "17:30" }; },
+    status: async () => ({ code: 0, said: "runs" }),
+  };
+  const dir = built();
+  const r = await onLocal(dir, "put", { env: {}, mod });
+  assert.equal(r.code, 0, r.said);
+  assert.match(r.said, /The local AgentMesh runs\.\ntime-zone-converter runs on the local mesh\./);
+  await onLocal(dir, "put", { env: {}, mod });
+  assert.deepEqual(did, ["up", "put", "put"], "the mesh is started only when it is not running");
+  assert.equal((await onLocal(dir, "try", { text: "hi", env: {}, mod })).said, "17:30");
+  const unfinished = built({ gates: { spec: { passed: true } } });
+  const refused = await onLocal(unfinished, "put", { env: {}, mod });
+  assert.equal(refused.code, 1);
+  assert.match(refused.said, /build has not passed/);
+  for (const d of [dir, unfinished, home]) rmSync(d, { recursive: true, force: true });
 });
 
 test("AgentMesh's refusal is passed on in its words", async () => {

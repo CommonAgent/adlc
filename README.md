@@ -61,6 +61,12 @@ emails the person a link whose page has one button; nothing is installed until
 they press it. `wait` follows it until it runs, and `try` sends it one message
 and shows the reply.
 
+`put --local` runs the same agent on a local AgentMesh in Docker on your own
+computer instead: the open-source Agent Messaging Server from its public
+images, and the agent in a container beside it. It needs Docker and nothing
+else, no account and no email; `try --local` sends it a message, and a model
+the agent calls is reached with your own `MODEL_*` settings.
+
 ## The agents in this repository
 
 These are AgentMesh's own role agents, published as reference

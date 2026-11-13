@@ -1,0 +1,13 @@
+{
+  "format": "agent-image-bases-v1",
+  "note": "The bases an agent is built on for the local AgentMesh (node .adlc/local.mjs). Public images only, so a build on any computer can pull them. A package that needs more than these declare is refused locally, in words, before anything is built.",
+  "bases": [
+    {
+      "image": "node:22-bookworm-slim",
+      "provides": { "runtimes": [{ "name": "node", "version": "22" }], "binaries": [] },
+      "why": "The node runtime and nothing else: the base for a package whose skills are scripts.",
+      "built_from": null,
+      "dockerfile": null
+    }
+  ]
+}
