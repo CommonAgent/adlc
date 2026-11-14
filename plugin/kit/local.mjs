@@ -278,7 +278,9 @@ const LINK_IMAGE = `${PROJECT}/link`;
 /** Where a linked agent's key is, inside the link's container. */
 export const identityPathOf = (name) => `/agents/${name}/home/.agentmesh/adapter/identity.json`;
 
-/** The agents on the local mesh: each one put here, and the local caller. */
+/** The agents on the local mesh: each one put here. The local caller, which
+ *  sends `try --local`'s message, is the kit's helper and not an agent anyone
+ *  built, so it is not one of them and is never linked. */
 export function localAgents(home) {
   const out = [];
   let names = [];
@@ -287,8 +289,6 @@ export function localAgents(home) {
     const a = readJson(join(home, "agents", n, "agent.json"));
     if (a?.id && a.name) out.push({ name: a.name, id: a.id, volume: volumeOf(a.name), container: a.container ?? containerOf(a.name) });
   }
-  const caller = readJson(join(home, "caller.json"));
-  if (caller?.id) out.push({ name: "caller", id: caller.id, volume: `${PROJECT}-caller`, container: null });
   return out;
 }
 
@@ -348,8 +348,13 @@ export async function link({ email, name, computer, ownAgent, instance, env = pr
   if (st.body.state !== "linked") return { code: 1, said: st.body.says ?? st.body.refusal ?? "It was not linked." };
   const mesh = meshUrlsOf(st.body.mesh);
   if (!mesh.length) return { code: 1, said: "AgentMesh linked the agents and did not say where the link connects." };
-  const joined = (st.body.agents ?? []).filter((a) => !a.refusal);
+  // Linked means reachable by name: an agent AgentMesh gave no handle is not.
+  const joined = (st.body.agents ?? []).filter((a) => !a.refusal && a.handle);
   const carried = agents.filter((a) => joined.some((j) => j.key === a.id));
+  if (!carried.length) {
+    const why = (st.body.agents ?? []).map((a) => `  ${a.name}: ${a.refusal ?? "AgentMesh gave it no name, so it can't be reached there by name."}`);
+    return { code: 1, said: ["No agent can be reached on AgentMesh by name, so the link was not started:", ...why].join("\n") };
+  }
 
   // The link's container.
   const ctx = join(home, "link", "build");
@@ -377,8 +382,9 @@ export async function link({ email, name, computer, ownAgent, instance, env = pr
     await sleep(2000);
   }
   if (!/\[link\] linked:/.test(logs)) return { code: 1, said: `The link started, and did not say it is linked. See: docker logs ${LINK_CONTAINER}\n${logs.trim().split("\n").slice(-5).join("\n")}` };
-  const handles = joined.map((a) => `  ${a.handle ?? a.name}`).join("\n");
-  const not = (st.body.agents ?? []).filter((a) => a.refusal).map((a) => `  ${a.name}: ${a.refusal}`);
+  const handles = joined.map((a) => `  ${a.handle}`).join("\n");
+  const not = (st.body.agents ?? []).filter((a) => a.refusal || !a.handle)
+    .map((a) => `  ${a.name}: ${a.refusal ?? "AgentMesh gave it no name, so it can't be reached there by name."}`);
   return { code: 0, said: [`The local mesh is linked to ${api.replace(/^https?:\/\/api\./, "")}. These agents can be reached there by name while this computer is on:`, handles, ...(not.length ? ["Not linked:", ...not] : [])].join("\n") };
 }
 
