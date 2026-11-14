@@ -135,3 +135,18 @@ test("try --via-agentmesh sends from the person's own agent on AgentMesh and sho
   assert.match(r.said, /17:30 in Paris/);
   assert.deepEqual(am.calls[0].body, { to: "tz", text: "09:30 Denver in Paris?" });
 });
+
+test("try --via-agentmesh shows the answer the test brought back itself, and says why when AgentMesh would not send", async () => {
+  const home = localHomeWith();
+  writeFileSync(join(home, "link.json"), JSON.stringify({ api: "https://api.dev.agentmesh.ai", ticket: "T.secret", state: "linked" }));
+  const dir = tmp("adlc-link-dir-");
+  writeFileSync(join(dir, "plugin.json"), JSON.stringify({ name: "tz" }));
+  const answered = async () => ({ status: 200, json: async () => ({ ok: true, state: "answered", reply: { text: "17:30 in Paris" }, to: "tz.dana@example.com" }) });
+  const r = await tryFromPublic(dir, { env: { ADLC_LOCAL_HOME: home }, fetcher: answered, sleep: async () => {} });
+  assert.equal(r.code, 0);
+  assert.match(r.said, /tz\.dana@example\.com answered, through AgentMesh:\n17:30 in Paris/);
+  const unnamed = async () => ({ status: 200, json: async () => ({ ok: false, state: "failed", error: "This agent does not have one yet, so nothing was sent." }) });
+  const n = await tryFromPublic(dir, { env: { ADLC_LOCAL_HOME: home }, fetcher: unnamed, sleep: async () => {} });
+  assert.equal(n.code, 1);
+  assert.match(n.said, /nothing was sent/);
+});

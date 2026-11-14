@@ -116,7 +116,6 @@ async function main() {
   }
   if (!agents.length) throw new Error("no linked agent's key could be read");
   const linked = new Set(agents.map((a) => a.id));
-  const byId = new Map(agents.map((a) => [a.id, a]));
 
   // The node credential on the public mesh, signed by the node and by each
   // agent, as its node-credential door requires.
@@ -148,6 +147,7 @@ async function main() {
     if (hops === null) { log(`${way}: dropped a message to ${subject}: its hop count is over ${MAX_HOPS}`); return; }
     const h = headers();
     h.set(HOP_HEADER, String(hops));
+    log(`${way}: a message for ${(inboxAgentOf(subject) ?? subject).slice(0, 12)}…${msg.reply ? ", its answers to come back" : ""}`);
     if (msg.reply) {
       const back = createInbox();
       const sub = to.subscribe(back, { max: 8, timeout: 180_000 });
@@ -228,14 +228,19 @@ async function main() {
 
   // Up: what the local mesh's agents send to agents it does not hold.
   const heldCache = new Map();
-  const heldHere = async (target, asAgent) => {
+  let registryKv = null;
+  const heldHere = async (target) => {
     const c = heldCache.get(target);
     if (c && c.until > Date.now()) return c.held;
+    // Read from the registry's own store, not asked of the registry service:
+    // the service answers "not found" for a private agent to anyone but its
+    // owner, and that answer would send a local message out.
     let held = null;
     try {
-      const r = await lookup(asAgent, target);
-      held = r.error ? (/NOT_FOUND/.test(String(r.error.code)) ? false : null) : true;
-    } catch { held = null; }
+      registryKv ??= await localNc.jetstream().views.kv("mesh_registry", { bindOnly: true });
+      const e = await registryKv.get(target);
+      held = !!e && e.operation === "PUT" && e.value?.length > 0;
+    } catch (e) { log(`the local registry could not be read: ${e.message}`); held = null; }
     if (held !== null) heldCache.set(target, { held, until: Date.now() + (held ? 300_000 : 30_000) });
     return held;
   };
@@ -247,8 +252,9 @@ async function main() {
       let from = null;
       try { from = sdk.decode(msg.data).from; } catch { return; }
       if (!linked.has(from)) return;
-      void heldHere(to, byId.get(from)).then((held) => {
+      void heldHere(to).then((held) => {
         if (goesUp({ to, from, linked, held })) carry(msg, localNc, pubNc, msg.subject, "up");
+        else if (held === null) log(`up: held back a message for ${to.slice(0, 12)}…: the local registry could not say whether it holds that agent`);
       });
     },
   });

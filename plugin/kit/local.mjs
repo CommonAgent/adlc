@@ -301,9 +301,9 @@ export function linkRunArgs({ image, api, mesh, agents }) {
     "-e", `LINK_CONFIG=${JSON.stringify(config)}`, image];
 }
 
-async function linkCall(fetcher, url, init = {}) {
+async function linkCall(fetcher, url, init = {}, timeoutMs = 30_000) {
   try {
-    const r = await fetcher(url, { ...init, signal: AbortSignal.timeout(30_000) });
+    const r = await fetcher(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
     return { status: r.status, body: await r.json().catch(() => ({})) };
   } catch (e) { return { status: 0, body: { error: `AgentMesh did not answer at ${url}: ${e.message}` } }; }
 }
@@ -390,8 +390,11 @@ export async function tryFromPublic(dir, { text, env = process.env, fetcher = fe
   if (!saved?.ticket || saved.state !== "linked") return { code: 1, said: "The local mesh is not linked to AgentMesh. Link it first: node .adlc/local.mjs link --email <address> --name \"<your name>\"" };
   const name = String((readJson(join(dir, "plugin.json")) ?? {}).name ?? "");
   const words = String(text ?? "").trim() || "Hello. What can you do?";
-  const sent = await linkCall(fetcher, `${saved.api}/v1/link/by-email/${saved.ticket}/test`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to: name, text: words }) });
+  const sent = await linkCall(fetcher, `${saved.api}/v1/link/by-email/${saved.ticket}/test`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to: name, text: words }) }, 120_000);
   if (sent.status !== 200 && sent.status !== 202) return { code: 1, said: `AgentMesh did not send it: ${sent.body.error ?? `HTTP ${sent.status}`}` };
+  // The test waits for the answer, and usually brings it back itself.
+  if (sent.body.reply?.text) return { code: 0, said: `${sent.body.to} answered, through AgentMesh:\n${sent.body.reply.text}` };
+  if (sent.body.ok === false && !/no response|offline|AGENT_UNAVAILABLE/i.test(String(sent.body.error ?? ""))) return { code: 1, said: `AgentMesh did not send it: ${sent.body.error}` };
   const since = sent.body.sent_at;
   const until = Date.now() + waitMs;
   while (Date.now() < until) {
