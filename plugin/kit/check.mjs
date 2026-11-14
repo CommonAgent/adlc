@@ -38,7 +38,7 @@ export async function checkFolder(dir) {
     const problems = await CHECKS.spec(dir, lock);
     if (problems.length) return { code: 1, phase, passed: false, problems };
     return { code: 4, phase, passed: false, problems: [], waiting: true,
-      said: "The spec is ready for the person. Show it to them in plain words and ask them to approve it by running `node .adlc/approve.mjs` themselves; you may not run it." };
+      said: "The spec is ready for the person. Show it to them in plain words and ask them to approve it. In Claude Code with the ADLC plugin they type approve; elsewhere they run `node .adlc/approve.mjs` themselves. You may not approve it for them." };
   }
   const built = await CHECKS.build(dir, lock);
   if (built.lock !== lock) { lock = built.lock; writeLock(dir, lock); }

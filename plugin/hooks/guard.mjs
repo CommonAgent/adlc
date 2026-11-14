@@ -9,7 +9,9 @@
 //         builder writes for them can be checked against their own words;
 //         the builder never writes said.md. A program that types the
 //         prompts for the person sets ADLC_NOT_THE_PERSON=1, and nothing is
-//         kept: it writes the person's own replies to said.md itself
+//         kept: it writes the person's own replies to said.md itself. When
+//         the person types their approval ("approve") and one folder's spec
+//         is waiting, the hook runs that folder's approve.mjs for them
 //   stop  (Stop) no stopping while such a file has changed, or while the
 //         tests are fixed and the build still fails its check; asked once, so
 //         the assistant can still say what blocks it
@@ -70,7 +72,7 @@ const WRITES = /(?:>|\btee\b|\bsed\s+-i|\bmv\b|\bcp\b|\brm\b|\bSet-Content\b|\bO
 export function commandRefusal(command, cwd) {
   const c = String(command ?? "");
   if (!buildFolderOf(cwd) && !/\.adlc[\\/]/.test(c)) return null;
-  if (APPROVE.test(c)) return "approve.mjs is the person's approval, and the assistant never runs it. Show them what is ready and ask them to run it themselves.";
+  if (APPROVE.test(c)) return "approve.mjs is the person's approval, and the assistant never runs it. Show them what is ready and ask them to type approve.";
   if (c.includes(SAID) && WRITES.test(c)) return `${SAID} is the person's own words, kept by the plugin as they say them; the builder does not write it.`;
   if (c.includes(LOCK) && WRITES.test(c)) return `${LOCK} is the build's lock file; only the check and the person's approval write it.`;
   if (/\.adlc[\\/]/.test(c) && WRITES.test(c) && !/node\s+(?:\S*[\\/])?\.adlc[\\/]/.test(c)) return "the files under .adlc/ are the ADLC check, and the builder does not change the check it is held to.";
@@ -140,6 +142,31 @@ export function keepSaid(event, { now = () => new Date().toISOString(), env = pr
   return dirs;
 }
 
+/** The person's approval in their own words: "approve", "I approve", "approve
+ *  the spec", "yes, approve it". Nothing longer, so a sentence that only
+ *  mentions approving never approves. */
+export const APPROVAL = /^(?:yes[,.!]?\s+)?(?:i\s+)?approved?(?:\s+(?:it|this|the\s+spec))?[.!]*$/i;
+
+/** When the person types their approval, approve the spec of the one build
+ *  folder whose spec is waiting, by running that folder's own approve.mjs.
+ *  The hook runs on what the person typed, before the assistant sees it, so
+ *  the assistant cannot type it for them. Returns { dir?, said } for the
+ *  assistant to hear, or null when the words are not an approval or no spec
+ *  is waiting. */
+export function approveIfSaid(event, { env = process.env, run = spawnSync } = {}) {
+  if (env.ADLC_NOT_THE_PERSON === "1") return null;
+  if (!APPROVAL.test(String(event.prompt ?? "").trim())) return null;
+  const waiting = openFoldersFrom(event.cwd ?? process.cwd()).filter((d) => !readJson(join(d, LOCK))?.gates?.spec);
+  if (!waiting.length) return null;
+  if (waiting.length > 1) {
+    return { said: `The person typed their approval, and ${waiting.length} build folders have a spec not yet approved (${waiting.join(", ")}), so nothing was approved. Ask them which one, and to type approve again from inside that folder.` };
+  }
+  const dir = waiting[0];
+  const r = run("node", [join(dir, ".adlc", "approve.mjs")], { cwd: dir, encoding: "utf8", timeout: 600000 });
+  const answer = (String(r.stdout ?? "").trim() || String(r.stderr ?? "").trim() || "approve.mjs said nothing.");
+  return { dir, said: `The person typed their approval, and the plugin ran it for them in ${dir} (node .adlc/approve.mjs). It answered:\n${answer}\nTell them what this means in plain words and carry on from there.` };
+}
+
 /** The stop decision: { block: reason } or {}. */
 export function stop(event, { run = spawnSync } = {}) {
   if (event.stop_hook_active) return {};
@@ -165,6 +192,9 @@ if (mode === "pre" || mode === "said" || mode === "stop") {
     try { event = JSON.parse(text || "{}"); } catch { event = {}; }
     if (mode === "said") {
       try { keepSaid(event); } catch { /* never stand between the person and the session */ }
+      let a = null;
+      try { a = approveIfSaid(event); } catch { a = null; }
+      if (a) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: a.said } }));
     } else if (mode === "pre") {
       const d = pre(event);
       if (d.deny) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: d.deny } }));
