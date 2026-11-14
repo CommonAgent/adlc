@@ -97,7 +97,7 @@ function docker() {
 
 test("link files the local agents with the email, waits for the button, starts the link and lets the person's own agent in", async () => {
   const home = localHomeWith();
-  assert.deepEqual(localAgents(home).map((a) => a.name), ["tz", "caller"]);
+  assert.deepEqual(localAgents(home).map((a) => a.name), ["tz"], "the kit's caller is not linked");
   const am = agentmesh();
   const d = docker();
   const r = await link({ email: "dana@example.com", name: "Dana Developer", instance: "https://api.dev.agentmesh.ai", env: { ADLC_LOCAL_HOME: home }, run: d.run, fetcher: am.fetcher, sleep: async () => {} });
@@ -105,12 +105,32 @@ test("link files the local agents with the email, waits for the button, starts t
   assert.match(r.said, /tz\.dana@example\.com/);
   const filed = am.calls[0];
   assert.equal(filed.url, "https://api.dev.agentmesh.ai/v1/link/by-email");
-  assert.deepEqual(filed.body.agents, [{ name: "tz", key: A }, { name: "caller", key: B }]);
+  assert.deepEqual(filed.body.agents, [{ name: "tz", key: A }]);
   assert.equal(filed.auth, undefined, "no deploy key in the shell: the owner approves by email");
   const started = d.calls.find((c) => c[1] === "run" && c.includes(LINK_CONTAINER));
   assert.ok(started, "the link's container started");
   assert.ok(d.calls.some((c) => c[1] === "exec" && c[2] === "agentmesh-local-tz" && c.at(-1).includes(`contacts admit ${OWN}`)), "the person's own agent is let in");
   assert.equal(JSON.parse(readFileSync(join(home, "link.json"), "utf8")).state, "linked");
+});
+
+test("an agent AgentMesh gave no name is listed as not linked, not as reachable; with none named, no link starts", async () => {
+  const home = localHomeWith();
+  mkdirSync(join(home, "agents", "uc"), { recursive: true });
+  writeFileSync(join(home, "agents", "uc", "agent.json"), JSON.stringify({ name: "uc", id: B, container: "agentmesh-local-uc" }));
+  const answer = (agents) => async (url, init = {}) => ({ status: url.endsWith("/v1/link/by-email") ? 202 : 200, json: async () => (url.endsWith("/v1/link/by-email") ? { ticket: "T.secret" } : { state: "linked", mesh: { endpoints: ["wss://mesh.dev.agentmesh.ai"] }, agents }) });
+  const r = await link({ email: "dana@example.com", name: "Dana", env: { ADLC_LOCAL_HOME: home }, run: docker().run, fetcher: answer([{ name: "tz", key: A, handle: "tz.dana@example.com" }, { name: "uc", key: B }]), sleep: async () => {} });
+  assert.equal(r.code, 0, r.said);
+  const [reachable, notLinked] = r.said.split("Not linked:");
+  assert.match(reachable, /tz\.dana@example\.com/);
+  assert.doesNotMatch(reachable, /\buc\b/);
+  assert.match(notLinked, /uc: AgentMesh gave it no name/);
+
+  const home2 = localHomeWith();
+  const d = docker();
+  const none = await link({ email: "dana@example.com", name: "Dana", env: { ADLC_LOCAL_HOME: home2 }, run: d.run, fetcher: answer([{ name: "tz", key: A }]), sleep: async () => {} });
+  assert.equal(none.code, 1);
+  assert.match(none.said, /link was not started/);
+  assert.ok(!d.calls.some((c) => c[1] === "run" && c.includes(LINK_CONTAINER)), "no link container");
 });
 
 test("link with the deploy key sends it as the bearer; without the button pressed it says to run it again, and keeps the ticket", async () => {
