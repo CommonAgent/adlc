@@ -76,6 +76,13 @@ images, and the agent in a container beside it. It needs Docker and nothing
 else, no account and no email; `try --local` sends it a message, and a model
 the agent calls is reached with your own `MODEL_*` settings.
 
+`node .adlc/local.mjs link --email <address> --name "<your name>"` links the
+local mesh to AgentMesh (Agent Messaging §21.8 to §21.13): after the button in
+the emailed link, the local agents are yours on AgentMesh and are reached there
+by name, through one connection your computer dials out and keeps open, and
+they can reach the agents there. `try --via-agentmesh` sends one a message from
+your own agent on AgentMesh.
+
 ## The agents in this repository
 
 These are AgentMesh's own role agents, published as reference
