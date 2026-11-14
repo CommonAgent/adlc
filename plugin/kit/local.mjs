@@ -8,6 +8,10 @@
 //   node .adlc/local.mjs up         start the local mesh (the first time, it fetches the server's compose files)
 //   node .adlc/local.mjs put        build this agent's image and run it on the local mesh
 //   node .adlc/local.mjs try [--text <words>]   send it one message and show the reply
+//   node .adlc/local.mjs link --email <address> --name "<your name>" [--own-agent <name>] [--computer <words>] [--instance <url>]
+//                                   link the local agents to AgentMesh, approved by the emailed link:
+//                                   they are reached there by name while this computer is on
+//   node .adlc/local.mjs try --via-agentmesh [--text <words>]   send it a message from your own agent on AgentMesh
 //   node .adlc/local.mjs status     what runs
 //   node .adlc/local.mjs down       stop it all (what the agents keep stays, on their volumes)
 //
@@ -22,12 +26,13 @@
 //
 // Everything is kept under ADLC_LOCAL_HOME (default ~/.agentmesh-local).
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pack } from "./packer.mjs";
 import { emit, needsHarness, readPackage, requiredVariables } from "./image/emit-image.mjs";
+import { meshUrlsOf } from "./local/link.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -264,6 +269,143 @@ export async function tryIt(dir, { text, env = process.env, run = runCommand } =
   return { code: 0, said: r.stdout.trim() };
 }
 
+// ── The link to a public AgentMesh (Agent Messaging §21.8 to §21.13) ─────
+
+/** The public AgentMesh a link goes to unless --instance names another. */
+export const PUBLIC_API = "https://api.agentmesh.ai";
+export const LINK_CONTAINER = `${PROJECT}-link`;
+const LINK_IMAGE = `${PROJECT}/link`;
+/** Where a linked agent's key is, inside the link's container. */
+export const identityPathOf = (name) => `/agents/${name}/home/.agentmesh/adapter/identity.json`;
+
+/** The agents on the local mesh: each one put here, and the local caller. */
+export function localAgents(home) {
+  const out = [];
+  let names = [];
+  try { names = readdirSync(join(home, "agents")); } catch { names = []; }
+  for (const n of names) {
+    const a = readJson(join(home, "agents", n, "agent.json"));
+    if (a?.id && a.name) out.push({ name: a.name, id: a.id, volume: volumeOf(a.name), container: a.container ?? containerOf(a.name) });
+  }
+  const caller = readJson(join(home, "caller.json"));
+  if (caller?.id) out.push({ name: "caller", id: caller.id, volume: `${PROJECT}-caller`, container: null });
+  return out;
+}
+
+/** The `docker run` arguments of the link's container. */
+export function linkRunArgs({ image, api, mesh, agents }) {
+  const config = { api, mesh, local: "ws://host.docker.internal:4443", agents: agents.map((a) => ({ name: a.name, id: a.id, identity: identityPathOf(a.name) })) };
+  return ["run", "-d", "--name", LINK_CONTAINER, "--label", `${PROJECT}=agent`, "--restart", "unless-stopped",
+    "--add-host", "host.docker.internal:host-gateway", "-v", `${PROJECT}-link:/data`, "-v", `${PROJECT}_config:/config:ro`,
+    ...agents.flatMap((a) => ["-v", `${a.volume}:/agents/${a.name}:ro`]),
+    "-e", `LINK_CONFIG=${JSON.stringify(config)}`, image];
+}
+
+async function linkCall(fetcher, url, init = {}, timeoutMs = 30_000) {
+  try {
+    const r = await fetcher(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  } catch (e) { return { status: 0, body: { error: `AgentMesh did not answer at ${url}: ${e.message}` } }; }
+}
+
+/**
+ * Link the local mesh's agents to a public AgentMesh: file them with an email
+ * address, wait for the person to press the button in the email (or, with
+ * AGENTMESH_DEPLOY_KEY for the platform's own addresses, at once), then start
+ * the link's container and let the person's own agent on AgentMesh in.
+ */
+export async function link({ email, name, computer, ownAgent, instance, env = process.env, run = runCommand, fetcher = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), waitMs = 540_000, localDir = join(HERE, "local") } = {}) {
+  const home = localHome(env);
+  if (!existsSync(join(home, "mesh.json"))) return { code: 1, said: "The local mesh is not running. Run node .adlc/local.mjs up first." };
+  const agents = localAgents(home);
+  if (!agents.length) return { code: 1, said: "No agent runs on the local mesh yet, so there is nothing to link. Put one first: node .adlc/local.mjs put" };
+  const api = String(instance || PUBLIC_API).replace(/\/+$/, "");
+  const savedFile = join(home, "link.json");
+  let saved = readJson(savedFile);
+  const sameAgents = saved?.api === api && JSON.stringify(saved?.keys ?? []) === JSON.stringify(agents.map((a) => a.id));
+  const newOwnAgent = !!ownAgent && ownAgent !== saved?.own_agent;
+  if (!saved?.ticket || !sameAgents || newOwnAgent || saved.state === "refused" || saved.state === "expired") {
+    if (!email || !name) return { code: 2, said: 'Say where the approval goes and your public name: node .adlc/local.mjs link --email <address> --name "<your name>"' };
+    const key = env.AGENTMESH_DEPLOY_KEY;
+    const filed = await linkCall(fetcher, `${api}/v1/link/by-email`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+      body: JSON.stringify({ email, name, computer: computer || "this computer", ...(ownAgent ? { own_agent: ownAgent } : {}), agents: agents.map((a) => ({ name: a.name, key: a.id })) }),
+    });
+    if (filed.status !== 202) return { code: 1, said: `AgentMesh did not take the link: ${filed.body.error ?? `HTTP ${filed.status}`}` };
+    saved = { api, ticket: filed.body.ticket, keys: agents.map((a) => a.id), ...(ownAgent ? { own_agent: ownAgent } : {}), state: filed.body.state ?? "waiting" };
+    writeFileSync(savedFile, JSON.stringify(saved, null, 2) + "\n", { mode: 0o600 });
+    console.log(filed.body.says);
+  }
+  // Wait for the button.
+  const until = Date.now() + waitMs;
+  let st = await linkCall(fetcher, `${api}/v1/link/by-email/${saved.ticket}`);
+  while (st.status === 200 && st.body.state === "waiting" && Date.now() < until) { await sleep(5000); st = await linkCall(fetcher, `${api}/v1/link/by-email/${saved.ticket}`); }
+  if (st.status !== 200) return { code: 1, said: `AgentMesh could not say where the link stands: ${st.body.error ?? `HTTP ${st.status}`}` };
+  saved = { ...saved, state: st.body.state };
+  writeFileSync(savedFile, JSON.stringify(saved, null, 2) + "\n", { mode: 0o600 });
+  if (st.body.state === "waiting") return { code: 3, said: "The button in the email has not been pressed yet. Once it is, run this again: node .adlc/local.mjs link" };
+  if (st.body.state !== "linked") return { code: 1, said: st.body.says ?? st.body.refusal ?? "It was not linked." };
+  const mesh = meshUrlsOf(st.body.mesh);
+  if (!mesh.length) return { code: 1, said: "AgentMesh linked the agents and did not say where the link connects." };
+  const joined = (st.body.agents ?? []).filter((a) => !a.refusal);
+  const carried = agents.filter((a) => joined.some((j) => j.key === a.id));
+
+  // The link's container.
+  const ctx = join(home, "link", "build");
+  rmSync(ctx, { recursive: true, force: true });
+  mkdirSync(ctx, { recursive: true });
+  writeFileSync(join(ctx, "link.mjs"), lf(readFileSync(join(localDir, "link.mjs"), "utf8")));
+  writeFileSync(join(ctx, "Dockerfile"), lf(readFileSync(join(localDir, "link.Dockerfile"), "utf8")));
+  const image = `${LINK_IMAGE}:latest`;
+  const built = run("docker", ["build", "-q", "-t", image, ctx]);
+  if (built.status !== 0) return { code: 1, said: `The link's image did not build: ${tail(built)}` };
+  run("docker", ["rm", "-f", LINK_CONTAINER], { timeout: 60_000 });
+  const started = run("docker", linkRunArgs({ image, api, mesh, agents: carried }));
+  if (started.status !== 0) return { code: 1, said: `The link's container did not start: ${tail(started)}` };
+  // The person's own agent on AgentMesh may write to their local agents, as
+  // the local caller may: it is theirs.
+  if (st.body.own_agent_key) {
+    for (const a of carried) if (a.container) run("docker", ["exec", a.container, "sh", "-c", `HOME=/data/home agentmesh contacts admit ${st.body.own_agent_key}`], { timeout: 60_000 });
+  }
+  const upUntil = Date.now() + 120_000;
+  let logs = "";
+  while (Date.now() < upUntil) {
+    const l = run("docker", ["logs", LINK_CONTAINER], { timeout: 30_000 });
+    logs = `${l.stdout}\n${l.stderr}`;
+    if (/\[link\] (linked:|stopped:)/.test(logs)) break;
+    await sleep(2000);
+  }
+  if (!/\[link\] linked:/.test(logs)) return { code: 1, said: `The link started, and did not say it is linked. See: docker logs ${LINK_CONTAINER}\n${logs.trim().split("\n").slice(-5).join("\n")}` };
+  const handles = joined.map((a) => `  ${a.handle ?? a.name}`).join("\n");
+  const not = (st.body.agents ?? []).filter((a) => a.refusal).map((a) => `  ${a.name}: ${a.refusal}`);
+  return { code: 0, said: [`The local mesh is linked to ${api.replace(/^https?:\/\/api\./, "")}. These agents can be reached there by name while this computer is on:`, handles, ...(not.length ? ["Not linked:", ...not] : [])].join("\n") };
+}
+
+/** Send this folder's agent one message from the person's own agent on the
+ *  public AgentMesh, carried down the link, and show the reply carried up. */
+export async function tryFromPublic(dir, { text, env = process.env, fetcher = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), waitMs = 120_000 } = {}) {
+  const home = localHome(env);
+  const saved = readJson(join(home, "link.json"));
+  if (!saved?.ticket || saved.state !== "linked") return { code: 1, said: "The local mesh is not linked to AgentMesh. Link it first: node .adlc/local.mjs link --email <address> --name \"<your name>\"" };
+  const name = String((readJson(join(dir, "plugin.json")) ?? {}).name ?? "");
+  const words = String(text ?? "").trim() || "Hello. What can you do?";
+  const sent = await linkCall(fetcher, `${saved.api}/v1/link/by-email/${saved.ticket}/test`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to: name, text: words }) }, 120_000);
+  if (sent.status !== 200 && sent.status !== 202) return { code: 1, said: `AgentMesh did not send it: ${sent.body.error ?? `HTTP ${sent.status}`}` };
+  // The test waits for the answer, and usually brings it back itself.
+  if (sent.body.reply?.text) return { code: 0, said: `${sent.body.to} answered, through AgentMesh:\n${sent.body.reply.text}` };
+  if (sent.body.ok === false && !/no response|offline|AGENT_UNAVAILABLE/i.test(String(sent.body.error ?? ""))) return { code: 1, said: `AgentMesh did not send it: ${sent.body.error}` };
+  const since = sent.body.sent_at;
+  const until = Date.now() + waitMs;
+  while (Date.now() < until) {
+    const r = await linkCall(fetcher, `${saved.api}/v1/link/by-email/${saved.ticket}/replies?to=${encodeURIComponent(name)}&since=${encodeURIComponent(since)}`);
+    const reply = (r.body.replies ?? [])[0];
+    if (reply) return { code: 0, said: `${sent.body.to} answered, through AgentMesh:\n${reply.text}` };
+    await sleep(3000);
+  }
+  return { code: 1, said: `${sent.body.to} did not answer within ${Math.round(waitMs / 1000)} seconds. See: docker logs ${LINK_CONTAINER}` };
+}
+
 /** What runs on the local mesh. */
 export async function status({ env = process.env, run = runCommand, fetcher = fetch } = {}) {
   const caps = await answers(fetcher);
@@ -295,9 +437,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const what = argv[2];
   const job = what === "up" ? up()
     : what === "put" ? put(dir)
+    : what === "try" && argv.includes("--via-agentmesh") ? tryFromPublic(dir, { text: flag(argv, "--text") })
     : what === "try" ? tryIt(dir, { text: flag(argv, "--text") })
+    : what === "link" ? link({ email: flag(argv, "--email"), name: flag(argv, "--name"), computer: flag(argv, "--computer"), ownAgent: flag(argv, "--own-agent"), instance: flag(argv, "--instance") })
     : what === "status" ? status()
     : what === "down" ? down()
-    : Promise.resolve({ code: 2, said: "usage: node .adlc/local.mjs up | put | try [--text <words>] | status | down" });
+    : Promise.resolve({ code: 2, said: "usage: node .adlc/local.mjs up | put | try [--text <words>] [--via-agentmesh] | link --email <address> --name \"<your name>\" [--own-agent <name>] [--computer <words>] [--instance <url>] | status | down" });
   job.then((r) => { console.log(r.said); process.exitCode = r.code; }, (e) => { console.error(e.message); process.exitCode = 1; });
 }
