@@ -5,7 +5,7 @@
 //   node --test plugin/test/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,9 @@ test("a new build folder has the check, the instructions, and the kit fixed, and
     assert.ok(existsSync(join(dir, ".adlc", "check.mjs")));
     assert.equal(readFileSync(join(dir, "AGENTS.md"), "utf8"), instructionsOf(SKILL));
     assert.equal(readFileSync(join(dir, "CLAUDE.md"), "utf8"), "@AGENTS.md\n");
+    const offered = JSON.parse(readFileSync(join(dir, ".claude", "settings.json"), "utf8"));
+    assert.deepEqual(offered.extraKnownMarketplaces, { adlc: { source: { source: "github", repo: "CommonAgent/adlc" } } }, "Claude Code knows the marketplace");
+    assert.deepEqual(offered.enabledPlugins, { "adlc@adlc": true }, "and offers the plugin from it");
     const lock = JSON.parse(readFileSync(join(dir, "build.lock.json"), "utf8"));
     assert.ok(Object.keys(lock.digests).every((p) => p.startsWith(".adlc/")));
     assert.ok(".adlc/stages.mjs" in lock.digests);
@@ -33,6 +36,16 @@ test("a new build folder has the check, the instructions, and the kit fixed, and
     appendFileSync(join(dir, ".adlc", "packer.mjs"), "\n");
     assert.equal((await checkFolder(dir)).code, 3);
   } finally { rmSync(dirname(dir), { recursive: true, force: true }); }
+});
+
+test("a folder's own Claude Code settings are never touched", () => {
+  const dir = mkdtempSync(join(tmpdir(), "adlc-own-"));
+  try {
+    mkdirSync(join(dir, ".claude"));
+    writeFileSync(join(dir, ".claude", "settings.json"), "{\"model\":\"theirs\"}\n");
+    assert.equal(start(join(dir)).ok, true);
+    assert.equal(readFileSync(join(dir, ".claude", "settings.json"), "utf8"), "{\"model\":\"theirs\"}\n");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("updating a folder's kit replaces it and fixes it again, and keeps every other fixed file and every phase passed", () => {

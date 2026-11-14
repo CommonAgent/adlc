@@ -40,13 +40,17 @@ a package that validates.
 
 The ADLC plugin lets one coding assistant build an agent from a request to a
 package, in two phases: the spec, which the person approves, then everything
-else in any order, with every gate checked from the first draft. Install it in Claude
-Code:
+else in any order, with every gate checked from the first draft. To install it,
+type these two lines at the Claude Code prompt, one after the other:
 
 ```
 /plugin marketplace add CommonAgent/adlc
 /plugin install adlc@adlc
 ```
+
+A build folder the plugin lays out, and an agent repository it publishes,
+carry a `.claude/settings.json` that names this marketplace, so Claude Code
+offers the plugin to whoever opens the folder and trusts it.
 
 On Windows, if a clone stops with "Filename too long", run
 `git config --global core.longpaths true` and clone again.
@@ -55,7 +59,9 @@ Then `/adlc:start <folder> <what the agent should do>`. The folder it lays out
 carries its instructions as `AGENTS.md`, so another coding assistant or a
 person can work it the same way, and `node .adlc/check.mjs` says, at any
 moment, which phase the folder is in and what each gate still needs. Approving the
-spec is the person's, with `node .adlc/approve.mjs`.
+spec is the person's: in Claude Code they type approve, and the plugin runs the
+approval for them; elsewhere they run `node .adlc/approve.mjs`. The assistant
+can do neither.
 
 When the build has passed, `node .adlc/deploy.mjs put --email <address> --name
 "<your name>" --own-agent <name> --repo <owner/name>` puts the agent on AgentMesh, the public one unless `--instance`

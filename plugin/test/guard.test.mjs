@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildFolderOf, commandRefusal, keepSaid, pre, stop, writeRefusal } from "../hooks/guard.mjs";
+import { approveIfSaid, buildFolderOf, commandRefusal, keepSaid, pre, stop, writeRefusal } from "../hooks/guard.mjs";
 
 test("what the person says is kept in said.md of each build folder still being built, and the builder never writes it", () => {
   const root = mkdtempSync(join(tmpdir(), "adlc-said-"));
@@ -29,6 +29,37 @@ test("what the person says is kept in said.md of each build folder still being b
     assert.doesNotMatch(readFileSync(join(open, "said.md"), "utf8"), /Follow AGENTS\.md/);
     assert.match(writeRefusal(join(open, "said.md"), root), /^said\.md is the person's own words/);
     assert.match(commandRefusal("echo yes >> said.md", open), /^said\.md is the person's own words/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the person's typed approval runs the waiting folder's own approve.mjs; other words, a program, or no waiting spec do not", () => {
+  const root = mkdtempSync(join(tmpdir(), "adlc-approve-"));
+  try {
+    const waiting = join(root, "agents", "a");
+    const approved = join(root, "agents", "b");
+    for (const d of [waiting, approved]) { mkdirSync(join(d, ".adlc"), { recursive: true }); writeFileSync(join(d, ".adlc", "check.mjs"), ""); }
+    writeFileSync(join(approved, "build.lock.json"), JSON.stringify({ build_lock: "v1", digests: {}, gates: { spec: { passed: true } } }));
+    const runs = [];
+    const run = (cmd, args, opts) => { runs.push({ cmd, args, cwd: opts.cwd }); return { stdout: "Approved. The spec can no longer change, and the build starts.\n" }; };
+    for (const words of ["approve", "Approve.", "I approve", "approve the spec", "yes, approve it", "Approved!"]) {
+      const a = approveIfSaid({ cwd: root, prompt: words }, { env: {}, run });
+      assert.equal(a?.dir, waiting, words);
+      assert.match(a.said, /Approved\. The spec can no longer change/);
+    }
+    assert.deepEqual(runs[0], { cmd: "node", args: [join(waiting, ".adlc", "approve.mjs")], cwd: waiting });
+    runs.length = 0;
+    for (const words of ["don't approve yet", "what does approve do?", "approve it once the price is 5 USD", "looks good"]) {
+      assert.equal(approveIfSaid({ cwd: root, prompt: words }, { env: {}, run }), null, words);
+    }
+    assert.equal(approveIfSaid({ cwd: root, prompt: "approve" }, { env: { ADLC_NOT_THE_PERSON: "1" }, run }), null, "a program's prompts are not the person's");
+    assert.equal(approveIfSaid({ cwd: approved, prompt: "approve" }, { env: {}, run }), null, "an approved spec is not approved again");
+    assert.equal(runs.length, 0);
+    const other = join(root, "agents", "c");
+    mkdirSync(join(other, ".adlc"), { recursive: true }); writeFileSync(join(other, ".adlc", "check.mjs"), "");
+    const two = approveIfSaid({ cwd: root, prompt: "approve" }, { env: {}, run });
+    assert.equal(two.dir, undefined);
+    assert.match(two.said, /2 build folders .* nothing was approved/);
+    assert.equal(runs.length, 0, "with two specs waiting, neither is approved");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

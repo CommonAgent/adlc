@@ -3,7 +3,9 @@
 // The folder gets the check and the generators under .adlc/ (this kit, copied
 // whole), AGENTS.md with the builder's instructions (the adlc skill's own
 // text, so Cursor, Codex or a person can work the folder without the plugin),
-// CLAUDE.md pointing to it, and the lock file build.lock.json, in which the
+// CLAUDE.md pointing to it, .claude/settings.json offering this plugin to
+// whoever opens the folder in Claude Code (unless the folder has settings of
+// its own), and the lock file build.lock.json, in which the
 // kit is fixed from the start: a check that changed is caught like any other
 // file that can no longer change.
 //
@@ -20,6 +22,24 @@ import { migrateLock } from "./stages.mjs";
 
 const KIT = dirname(fileURLToPath(import.meta.url));
 const SKILL = join(KIT, "..", "skills", "adlc", "SKILL.md");
+
+/** What a folder's .claude/settings.json holds so that Claude Code offers this
+ *  plugin to whoever opens the folder and trusts it: the marketplace (this
+ *  repository on GitHub) and the plugin from it. */
+export const OFFER_PLUGIN = {
+  extraKnownMarketplaces: { adlc: { source: { source: "github", repo: "CommonAgent/adlc" } } },
+  enabledPlugins: { "adlc@adlc": true },
+};
+
+/** Write .claude/settings.json offering the plugin, unless the folder already
+ *  has settings of its own, which are never touched. Returns whether it wrote. */
+export function offerPlugin(dir) {
+  const at = join(dir, ".claude", "settings.json");
+  if (existsSync(at)) return false;
+  mkdirSync(dirname(at), { recursive: true });
+  writeFileSync(at, JSON.stringify(OFFER_PLUGIN, null, 2) + "\n");
+  return true;
+}
 
 /** The skill's text without its front matter: the instructions AGENTS.md holds. */
 export function instructionsOf(skillText) {
@@ -45,6 +65,7 @@ export function start(folder, { kit = KIT, skill = SKILL } = {}) {
   cpSync(kit, join(dir, ".adlc"), { recursive: true });
   writeFileSync(join(dir, "AGENTS.md"), instructionsOf(readFileSync(skill, "utf8")));
   if (!existsSync(join(dir, "CLAUDE.md"))) writeFileSync(join(dir, "CLAUDE.md"), "@AGENTS.md\n");
+  offerPlugin(dir);
   const digests = Object.fromEntries(walk(join(dir, ".adlc")).sort().map((r) => [`.adlc/${r}`, digestOf(readFileSync(join(dir, ".adlc", r)))]));
   writeFileSync(join(dir, LOCK_FILE), JSON.stringify({ build_lock: "v1", digests, gates: {} }, null, 2) + "\n");
   return { ok: true, dir, said: `The build folder is ${dir}. Write the person's own words to request.md there, then follow AGENTS.md from the start.` };
@@ -63,7 +84,8 @@ export function update(folder, { kit = KIT, skill = SKILL } = {}) {
   rmSync(join(dir, ".adlc"), { recursive: true, force: true });
   cpSync(kit, join(dir, ".adlc"), { recursive: true });
   writeFileSync(join(dir, "AGENTS.md"), instructionsOf(readFileSync(skill, "utf8")));
-  const kept = Object.entries(lock.digests ?? {}).filter(([p]) => !p.startsWith(".adlc/"));
+  offerPlugin(dir);
+  const kept =Object.entries(lock.digests ?? {}).filter(([p]) => !p.startsWith(".adlc/"));
   const kitPins = walk(join(dir, ".adlc")).map((r) => [`.adlc/${r}`, digestOf(readFileSync(join(dir, ".adlc", r)))]);
   const digests = Object.fromEntries([...kept, ...kitPins].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
   writeFileSync(join(dir, LOCK_FILE), JSON.stringify({ ...lock, digests }, null, 2) + "\n");
