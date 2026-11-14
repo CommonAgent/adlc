@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HOP_HEADER, MAX_HOPS, credsOf, goesUp, inboxAgentOf, meshUrlOf, nextHops } from "../kit/local/link.mjs";
+import { HOP_HEADER, MAX_HOPS, credsOf, goesUp, inboxAgentOf, meshUrlOf, meshUrlsOf, nextHops } from "../kit/local/link.mjs";
 import { LINK_CONTAINER, identityPathOf, link, linkRunArgs, localAgents, tryFromPublic } from "../kit/local.mjs";
 
 const A = `U${"A".repeat(55)}`;
@@ -43,6 +43,9 @@ test("the inbox subject names the agent; the credential file gives the JWT and s
   assert.equal(meshUrlOf({ endpoints: ["nats://mesh.dev.agentmesh.ai:4222", "wss://mesh.dev.agentmesh.ai"] }), "wss://mesh.dev.agentmesh.ai");
   assert.equal(meshUrlOf({ endpoints: { nats: ["wss://x"] } }), "wss://x");
   assert.equal(meshUrlOf({}), null);
+  // What dev's bootstrap answers: a plain WebSocket on 4443, while its web
+  // front serves the same broker over TLS on the standard port.
+  assert.deepEqual(meshUrlsOf({ endpoints: ["nats://mesh.dev.agentmesh.ai:4222", "ws://mesh.dev.agentmesh.ai:4443"] }), ["wss://mesh.dev.agentmesh.ai", "ws://mesh.dev.agentmesh.ai:4443"]);
 });
 
 test("the link's container reads each linked agent's volume read-only and the local mesh's credential read-only", () => {

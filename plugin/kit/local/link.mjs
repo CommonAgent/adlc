@@ -71,12 +71,19 @@ export function goesUp({ to, from, linked, held }) {
   return linked.has(from);
 }
 
-/** Where the link connects on the public mesh, from what its bootstrap
- *  answered: the first WebSocket endpoint. */
-export function meshUrlOf(mesh) {
-  const all = Array.isArray(mesh?.endpoints) ? mesh.endpoints : Array.isArray(mesh?.endpoints?.nats) ? mesh.endpoints.nats : [];
-  return all.find((u) => /^wss?:\/\//.test(String(u))) ?? null;
+/** Where the link may connect on the public mesh, in the order to try, from
+ *  what its bootstrap answered: each TLS WebSocket endpoint; then, for a
+ *  plain WebSocket endpoint, the same host over TLS on the standard port
+ *  (where a public mesh's web front serves it); then the plain one. */
+export function meshUrlsOf(mesh) {
+  const all = (Array.isArray(mesh?.endpoints) ? mesh.endpoints : Array.isArray(mesh?.endpoints?.nats) ? mesh.endpoints.nats : []).map(String);
+  const tls = all.filter((u) => /^wss:\/\//.test(u));
+  const plain = all.filter((u) => /^ws:\/\//.test(u));
+  const fronted = plain.map((u) => { try { return `wss://${new URL(u).hostname}`; } catch { return null; } }).filter(Boolean);
+  return [...new Set([...tls, ...fronted, ...plain])];
 }
+/** The first place to try, or null. */
+export const meshUrlOf = (mesh) => meshUrlsOf(mesh)[0] ?? null;
 
 const log = (line) => console.log(`[link] ${line}`);
 
@@ -114,12 +121,22 @@ async function main() {
   // The node credential on the public mesh, signed by the node and by each
   // agent, as its node-credential door requires.
   const cred = await sdk.renewNodeCredential(cfg.api, nodeSeed, agents.map((a) => ({ id: a.id, seed: a.seed })));
-  const pub = await sdk.MeshNode.connect(cfg.mesh, {
-    jwt: cred.jwt,
-    nodeSeed,
-    profile: { availability_class: "intermittent", reachability: "leaf" },
-    credentialRenewal: { apiBase: cfg.api, onRenewed: () => log("the node credential was renewed") },
-  });
+  let pub = null;
+  let meshUrl = null;
+  for (const url of [].concat(cfg.mesh)) {
+    try {
+      pub = await sdk.MeshNode.connect(url, {
+        jwt: cred.jwt,
+        nodeSeed,
+        profile: { availability_class: "intermittent", reachability: "leaf" },
+        credentialRenewal: { apiBase: cfg.api, onRenewed: () => log("the node credential was renewed") },
+      });
+      meshUrl = url;
+      break;
+    } catch (e) { log(`${url} did not take the connection (${e.message})`); }
+  }
+  if (!pub) throw new Error("the public mesh took the connection at none of its addresses");
+  cfg.mesh = meshUrl;
   for (const a of agents) pub.addAgent({ nkeySeed: a.seed });
   const pubNc = pub.conn.raw;
   const localNc = await connect({ servers: cfg.local ?? "ws://host.docker.internal:4443", authenticator: jwtAuthenticator(local.jwt, new TextEncoder().encode(local.seed)), name: "link" });
@@ -151,15 +168,20 @@ async function main() {
   const register = async (a) => {
     const got = await lookup(a, a.id);
     if (got.error || !got.payload?.id) throw new Error(`the local registry has no record of it (${got.error?.code ?? "none"})`);
-    const manifest = { ...got.payload, node: { id: nodeKp.getPublicKey(), attestation: sdk.createAttestation(nodeKp, a.id) } };
+    // The owner is the public mesh's to say (the account the button enrolled
+    // the agent into), so the local mesh's owner and its attestation stay here.
+    const { owner: _owner, owner_attestation: _ownerAtt, ...own } = got.payload;
+    const manifest = { ...own, node: { id: nodeKp.getPublicKey(), attestation: sdk.createAttestation(nodeKp, a.id) } };
     const env = sdk.signEnvelope(sdk.createEnvelope({ type: "register", from: a.id, payload: manifest }), a.kp);
     const r = sdk.decode((await pubNc.request(sdk.Subjects.REGISTRY_REGISTER, sdk.encode(env), { timeout: 8000 })).data);
     if (r.error) throw new Error(`${r.error.code}: ${r.error.message}`);
   };
   const registerAll = async () => {
+    let n = 0;
     for (const a of agents) {
-      try { await register(a); log(`${a.name} is registered on ${cfg.mesh}`); } catch (e) { log(`${a.name} could not be registered there: ${e.message}`); }
+      try { await register(a); n++; log(`${a.name} is registered on ${cfg.mesh}`); } catch (e) { log(`${a.name} could not be registered there: ${e.message}`); }
     }
+    return n;
   };
 
   // Down: the linked agents' inboxes on the public mesh.
@@ -231,7 +253,7 @@ async function main() {
     },
   });
 
-  await registerAll();
+  if (!(await registerAll())) throw new Error("no linked agent could be registered on the public mesh");
   await drainAll();
   log(`linked: ${agents.map((a) => a.name).join(", ")}`);
   // Keep the registrations fresh, and carry what waited after a reconnect.
