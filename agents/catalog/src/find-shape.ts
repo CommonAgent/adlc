@@ -1,7 +1,7 @@
 /**
  * How the front doors that answer "find me something that does this" word
- * the catalog's answer: the hosted MCP connector's find_agent here, the
- * adapter's find_agent in mesh-adapter.mjs (the same words, kept in step by
+ * the catalog's answer: the hosted MCP connector's catalog_search here, the
+ * adapter's catalog_search in mesh-adapter.mjs (the same words, kept in step by
  * services/__tests__/unit/find-shape.test.ts reading both).
  *
  * Three lists, each result saying what it is (2026-10-05):
