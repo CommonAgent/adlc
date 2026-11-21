@@ -584,13 +584,15 @@ async function main() {
 
   // Who may reach it at first, settled before the adapter ever starts. Its
   // owner's own agents are admitted by the adapter without asking; nobody
-  // outside the mesh reaches it.
+  // outside the mesh reaches it. A handle in TENANT_ADMIT is let in with
+  // `contacts admit` (its old name, `contacts allow`, refuses since
+  // 2026-11-04).
   const meshEnv = {
     PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin", HOME: MESH_USER.home,
     MESH_ADAPTER_STATE: STATE_DIR, MESH_URL: meshUrlOf(bundle.servers),
   };
   const contacts = [["contacts", "default", "a2a", "block"],
-    ...String(process.env.TENANT_ADMIT ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean).map((h) => ["contacts", "allow", h])];
+    ...String(process.env.TENANT_ADMIT ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean).map((h) => ["contacts", "admit", h])];
   for (const args of contacts) {
     const r = asMesh(args, meshEnv);
     if (r.status !== 0) log(`agentmesh ${args.join(" ")} did not take: ${(r.stderr || r.stdout || "").trim().split("\n").pop()}`);

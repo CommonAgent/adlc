@@ -2979,9 +2979,11 @@ def deploy_place(ctx, also_adding=0):
     # whole reason the member exists.
     key_custody = {"minted": "generated", "held_by": [agent_key, f"root@{HOST}"]}
 
-    # Admission, settled before first boot.
+    # Admission, settled before first boot. `contacts admit` resolves the
+    # handle and keys the entry on the agent's key; the adapter's old name for
+    # it, `contacts allow`, refuses since 2026-11-04.
     for h in admit:
-        as_user(state_user, f"{state_cmd} contacts allow {h}", "admit", 60)
+        as_user(state_user, f"{state_cmd} contacts admit {h}", "admit", 60)
     # Reach from outside the mesh: the a2a tier's default, allow or block.
     # The adapter projects it into the registration at boot, so the card and
     # the AgentDoc say what this door enforces.
