@@ -543,14 +543,27 @@ class TheTwoRecords(unittest.TestCase):
         # record, so the two records over one package can be compared rather
         # than translated. A step has a skill too, so `skills` is every skill
         # folder and not only the offered ones.
-        shape = image.build_shape(PKGS["process-runner"], os.path.join(TMP, "process-runner", "process-runner"))
+        built = os.path.join(TMP, "process-runner", "process-runner")
+        shape = image.build_shape(PKGS["process-runner"], built)
         self.assertEqual(sorted(shape), ["records", "refuses", "skills", "systems"])
-        # The counts follow the example package. It gained the run-record
-        # system, a skill, a record and seven refusals on 2026-09-17, when the
-        # runner learned to drive a solution's run. 0.10.2 (2026-09-23) left the
-        # run-record system out again until the platform binds it. 0.12.0
-        # (2026-10-03) records every conversion of a handoff: one more record.
-        self.assertEqual(shape, {"skills": 6, "systems": 0, "refuses": 24, "records": 12})
+        # The counts are the package's own, read off the files it was built
+        # from, and not numbers written here: they were pinned to the example
+        # package (24 refusals, 12 records, 6 skills), so a package that gained
+        # or lost a refusal broke this test, which is about how the shape is
+        # counted and not about what the package refuses. Each refusal is one
+        # non-empty line of the authored descriptor's refusals, as written.
+        src = package_dir("process-runner")
+        with open(os.path.join(src, "agent-descriptor.json"), encoding="utf-8") as f:
+            authored = json.load(f)
+        lines = [r.strip() for r in str(authored.get("refusals") or "").split("\n") if r.strip()]
+        self.assertTrue(lines, "the package refuses something")
+        packed = [r.strip() for r in str(PKGS["process-runner"]["descriptor"].get("refusals") or "").split("\n") if r.strip()]
+        self.assertEqual(packed, lines, "the built package carries every refusal line as written")
+        with open(os.path.join(src, "agent-runtime-requirements.json"), encoding="utf-8") as f:
+            requires = json.load(f)
+        skills = [d for d in os.listdir(os.path.join(src, "skills")) if os.path.isdir(os.path.join(src, "skills", d))]
+        self.assertEqual(shape, {"skills": len(skills), "systems": len(requires.get("systems") or []),
+                                 "refuses": len(lines), "records": len(authored.get("records") or [])})
 
 
 if __name__ == "__main__":
