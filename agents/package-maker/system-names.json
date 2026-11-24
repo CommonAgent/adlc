@@ -22,6 +22,10 @@
       "state": "defined"
     },
     {
+      "name": "public-sources",
+      "state": "defined"
+    },
+    {
       "name": "text-reasoning",
       "state": "defined"
     },

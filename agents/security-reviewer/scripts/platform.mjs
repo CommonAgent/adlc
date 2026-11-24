@@ -17,7 +17,7 @@
 export const PLATFORM = {
   /** The reserved system names an account can bind (agents/package-maker/system-names.json). */
   reservedSystems: [
-    "database", "files", "agent-memory", "sign-in", "mail", "text-reasoning", "image-reading",
+    "database", "files", "agent-memory", "sign-in", "mail", "public-sources", "text-reasoning", "image-reading",
     "speech-to-text", "text-to-speech", "api-gateway", "mcp-gateway", "draft-host", "activity-record",
     "calendar", "chat", "payments",
   ],
