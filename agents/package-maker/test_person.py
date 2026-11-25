@@ -11,6 +11,7 @@ that is not a list of media types is refused.
 
 Run: AGENTMESH_ENV=example python3 -m unittest test_person
 """
+import hashlib
 import json
 import os
 import sys
@@ -173,6 +174,105 @@ class AFolderThatStatesThem(FolderHarness):
                          ("Folder check", "Checks a folder for you.", ["It will not change the folder."]))
         self.assertEqual((d["offerings"][0]["started_by"], d["offerings"][0]["works_as"]), (["person"], "job"))
         self.assertEqual(d["offerings"][0]["example"]["good_result"], "A check of the folder.")
+
+
+VIEW_HTML = (b"<!doctype html><title>The announcement</title><style>body{background:url(data:image/png;base64,AA==)}</style>"
+             b"<script>parent.postMessage({jsonrpc:'2.0',method:'view/ready'},'*')</script>\n")
+
+
+def view_entry(**over):
+    e = {"id": "announcement", "for": {"offering": "read-a-note", "output": "announcement"},
+         "file": "views/announcement.html", "digest": "sha256:" + hashlib.sha256(VIEW_HTML).hexdigest(), "requests": ["resize"]}
+    e.update(over)
+    return e
+
+
+def write_view(folder, data=VIEW_HTML, rel="views/announcement.html"):
+    p = os.path.join(folder, *rel.split("/"))
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "wb") as f:
+        f.write(data)
+
+
+class TheViews(Harness):
+    """The agent's own views (Common Agent 6.13.6, checked as 6.13.10 says):
+    each file is copied into the package at its path and is its digest, and
+    the Descriptor names it by id, for, file, digest and requests."""
+
+    def test_a_view_builds_into_the_package_and_the_descriptor_names_it(self):
+        write_view(self.src)
+        res, _ = self.build(person_spec(views=[view_entry()]))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(descriptor(res)["views"], [view_entry()])
+        with open(os.path.join(res["path"], "views", "announcement.html"), "rb") as f:
+            self.assertEqual(f.read(), VIEW_HTML)
+
+    def test_a_view_of_an_offerings_preparation_names_no_output(self):
+        write_view(self.src)
+        v = view_entry(id="prepare", **{"for": {"offering": "read-a-note"}}, requests=["propose-inputs", "copy-text"])
+        res, _ = self.build(person_spec(views=[v]))
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(descriptor(res)["views"][0]["for"], {"offering": "read-a-note"})
+
+    def test_a_file_that_is_not_its_digest_is_refused(self):
+        write_view(self.src, VIEW_HTML + b" ")
+        res, _ = self.build(person_spec(views=[view_entry()]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("a view is named by the digest of its exact bytes", res["error"])
+
+    def test_a_file_not_in_the_folder_is_refused(self):
+        res, _ = self.build(person_spec(views=[view_entry()]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("is not in the agent's folder", res["error"])
+
+    def test_a_file_outside_the_package_or_at_an_address_is_refused(self):
+        for f in ("../announcement.html", "/views/announcement.html", "https://example.com/v.html", "views/./a.html", "views\\a.html"):
+            res, _ = self.build(person_spec(views=[view_entry(file=f)]))
+            self.assertFalse(res["ok"], f)
+            self.assertIn("file is a path in the package", res["error"])
+
+    def test_for_must_name_an_offered_job_and_one_of_its_outputs(self):
+        write_view(self.src)
+        res, _ = self.build(person_spec(views=[view_entry(**{"for": {"offering": "summarize", "output": "announcement"}})]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("which is not an offered job", res["error"])
+        res, _ = self.build(person_spec(views=[view_entry(**{"for": {"offering": "read-a-note", "output": "quiz"}})]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("which read-a-note does not declare", res["error"])
+
+    def test_requests_come_from_the_bindings_list(self):
+        write_view(self.src)
+        res, _ = self.build(person_spec(views=[view_entry(requests=["resize", "open-link"])]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("requests come from the binding's list", res["error"])
+
+    def test_two_views_with_one_id_are_refused(self):
+        write_view(self.src)
+        res, _ = self.build(person_spec(views=[view_entry(), view_entry()]))
+        self.assertFalse(res["ok"], res)
+        self.assertIn("is the id of another view", res["error"])
+
+    def test_a_view_that_would_load_from_an_address_is_refused(self):
+        for bad in (b'<script src="https://cdn.example.com/x.js"></script>', b'<link rel="stylesheet" href="//fonts.example.com/a.css">',
+                    b"<style>@import 'x.css';</style>", b"<style>body{background:url(https://example.com/a.png)}</style>",
+                    b'<img src="http://example.com/a.png">', b'<iframe src="https://example.com"></iframe>'):
+            data = b"<!doctype html><title>x</title>" + bad
+            write_view(self.src, data)
+            res, _ = self.build(person_spec(views=[view_entry(digest="sha256:" + hashlib.sha256(data).hexdigest())]))
+            self.assertFalse(res["ok"], bad)
+            self.assertIn("would load something from an address", res["error"])
+
+
+class AFolderWithAView(FolderHarness):
+    def test_the_folder_builds_and_its_view_is_carried_as_authored(self):
+        self.convert()
+        write_view(self.src)
+        entry = view_entry(**{"for": {"offering": "read-a-note", "output": "summary"}})
+        self.edit("agent-descriptor.json", lambda doc: doc.__setitem__("views", [entry]))
+        res, _ = self.build(self.src, "out")
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(descriptor(res)["views"], [entry])
+        self.assertTrue(os.path.isfile(os.path.join(res["path"], "views", "announcement.html")))
 
 
 if __name__ == "__main__":

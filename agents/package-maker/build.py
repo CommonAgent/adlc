@@ -42,7 +42,11 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
   "display_name": "Invoice reader",      # ? the Descriptor's `name`: what a person calls it (6.13.1)
   "summary": "Reads an invoice and hands back its fields.",  # ? one sentence for a person, at most 200 characters
   "will_not": ["It will not pay an invoice."],  # ? what it will not do, in words a person acts on (6.13.3)
-  "source": "<dir>",                     # ? base for relative file paths below;
+  "views": [                             # ? its own views (6.13.6): one self-contained HTML file each,
+    { "id": "fields", "for": { "offering": "read-the-invoice", "output": "fields" },   # copied in from the
+      "file": "views/fields.html", "digest": "sha256:<of the file's bytes>",           # agent's folder and
+      "requests": ["resize", "copy-text"] } ],                                         # checked against its digest
+  "source": "<dir>",                    # ? base for relative file paths below;
                                          #   defaults to the spec file's directory
   "jobs": [                              # each becomes a skill; the offered ones become offerings
     { "slug": "read-the-invoice",
@@ -1224,6 +1228,99 @@ WORKS_AS = ("conversation", "job")
 #: How a person views or gives an input or output (6.13.5).
 PRESENTATIONS = ("quiz", "document", "facts", "table", "media", "audio", "package")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+#: The requests a view may make of its host, the closed list of the
+#: Descriptor to user interface binding's message bridge (6.13.6).
+VIEW_REQUESTS = ("resize", "propose-inputs", "save-file", "copy-text")
+#: What in a view's file would load something from an address: a script, a
+#: style sheet, an image, a font or a frame (6.13.10, the package check).
+VIEW_LOADS = re.compile(
+    r"""(?:\b(?:src|href|srcset|poster|data|action|formaction|background)\s*=\s*["']?\s*(?:[a-z][a-z0-9+.-]*:|//))"""
+    r"""|(?:url\(\s*["']?\s*(?:[a-z][a-z0-9+.-]*:|//))|(?:@import\b)""",
+    re.IGNORECASE)
+#: Schemes a view may name inline, which load nothing from anywhere.
+VIEW_INLINE = re.compile(r"""^(?:data|blob|about|javascript|#)""", re.IGNORECASE)
+
+
+def plain_package_path(p):
+    """A path inside the package: relative, forward slashes, no `.` or `..`
+    segment, no scheme."""
+    return (isinstance(p, str) and p.strip() == p and p and not p.startswith("/") and "\\" not in p
+            and "://" not in p and not re.match(r"^[a-z][a-z0-9+.-]*:", p, re.IGNORECASE)
+            and all(seg not in ("", ".", "..") for seg in p.split("/")))
+
+
+def views_declaration(spec, jobs):
+    """The agent's own views (Common Agent 6.13.6): small programs that draw
+    one of its outputs, or the preparation of one of its offerings, inside a
+    frame the host owns. Each is {id, for, file, digest, requests}, checked as
+    6.13.10 says: a unique id; `for` naming an offered job and, where it names
+    one, that job's declared output; `file` a path inside the package; a
+    well-formed digest; `requests` from the binding's closed list. Returned as
+    authored; that the file is in the package and is its digest is checked
+    against the package once it is written (view_files)."""
+    views = spec.get("views")
+    if not isinstance(views, list) or not views:
+        fail("views is a non-empty list of the agent's own views, each {id, for, file, digest, requests}")
+    can_order = set(offered_slugs(jobs))
+    offered = {j["slug"]: j for j in jobs if j["slug"] in can_order}
+    out, ids = [], set()
+    for i, v in enumerate(views):
+        where = f"views[{i}]"
+        if not isinstance(v, dict) or set(v) - {"id", "for", "file", "digest", "requests"}:
+            fail(f"{where} is {{id, for, file, digest, requests}}")
+        vid = v.get("id")
+        if not (isinstance(vid, str) and SLUG_RE.match(vid)):
+            fail(f"{where}.id is the view's name, lowercase-hyphen")
+        if vid in ids:
+            fail(f"{where}.id {vid} is the id of another view; each view's id is its own")
+        ids.add(vid)
+        f = v.get("for")
+        if not isinstance(f, dict) or set(f) - {"offering", "output"} or not isinstance(f.get("offering"), str):
+            fail(f"view {vid}: for is {{offering}} for the preparation of an offering, or {{offering, output}} for one of its outputs")
+        job = offered.get(f["offering"])
+        if job is None:
+            fail(f"view {vid}: for.offering names {f['offering']}, which is not an offered job ({', '.join(offered)})")
+        if "output" in f:
+            outs = [o.get("name") for o in (job.get("outputs") or []) if isinstance(o, dict)]
+            if f["output"] not in outs:
+                fail(f"view {vid}: for.output names {f['output']!r}, which {f['offering']} does not declare ({', '.join(map(str, outs))})")
+        if not plain_package_path(v.get("file")):
+            fail(f"view {vid}: file is a path in the package, relative, with forward slashes and no . or .. segment, such as views/{vid}.html")
+        if not v["file"].lower().endswith(".html"):
+            fail(f"view {vid}: file is one self-contained HTML file, ending .html")
+        if not (isinstance(v.get("digest"), str) and DIGEST_RE.match(v["digest"])):
+            fail(f"view {vid}: digest is sha256: and 64 lowercase hex characters, the SHA-256 of the file's exact bytes")
+        req = v.get("requests", [])
+        if not (isinstance(req, list) and all(r in VIEW_REQUESTS for r in req) and len(set(req)) == len(req)):
+            fail(f"view {vid}: requests come from the binding's list, each once: {', '.join(VIEW_REQUESTS)}")
+        out.append({"id": vid, "for": dict(f), "file": v["file"], "digest": v["digest"], "requests": list(req)})
+    return out
+
+
+def view_files(spec, jobs, src_base, pkg):
+    """Each view's file, copied into the package at its path and checked
+    there (Common Agent 6.13.10): it is the file its digest names, and it
+    names no address from which a script, a style, an image, a font or a
+    frame would be loaded."""
+    for v in views_declaration(spec, jobs):
+        src = os.path.normpath(os.path.join(src_base, *v["file"].split("/")))
+        if not os.path.isfile(src):
+            fail(f"view {v['id']}: {v['file']} is not in the agent's folder")
+        dest = os.path.join(pkg, *v["file"].split("/"))
+        if os.path.exists(dest):
+            fail(f"view {v['id']}: {v['file']} is a path the package already uses; put the view under views/")
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.copyfile(src, dest)
+        data = open(dest, "rb").read()
+        if "sha256:" + sha256_of(data) != v["digest"]:
+            fail(f"view {v['id']}: {v['file']} is sha256:{sha256_of(data)}, and its digest says {v['digest']}; "
+                 f"a view is named by the digest of its exact bytes")
+        text = data.decode("utf-8", errors="replace")
+        for m in VIEW_LOADS.finditer(text):
+            target = re.sub(r"""^.*?(?:=\s*["']?\s*|url\(\s*["']?\s*)""", "", m.group(0), flags=re.IGNORECASE | re.DOTALL)
+            if m.group(0).lower().startswith("@import") or not VIEW_INLINE.match(target):
+                fail(f"view {v['id']}: {v['file']} would load something from an address ({m.group(0).strip()[:60]}); "
+                     f"a view carries everything it draws with inside its one file")
 
 
 def example_declaration(j):
@@ -1949,6 +2046,10 @@ def draft_descriptor(spec, jobs, systems, refuses, escalates, records):
     run_config = run_config_declaration(spec)
     if run_config is not None:
         doc["run_config"] = run_config
+    # The agent's own views (6.13.6): carried as declared; their files are
+    # copied in and checked against their digests by view_files.
+    if "views" in spec:
+        doc["views"] = views_declaration(spec, jobs)
     return doc
 
 
@@ -3025,7 +3126,7 @@ def read_folder(folder):
                 s[k] = e[k]
         systems.append(s)
     spec["systems"] = systems
-    for k in ("can_use", "run_config"):
+    for k in ("can_use", "run_config", "views"):
         if k in desc:
             spec[k] = desc[k]
 
@@ -3364,6 +3465,12 @@ def build(spec, src_base, out_dir, authored):
                 fail(f"job {j['slug']}: example.inputs.{ex_input} names {v['file']}, which the package does not carry; copy it in under a skill's scripts, references or assets")
             if "sha256:" + sha256_of(open(at, "rb").read()) != v.get("digest"):
                 fail(f"job {j['slug']}: example.inputs.{ex_input}: {v['file']} in the package is not the file its digest names")
+
+    # Each view's file (Common Agent 6.13.6), into the package at the path its
+    # entry names, checked there against its digest, before the Descriptor
+    # that names it is written.
+    if "views" in spec:
+        view_files(spec, jobs, src_base, pkg)
 
     # The two authored files, then the manifest that points at them.
     desc = draft_descriptor(spec, jobs, systems, refuses, escalates, records)
