@@ -346,11 +346,12 @@ def run_container(r):
     # ignores the placement below (docs/tenant-isolation-plan.md).
     # always_on: the owner's exception to wake on message; wake_idle_seconds:
     # how long a woken agent stays up (docs/container-agents-plan.md, "Wake on
-    # message"). answers, descriptor and admit: a person's agent tried on the
+    # message"). answers, descriptor and admit (and harness, for a plugin tried
+    # under a named harness): a person's agent tried on the
     # mesh with the adapter on top (docs/try-mode-plan.md, "`answers`"); the
     # deployment manager checks them by rule.
     for k in ("cpu", "memory", "replaces", "ready_line", "port", "tenant", "always_on", "wake_idle_seconds",
-              "answers", "descriptor", "admit", "kept_tries"):
+              "answers", "descriptor", "admit", "kept_tries", "harness"):
         if c.get(k) is not None:
             arg[k] = c[k]
     if token:
