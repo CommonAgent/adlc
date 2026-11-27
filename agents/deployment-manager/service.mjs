@@ -2530,7 +2530,10 @@ export function readConnect(text) {
     if (!CONNECT_ENV_RE.test(n) || CONNECT_RESERVED_RE.test(n)) stop("validate", `${n} is not a setting a connect may write`);
     if (typeof env[n] !== "string" || env[n].length > 4096 || /[\r\n\0]/.test(env[n])) stop("validate", `${n} must be one line of at most 4096 characters`);
   }
-  return { proxy: c.proxy, env };
+  // A host connected to it, which the tenant host asks the door about once.
+  const check = c.check === undefined || c.check === null ? null : String(c.check);
+  if (check !== null && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(check)) stop("validate", "check must be a host name");
+  return { proxy: c.proxy, env, ...(check ? { check } : {}) };
 }
 
 /** Write what the person connected into the try's own secret, as a new

@@ -538,3 +538,25 @@ test("what a person connected to a try is read from TRY_CONNECT, and nothing tha
   // TENANT_ names never reach the work, the restart stamp among them.
   assert.equal(workEnv({ TENANT_CONNECTED_AT: "1", AGENT_TRY_CONNECT: "{}" }, {}, {}).TENANT_CONNECTED_AT, undefined);
 });
+
+test("the tenant host asks the door, once, about a host connected to the try and one that is not, and writes the answers, never the credential", async () => {
+  const { egressCheck, readTryConnect } = await import("../tenant-host.mjs");
+  const { createServer } = await import("node:net");
+  const heads = [];
+  const door = createServer((s) => s.on("data", (d) => {
+    const head = d.toString("latin1");
+    heads.push(head);
+    s.end(head.startsWith("CONNECT api.smith.langchain.com:443") ? "HTTP/1.1 200 Connection Established\r\n\r\n" : "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
+  }));
+  await new Promise((r) => door.listen(0, "127.0.0.1", r));
+  try {
+    const proxy = `http://try:${"c".repeat(32)}@127.0.0.1:${door.address().port}`;
+    const lines = await egressCheck(proxy, ["api.smith.langchain.com", "example.com"]);
+    assert.deepEqual(lines, ["tenant host: egress door: api.smith.langchain.com: HTTP/1.1 200 Connection Established", "tenant host: egress door: example.com: HTTP/1.1 403 Forbidden"]);
+    assert.ok(heads[0].includes(`Proxy-Authorization: Basic ${Buffer.from(`try:${"c".repeat(32)}`).toString("base64")}`));
+    assert.ok(!lines.join("\n").includes("c".repeat(32)));
+  } finally { door.close(); }
+  const p = "http://try:" + "a".repeat(32) + "@egress.dev.agentmesh.ai:3129";
+  assert.equal(readTryConnect(JSON.stringify({ proxy: p, env: { K_EY: "v" }, check: "api.smith.langchain.com" })).check, "api.smith.langchain.com");
+  assert.equal(readTryConnect(JSON.stringify({ proxy: p, env: {}, check: "not a host" })).check, undefined);
+});
