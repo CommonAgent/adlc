@@ -64,6 +64,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, chownSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { connect as netConnect } from "node:net";
 import { createRequire } from "node:module";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -386,7 +387,31 @@ export function readTryConnect(text) {
   for (const [k, v] of Object.entries(c.env && typeof c.env === "object" ? c.env : {})) {
     if (TRY_ENV_RE.test(k) && !TRY_RESERVED_RE.test(k) && typeof v === "string" && v.length <= 4096) env[k] = v;
   }
-  return { proxy: c.proxy, env };
+  // A host connected to it, which the tenant host asks the door about once.
+  const check = typeof c.check === "string" && TRY_HOST_RE.test(c.check) ? c.check : null;
+  return { proxy: c.proxy, env, ...(check ? { check } : {}) };
+}
+const TRY_HOST_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/** What the egress door answers a CONNECT for each host, through the try's
+ *  proxy address: the status line only. The credential is sent to the door
+ *  and never written down. */
+export async function egressCheck(proxy, hosts, { connect = netConnect, timeoutMs = 8000 } = {}) {
+  const m = /^http:\/\/try:([A-Za-z0-9_-]+)@([a-z0-9.-]+):([0-9]+)$/.exec(String(proxy ?? ""));
+  if (!m) return ["tenant host: egress door: no door address to check"];
+  const auth = Buffer.from(`try:${m[1]}`).toString("base64");
+  const one = (host) => new Promise((done) => {
+    const sock = connect({ host: m[2], port: Number(m[3]) });
+    let got = "";
+    const end = (w) => { try { sock.destroy(); } catch { /* gone */ } done(`tenant host: egress door: ${host}: ${w}`); };
+    const timer = setTimeout(() => end("no answer"), timeoutMs);
+    sock.on("connect", () => sock.write(`CONNECT ${host}:443 HTTP/1.1\r\nHost: ${host}:443\r\nProxy-Authorization: Basic ${auth}\r\n\r\n`));
+    sock.on("data", (b) => { got += b.toString("latin1"); const i = got.indexOf("\r\n"); if (i >= 0) { clearTimeout(timer); end(got.slice(0, i)); } });
+    sock.on("error", (e) => { clearTimeout(timer); end(`could not reach the door (${e.code ?? e.message})`); });
+  });
+  const out = [];
+  for (const h of hosts) out.push(await one(h));
+  return out;
 }
 
 export function workEnv(base, spec, tenant) {
@@ -844,6 +869,11 @@ async function main() {
   const connected = readTryConnect(process.env.TRY_CONNECT);
   delete process.env.TRY_CONNECT;
   if (connected) process.env.AGENT_TRY_CONNECT = JSON.stringify(connected);
+  // Once a container, what the door answers this try for a host connected to
+  // it and for one that is not: one log line each, never the credential.
+  if (connected?.check) {
+    void egressCheck(connected.proxy, [connected.check, "example.com"]).then((lines) => { for (const l of lines) log(l); }, () => {});
+  }
   const raw = got.text;
   if (got.from !== CREDENTIALS_JSON_ENV) {
     // A secret mounted as a file is readable by whoever its mode lets; the
