@@ -1,6 +1,6 @@
 ---
 name: audit-an-agent
-description: When a built agent version is to go to prod or into the catalog, or when a sweep audits every agent: the gates need a current, signed audit of that exact package digest. This is the Audit role of the Prove phase of the Agent Development Lifecycle.
+description: "When a built agent version is to go to prod or into the catalog, or when a sweep audits every agent: the gates need a current, signed audit of that exact package digest. This is the Audit role of the Prove phase of the Agent Development Lifecycle."
 ---
 
 # Audit an agent version

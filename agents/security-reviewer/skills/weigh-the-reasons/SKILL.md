@@ -1,6 +1,6 @@
 ---
 name: weigh-the-reasons
-description: third, when a model is placed: the one judgment, which says which recorded reasons to read hardest
+description: "third, when a model is placed: the one judgment, which says which recorded reasons to read hardest"
 ---
 
 # Weigh the reasons

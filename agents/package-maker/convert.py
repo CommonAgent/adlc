@@ -11,6 +11,8 @@ Writes into <folder> (default: the folder the spec sits in):
   plugin.json                      the manifest's authored members, and the
                                    builder's own entry (see below)
   skills/<slug>/SKILL.md           each job's skill, as the builder writes it
+  mcp.json                         the servers fixed in the package, when the
+                                   spec's `mcp` names any (Agent Plugins 1.0.0)
 
 and prints one JSON line saying what it wrote. The spec itself is left where
 it is: deleting it is a separate, reviewed step.
@@ -25,7 +27,8 @@ same package.
 
 WHAT plugin.json CARRIES. The members the builder wrote into the manifest
 (name, version, description, license, homepage, repository, author,
-keywords, and `from` in the package's own entry), and one member that is the
+keywords, and `from` in the package's own entry; the description is the
+spec's summary where it has one, the line a harness shows), and one member that is the
 builder's and never the package's, `build` in the package's own entry:
 
   "build": {
@@ -59,6 +62,7 @@ EXT = "net.agentdoc.package"
 DESCRIPTOR_FILE = "agent-descriptor.json"
 RUNTIME_FILE = "agent-runtime-requirements.json"
 WRITES = ("plugin.json", DESCRIPTOR_FILE, RUNTIME_FILE)
+MCP_FILE = "mcp.json"
 
 
 def out(obj):
@@ -132,6 +136,14 @@ def convert(spec_path, folder, force=False):
         for n in (DESCRIPTOR_FILE, RUNTIME_FILE):
             shutil.copyfile(os.path.join(pkg, n), os.path.join(folder, n))
         written = list(WRITES)
+        # The spec's `mcp`, the servers fixed in the package, is the folder's
+        # mcp.json in the form Agent Plugins publishes, as the build wrote it.
+        if os.path.exists(os.path.join(pkg, MCP_FILE)):
+            target = os.path.join(folder, MCP_FILE)
+            if os.path.exists(target) and not force:
+                out({"ok": False, "error": f"{MCP_FILE} already in {folder}; pass --force to write over it"})
+            shutil.copyfile(os.path.join(pkg, MCP_FILE), target)
+            written.append(MCP_FILE)
         for slug in slugs:
             d = os.path.join(folder, "skills", slug)
             target = os.path.join(d, "SKILL.md")

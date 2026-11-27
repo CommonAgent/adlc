@@ -419,7 +419,7 @@ def skill_slug_of(text):
 
 def agent_file_kind(text):
     """What one attached file is, by its content: ("descriptor", doc),
-    ("runtime", doc), ("manifest", doc), ("skill", slug), or None. Told apart
+    ("runtime", doc), ("mcp", doc), ("manifest", doc), ("skill", slug), or None. Told apart
     by content, never by name, for the reason spec_among gives."""
     if text.startswith("---"):
         slug = skill_slug_of(text)
@@ -434,6 +434,8 @@ def agent_file_kind(text):
         return ("descriptor", doc)
     if doc.get("format") in AGENT_RUNTIME_FORMATS:
         return ("runtime", doc)
+    if isinstance(doc.get("mcpServers"), dict) and str(doc.get("$schema", "")).endswith("/mcp.schema.json"):
+        return ("mcp", doc)
     ext = doc.get("extensions")
     if isinstance(ext, dict) and ("net.agentdoc.package" in ext or "agent-plugins.org" in str(doc.get("$schema", ""))):
         return ("manifest", doc)
@@ -450,7 +452,7 @@ def agent_files_among(files):
     names (or the descriptor's offerings and steps), the later of two for one
     skill. Everything else is an ordinary attachment, laid out where the
     agent's files name it. A job manifest is skipped by name."""
-    of = {"manifest": [], "descriptor": [], "runtime": []}
+    of = {"manifest": [], "descriptor": [], "runtime": [], "mcp": []}
     skills = []
     for path in files:
         if sent_name(path) == MANIFEST_NAME:
@@ -508,7 +510,11 @@ def agent_files_among(files):
         if slug in wanted:
             chosen[slug] = path
     found = {"manifest": manifest[0], "descriptor": descriptor[0], "runtime": runtime[0], "skills": chosen}
-    found["used"] = [found["descriptor"], found["runtime"], found["manifest"], *chosen.values()]
+    # The package's mcp.json, the last one sent, when its servers are fixed in it.
+    mcp = last(of["mcp"])
+    if mcp:
+        found["mcp"] = mcp[0]
+    found["used"] = [found["descriptor"], found["runtime"], found["manifest"], *([mcp[0]] if mcp else []), *chosen.values()]
     return found
 
 
@@ -534,7 +540,8 @@ def lay_out_folder(found, files):
     with open(os.path.join(root, "plugin.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    for src, rel in ((found["descriptor"], "agent-descriptor.json"), (found["runtime"], "agent-runtime-requirements.json")):
+    for src, rel in ((found["descriptor"], "agent-descriptor.json"), (found["runtime"], "agent-runtime-requirements.json"),
+                     *(((found["mcp"], "mcp.json"),) if found.get("mcp") else ())):
         shutil.copy(src, os.path.join(root, rel))
     for slug, src in found["skills"].items():
         os.makedirs(os.path.join(root, "skills", slug), exist_ok=True)

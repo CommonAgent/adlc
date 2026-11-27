@@ -1,6 +1,6 @@
 ---
 name: write-a-process
-description: when somebody describes work that passes between several agents or people, or that waits for a person to approve it along the way: a process, not one agent
+description: "when somebody describes work that passes between several agents or people, or that waits for a person to approve it along the way: a process, not one agent"
 ---
 
 # Write a process

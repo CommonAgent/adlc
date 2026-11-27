@@ -1,6 +1,6 @@
 ---
 name: agent-change
-description: When a change to an agent is proposed and nothing has been built yet: the person who asked for it needs every dependent named and answered before deciding. This is the Impact stage of the Agent Development Lifecycle.
+description: "When a change to an agent is proposed and nothing has been built yet: the person who asked for it needs every dependent named and answered before deciding. This is the Impact stage of the Agent Development Lifecycle."
 ---
 
 # Report on a change to an agent

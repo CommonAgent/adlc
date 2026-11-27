@@ -1,6 +1,6 @@
 ---
 name: reverse-engineer
-description: When an existing codebase is taken on, or its code changed outside the lifecycle: somebody has to say what the code is before anybody decides what to keep. This is the Reverse engineering stage (00) of the Agent Development Lifecycle. On drift, give it the last as-built record too, and it covers only what changed since that record's commit.
+description: "When an existing codebase is taken on, or its code changed outside the lifecycle: somebody has to say what the code is before anybody decides what to keep. This is the Reverse engineering stage (00) of the Agent Development Lifecycle. On drift, give it the last as-built record too, and it covers only what changed since that record's commit."
 ---
 
 # Describe a codebase

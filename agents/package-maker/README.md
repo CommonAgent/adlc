@@ -16,7 +16,25 @@ is kept the way that format says a package is authored (Common Agent 13.2):
   license, author, repository), and in its `net.agentdoc.package` entry one
   member that is the builder's alone, `build`, which lists the files each skill
   carries, so a script several skills run is kept once beside the agent;
-- `skills/<slug>/SKILL.md`, one per offering and step.
+- `skills/<slug>/SKILL.md`, one per offering and step;
+- `mcp.json`, only when the agent reaches an MCP server whose address is fixed
+  in the package: a public HTTPS endpoint, or a program the package ships,
+  started over stdio with its paths spelled from `${PLUGIN_ROOT}` and
+  `${PLUGIN_DATA}`. It is written as Agent Plugins 1.0.0 writes it
+  (agent-plugins.org/specification, 7.2), each server named for a declared
+  system of kind `mcp`, with no credential in `env` or `headers`. An MCP server
+  the organization binds at install has no entry; the runtime requirements
+  carry it.
+
+A package is an Agent Plugin, and what Agent Plugins readers show is held to
+it: `plugin.json`'s description is the Descriptor's summary (its `does` where
+it has no summary), one line of at most 300 characters, because a harness
+shows it to a person picking a plugin; the whole account of what the agent
+does stays in `does`. Keywords are the jobs, never a word about how the
+package was made (`built-agent`, `draft`, `system-agent`, `demo-agent` are
+refused). A SKILL.md description YAML would misread, such as one with `: `
+inside it, is written in double quotes, and a folder's unquoted one is
+refused.
 
 Building checks those files, copies the skills and their files in, generates
 NOT.md, RECORDS.md and SYSTEMS.md, and writes the manifest's digests. It adds
