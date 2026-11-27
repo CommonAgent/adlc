@@ -493,3 +493,9 @@ test("the image's working folder is handed to the work, never a system folder or
   assert.equal(workdirToHand("/usr/src/app"), "/usr/src/app");
   for (const w of ["/", "", null, "app", "/usr", "/usr/lib/x", "/usr/src", "/etc", "/opt", "/opt/tenant", "/opt/mesh/lib", "/home/mesh", "/tmp", "/var", "/app/../etc"]) assert.equal(workdirToHand(w), null, String(w));
 });
+
+test("the model door says in one line why a call failed, never the call's words", async () => {
+  const { modelDoorWhy } = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "tenant-host.mjs")).href);
+  assert.equal(modelDoorWhy(JSON.stringify({ type: "error", error: { type: "relay_refused", message: "The model door is not set up on this mesh." } })), "relay_refused: The model door is not set up on this mesh.");
+  assert.equal(modelDoorWhy("not json at all"), "not json at all");
+});
