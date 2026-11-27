@@ -15,14 +15,23 @@ steps:
     name: gcr.io/cloud-builders/docker
     waitFor: ["-"]
     args: ["build", "-f", "tenant-harness/Dockerfile.claude-agent-sdk", "-t", "${_REGISTRY}/harness-claude-agent-sdk:${_CLAUDE_AGENT_SDK_TAG}", "."]
+  # Each check writes its verdict, so one failing does not cancel the other,
+  # and the last step fails the build (pushing nothing) if either did.
   - id: check-opencode
     name: gcr.io/cloud-builders/docker
     waitFor: ["opencode"]
-    args: ["run", "--rm", "--network", "none", "${_REGISTRY}/harness-opencode:${_OPENCODE_TAG}", "node", "/opt/harness/check/harness-check.mjs"]
+    entrypoint: bash
+    args: ["-c", "docker run --rm --network none ${_REGISTRY}/harness-opencode:${_OPENCODE_TAG} node /opt/harness/check/harness-check.mjs && echo pass > /workspace/check-opencode || echo fail > /workspace/check-opencode"]
   - id: check-claude-agent-sdk
     name: gcr.io/cloud-builders/docker
     waitFor: ["claude-agent-sdk"]
-    args: ["run", "--rm", "--network", "none", "${_REGISTRY}/harness-claude-agent-sdk:${_CLAUDE_AGENT_SDK_TAG}", "node", "/opt/harness/check/harness-check.mjs"]
+    entrypoint: bash
+    args: ["-c", "docker run --rm --network none ${_REGISTRY}/harness-claude-agent-sdk:${_CLAUDE_AGENT_SDK_TAG} node /opt/harness/check/harness-check.mjs && echo pass > /workspace/check-claude-agent-sdk || echo fail > /workspace/check-claude-agent-sdk"]
+  - id: verdict
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["check-opencode", "check-claude-agent-sdk"]
+    entrypoint: bash
+    args: ["-c", "grep -q pass /workspace/check-opencode && grep -q pass /workspace/check-claude-agent-sdk"]
 images:
   - ${_REGISTRY}/harness-opencode:${_OPENCODE_TAG}
   - ${_REGISTRY}/harness-claude-agent-sdk:${_CLAUDE_AGENT_SDK_TAG}

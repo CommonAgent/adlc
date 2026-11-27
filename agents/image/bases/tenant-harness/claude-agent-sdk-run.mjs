@@ -28,8 +28,18 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** The tools the work may use without asking. A tool not here is refused,
- *  because nobody is there to answer (dontAsk). */
-export const ALLOWED = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS", "Bash", "WebFetch", "TodoWrite", "Task", "Skill", "SlashCommand", "NotebookEdit"];
+ *  because nobody is there to answer (dontAsk). Writing files is not among
+ *  them: it is allowed only in the directories it was given (editRules). */
+export const ALLOWED = ["Read", "Glob", "Grep", "LS", "Bash", "WebFetch", "TodoWrite", "Task", "Skill", "SlashCommand"];
+
+/** Writing files (Edit, Write, MultiEdit and NotebookEdit all answer to Edit
+ *  rules), only under the directories it was given; "//" starts a rule at the
+ *  filesystem root. A bare "Write" would allow it everywhere: the contract
+ *  check caught that, a write to /opt going through. */
+export function editRules(dirs) {
+  return [...new Set(dirs.filter(Boolean).map((d) => String(d).replace(/\/+$/, "")))].map((d) => `Edit(/${d}/**)`);
+}
+
 /** Removed outright: web search runs on the model's side and would reach the
  *  web without passing the egress door. */
 export const DISALLOWED = ["WebSearch"];
@@ -82,7 +92,7 @@ export function optionsFor(env = process.env) {
     settingSources: [],
     settings: { disableAllHooks: true },
     permissionMode: "dontAsk",
-    allowedTools: [...ALLOWED, ...Object.keys(servers).map((n) => `mcp__${n}`)],
+    allowedTools: [...ALLOWED, ...editRules([env.AGENT_HOME || process.cwd(), ...grantedDirs(env)]), ...Object.keys(servers).map((n) => `mcp__${n}`)],
     disallowedTools: DISALLOWED,
     additionalDirectories: grantedDirs(env),
     mcpServers: servers,
