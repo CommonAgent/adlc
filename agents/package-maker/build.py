@@ -2241,12 +2241,14 @@ def listed_description(spec, description):
     return text
 
 
-def keyword_problem(keywords):
+def keyword_problem(keywords, jobs=()):
     """Why a manifest's keywords are refused, or None. They are search tags
-    for what the agent does; a word about how the package was made is not."""
+    for what the agent does; a word about how the package was made is not.
+    One of the agent's own jobs is what it does, whatever its slug, so a job
+    named `draft` is a keyword like any other job."""
     if not (isinstance(keywords, list) and all(isinstance(x, str) for x in keywords)):
         return "plugin.json keywords must be strings"
-    inner = [k for k in keywords if k.strip().lower() in INTERNAL_KEYWORDS]
+    inner = [k for k in keywords if k.strip().lower() in INTERNAL_KEYWORDS and k.strip() not in jobs]
     if inner:
         return (f"plugin.json keywords carry {', '.join(inner)}, which say how the package was made and not "
                 f"what the agent does; keywords are search tags for the work")
@@ -2767,7 +2769,7 @@ def generated_views(desc, inst):
 
 # ── checks ────────────────────────────────────────────────────────────────
 
-def check_manifest(manifest):
+def check_manifest(manifest, jobs=()):
     """The pinned Agent Plugins schema, applied by hand: required members,
     no member the schema does not list, the name pattern, and the types of
     what is present. Small enough that a dependency would cost more than it
@@ -2790,8 +2792,8 @@ def check_manifest(manifest):
     for k in ("version", "description", "homepage", "repository", "license"):
         if k in manifest and not isinstance(manifest[k], str):
             fail(f"plugin.json {k} must be a string")
-    if "keywords" in manifest and keyword_problem(manifest["keywords"]):
-        fail(keyword_problem(manifest["keywords"]))
+    if "keywords" in manifest and keyword_problem(manifest["keywords"], jobs):
+        fail(keyword_problem(manifest["keywords"], jobs))
     d = manifest.get("description")
     if isinstance(d, str) and ("\n" in d or len(d) > DESCRIPTION_MAX):
         fail(f"plugin.json description is one or two sentences on one line, at most {DESCRIPTION_MAX} characters")
@@ -3583,7 +3585,7 @@ def build(spec, src_base, out_dir, authored):
     # refused here, before any file is written, like every other shape check.
     mcp_doc = mcp_declaration(spec, systems)
     if authored and "keywords" in authored["manifest"]:
-        why = keyword_problem(authored["manifest"]["keywords"])
+        why = keyword_problem(authored["manifest"]["keywords"], [j["slug"] for j in jobs])
         if why:
             fail(why)
     for s in systems:
@@ -3802,7 +3804,7 @@ def build(spec, src_base, out_dir, authored):
             "keywords": [j["slug"] for j in jobs],
             "extensions": {EXT: pointers},
         }
-    check_manifest(manifest)
+    check_manifest(manifest, [j["slug"] for j in jobs])
     open(os.path.join(pkg, MANIFEST_FILE), "w", encoding="utf-8", newline="\n").write(dumps(manifest))
     if mcp_doc is not None:
         # A server the package ships is started from inside it, so the

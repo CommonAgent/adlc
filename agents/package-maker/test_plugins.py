@@ -92,6 +92,16 @@ class TheManifestsWords(Base):
         self.edit("plugin.json", lambda d: d.update(description="Something else."))
         self.refused("the Descriptor's does")
 
+    def test_a_job_whose_slug_is_such_a_word_is_still_a_keyword(self):
+        # A step named draft is what the agent does, not how the package was made.
+        self.write_spec(json.loads(json.dumps(spec()).replace('"summarize"', '"draft"')))
+        res = self.built("a")
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(json.loads(self.read(res, "plugin.json"))["keywords"], ["read-a-note", "draft"])
+        self.convert()
+        again, _ = self.build(self.src, "b")
+        self.assertTrue(again["ok"], again)
+
     def test_a_word_about_how_it_was_made_is_refused_as_a_keyword(self):
         self.convert()
         for word in build.INTERNAL_KEYWORDS:
