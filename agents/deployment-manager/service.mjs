@@ -182,12 +182,14 @@ export function tenantSettings(e) {
     // tenant-try-builder, which may write only to the tries repository; the
     // adapter layer takes node from Node's own image and the mesh adapter
     // from the public release bucket, checked by its sha256, and reads
-    // nothing from the tenant registry. Empty leaves tries on the pool.
+    // nothing from the tenant registry. Empty leaves tries on the pool. Each
+    // name starts DM_TENANT_, because the host's deploymgr-tenant.json gives
+    // only such names (tenantFile).
     try_builder: e.DM_TENANT_TRY_BUILDER || "",
     try_registry: e.DM_TENANT_TRY_REGISTRY || "",
-    try_adapter_url: e.DM_TRY_ADAPTER_TARBALL || "",
-    try_adapter_sha256: String(e.DM_TRY_ADAPTER_SHA256 || "").toLowerCase(),
-    try_node_image: e.DM_TRY_NODE_IMAGE || "node:22-bookworm-slim",
+    try_adapter_url: e.DM_TENANT_TRY_ADAPTER_TARBALL || "",
+    try_adapter_sha256: String(e.DM_TENANT_TRY_ADAPTER_SHA256 || "").toLowerCase(),
+    try_node_image: e.DM_TENANT_TRY_NODE_IMAGE || "node:22-bookworm-slim",
     // What the tenant network lets a tenant agent reach, as the deployment
     // record's `egress` states it (Common Agent 8.3). See tenantEgress.
     egress: tenantEgress(e.DM_TENANT_EGRESS),
@@ -739,8 +741,8 @@ export function tryPlacement(t) {
   if (!t?.try_builder) return null;
   if (!SA_EMAIL_RE.test(t.try_builder)) stop("validate", "DM_TENANT_TRY_BUILDER must be a service account's address");
   if (!REGISTRY_RE.test(String(t.try_registry ?? ""))) stop("validate", "DM_TENANT_TRY_REGISTRY must say where a try's image is kept");
-  if (!TRY_TARBALL_RE.test(String(t.try_adapter_url ?? ""))) stop("validate", "DM_TRY_ADAPTER_TARBALL must be a mesh adapter release tarball in the public release bucket");
-  if (!/^[0-9a-f]{64}$/.test(String(t.try_adapter_sha256 ?? ""))) stop("validate", "DM_TRY_ADAPTER_SHA256 must be the tarball's sha256");
+  if (!TRY_TARBALL_RE.test(String(t.try_adapter_url ?? ""))) stop("validate", "DM_TENANT_TRY_ADAPTER_TARBALL must be a mesh adapter release tarball in the public release bucket");
+  if (!/^[0-9a-f]{64}$/.test(String(t.try_adapter_sha256 ?? ""))) stop("validate", "DM_TENANT_TRY_ADAPTER_SHA256 must be the tarball's sha256");
   return {
     builder: t.try_builder, registry: t.try_registry, worker_pool: null,
     try_adapter: { node: t.try_node_image || WAKE_NODE_IMAGE, url: t.try_adapter_url, sha256: t.try_adapter_sha256 },

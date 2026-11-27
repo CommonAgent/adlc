@@ -331,7 +331,7 @@ const TRY_ENV = {
   DM_TENANT_NPM_REGISTRY: "https://us-east1-npm.pkg.dev/example-tenants/npm-mirror/",
   DM_TENANT_TRY_BUILDER: "tenant-try-builder@example-tenants.iam.gserviceaccount.com",
   DM_TENANT_TRY_REGISTRY: "us-east1-docker.pkg.dev/example-tenants/tries",
-  DM_TRY_ADAPTER_TARBALL: TARBALL, DM_TRY_ADAPTER_SHA256: SHA,
+  DM_TENANT_TRY_ADAPTER_TARBALL: TARBALL, DM_TENANT_TRY_ADAPTER_SHA256: SHA,
 };
 
 test("a try is built on the shared pool as the try builder, into the tries repository", () => {
@@ -347,8 +347,8 @@ test("a try is built on the shared pool as the try builder, into the tries repos
   assert.equal(plain.builder, "tenant-builder@example-tenants.iam.gserviceaccount.com");
   assert.ok(plain.worker_pool);
   // Half set is refused in words.
-  assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TRY_ADAPTER_SHA256: "" }) }), /DM_TRY_ADAPTER_SHA256/);
-  assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TRY_ADAPTER_TARBALL: "https://evil.example/a.tgz" }) }), /public release bucket/);
+  assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TENANT_TRY_ADAPTER_SHA256: "" }) }), /DM_TENANT_TRY_ADAPTER_SHA256/);
+  assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TENANT_TRY_ADAPTER_TARBALL: "https://evil.example/a.tgz" }) }), /public release bucket/);
 });
 
 test("a try's layer takes node and the adapter from public sources, checked by sha256, and reads no tenant image", () => {
