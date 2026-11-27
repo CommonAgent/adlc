@@ -19,7 +19,7 @@
 // folder is the delivery; what it printed is used only when it filed nothing.
 //
 //   needs: node >= 22, AGENT_HARNESS_BIN, AGENT_PACKAGE (the plugin, read only)
-//   environment: HARNESS_PORT (default 8080), HARNESS_LABEL, AGENT_JOB_SECONDS
+//   environment: HARNESS_PORT (default 8085; the tenant host has 8080 and the model door 8790), HARNESS_LABEL, AGENT_JOB_SECONDS
 //     (default 900), and whatever the adapter gave the server: the model door
 //     (ANTHROPIC_BASE_URL) and, once the person connected something, the
 //     egress door as HTTPS_PROXY with the keys' settings.
@@ -138,7 +138,7 @@ export async function answerOne(text, env = process.env, { run = runHarness, now
 }
 
 export function serve(env = process.env) {
-  const port = Number(env.HARNESS_PORT || 8080);
+  const port = Number(env.HARNESS_PORT || 8085);
   let busy = 0;
   const server = createServer((req, res) => {
     const send = (status, body) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
