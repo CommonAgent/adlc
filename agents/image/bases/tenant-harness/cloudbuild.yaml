@@ -1,0 +1,35 @@
+# The tenant harness bases (docs/harness-contract.md in the AgentMesh
+# repository): each image is built, then passes the harness contract check
+# with no network at all, and only then pushed. A failed check pushes nothing,
+# so the catalogue (../tenant-harnesses.json) never names an image that did not
+# pass.
+#
+#   cd agents/image/bases
+#   gcloud builds submit --config tenant-harness/cloudbuild.yaml --project <tenant project> \
+#     --substitutions _REGISTRY=<the tries registry> .
+steps:
+  - id: opencode
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "tenant-harness/Dockerfile.opencode", "-t", "${_REGISTRY}/harness-opencode:${_OPENCODE_TAG}", "."]
+  - id: claude-agent-sdk
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["-"]
+    args: ["build", "-f", "tenant-harness/Dockerfile.claude-agent-sdk", "-t", "${_REGISTRY}/harness-claude-agent-sdk:${_CLAUDE_AGENT_SDK_TAG}", "."]
+  - id: check-opencode
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["opencode"]
+    args: ["run", "--rm", "--network", "none", "${_REGISTRY}/harness-opencode:${_OPENCODE_TAG}", "node", "/opt/harness/check/harness-check.mjs"]
+  - id: check-claude-agent-sdk
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["claude-agent-sdk"]
+    args: ["run", "--rm", "--network", "none", "${_REGISTRY}/harness-claude-agent-sdk:${_CLAUDE_AGENT_SDK_TAG}", "node", "/opt/harness/check/harness-check.mjs"]
+images:
+  - ${_REGISTRY}/harness-opencode:${_OPENCODE_TAG}
+  - ${_REGISTRY}/harness-claude-agent-sdk:${_CLAUDE_AGENT_SDK_TAG}
+substitutions:
+  _REGISTRY: us-east1-docker.pkg.dev/agentmesh-tenants-dev/tries
+  _OPENCODE_TAG: 1.18.30-1
+  _CLAUDE_AGENT_SDK_TAG: 0.3.323-1
+options:
+  requestedVerifyOption: VERIFIED
+  logging: CLOUD_LOGGING_ONLY
