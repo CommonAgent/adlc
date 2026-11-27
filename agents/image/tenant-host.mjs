@@ -711,6 +711,23 @@ export function usersToAdd(passwd, group, work) {
   return add;
 }
 
+/** The folders never handed to the work, whatever the image names as its
+ *  working folder: the system's, and the adapter layer's own. */
+const NEVER_HANDED = ["/", "/bin", "/boot", "/dev", "/etc", "/home", "/home/mesh", "/lib", "/lib32", "/lib64", "/libx32", "/media", "/mnt", "/opt", "/opt/agent", "/opt/mesh", "/opt/tenant", "/proc", "/root", "/run", "/sbin", "/srv", "/sys", "/tmp", "/usr", "/usr/bin", "/usr/lib", "/usr/local", "/usr/local/bin", "/usr/local/lib", "/var", "/var/lib"];
+
+/** The image's working folder when it may be handed to the work: absolute,
+ *  with nothing that climbs, and not a system folder or one of the layer's;
+ *  else null. */
+export function workdirToHand(workdir) {
+  const w = String(workdir ?? "").trim().replace(/\/+$/, "");
+  if (!w.startsWith("/") || w.split("/").some((p) => p === "..")) return null;
+  if (!w || NEVER_HANDED.includes(w)) return null;
+  const inside = ["/opt/agent/", "/opt/mesh/", "/opt/tenant/", "/home/mesh/", "/proc/", "/sys/", "/dev/", "/etc/", "/usr/", "/bin/", "/sbin/", "/lib/", "/lib64/", "/boot/", "/run/"];
+  // A folder under /usr/src (Node's images work in /usr/src/app) is an app's.
+  if (/^\/usr\/src\/[^/]+/.test(w)) return w;
+  return inside.some((p) => `${w}/`.startsWith(p)) ? null : w;
+}
+
 /** The settle step itself, under `root` (/ in the image; a folder in a test).
  *  Ownership is set only when this runs as root. */
 export function settleImage({ root = "/", tenantFile = join(root, "opt", "tenant", "tenant.json"), log: say = log, check = true } = {}) {
@@ -737,6 +754,12 @@ export function settleImage({ root = "/", tenantFile = join(root, "opt", "tenant
   own(at("home", "mesh"), MESH_USER.uid, MESH_USER.gid);
   if (work.make) { mkdirSync(at("home", "agent"), { recursive: true, mode: 0o755 }); own(at("home", "agent"), work.uid, work.gid); }
   for (const d of [DIRECTORIES_ROOT, JOBS_ROOT]) mkdirSync(at(...d.split("/").filter(Boolean)), { recursive: true, mode: 0o755 });
+  // The image's working folder is the work's to write while it runs (an
+  // agent's own files, a local sandbox, a SQLite file beside its code): an
+  // image made for a developer's checkout writes there, and the try runs it
+  // as a user the image may not have given that folder. Never a system folder.
+  const workdir = workdirToHand(command.workdir);
+  if (workdir && existsSync(at(...workdir.split("/").filter(Boolean))) && asRoot) chownTree(at(...workdir.split("/").filter(Boolean)), work.uid, work.gid);
   const t = JSON.parse(readFileSync(tenantFile, "utf8"));
   t.agent_user = { name: add.work_name ?? work.name, uid: work.uid, gid: work.gid };
   writeFileSync(tenantFile, `${JSON.stringify(t, null, 2)}\n`);
