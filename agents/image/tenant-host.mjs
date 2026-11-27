@@ -43,9 +43,18 @@
 // the session ran, for the platform's run accounting. Cloud Run bills only
 // while a request is open, and takes the idle instance away on its own.
 //
-//   needs: node >= 22, the mesh adapter on the path, the supervisor beside
-//          this file, and the users mesh and agent the image made.
-//   environment: AGENTMESH_CREDENTIALS_JSON, TENANT_AGENT_NAME,
+// AN OUTSIDE AGENT TRIED ON THE MESH (docs/try-mode-plan.md, "The adapter on
+// it") runs on this same host: the deployment manager's adapter layer puts
+// node, the adapter and this file in places of their own on the agent's own
+// image (tenant.json names them under `adapter`), the work is http-agent.mjs,
+// and its user is the image's own when that is not root (tenant.json
+// `agent_user`, settled at build by `tenant-host.mjs --settle`).
+//
+//   needs: node >= 22, the mesh adapter (on the path, or where tenant.json
+//          says), the supervisor beside this file, and the users mesh and
+//          agent the image made.
+//   environment: AGENTMESH_CREDENTIALS_JSON (or AGENTMESH_CREDENTIALS_FILE,
+//     the file it is mounted as), TENANT_AGENT_NAME,
 //     TENANT_AGENT_HANDLE, TENANT_WAKER (the one account whose wake is
 //     taken), optionally TENANT_ADMIT (handles, comma separated),
 //     TENANT_MODEL_GATEWAY, TENANT_JOBS_AT_ONCE, TENANT_WAKE_IDLE_SECONDS,
@@ -53,10 +62,10 @@
 //     (AGENT_HOME, AGENT_PACKAGE, AGENT_DIR, ...).
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, chownSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { createRequire as amCreateRequire } from "node:module";
@@ -85,7 +94,7 @@ function amEnv(key) {
 const here = dirname(fileURLToPath(import.meta.url));
 
 export const MESH_USER = { name: "mesh", uid: 10002, gid: 10002, home: "/home/mesh" };
-export const AGENT_USER = { name: "agent", uid: 10001, gid: 10001 };
+export const AGENT_USER = Object.freeze({ name: "agent", uid: 10001, gid: 10001 });
 export const STATE_DIR = `${MESH_USER.home}/.agentmesh/adapter`;
 export const JOBS_ROOT = "/tmp/mesh";
 export const DIRECTORIES_ROOT = "/var/agent-state";
@@ -115,11 +124,27 @@ const log = (line) => console.log(`${new Date().toISOString()} ${line}`);
 
 // ── what arrives ──────────────────────────────────────────────────────────
 
+export const CREDENTIALS_JSON_ENV = "AGENTMESH_CREDENTIALS_JSON";
+export const CREDENTIALS_FILE_ENV = "AGENTMESH_CREDENTIALS_FILE";
+
+/** The credential bundle's text: AGENTMESH_CREDENTIALS_JSON when it is set,
+ *  else the file AGENTMESH_CREDENTIALS_FILE names (a secret mounted as a
+ *  file). Says where it came from; never what it holds. */
+export function credentialText(env, read = (f) => readFileSync(f, "utf8")) {
+  const inline = env?.[CREDENTIALS_JSON_ENV];
+  if (typeof inline === "string" && inline.trim()) return { text: inline, from: CREDENTIALS_JSON_ENV };
+  const file = String(env?.[CREDENTIALS_FILE_ENV] ?? "").trim();
+  if (!file) throw new Error(`neither ${CREDENTIALS_JSON_ENV} nor ${CREDENTIALS_FILE_ENV} is set, so this agent has no key to serve it with`);
+  try { return { text: read(file), from: file }; } catch (err) {
+    throw new Error(`the credential file ${CREDENTIALS_FILE_ENV} names (${file}) could not be read: ${err?.code ?? err?.message ?? err}`);
+  }
+}
+
 /** The credential bundle, checked. It carries the agent's seed, the mesh
  *  credential, the mesh's addresses and the API's; nothing is printed. */
 export function readBundle(text) {
   let d;
-  try { d = JSON.parse(String(text ?? "")); } catch { throw new Error("AGENTMESH_CREDENTIALS_JSON is not JSON"); }
+  try { d = JSON.parse(String(text ?? "")); } catch { throw new Error("the credential bundle is not JSON"); }
   const seed = String(d?.agent_seed ?? "").trim();
   if (!NKEY_SEED.test(seed)) throw new Error("the credential bundle carries no agent seed");
   const creds = String(d?.mesh_creds ?? "");
@@ -148,6 +173,37 @@ export function readTenantFile(text) {
       return d.length ? d : ["records", "work"];
     })(),
     kind: typeof t.kind === "string" && t.kind ? t.kind : "program",
+    agent_user: workUserOf(t.agent_user),
+    adapter: {
+      bin: absPath(t.adapter?.bin),
+      modules: absPath(t.adapter?.modules),
+    },
+  };
+}
+
+const absPath = (p) => (typeof p === "string" && p.startsWith("/") && !p.split("/").includes("..") ? p : null);
+const ID_MAX = 2 ** 31 - 1;
+
+/** The user the work runs as, from tenant.json's `agent_user`: the agent
+ *  user (10001) unless it names another, and never root, by user or group. */
+export function workUserOf(u) {
+  const id = (v) => Number.isInteger(v) && v > 0 && v <= ID_MAX;
+  if (!u || typeof u !== "object" || !id(u.uid) || !id(u.gid)) return { ...AGENT_USER };
+  return { name: typeof u.name === "string" && /^[a-z_][a-z0-9_.-]{0,31}$/i.test(u.name) ? u.name : AGENT_USER.name, uid: u.uid, gid: u.gid };
+}
+
+/** Where the mesh adapter is: its command and its node_modules folder (whose
+ *  nkeys.js reads the agent's key). A person's package has it on the path
+ *  from the tenant base; the adapter layer on an outside agent's image puts
+ *  it in a place of its own and tenant.json says where. TENANT_ADAPTER_BIN
+ *  and TENANT_ADAPTER_MODULES win over both. */
+export const ADAPTER_BIN = "agentmesh";
+export const ADAPTER_MODULES = "/usr/local/lib/node_modules/mesh-adapter/node_modules/";
+export function adapterPlaces(tenant, env = process.env) {
+  const modules = absPath(env?.TENANT_ADAPTER_MODULES) ?? tenant?.adapter?.modules ?? ADAPTER_MODULES;
+  return {
+    bin: absPath(env?.TENANT_ADAPTER_BIN) ?? tenant?.adapter?.bin ?? ADAPTER_BIN,
+    modules: modules.endsWith("/") ? modules : `${modules}/`,
   };
 }
 
@@ -353,20 +409,70 @@ export function localExecution({ entrypoint, baseEnv, tenant, spawnImpl = spawn,
   };
 }
 
+/**
+ * The work's updates, carried into the adapter's own job folder while the job
+ * runs. The work writes status lines to updates.jsonl in its folder under
+ * /tmp/mesh, and the supervisor copies that folder into the adapter's only
+ * when the job ends; the adapter reads its own folder's updates.jsonl about
+ * once a second and streams each whole line to the sender. So every second
+ * the bytes the work added, up to its last line end, are appended to the
+ * adapter's file exactly as written: the copy at the end then writes the same
+ * file again, nothing shrinks, and the adapter sends nothing twice. Once the
+ * adapter's file is not the length this wrote (the copy at the end, or
+ * anything else), the relay stops.
+ */
+export function relayUpdates(from, to, { everyMs = 1000 } = {}) {
+  const size = (f) => { try { return statSync(f).size; } catch { return 0; } };
+  let written = size(to);
+  let read = written;
+  let stopped = false;
+  const tick = () => {
+    if (stopped) return;
+    try {
+      if (size(to) !== written) { stopped = true; return; }
+      const fd = openSync(from, "r");
+      let chunk = null;
+      try {
+        const end = fstatSync(fd).size;
+        if (end > read) {
+          const buf = Buffer.alloc(Math.min(end - read, 1024 * 1024));
+          const got = readSync(fd, buf, 0, buf.length, read);
+          const cut = buf.subarray(0, got).lastIndexOf(0x0a);
+          if (cut >= 0) chunk = buf.subarray(0, cut + 1);
+        }
+      } finally { closeSync(fd); }
+      if (chunk) {
+        appendFileSync(to, chunk);
+        written += chunk.length;
+        read += chunk.length;
+      }
+    } catch { /* no updates file yet, or the folder went: tried again */ }
+  };
+  const timer = setInterval(tick, everyMs);
+  timer.unref?.();
+  return { tick, stop() { stopped = true; clearInterval(timer); } };
+}
+
 /** The supervisor's worker, with the adapter's own job folder handed back to
  *  the adapter's user once the work's pieces are copied into it (the copy is
  *  made by this process, as root, before `finished` resolves), so the adapter
- *  can write the delivery's manifest beside them. */
-export function handBackToAdapter(startWorker, { chown = chownSync, user = MESH_USER } = {}) {
+ *  can write the delivery's manifest beside them. When `workDirOf` names the
+ *  work's own folder for a job and it is not the adapter's, the work's status
+ *  lines are relayed into the adapter's folder while it runs (relayUpdates). */
+export function handBackToAdapter(startWorker, { chown = chownSync, user = MESH_USER, workDirOf = null, everyMs = 1000 } = {}) {
   return (agent, entry, ctx) => {
     const h = startWorker(agent, entry, ctx);
     const dir = entry?.job?.dir;
+    let from = null;
+    try { from = dir && workDirOf ? workDirOf(agent, entry) : null; } catch { from = null; }
+    const relay = from && resolvePath(from) !== resolvePath(dir) ? relayUpdates(join(from, "updates.jsonl"), join(dir, "updates.jsonl"), { everyMs }) : null;
     return {
       kind: h.kind, pid: h.pid, kill: () => h.kill(),
       finished: h.finished.then((r) => {
+        relay?.stop();
         try { if (dir && existsSync(dir)) chownTree(dir, user.uid, user.gid, chown); } catch { /* the reply still goes; the adapter reads what it can */ }
         return r;
-      }),
+      }, (err) => { relay?.stop(); throw err; }),
     };
   };
 }
@@ -375,10 +481,11 @@ export function handBackToAdapter(startWorker, { chown = chownSync, user = MESH_
 export function rosterRow({ name, handle, key, tenant, jobsAtOnce = 2 }) {
   return {
     name, home: MESH_USER.home, brain: "/bin/false", agent_key: key, handle,
-    // The user the work runs as. The supervisor, running as root, refuses a
-    // row with no uid rather than run anything as root; the launcher below
-    // runs the work as this user in any case.
-    uid: AGENT_USER.uid, gid: AGENT_USER.gid,
+    // The user the work runs as (tenant.json's agent_user, the agent user
+    // unless it names another, never root). The supervisor, running as root,
+    // refuses a row with no uid rather than run anything as root; the
+    // launcher runs the work as this user in any case.
+    uid: (tenant.agent_user ?? AGENT_USER).uid, gid: (tenant.agent_user ?? AGENT_USER).gid,
     job_seconds: tenant.job_seconds ?? undefined,
     ...(tenant.wants_replies ? { wants_replies: true } : {}),
     ...(tenant.answer_piece ? { answer_piece: tenant.answer_piece } : {}),
@@ -526,15 +633,146 @@ export function wakeServer({ waker, session, state = () => "asleep", log: say = 
   });
 }
 
+// ── settling the adapter layer, at build ──────────────────────────────────
+//
+// The adapter layer on an outside agent's image (the deployment manager's
+// adapterDockerfile) runs `tenant-host.mjs --settle` once, as root, at build:
+// it makes the adapter's user (mesh, 10002) and, when the image's own user is
+// root or none, the agent user (10001), the folders the tenant host uses, and
+// writes the work's user into tenant.json. Users are written into /etc/passwd
+// and /etc/group directly, so the layer needs no useradd from the image.
+
+const passwdRows = (text) => String(text ?? "").split("\n").map((l) => l.split(":")).filter((f) => f.length >= 7)
+  .map((f) => ({ name: f[0], uid: Number(f[2]), gid: Number(f[3]), home: f[5] }));
+const groupRows = (text) => String(text ?? "").split("\n").map((l) => l.split(":")).filter((f) => f.length >= 3)
+  .map((f) => ({ name: f[0], gid: Number(f[2]) }));
+
+/** The user the work runs as, from the image's own (`docker inspect`'s
+ *  .Config.User: name, uid, name:group or uid:gid). Root, or none, is the
+ *  agent user (10001), made when the image has no such uid. The root group is
+ *  never kept: a gid of 0 becomes the agent group's. Refused in words when the
+ *  image names a user or group its own files do not have. */
+export function resolveWorkUser(user, passwd, group) {
+  const users = passwdRows(passwd);
+  const groups = groupRows(group);
+  const said = String(user ?? "").trim();
+  const [u, g] = said.split(":");
+  const agent = () => {
+    const has = users.find((x) => x.uid === AGENT_USER.uid);
+    return has ? { name: has.name, uid: has.uid, gid: has.gid > 0 ? has.gid : AGENT_USER.gid, make: false } : { ...AGENT_USER, make: true };
+  };
+  if (!u) return agent();
+  const numeric = /^\d+$/.test(u);
+  const row = numeric ? users.find((x) => x.uid === Number(u)) : users.find((x) => x.name === u);
+  if (!numeric && !row) throw new Error(`the image runs as ${said}, and its /etc/passwd has no user ${u}`);
+  const uid = numeric ? Number(u) : row.uid;
+  if (uid === 0) return agent();
+  let gid = row?.gid ?? uid;
+  if (g) {
+    const grow = /^\d+$/.test(g) ? { gid: Number(g) } : groups.find((x) => x.name === g);
+    if (!grow) throw new Error(`the image runs as ${said}, and its /etc/group has no group ${g}`);
+    gid = grow.gid;
+  }
+  if (gid === 0) gid = AGENT_USER.gid;
+  return { name: row?.name ?? `uid-${uid}`, uid, gid, make: false };
+}
+
+/** The lines /etc/passwd and /etc/group need for the adapter's user and, when
+ *  it is made, the agent user. Refused in words when the image already uses
+ *  the adapter's name or ids for something else. */
+export function usersToAdd(passwd, group, work) {
+  const users = passwdRows(passwd);
+  const groups = groupRows(group);
+  const add = { passwd: [], group: [] };
+  const want = (who, gecos, home) => {
+    const byName = users.find((x) => x.name === who.name);
+    const byId = users.find((x) => x.uid === who.uid);
+    if (byName && byName.uid !== who.uid) throw new Error(`the image already has a user ${who.name} with uid ${byName.uid}, and the adapter layer needs ${who.name} to be ${who.uid}`);
+    if (byId && byId.name !== who.name) throw new Error(`uid ${who.uid} is ${byId.name} in this image, and the adapter layer needs it for ${who.name}`);
+    if (!byName) add.passwd.push(`${who.name}:x:${who.uid}:${who.gid}:${gecos}:${home}:/usr/sbin/nologin`);
+    const gName = groups.find((x) => x.name === who.name);
+    const gId = groups.find((x) => x.gid === who.gid);
+    if (gName && gName.gid !== who.gid) throw new Error(`the image already has a group ${who.name} with gid ${gName.gid}, and the adapter layer needs ${who.gid}`);
+    if (!gName && !gId) add.group.push(`${who.name}:x:${who.gid}:`);
+  };
+  want(MESH_USER, "AgentMesh adapter", MESH_USER.home);
+  if (work.make) {
+    // The agent user's name, unless the image already gives it to someone.
+    add.work_name = users.some((x) => x.name === AGENT_USER.name) ? `agent-${AGENT_USER.uid}` : AGENT_USER.name;
+    want({ name: add.work_name, uid: AGENT_USER.uid, gid: AGENT_USER.gid }, "the agent's work", "/home/agent");
+  }
+  return add;
+}
+
+/** The settle step itself, under `root` (/ in the image; a folder in a test).
+ *  Ownership is set only when this runs as root. */
+export function settleImage({ root = "/", tenantFile = join(root, "opt", "tenant", "tenant.json"), log: say = log, check = true } = {}) {
+  const at = (...p) => join(root, ...p);
+  const asRoot = process.getuid?.() === 0;
+  const own = (p, uid, gid) => { if (asRoot) chownSync(p, uid, gid); };
+  const passwd = existsSync(at("etc", "passwd")) ? readFileSync(at("etc", "passwd"), "utf8") : "";
+  const group = existsSync(at("etc", "group")) ? readFileSync(at("etc", "group"), "utf8") : "";
+  let command = {};
+  try { command = JSON.parse(readFileSync(at("opt", "agent", "command.json"), "utf8")); } catch (err) {
+    throw new Error(`the image's own command (/opt/agent/command.json) could not be read: ${err?.message ?? err}`);
+  }
+  const work = resolveWorkUser(command.user, passwd, group);
+  const add = usersToAdd(passwd, group, work);
+  const appendLines = (file, lines) => {
+    if (!lines.length) return;
+    const before = existsSync(file) ? readFileSync(file, "utf8") : "";
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, `${before}${before && !before.endsWith("\n") ? "\n" : ""}${lines.join("\n")}\n`);
+  };
+  appendLines(at("etc", "passwd"), add.passwd);
+  appendLines(at("etc", "group"), add.group);
+  mkdirSync(at("home", "mesh"), { recursive: true, mode: 0o700 });
+  own(at("home", "mesh"), MESH_USER.uid, MESH_USER.gid);
+  if (work.make) { mkdirSync(at("home", "agent"), { recursive: true, mode: 0o755 }); own(at("home", "agent"), work.uid, work.gid); }
+  for (const d of [DIRECTORIES_ROOT, JOBS_ROOT]) mkdirSync(at(...d.split("/").filter(Boolean)), { recursive: true, mode: 0o755 });
+  const t = JSON.parse(readFileSync(tenantFile, "utf8"));
+  t.agent_user = { name: add.work_name ?? work.name, uid: work.uid, gid: work.gid };
+  writeFileSync(tenantFile, `${JSON.stringify(t, null, 2)}\n`);
+  if (check) {
+    const places = adapterPlaces(readTenantFile(JSON.stringify(t)), {});
+    if (places.bin.startsWith("/") && !existsSync(at(...places.bin.split("/").filter(Boolean)))) throw new Error(`the adapter's command is not at ${places.bin}`);
+    const modules = at(...places.modules.split("/").filter(Boolean));
+    let found = "";
+    try { found = createRequire(join(modules, "x.js")).resolve("nkeys.js"); } catch { /* said below */ }
+    if (!resolvePath(found).startsWith(resolvePath(modules))) {
+      throw new Error(`the adapter's nkeys.js is not under ${places.modules}, so the agent's key could not be read`);
+    }
+    const entry = at("opt", "agent", "entrypoint.mjs");
+    if (existsSync(entry)) {
+      const r = spawnSync(process.execPath, ["--check", entry], { encoding: "utf8" });
+      if (r.status !== 0) throw new Error(`the work's entrypoint does not load on this node: ${(r.stderr || "").trim().split("\n").pop()}`);
+    }
+  }
+  say(`tenant host: settled: the work runs as ${t.agent_user.name} (${work.uid}:${work.gid}), the adapter as mesh (${MESH_USER.uid})`);
+  return { work: t.agent_user, added: add };
+}
+
 // ── start ─────────────────────────────────────────────────────────────────
 
-function asMesh(args, env) {
-  return spawnSync("agentmesh", args, { env, uid: MESH_USER.uid, gid: MESH_USER.gid, encoding: "utf8", timeout: 60_000 });
+function asMesh(bin, args, env) {
+  return spawnSync(bin, args, { env, uid: MESH_USER.uid, gid: MESH_USER.gid, encoding: "utf8", timeout: 60_000 });
 }
 
 async function main() {
-  const raw = process.env.AGENTMESH_CREDENTIALS_JSON ?? "";
-  delete process.env.AGENTMESH_CREDENTIALS_JSON;
+  // The key's text, and both of the variables that may carry it taken out of
+  // this process's environment before anything is started, so no child
+  // inherits either.
+  let got;
+  try { got = credentialText(process.env); } finally {
+    delete process.env[CREDENTIALS_JSON_ENV];
+    delete process.env[CREDENTIALS_FILE_ENV];
+  }
+  const raw = got.text;
+  if (got.from !== CREDENTIALS_JSON_ENV) {
+    // A secret mounted as a file is readable by whoever its mode lets; the
+    // work runs as another user, and is told nothing of where it is.
+    try { if (statSync(got.from).mode & 0o004) log(`the credential file ${got.from} can be read by every user in this container; a person's agent is better given its key as ${CREDENTIALS_JSON_ENV}`); } catch { /* read already */ }
+  }
   const name = String(process.env.TENANT_AGENT_NAME ?? "").trim();
   const handle = String(process.env.TENANT_AGENT_HANDLE ?? "").trim().toLowerCase();
   const gateway = String(process.env.TENANT_MODEL_GATEWAY ?? DEFAULT_GATEWAY).trim();
@@ -547,9 +785,11 @@ async function main() {
   if (!waker) throw new Error("TENANT_WAKER is the deployment manager's to set, and is not set, so nothing could wake this agent");
   const bundle = readBundle(raw);
   const tenant = readTenantFile(existsSync(TENANT_FILE) ? readFileSync(TENANT_FILE, "utf8") : "{}");
+  const places = adapterPlaces(tenant, process.env);
+  const workUser = tenant.agent_user;
 
   // The key, into the adapter's folder, which only the mesh user may read.
-  const require = createRequire("/usr/local/lib/node_modules/mesh-adapter/node_modules/");
+  const require = createRequire(places.modules);
   const nk = (() => { const m = require("nkeys.js"); return m.default ?? m; })();
   const kp = nk.fromSeed(new TextEncoder().encode(bundle.seed));
   const key = kp.getPublicKey();
@@ -580,7 +820,7 @@ async function main() {
   // container lives, and where each message's folder goes.
   for (const d of tenant.directories) mkdirSync(`${DIRECTORIES_ROOT}/${d}`, { recursive: true });
   mkdirSync(JOBS_ROOT, { recursive: true });
-  chownTree(DIRECTORIES_ROOT, AGENT_USER.uid, AGENT_USER.gid);
+  chownTree(DIRECTORIES_ROOT, workUser.uid, workUser.gid);
 
   // Who may reach it at first, settled before the adapter ever starts. Its
   // owner's own agents are admitted by the adapter without asking; nobody
@@ -594,7 +834,7 @@ async function main() {
   const contacts = [["contacts", "default", "a2a", "block"],
     ...String(process.env.TENANT_ADMIT ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean).map((h) => ["contacts", "admit", h])];
   for (const args of contacts) {
-    const r = asMesh(args, meshEnv);
+    const r = asMesh(places.bin, args, meshEnv);
     if (r.status !== 0) log(`agentmesh ${args.join(" ")} did not take: ${(r.stderr || r.stdout || "").trim().split("\n").pop()}`);
   }
 
@@ -631,7 +871,7 @@ async function main() {
     const cold = wakes === 1;
     const t0 = Date.now();
     state = "waking";
-    const adapter = spawn("agentmesh", ["start", "--inbox", "--name", name, "--unattended"], {
+    const adapter = spawn(places.bin, ["start", "--inbox", "--name", name, "--unattended"], {
       env: meshEnv, uid: MESH_USER.uid, gid: MESH_USER.gid, stdio: ["ignore", "inherit", "inherit"],
     });
     let exited = null;
@@ -660,13 +900,19 @@ async function main() {
       throw err;
     }
     const jobs = [];
+    const mount = { hostRoot: JOBS_ROOT, containerRoot: JOBS_ROOT };
+    // The work's own folder for a job, when the supervisor puts it apart from
+    // the adapter's, so its status lines are carried across while it runs.
+    const workDirOf = typeof sup.containerJobPlacement === "function"
+      ? (agent, entry) => { const p = sup.containerJobPlacement(agent, entry, mount); return p.collectDir ? p.hostDir : null; }
+      : null;
     const supervisor = new sup.Supervisor({
       agents: [rosterRow({ name, handle, key, tenant, jobsAtOnce })],
       startWorker: handBackToAdapter(sup.containerWorker({
-        execute: localExecution({ entrypoint, baseEnv: process.env, tenant }),
-        mount: { hostRoot: JOBS_ROOT, containerRoot: JOBS_ROOT },
+        execute: localExecution({ entrypoint, baseEnv: process.env, tenant, user: workUser }),
+        mount,
         report: async () => ({ ok: true }),
-      })),
+      }), { workDirOf }),
       fileDeployRequest: async () => ({ ok: false, error: "a person's agent cannot file a deploy request from the tenant sandbox" }),
       fileStepCharge: async () => ({ ok: false, error: "a person's agent files no step charges from the tenant sandbox" }),
       // The job summaries go back in the wake's answer, not over the network.
@@ -708,7 +954,12 @@ async function main() {
   process.on("SIGINT", () => process.exit(0));
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv[2] === "--settle") {
+  try { settleImage(); } catch (err) {
+    log(`the adapter layer could not be settled: ${String(err?.message ?? err).slice(0, 400)}`);
+    process.exit(1);
+  }
+} else if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     log(`the tenant host could not start: ${String(err?.message ?? err).slice(0, 400)}`);
     process.exit(1);

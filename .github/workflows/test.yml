@@ -72,7 +72,7 @@ jobs:
           node --test "test/*.test.mjs"
 
       - name: Image tools
-        run: node --test agents/image/test/job-usage.test.mjs agents/image/test/model-gateway.test.mjs agents/image/test/tenant-host.test.mjs agents/image/test/wake-host.test.mjs
+        run: node --test agents/image/test/job-usage.test.mjs agents/image/test/model-gateway.test.mjs agents/image/test/tenant-host.test.mjs agents/image/test/wake-host.test.mjs agents/image/test/http-agent.test.mjs
 
       - name: Catalog
         run: |
