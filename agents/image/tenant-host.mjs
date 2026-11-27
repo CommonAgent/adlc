@@ -371,6 +371,24 @@ export function adapterAddresses(env) {
 /** The environment the work is given: the image's own settings with nothing
  *  secret in them, the model door, the directories, and what the supervisor
  *  set for this one message. Never the credential bundle. */
+const TRY_PROXY_RE = /^http:\/\/try:[A-Za-z0-9_-]{16,64}@[a-z0-9.-]{3,253}:[0-9]{2,5}$/;
+const TRY_ENV_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
+const TRY_RESERVED_RE = /^(AGENTMESH_|TENANT_|K_|MESH_|HTTPS?_PROXY$|NO_PROXY$)|^(PORT|ANTHROPIC_BASE_URL|ANTHROPIC_API_KEY|HOME|PATH|LD_LIBRARY_PATH|NODE_OPTIONS|PYTHONPATH)$/i;
+
+/** What the person connected to a try, from its own secret's text: the
+ *  egress door's address with the try's credential, and the settings its keys
+ *  go in. Null when nothing is connected ("{}") or the text is not that. */
+export function readTryConnect(text) {
+  let c;
+  try { c = JSON.parse(String(text ?? "")); } catch { return null; }
+  if (!c || typeof c !== "object" || !TRY_PROXY_RE.test(String(c.proxy ?? ""))) return null;
+  const env = {};
+  for (const [k, v] of Object.entries(c.env && typeof c.env === "object" ? c.env : {})) {
+    if (TRY_ENV_RE.test(k) && !TRY_RESERVED_RE.test(k) && typeof v === "string" && v.length <= 4096) env[k] = v;
+  }
+  return { proxy: c.proxy, env };
+}
+
 export function workEnv(base, spec, tenant) {
   const env = {};
   for (const [k, v] of Object.entries(base ?? {})) {
@@ -576,7 +594,7 @@ export function wakeWindows(env = process.env) {
  * `beat` is called every beatMs with where it stands; `abandoned()` says the
  * platform stopped waiting, which ends it as soon as nothing is under way.
  */
-export async function runSession({ open, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), idleMs, maxMs, tickMs = 2000, beatMs = BEAT_MS, beat = () => {}, abandoned = () => false }) {
+export async function runSession({ open, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), idleMs, maxMs, tickMs = 2000, beatMs = BEAT_MS, beat = () => {}, ready = () => {}, abandoned = () => false }) {
   const t0 = now();
   let s;
   try {
@@ -584,6 +602,10 @@ export async function runSession({ open, now = Date.now, sleep = (ms) => new Pro
   } catch (err) {
     return { ok: false, ended: "could not start", error: String(err?.message ?? err).slice(0, 300), session_ms: now() - t0, jobs: [] };
   }
+  // The adapter is up: said to the waker as the wake host says it, so a
+  // caller waiting on it (the keep check, docs/try-mode-plan.md) acts while
+  // the agent is awake rather than after the session ends.
+  try { ready({ ready: true, ready_ms: s.readyMs ?? now() - t0 }); } catch { /* a listener gone */ }
   let died = null;
   s.died?.then((why) => { died = why ?? "it stopped"; }, () => { died = "it stopped"; });
   let sig = activityOf(s.agent());
@@ -620,6 +642,7 @@ export async function runSession({ open, now = Date.now, sleep = (ms) => new Pro
  */
 export function wakeServer({ waker, session, state = () => "asleep", log: say = log }) {
   let current = null;
+  let readyLine = null;
   const listeners = new Set();
   return createServer((req, res) => {
     if (req.method === "GET" && (req.url === "/" || req.url === "/healthz")) {
@@ -644,13 +667,15 @@ export function wakeServer({ waker, session, state = () => "asleep", log: say = 
     const line = (o) => { try { res.write(`${JSON.stringify(o)}\n`); } catch { /* gone */ } };
     const joined = !!current;
     line({ taken: true, joined, at: new Date().toISOString() });
+    if (joined && readyLine) line(readyLine);
     const me = { line, open: true };
     listeners.add(me);
     res.on("close", () => { me.open = false; listeners.delete(me); });
-    current ??= session({
+    current ??= (readyLine = null, session({
       beat: (o) => { for (const l of listeners) l.line(o); },
+      ready: (o) => { readyLine = o; for (const l of listeners) l.line(o); },
       abandoned: () => listeners.size === 0,
-    }).finally(() => { current = null; });
+    }).finally(() => { current = null; readyLine = null; }));
     current.then((r) => { line({ done: true, ...r }); res.end(); }, (err) => { line({ done: true, ok: false, error: String(err?.message ?? err).slice(0, 300), jobs: [] }); res.end(); });
   });
 }
@@ -812,6 +837,13 @@ async function main() {
     delete process.env[CREDENTIALS_JSON_ENV];
     delete process.env[CREDENTIALS_FILE_ENV];
   }
+  // What the person connected to a try (the try's own secret, TRY_CONNECT):
+  // taken out of this process's environment, and handed to the work alone as
+  // AGENT_TRY_CONNECT, which http-agent gives the agent's server. The adapter
+  // is started with an environment of its own and never sees it.
+  const connected = readTryConnect(process.env.TRY_CONNECT);
+  delete process.env.TRY_CONNECT;
+  if (connected) process.env.AGENT_TRY_CONNECT = JSON.stringify(connected);
   const raw = got.text;
   if (got.from !== CREDENTIALS_JSON_ENV) {
     // A secret mounted as a file is readable by whoever its mode lets; the
@@ -988,9 +1020,9 @@ async function main() {
   const server = wakeServer({
     waker,
     state: () => state,
-    session: ({ beat, abandoned }) => {
+    session: ({ beat, ready, abandoned }) => {
       const cold = wakes === 0;
-      return runSession({ open, ...windows, beat, abandoned }).then((r) => ({ ...r, cold, container_ms: Date.now() - bornAt }));
+      return runSession({ open, ...windows, beat, ready, abandoned }).then((r) => ({ ...r, cold, container_ms: Date.now() - bornAt }));
     },
   });
   server.requestTimeout = 0;

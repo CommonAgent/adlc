@@ -205,6 +205,13 @@ export function tenantSettings(e) {
       cpu: num(e.DM_TENANT_MAX_CPU, 2),
       memory_mib: num(e.DM_TENANT_MAX_MEMORY_MIB, 2048),
       instance_hours: num(e.DM_TENANT_MAX_INSTANCE_HOURS, 48),
+      // Tries (docs/try-mode-plan.md) have an allowance of their own, so an
+      // agent a person kept never stands in the way of the next try.
+      tries: {
+        services: num(e.DM_TENANT_TRY_MAX_SERVICES, 3),
+        cpu: num(e.DM_TENANT_TRY_MAX_CPU, 3),
+        memory_mib: num(e.DM_TENANT_TRY_MAX_MEMORY_MIB, 6144),
+      },
     },
   };
 }
@@ -301,8 +308,8 @@ export function memoryMib(m) {
  *  zero, so it counts no instance-hours here (the platform's day allowance of
  *  wake minutes, TENANT_WAKE_DAY_MINUTES, bounds it instead); one kept always
  *  on, from before the wake, counts 24 a day. */
-export function tenantUsage(rows, tenant, except = null) {
-  const mine = (rows ?? []).filter((r) => r.tenant === tenant && r.name !== except && !/^failed/.test(String(r.state ?? "")));
+export function tenantUsage(rows, tenant, except = null, { tries = false } = {}) {
+  const mine = (rows ?? []).filter((r) => r.tenant === tenant && r.name !== except && !/^failed/.test(String(r.state ?? "")) && (r.try === true) === tries);
   return {
     services: mine.length,
     cpu: mine.reduce((n, r) => n + Number(r.cpu ?? 1), 0),
@@ -311,8 +318,19 @@ export function tenantUsage(rows, tenant, except = null) {
   };
 }
 
-/** Refuse a tenant install that would take the tenant past its limits. */
+/** Refuse a tenant install that would take the tenant past its limits. A
+ *  try (an install with answers) counts against the tries' own allowance,
+ *  and only the tenant's other tries count with it; anything else counts
+ *  against the tenant's limits, and its tries do not. */
 export function checkTenantLimits(ins, rows, limits) {
+  if (ins.answers && limits.tries) {
+    const t = tenantUsage(rows, ins.tenant, ins.name, { tries: true });
+    const lim = limits.tries;
+    if (t.services + 1 > lim.services) return `${ins.tenant} already runs ${t.services} of the ${lim.services} tries it may have (DM_TENANT_TRY_MAX_SERVICES)`;
+    if (t.cpu + Number(ins.cpu) > lim.cpu) return `${ins.tenant}'s tries would have ${t.cpu + Number(ins.cpu)} CPUs, and may have ${lim.cpu} (DM_TENANT_TRY_MAX_CPU)`;
+    if (t.memory_mib + memoryMib(ins.memory) > lim.memory_mib) return `${ins.tenant}'s tries would have ${t.memory_mib + memoryMib(ins.memory)} MiB of memory, and may have ${lim.memory_mib} (DM_TENANT_TRY_MAX_MEMORY_MIB)`;
+    return null;
+  }
   const u = tenantUsage(rows, ins.tenant, ins.name);
   const after = { services: u.services + 1, cpu: u.cpu + Number(ins.cpu), memory_mib: u.memory_mib + memoryMib(ins.memory), instance_hours: u.instance_hours + (ins.always_on ? 24 : 0) };
   if (after.services > limits.services) return `${ins.tenant} already runs ${u.services} of the ${limits.services} services it may have`;
@@ -617,12 +635,17 @@ export function readInstruction(args, s = SETTINGS) {
   const admit = Array.isArray(a.admit) ? a.admit.map((h) => String(h).toLowerCase()) : [];
   if (admit.some((h) => !HANDLE_RE.test(h)) || admit.length > 12) stop("validate", "admit must be a list of at most twelve handles");
   if (admit.length && !answers) stop("validate", "admit is for the tenant host's door, which only an install with answers has");
+  // The tries the platform says were kept since: names of this tenant's
+  // inventory rows, which then count against its own limits, not its tries'.
+  const keptTries = Array.isArray(a.kept_tries) ? a.kept_tries.map(String) : [];
+  if (keptTries.some((n) => !NAME_RE.test(n)) || keptTries.length > 50) stop("validate", "kept_tries must be a list of at most fifty agent names");
+  if (keptTries.length && !answers) stop("validate", "kept_tries goes in with a try, an install with answers");
   const tried = answers && tenant !== null ? tryPlacement(t) : null;
   const adapterEnv = answers ? adapterEnvOf(s) : null;
   return {
     tenant,
     always_on: alwaysOn,
-    ...(answers ? { answers, descriptor, admit, adapter_env: adapterEnv } : {}),
+    ...(answers ? { answers, descriptor, admit, adapter_env: adapterEnv, kept_tries: keptTries } : {}),
     ...(alwaysOn ? {} : { waker, wake_idle_seconds: wakeIdle ?? (tenant !== null ? t.wake_idle_seconds ?? 120 : 120), wake_max_seconds: tenant !== null ? t.wake_max_seconds ?? 3300 : 3300 }),
     ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null, worker_pool: t.worker_pool || null }
       : platformBuilder(s, project) ? { builder: platformBuilder(s, project) } : {}),
@@ -644,6 +667,10 @@ export function resourcesFor(ins) {
     service_account: `${sa}@${ins.project}.iam.gserviceaccount.com`,
     service_account_id: sa,
     secret: `mesh-agent-${ins.name}`,
+    // A try's own secret for what the person connects to it (a key and the
+    // egress door's credential, docs/try-mode-plan.md): "{}" until then,
+    // readable by this agent's account alone, and TRY_CONNECT in its service.
+    ...(ins.answers ? { connect_secret: `mesh-agent-${ins.name}-connect` } : {}),
     // An agent that wakes on message runs the folder's image with the wake
     // host on top, tagged apart from the image the folder alone makes; one
     // tried with answers, with the adapter layer on top.
@@ -1447,6 +1474,11 @@ export async function install(args, deps) {
     if (updating && before.handle !== ins.handle) stop("validate", `${ins.name} is installed as ${before.handle}; an update keeps its name`);
     if (updating && (before.tenant ?? null) !== ins.tenant) stop("validate", `${ins.name} runs ${before.tenant ? `for ${before.tenant}` : "in the platform project"}; an update does not move it`);
     if (ins.tenant) {
+      // The tries this tenant kept since its last try now count as its agents.
+      for (const name of ins.kept_tries ?? []) {
+        const k = rows().find((x) => x.name === name && x.tenant === ins.tenant && x.try === true);
+        if (k) save({ ...k, try: false, kept_at: deps.now() });
+      }
       const over = checkTenantLimits(ins, rows(), (deps.settings ?? SETTINGS).tenant.limits);
       if (over) stop("limits", `refused: ${over}`);
       deps = tenantDeps(deps, ins.deployer);
@@ -1459,7 +1491,7 @@ export async function install(args, deps) {
           service: res.service, service_account: res.service_account, secret: res.secret, source: ins.source, images: [],
           claims: ins.claims, ready_line: ins.answers ? TENANT_READY_LINE : ins.ready_line, state: "installing", installed_at: now,
           ...(ins.tenant ? { tenant: ins.tenant } : {}), cpu: ins.cpu, memory: ins.memory,
-          ...(ins.answers ? { adapter: "tenant-host" } : {}) };
+          ...(ins.answers ? { adapter: "tenant-host", try: true } : {}) };
     save(row);
 
     // 1. The image, built in the cloud.
@@ -1505,6 +1537,18 @@ export async function install(args, deps) {
       const named = await bindName(ins, key, deps);
       row.handle = named.handle;
       row.state = "named";
+      save(row);
+    }
+    // A try's connect secret, made the first time with nothing in it, and
+    // readable by this account alone.
+    if (res.connect_secret && !updating) {
+      if (deps.gcloud(["secrets", "describe", res.connect_secret, "--project", ins.project, "--format", "json"]).code !== 0) {
+        must(deps, ["secrets", "create", res.connect_secret, "--project", ins.project, "--replication-policy", "automatic",
+          "--labels", labelsFor(ins), "--quiet"], "secret");
+      }
+      must(deps, ["secrets", "versions", "add", res.connect_secret, "--project", ins.project, "--data-file=-", "--quiet"], "secret", { input: "{}" });
+      await bindReader(deps, res.connect_secret, ins.project, res.service_account);
+      row.connect_secret = res.connect_secret;
       save(row);
     }
     // Secrets the program reads besides its own credential: each readable by
@@ -1661,6 +1705,7 @@ async function removeRow(row, reason, deps) {
   quiet(["run", "services", "delete", row.service, "--region", row.region, ...where, "--quiet"], `the Cloud Run service ${row.service}`);
   for (const img of row.images ?? []) quiet(["artifacts", "docker", "images", "delete", artifactRef(img), "--delete-tags", ...where, "--quiet"], `the image ${img}`);
   quiet(["secrets", "delete", row.secret, ...where, "--quiet"], `the secret ${row.secret}`);
+  if (row.connect_secret) quiet(["secrets", "delete", row.connect_secret, ...where, "--quiet"], `the secret ${row.connect_secret}`);
   quiet(["iam", "service-accounts", "delete", row.service_account, ...where, "--quiet"], `the service account ${row.service_account}`);
   let key = null;
   if (row.agent_key) {
@@ -2133,7 +2178,7 @@ export function packageServiceDeployArgv(ins, res, pinned, envFile) {
     "--cpu", ins.cpu, "--memory", ins.memory, "--concurrency", "10", "--timeout", String(WAKE_REQUEST_SECONDS),
     "--ingress", "all", "--no-allow-unauthenticated",
     ...tenantNetworkArgv(ins, { address: true }),
-    "--set-secrets", `AGENTMESH_CREDENTIALS_JSON=${res.secret}:latest`,
+    "--set-secrets", `AGENTMESH_CREDENTIALS_JSON=${res.secret}:latest${res.connect_secret ? `,TRY_CONNECT=${res.connect_secret}:latest` : ""}`,
     "--env-vars-file", envFile,
     "--labels", `${labelsFor(ins)},${WAKE_LABEL}`,
     "--format", "json", "--quiet"];
@@ -2465,6 +2510,57 @@ export async function installPackage(args, deps) {
   }
 }
 
+// ── what the person connects to a try (docs/try-mode-plan.md) ──────────────
+
+const CONNECT_ENV_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
+const CONNECT_RESERVED_RE = /^(AGENTMESH_|TENANT_|K_|MESH_|HTTPS?_PROXY$|NO_PROXY$)|^(PORT|ANTHROPIC_BASE_URL|ANTHROPIC_API_KEY|HOME|PATH|LD_LIBRARY_PATH|NODE_OPTIONS|PYTHONPATH)$/i;
+const PROXY_RE = /^http:\/\/try:[A-Za-z0-9_-]{16,64}@[a-z0-9.-]{3,253}:[0-9]{2,5}$/;
+
+/** What a connect may write: the egress door's address with the try's own
+ *  credential, and the settings its keys go in. Refused in words. */
+export function readConnect(text) {
+  let c;
+  try { c = JSON.parse(String(text ?? "")); } catch { stop("validate", "the connect file is not JSON"); }
+  if (!c || typeof c !== "object" || Array.isArray(c)) stop("validate", "the connect file is not an object");
+  if (!PROXY_RE.test(String(c.proxy ?? ""))) stop("validate", "proxy must be the egress door's address with the try's credential");
+  const env = c.env && typeof c.env === "object" && !Array.isArray(c.env) ? c.env : {};
+  const names = Object.keys(env);
+  if (!names.length || names.length > 24) stop("validate", "env must name between one and twenty-four settings");
+  for (const n of names) {
+    if (!CONNECT_ENV_RE.test(n) || CONNECT_RESERVED_RE.test(n)) stop("validate", `${n} is not a setting a connect may write`);
+    if (typeof env[n] !== "string" || env[n].length > 4096 || /[\r\n\0]/.test(env[n])) stop("validate", `${n} must be one line of at most 4096 characters`);
+  }
+  return { proxy: c.proxy, env };
+}
+
+/** Write what the person connected into the try's own secret, as a new
+ *  version: its next wake reads it. The file is read once and removed. */
+export async function connectTry(name, file, deps) {
+  const take = () => { try { deps.remove(file); } catch { /* already gone */ } };
+  try {
+    if (!NAME_RE.test(String(name))) return out({ ok: false, act: "connect", step: "validate", error: `bad name ${JSON.stringify(name)}` });
+    if (!String(file).replace(/\\/g, "/").startsWith(`${deps.paths.tokens}/`)) return out({ ok: false, act: "connect", step: "validate", error: "the connect file is outside the token store" });
+    const row = deps.inventory.load().find((x) => x.name === name);
+    if (!row || row.try !== true || !row.connect_secret) return out({ ok: false, act: "connect", step: "validate", error: `${name} is not a try with a connect secret` });
+    let c;
+    try { c = readConnect(deps.readFile(file)); } catch (e) { return out({ ok: false, act: "connect", step: e.step ?? "validate", error: e.message }); }
+    const t = (deps.settings ?? SETTINGS).tenant;
+    const d = t?.deployer ? tenantDeps(deps, t.deployer) : deps;
+    const r = d.gcloud(["secrets", "versions", "add", row.connect_secret, "--project", row.project, "--data-file=-", "--quiet"], { input: JSON.stringify(c) });
+    if (r.code !== 0) return out({ ok: false, act: "connect", step: "secret", error: `the connect secret was not written: ${(r.stderr || "").trim().slice(-300)}` });
+    // A new revision, so the next wake starts with the new version: a warm
+    // instance holds the secret it started with. TENANT_ names never reach
+    // the work (tenant-host.mjs workEnv).
+    const u = d.gcloud(["run", "services", "update", row.service, "--region", row.region, "--project", row.project,
+      "--update-env-vars", `TENANT_CONNECTED_AT=${deps.now()}`, "--quiet", "--format", "none"], { timeout: 600_000 });
+    if (u.code !== 0) return out({ ok: false, act: "connect", step: "service", error: `the secret was written, and the service was not restarted to read it: ${(u.stderr || "").trim().slice(-300)}` });
+    deps.inventory.save([...deps.inventory.load().filter((x) => x.name !== name), { ...row, connected_at: deps.now() }]);
+    return out({ ok: true, act: "connect", name, settings: Object.keys(c.env).length });
+  } finally {
+    take();
+  }
+}
+
 async function main(argv) {
   const deps = realDeps();
   const [cmd, arg, ...rest] = argv;
@@ -2476,6 +2572,7 @@ async function main(argv) {
     return install(args, deps);
   }
   if (cmd === "retire" && arg) return retire(arg, rest.join(" "), deps);
+  if (cmd === "connect" && arg) return connectTry(arg, rest[0] ?? "", deps);
   if (cmd === "retire-key" && arg) return retireKey(arg, rest.join(" "), deps);
   if (cmd === "restart" && arg) return restart(arg, rest.join(" "), deps);
   if (cmd === "install-package" && arg) {

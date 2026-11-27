@@ -335,6 +335,34 @@ test("the wake door refuses a stranger, answers its state, and gives two callers
   } finally { server.close(); }
 });
 
+test("a session says it is ready once the adapter is up, and the wake door passes it on, to a caller who joins late too", async () => {
+  const said = [];
+  let t = 0;
+  const r = await runSession({ open: async () => ({ agent: () => ({}), readyMs: 1335, close: async () => [] }), now: () => (t += 1000), sleep: async () => {}, idleMs: 1000, maxMs: 600_000, ready: (o) => said.push(o) });
+  assert.deepEqual(said, [{ ready: true, ready_ms: 1335 }]);
+  assert.equal(r.ok, true);
+  let release;
+  const server = wakeServer({
+    waker: WAKER,
+    log: () => {},
+    session: ({ ready }) => new Promise((done) => { setTimeout(() => ready({ ready: true, ready_ms: 900 }), 20); release = () => done({ ok: true, ended: "idle", jobs: [] }); }),
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const one = fetch(`${base}/wake`, { method: "POST", headers: { authorization: jwtFor({ email: WAKER }) } });
+    await new Promise((ok) => setTimeout(ok, 120));
+    const two = fetch(`${base}/wake`, { method: "POST", headers: { authorization: jwtFor({ email: WAKER }) } });
+    const [r1, r2] = await Promise.all([one, two]);
+    await new Promise((ok) => setTimeout(ok, 50));
+    release();
+    const lines1 = (await r1.text()).trim().split("\n").map((l) => JSON.parse(l));
+    const lines2 = (await r2.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.ok(lines1.some((l) => l.ready === true && l.ready_ms === 900), "the first caller hears it is ready");
+    assert.equal(lines2[1].ready, true, "a caller who joins after it is up hears it at once");
+  } finally { server.close(); }
+});
+
 // ── an outside agent tried on the mesh (docs/try-mode-plan.md) ─────────────
 
 test("the key is read from AGENTMESH_CREDENTIALS_JSON, or else from the file AGENTMESH_CREDENTIALS_FILE names", () => {
@@ -498,4 +526,15 @@ test("the model door says in one line why a call failed, never the call's words"
   const { modelDoorWhy } = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "tenant-host.mjs")).href);
   assert.equal(modelDoorWhy(JSON.stringify({ type: "error", error: { type: "relay_refused", message: "The model door is not set up on this mesh." } })), "relay_refused: The model door is not set up on this mesh.");
   assert.equal(modelDoorWhy("not json at all"), "not json at all");
+});
+
+test("what a person connected to a try is read from TRY_CONNECT, and nothing that is not it", async () => {
+  const { readTryConnect, workEnv } = await import("../tenant-host.mjs");
+  const proxy = "http://try:" + "a".repeat(32) + "@egress.dev.agentmesh.ai:3129";
+  assert.equal(readTryConnect("{}"), null);
+  assert.equal(readTryConnect("not json"), null);
+  assert.equal(readTryConnect(JSON.stringify({ proxy: "http://elsewhere:80", env: { K: "v" } })), null);
+  assert.deepEqual(readTryConnect(JSON.stringify({ proxy, env: { LANGSMITH_API_KEY: "k", HTTPS_PROXY: "x", AGENTMESH_X: "y", lower: "z" } })), { proxy, env: { LANGSMITH_API_KEY: "k" } });
+  // TENANT_ names never reach the work, the restart stamp among them.
+  assert.equal(workEnv({ TENANT_CONNECTED_AT: "1", AGENT_TRY_CONNECT: "{}" }, {}, {}).TENANT_CONNECTED_AT, undefined);
 });
