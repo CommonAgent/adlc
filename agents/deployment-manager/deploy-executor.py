@@ -348,7 +348,7 @@ def run_container(r):
     # mesh with the adapter on top (docs/try-mode-plan.md, "`answers`"); the
     # deployment manager checks them by rule.
     for k in ("cpu", "memory", "replaces", "ready_line", "port", "tenant", "always_on", "wake_idle_seconds",
-              "answers", "descriptor", "admit"):
+              "answers", "descriptor", "admit", "kept_tries"):
         if c.get(k) is not None:
             arg[k] = c[k]
     if token:

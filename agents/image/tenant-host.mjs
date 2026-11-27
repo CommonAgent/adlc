@@ -576,7 +576,7 @@ export function wakeWindows(env = process.env) {
  * `beat` is called every beatMs with where it stands; `abandoned()` says the
  * platform stopped waiting, which ends it as soon as nothing is under way.
  */
-export async function runSession({ open, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), idleMs, maxMs, tickMs = 2000, beatMs = BEAT_MS, beat = () => {}, abandoned = () => false }) {
+export async function runSession({ open, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), idleMs, maxMs, tickMs = 2000, beatMs = BEAT_MS, beat = () => {}, ready = () => {}, abandoned = () => false }) {
   const t0 = now();
   let s;
   try {
@@ -584,6 +584,10 @@ export async function runSession({ open, now = Date.now, sleep = (ms) => new Pro
   } catch (err) {
     return { ok: false, ended: "could not start", error: String(err?.message ?? err).slice(0, 300), session_ms: now() - t0, jobs: [] };
   }
+  // The adapter is up: said to the waker as the wake host says it, so a
+  // caller waiting on it (the keep check, docs/try-mode-plan.md) acts while
+  // the agent is awake rather than after the session ends.
+  try { ready({ ready: true, ready_ms: s.readyMs ?? now() - t0 }); } catch { /* a listener gone */ }
   let died = null;
   s.died?.then((why) => { died = why ?? "it stopped"; }, () => { died = "it stopped"; });
   let sig = activityOf(s.agent());
@@ -620,6 +624,7 @@ export async function runSession({ open, now = Date.now, sleep = (ms) => new Pro
  */
 export function wakeServer({ waker, session, state = () => "asleep", log: say = log }) {
   let current = null;
+  let readyLine = null;
   const listeners = new Set();
   return createServer((req, res) => {
     if (req.method === "GET" && (req.url === "/" || req.url === "/healthz")) {
@@ -644,13 +649,15 @@ export function wakeServer({ waker, session, state = () => "asleep", log: say = 
     const line = (o) => { try { res.write(`${JSON.stringify(o)}\n`); } catch { /* gone */ } };
     const joined = !!current;
     line({ taken: true, joined, at: new Date().toISOString() });
+    if (joined && readyLine) line(readyLine);
     const me = { line, open: true };
     listeners.add(me);
     res.on("close", () => { me.open = false; listeners.delete(me); });
-    current ??= session({
+    current ??= (readyLine = null, session({
       beat: (o) => { for (const l of listeners) l.line(o); },
+      ready: (o) => { readyLine = o; for (const l of listeners) l.line(o); },
       abandoned: () => listeners.size === 0,
-    }).finally(() => { current = null; });
+    }).finally(() => { current = null; readyLine = null; }));
     current.then((r) => { line({ done: true, ...r }); res.end(); }, (err) => { line({ done: true, ok: false, error: String(err?.message ?? err).slice(0, 300), jobs: [] }); res.end(); });
   });
 }
@@ -988,9 +995,9 @@ async function main() {
   const server = wakeServer({
     waker,
     state: () => state,
-    session: ({ beat, abandoned }) => {
+    session: ({ beat, ready, abandoned }) => {
       const cold = wakes === 0;
-      return runSession({ open, ...windows, beat, abandoned }).then((r) => ({ ...r, cold, container_ms: Date.now() - bornAt }));
+      return runSession({ open, ...windows, beat, ready, abandoned }).then((r) => ({ ...r, cold, container_ms: Date.now() - bornAt }));
     },
   });
   server.requestTimeout = 0;

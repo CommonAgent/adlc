@@ -205,6 +205,13 @@ export function tenantSettings(e) {
       cpu: num(e.DM_TENANT_MAX_CPU, 2),
       memory_mib: num(e.DM_TENANT_MAX_MEMORY_MIB, 2048),
       instance_hours: num(e.DM_TENANT_MAX_INSTANCE_HOURS, 48),
+      // Tries (docs/try-mode-plan.md) have an allowance of their own, so an
+      // agent a person kept never stands in the way of the next try.
+      tries: {
+        services: num(e.DM_TENANT_TRY_MAX_SERVICES, 3),
+        cpu: num(e.DM_TENANT_TRY_MAX_CPU, 3),
+        memory_mib: num(e.DM_TENANT_TRY_MAX_MEMORY_MIB, 6144),
+      },
     },
   };
 }
@@ -301,8 +308,8 @@ export function memoryMib(m) {
  *  zero, so it counts no instance-hours here (the platform's day allowance of
  *  wake minutes, TENANT_WAKE_DAY_MINUTES, bounds it instead); one kept always
  *  on, from before the wake, counts 24 a day. */
-export function tenantUsage(rows, tenant, except = null) {
-  const mine = (rows ?? []).filter((r) => r.tenant === tenant && r.name !== except && !/^failed/.test(String(r.state ?? "")));
+export function tenantUsage(rows, tenant, except = null, { tries = false } = {}) {
+  const mine = (rows ?? []).filter((r) => r.tenant === tenant && r.name !== except && !/^failed/.test(String(r.state ?? "")) && (r.try === true) === tries);
   return {
     services: mine.length,
     cpu: mine.reduce((n, r) => n + Number(r.cpu ?? 1), 0),
@@ -311,8 +318,19 @@ export function tenantUsage(rows, tenant, except = null) {
   };
 }
 
-/** Refuse a tenant install that would take the tenant past its limits. */
+/** Refuse a tenant install that would take the tenant past its limits. A
+ *  try (an install with answers) counts against the tries' own allowance,
+ *  and only the tenant's other tries count with it; anything else counts
+ *  against the tenant's limits, and its tries do not. */
 export function checkTenantLimits(ins, rows, limits) {
+  if (ins.answers && limits.tries) {
+    const t = tenantUsage(rows, ins.tenant, ins.name, { tries: true });
+    const lim = limits.tries;
+    if (t.services + 1 > lim.services) return `${ins.tenant} already runs ${t.services} of the ${lim.services} tries it may have (DM_TENANT_TRY_MAX_SERVICES)`;
+    if (t.cpu + Number(ins.cpu) > lim.cpu) return `${ins.tenant}'s tries would have ${t.cpu + Number(ins.cpu)} CPUs, and may have ${lim.cpu} (DM_TENANT_TRY_MAX_CPU)`;
+    if (t.memory_mib + memoryMib(ins.memory) > lim.memory_mib) return `${ins.tenant}'s tries would have ${t.memory_mib + memoryMib(ins.memory)} MiB of memory, and may have ${lim.memory_mib} (DM_TENANT_TRY_MAX_MEMORY_MIB)`;
+    return null;
+  }
   const u = tenantUsage(rows, ins.tenant, ins.name);
   const after = { services: u.services + 1, cpu: u.cpu + Number(ins.cpu), memory_mib: u.memory_mib + memoryMib(ins.memory), instance_hours: u.instance_hours + (ins.always_on ? 24 : 0) };
   if (after.services > limits.services) return `${ins.tenant} already runs ${u.services} of the ${limits.services} services it may have`;
@@ -617,12 +635,17 @@ export function readInstruction(args, s = SETTINGS) {
   const admit = Array.isArray(a.admit) ? a.admit.map((h) => String(h).toLowerCase()) : [];
   if (admit.some((h) => !HANDLE_RE.test(h)) || admit.length > 12) stop("validate", "admit must be a list of at most twelve handles");
   if (admit.length && !answers) stop("validate", "admit is for the tenant host's door, which only an install with answers has");
+  // The tries the platform says were kept since: names of this tenant's
+  // inventory rows, which then count against its own limits, not its tries'.
+  const keptTries = Array.isArray(a.kept_tries) ? a.kept_tries.map(String) : [];
+  if (keptTries.some((n) => !NAME_RE.test(n)) || keptTries.length > 50) stop("validate", "kept_tries must be a list of at most fifty agent names");
+  if (keptTries.length && !answers) stop("validate", "kept_tries goes in with a try, an install with answers");
   const tried = answers && tenant !== null ? tryPlacement(t) : null;
   const adapterEnv = answers ? adapterEnvOf(s) : null;
   return {
     tenant,
     always_on: alwaysOn,
-    ...(answers ? { answers, descriptor, admit, adapter_env: adapterEnv } : {}),
+    ...(answers ? { answers, descriptor, admit, adapter_env: adapterEnv, kept_tries: keptTries } : {}),
     ...(alwaysOn ? {} : { waker, wake_idle_seconds: wakeIdle ?? (tenant !== null ? t.wake_idle_seconds ?? 120 : 120), wake_max_seconds: tenant !== null ? t.wake_max_seconds ?? 3300 : 3300 }),
     ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null, worker_pool: t.worker_pool || null }
       : platformBuilder(s, project) ? { builder: platformBuilder(s, project) } : {}),
@@ -1447,6 +1470,11 @@ export async function install(args, deps) {
     if (updating && before.handle !== ins.handle) stop("validate", `${ins.name} is installed as ${before.handle}; an update keeps its name`);
     if (updating && (before.tenant ?? null) !== ins.tenant) stop("validate", `${ins.name} runs ${before.tenant ? `for ${before.tenant}` : "in the platform project"}; an update does not move it`);
     if (ins.tenant) {
+      // The tries this tenant kept since its last try now count as its agents.
+      for (const name of ins.kept_tries ?? []) {
+        const k = rows().find((x) => x.name === name && x.tenant === ins.tenant && x.try === true);
+        if (k) save({ ...k, try: false, kept_at: deps.now() });
+      }
       const over = checkTenantLimits(ins, rows(), (deps.settings ?? SETTINGS).tenant.limits);
       if (over) stop("limits", `refused: ${over}`);
       deps = tenantDeps(deps, ins.deployer);
@@ -1459,7 +1487,7 @@ export async function install(args, deps) {
           service: res.service, service_account: res.service_account, secret: res.secret, source: ins.source, images: [],
           claims: ins.claims, ready_line: ins.answers ? TENANT_READY_LINE : ins.ready_line, state: "installing", installed_at: now,
           ...(ins.tenant ? { tenant: ins.tenant } : {}), cpu: ins.cpu, memory: ins.memory,
-          ...(ins.answers ? { adapter: "tenant-host" } : {}) };
+          ...(ins.answers ? { adapter: "tenant-host", try: true } : {}) };
     save(row);
 
     // 1. The image, built in the cloud.

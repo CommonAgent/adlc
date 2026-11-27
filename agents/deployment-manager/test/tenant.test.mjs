@@ -246,3 +246,22 @@ test("a host whose tenant file carries the egress description loads it when the 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("tries have their own allowance: a kept agent never stands in the way of the next try", () => {
+  const T = "t-0a1b2c3d4e5f";
+  const row = (name, extra = {}) => ({ name, tenant: T, state: "running", cpu: "1", memory: "2Gi", ...extra });
+  const lim = { services: 2, cpu: 2, memory_mib: 2048, instance_hours: 48, tries: { services: 3, cpu: 3, memory_mib: 6144 } };
+  const tryIns = { name: "design-agent-new1", tenant: T, cpu: "1", memory: "2Gi", answers: { over: "http" } };
+  // One kept agent fills the tenant's own 2048 MiB, and a try still goes in.
+  assert.equal(checkTenantLimits(tryIns, [row("kept-one")], lim), null);
+  // Two live tries leave room for a third, not a fourth.
+  assert.equal(checkTenantLimits(tryIns, [row("try-a", { try: true }), row("try-b", { try: true }), row("kept-one")], lim), null);
+  assert.match(checkTenantLimits(tryIns, [row("try-a", { try: true }), row("try-b", { try: true }), row("try-c", { try: true })], lim), /already runs 3 of the 3 tries it may have \(DM_TENANT_TRY_MAX_SERVICES\)/);
+  // A person's own install counts the tenant's agents, never its tries.
+  const own = { name: "own-agent", tenant: T, cpu: "1", memory: "1Gi" };
+  assert.equal(checkTenantLimits(own, [row("try-a", { try: true }), row("try-b", { try: true })], lim), null);
+  assert.match(checkTenantLimits(own, [row("kept-one")], lim), /would have 3072 MiB of memory, and may have 2048/);
+  // The settings, by exact name.
+  const t = tenantSettings({ DM_TENANT_TRY_MAX_SERVICES: "5", DM_TENANT_TRY_MAX_MEMORY_MIB: "10240" });
+  assert.deepEqual(t.limits.tries, { services: 5, cpu: 3, memory_mib: 10240 });
+});
