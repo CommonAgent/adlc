@@ -484,3 +484,12 @@ test("the tenant host passes the environment's addresses to the adapter, and not
     { MESH_GUEST_URL: "https://api.dev.example/v1/guest", PAN_REGISTRAR: "https://naming.dev.example", MESH_CONSOLE: "https://app.dev.example" });
   assert.deepEqual(adapterAddresses({ PAN_REGISTRAR: "file:///etc/passwd" }), {});
 });
+
+test("the image's working folder is handed to the work, never a system folder or the layer's", async () => {
+  const { workdirToHand } = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "tenant-host.mjs")).href);
+  assert.equal(workdirToHand("/app"), "/app");
+  assert.equal(workdirToHand("/srv/agent/"), "/srv/agent");
+  assert.equal(workdirToHand("/home/agent/app"), "/home/agent/app");
+  assert.equal(workdirToHand("/usr/src/app"), "/usr/src/app");
+  for (const w of ["/", "", null, "app", "/usr", "/usr/lib/x", "/usr/src", "/etc", "/opt", "/opt/tenant", "/opt/mesh/lib", "/home/mesh", "/tmp", "/var", "/app/../etc"]) assert.equal(workdirToHand(w), null, String(w));
+});
