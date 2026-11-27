@@ -274,6 +274,8 @@ test("an install with answers runs in the tenant wake shape a person's package t
   assert.deepEqual(env, {
     TENANT_AGENT_NAME: "design-agent-k3p9", TENANT_AGENT_HANDLE: "design-agent-k3p9.someone@example.com", TENANT_WAKER: WAKER,
     TENANT_WAKE_IDLE_SECONDS: "120", TENANT_WAKE_MAX_SECONDS: "3300",
+    // The environment's addresses for the public adapter (adapterEnvOf).
+    MESH_GUEST_URL: "https://api.agentmesh.ai/v1/guest",
   });
   assert.deepEqual(env, envFor(readInstruction(args(), S)));
   assert.ok(f.filters.every((x) => x.includes(`textPayload:"${TENANT_READY_LINE}"`)), "the install waits for the tenant host's asleep line");
@@ -382,4 +384,14 @@ test("every try setting reaches the deployment manager through the host's tenant
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a try's adapter is told this environment's addresses, which the tenant host passes on", () => {
+  const T = { ...S, naming: "https://naming.dev.example", app: "https://app.dev.example", meshApi: "https://api.dev.example" };
+  const ins = readInstruction(args(), T);
+  assert.deepEqual(ins.adapter_env, { MESH_GUEST_URL: "https://api.dev.example/v1/guest", PAN_REGISTRAR: "https://naming.dev.example", MESH_CONSOLE: "https://app.dev.example" });
+  const env = envFor(ins);
+  assert.equal(env.PAN_REGISTRAR, "https://naming.dev.example");
+  assert.equal(env.MESH_GUEST_URL, "https://api.dev.example/v1/guest");
+  assert.equal(readInstruction(args({ answers: undefined, descriptor: undefined }), T).adapter_env, undefined);
 });

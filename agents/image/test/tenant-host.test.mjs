@@ -477,3 +477,10 @@ test("the work's status lines reach the adapter's job folder while it runs, as w
   const same = handBackToAdapter(() => ({ finished: Promise.resolve({ code: 0 }), kill() {} }), { chown: () => {}, workDirOf: () => jobDir });
   await same({ name: "helper" }, { id: "m2", job: { dir: jobDir } }).finished;
 });
+
+test("the tenant host passes the environment's addresses to the adapter, and nothing else of its own environment", async () => {
+  const { adapterAddresses } = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "tenant-host.mjs")).href);
+  assert.deepEqual(adapterAddresses({ MESH_GUEST_URL: "https://api.dev.example/v1/guest", PAN_REGISTRAR: "https://naming.dev.example", MESH_CONSOLE: "https://app.dev.example", AGENTMESH_CREDENTIALS_JSON: "{}", PATH: "/bin" }),
+    { MESH_GUEST_URL: "https://api.dev.example/v1/guest", PAN_REGISTRAR: "https://naming.dev.example", MESH_CONSOLE: "https://app.dev.example" });
+  assert.deepEqual(adapterAddresses({ PAN_REGISTRAR: "file:///etc/passwd" }), {});
+});

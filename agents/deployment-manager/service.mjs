@@ -91,6 +91,11 @@ export const SETTINGS = {
   control: (process.env.DM_CONTROL_URL || `${amEnv("urls.app")}/v1`).replace(/\/+$/, ""),
   controlTokenFile: process.env.DM_CONTROL_TOKEN_FILE || "/opt/fleet/secrets/deploy-executor.token",
   meshApi: (process.env.DM_MESH_API || amEnv("urls.api")).replace(/\/+$/, ""),
+  // The naming service and the app of this environment, which a try's
+  // adapter is told (adapterEnvOf): the adapter a try carries is the public
+  // release, whose own addresses are prod's.
+  naming: (process.env.DM_NAMING_URL || amEnv("urls.naming")).replace(/\/+$/, ""),
+  app: (process.env.DM_APP_URL || amEnv("urls.app")).replace(/\/+$/, ""),
   adapterModules: process.env.DM_ADAPTER_MODULES || "/usr/lib/node_modules/mesh-adapter/node_modules/",
   buildMinutes: Number(process.env.DM_BUILD_MINUTES || 40),
   readyMinutes: Number(process.env.DM_READY_MINUTES || 8),
@@ -613,10 +618,11 @@ export function readInstruction(args, s = SETTINGS) {
   if (admit.some((h) => !HANDLE_RE.test(h)) || admit.length > 12) stop("validate", "admit must be a list of at most twelve handles");
   if (admit.length && !answers) stop("validate", "admit is for the tenant host's door, which only an install with answers has");
   const tried = answers && tenant !== null ? tryPlacement(t) : null;
+  const adapterEnv = answers ? adapterEnvOf(s) : null;
   return {
     tenant,
     always_on: alwaysOn,
-    ...(answers ? { answers, descriptor, admit } : {}),
+    ...(answers ? { answers, descriptor, admit, adapter_env: adapterEnv } : {}),
     ...(alwaysOn ? {} : { waker, wake_idle_seconds: wakeIdle ?? (tenant !== null ? t.wake_idle_seconds ?? 120 : 120), wake_max_seconds: tenant !== null ? t.wake_max_seconds ?? 3300 : 3300 }),
     ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null, worker_pool: t.worker_pool || null }
       : platformBuilder(s, project) ? { builder: platformBuilder(s, project) } : {}),
@@ -732,6 +738,19 @@ export function meshStage(from) {
 
 /** The release tarballs a try may take the mesh adapter from. */
 export const TRY_TARBALL_RE = /^https:\/\/storage\.googleapis\.com\/agentmesh-releases\/mesh-adapter-\d+\.\d+\.\d+\.tgz$/;
+
+/** The addresses a try's adapter is told, this environment's: the API (its
+ *  control base, read from the guest address), the naming service and the
+ *  app. The tenant host passes them to the adapter; without them the public
+ *  adapter asks prod's, which the tenant network cannot reach. */
+export function adapterEnvOf(s) {
+  const api = String(s?.meshApi ?? "");
+  const out = {};
+  if (/^https:\/\//.test(api)) out.MESH_GUEST_URL = `${api}/v1/guest`;
+  if (/^https:\/\//.test(String(s?.naming ?? ""))) out.PAN_REGISTRAR = s.naming;
+  if (/^https:\/\//.test(String(s?.app ?? ""))) out.MESH_CONSOLE = s.app;
+  return out;
+}
 
 /** Where a try is built and kept, when this host names a try builder: the
  *  shared pool (no worker pool), as tenant-try-builder, into the tries
@@ -1008,7 +1027,7 @@ export function wakeEnvFor(ins) {
  *  a mounted file, because a mounted secret can be read by every user in the
  *  container and the agent's own code runs in it as one of them. */
 export function envFor(ins) {
-  if (ins.answers) return packageEnvFor({ ...ins, admit: ins.admit ?? [] });
+  if (ins.answers) return { ...packageEnvFor({ ...ins, admit: ins.admit ?? [] }), ...(ins.adapter_env ?? {}) };
   return { ...ins.settings, [CREDENTIALS_ENV]: MOUNT, ...(ins.always_on === false ? wakeEnvFor(ins) : {}) };
 }
 
