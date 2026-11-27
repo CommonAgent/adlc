@@ -2,13 +2,12 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "solution-architect",
   "version": "0.2.0",
-  "description": "Holds the Architecture part of stage 02: reads the statement of a job and the organization's stack, and writes the architecture record, naming the systems the agent reaches in plain words, binding a product to each in dev, test and production (the organization's choice first, the platform's default for the rest), and recording its dependencies, kind, limits, egress, formats, settings and every decision with its reason. Asks what only a person can commit to, and designs nothing.",
+  "description": "Writes the architecture record for a new agent: the systems it reaches, the product bound to each, and every decision with its reason.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
   },
   "keywords": [
-    "built-agent",
     "architecture",
     "write-the-architecture",
     "revise-the-architecture",

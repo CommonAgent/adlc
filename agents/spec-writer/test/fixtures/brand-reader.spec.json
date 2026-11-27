@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "job_seconds": 600,
-  "description": "Reads a brand from a domain into a draft brand profile: only what the site states about itself goes in the profile, what it was merely observed doing is reported beside it, and every value says where it was seen. The two values no site declares, which of its colors is the primary and which is the accent, are chosen by a model that is shown a picture of the home page and may only answer with a color the pages declare, and the profile says so on the value.",
+  "summary": "Reads your website and drafts a brand profile from what the site says about itself, with where each value was found.",
+  "description":"Reads a brand from a domain into a draft brand profile: only what the site states about itself goes in the profile, what it was merely observed doing is reported beside it, and every value says where it was seen. The two values no site declares, which of its colors is the primary and which is the accent, are chosen by a model that is shown a picture of the home page and may only answer with a color the pages declare, and the profile says so on the value.",
   "jobs": [
     {
       "slug": "read-a-brand",

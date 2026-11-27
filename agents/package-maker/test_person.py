@@ -166,6 +166,8 @@ class AFolderThatStatesThem(FolderHarness):
             doc["offerings"][0]["example"] = {"inputs": {i["name"]: "a sample" for i in doc["offerings"][0].get("inputs", [])[:1]} or {"x": "y"},
                                               "good_result": "A check of the folder."}
         self.edit("agent-descriptor.json", add)
+        # plugin.json's description is the summary, the line a harness shows (test_plugins).
+        self.edit("plugin.json", lambda m: m.update(description="Checks a folder for you."))
         res, _ = self.build(self.src, "out")
         self.assertTrue(res["ok"], res)
         d = descriptor(res)

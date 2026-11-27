@@ -73,6 +73,18 @@ export const dumps = (obj) => JSON.stringify(obj, null, 2) + "\n";
 /** A line as a sentence: trimmed, with a full stop when it has none. */
 const sentence = (s) => { const t = String(s).trim(); return t.endsWith(".") ? t : `${t}.`; };
 
+/** Whether a one-line value reads back from YAML as itself, unquoted, as
+ *  build.py's yaml_plain_ok says: `: ` would start a mapping, ` #` a comment,
+ *  and an indicator or a word like `yes` at the start would not be a string. */
+const YAML_INDICATORS = "-?:,[]{}#&*!|>'\"%@`";
+const YAML_NOT_A_STRING = /^(?:true|false|yes|no|on|off|null|~|[-+]?(?:\.?[0-9][0-9_.:eE+-]*|\.inf|\.nan))$/i;
+export const yamlPlainOk = (t) => !!t && t === t.trim() && !t.includes("\n") && !(YAML_INDICATORS.includes(t[0])
+  || t.includes(": ") || t.includes(" #") || t.includes("\t") || t.endsWith(":") || YAML_NOT_A_STRING.test(t));
+
+/** A one-line frontmatter value: plain where YAML reads it back as itself,
+ *  else double-quoted, JSON's string form, so build.py writes the same bytes. */
+export const yamlScalar = (t) => (yamlPlainOk(t) ? t : JSON.stringify(t));
+
 /** Python's str() of a version the draft gave as a number or a string. */
 const pyStr = (v) => (typeof v === "number" && Number.isInteger(v) ? String(v) : String(v));
 
@@ -259,7 +271,7 @@ export function runtimeOf(spec, jobs, systems, lockfiles) {
 export function skillMd(job, agentName, copied) {
   const when = str(job.when || "When the request matches this job.").trim();
   // cut-ok: the builder's own rule (the frontmatter description is the first 1024 characters); the whole sentence is under "When to use this"
-  const lines = ["---", `name: ${job.slug}`, `description: ${when.slice(0, 1024)}`, "---", "",
+  const lines = ["---", `name: ${job.slug}`, `description: ${yamlScalar(when.slice(0, 1024))}`, "---", "",
     `# ${job.title}`, "", `Part of ${agentName}. ${when}`, "",
     "## When to use this", "", when, ""];
   if (job.inputs?.length) {
@@ -331,18 +343,23 @@ export function agentFilesOf(spec) {
     $schema: schemaUrlOf(),
     ...(named ? { name: spec.name } : {}),
     version: pyStr(spec.version ?? "1.0.0"),
-    description: str(spec.description).trim(),
+    // The line a harness shows a person: the summary where the draft has
+    // one, else what the agent does, as build.py's listed_description.
+    description: (str(spec.summary).trim() || str(spec.description).trim()),
     ...(spec.license ? { license: str(spec.license).trim() } : {}),
     ...(spec.homepage ? { homepage: spec.homepage } : {}),
     ...(spec.repository ? { repository: spec.repository } : {}),
     author: spec.author || { name: "Agent Builder" },
-    keywords: ["built-agent", "draft", ...jobs.map((j) => j.slug)],
+    // Search tags for the work: the jobs, by slug, as build.py writes them.
+    keywords: jobs.map((j) => j.slug),
     extensions: { [EXT]: { ...(lineage ? { from: lineage } : {}), build } },
   };
   const files = {
     "agent-descriptor.json": dumps(desc),
     "agent-runtime-requirements.json": dumps(inst),
     "plugin.json": dumps(manifest),
+    // The servers fixed in the package, in Agent Plugins' own form (build.py's mcp_declaration).
+    ...(isObj(spec.mcp) ? { "mcp.json": dumps({ $schema: spec.mcp.$schema, mcpServers: spec.mcp.mcpServers }) } : {}),
   };
   for (const j of jobs) files[`skills/${j.slug}/SKILL.md`] = skills[j.slug];
   return files;

@@ -1,6 +1,6 @@
 ---
 name: read-the-request
-description: First: before any record is judged, work out which agent and which package are being audited and read everything about them.
+description: "First: before any record is judged, work out which agent and which package are being audited and read everything about them."
 ---
 
 # Read the request

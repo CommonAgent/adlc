@@ -3,7 +3,8 @@
   "version": "0.10.6",
   "license": "Apache-2.0",
   "job_seconds": 900,
-  "description": "Runs a process document written in the Agent Processes language, as written: sends each phase to the agent that holds it, stops at every gate for the owner, records who did what and when, and delivers the account and the run record. A run the platform hands over is driven through the platform's own record instead: this agent still decides what happens next, and the platform sends each phase as the account the run names, so the cost falls on whoever is paying and a phase a person holds reaches them on their own page. Every message it receives is handled by running one command, including a one word answer such as yes, stop or status; it never answers a run from its own words.",
+  "summary": "Runs a process you give it step by step, sending each step to the agent that holds it and stopping at every approval for you.",
+  "description":"Runs a process document written in the Agent Processes language, as written: sends each phase to the agent that holds it, stops at every gate for the owner, records who did what and when, and delivers the account and the run record. A run the platform hands over is driven through the platform's own record instead: this agent still decides what happens next, and the platform sends each phase as the account the run names, so the cost falls on whoever is paying and a phase a person holds reaches them on their own page. Every message it receives is handled by running one command, including a one word answer such as yes, stop or status; it never answers a run from its own words.",
   "wants_replies": true,
   "jobs": [
     {

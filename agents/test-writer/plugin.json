@@ -2,14 +2,12 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "test-writer",
   "version": "0.4.0",
-  "description": "Writes the test suite a package's scripts will have to pass, from the spec and before the scripts exist, and runs it against nothing to prove it asserts something.",
+  "description": "Writes the tests an agent's scripts must pass, before the scripts exist, and proves each test would notice a script being wrong.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
   },
   "keywords": [
-    "built-agent",
-    "draft",
     "write-a-suite",
     "prove-a-suite",
     "read-the-spec",

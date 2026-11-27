@@ -2,13 +2,11 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "planner",
   "version": "0.4.0",
-  "description": "Plans a described piece of work as steps, each saying what kind of work it is, what it takes and what it hands back. It names no agent for any step: the catalog answers each step at the next stage, Source, with an agent that already exists, a solution, or a new agent to build. The plan is checked in code before it is written, and it is handed back to whoever asked for it.",
+  "description": "Plans a piece of work you describe as steps, each saying what kind of work it is, what it takes and what it hands back.",
   "author": {
     "name": "Agent Builder"
   },
   "keywords": [
-    "built-agent",
-    "draft",
     "make-a-plan",
     "read-the-request",
     "ask-the-model",
