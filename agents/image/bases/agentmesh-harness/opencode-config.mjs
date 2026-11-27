@@ -58,6 +58,14 @@ export function boundDirectories(env = process.env) {
       if (m && m[2] === name) out.push(`${m[1]}${name}`);
     }
   }
+  // A try in the tenant sandbox (HARNESS_READS_MCP_JSON): the plugin it runs,
+  // outside its home and read only in the image, and the plugin's own data
+  // folder (Agent Plugins 1.0.0, Section 9). The contract check caught the
+  // first: opencode refused to read the plugin's own skill.
+  if (env.HARNESS_READS_MCP_JSON === "1") {
+    if (env.AGENT_PACKAGE) out.push(env.AGENT_PACKAGE);
+    if (env.PLUGIN_DATA) out.push(env.PLUGIN_DATA);
+  }
   return [...new Set(out.map(trimmed).filter(Boolean))].sort();
 }
 
