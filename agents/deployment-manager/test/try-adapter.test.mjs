@@ -16,8 +16,10 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import {
   LAYER_ADAPTER_BIN, LAYER_ADAPTER_MODULES, TENANT_READY_LINE, adapterDockerfile, buildConfig, envFor, install, platformSettings, readAnswers, readInstruction,
-  readLayer, resourcesFor, restart, retire, tenantBaseImage, tenantSettings,
+  readLayer, resourcesFor, restart, retire, tenantBaseImage, tenantFile, tenantSettings, tryPlacement,
 } from "../service.mjs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const IMAGE = join(HERE, "..", "..", "image");
@@ -331,7 +333,7 @@ const TRY_ENV = {
   DM_TENANT_NPM_REGISTRY: "https://us-east1-npm.pkg.dev/example-tenants/npm-mirror/",
   DM_TENANT_TRY_BUILDER: "tenant-try-builder@example-tenants.iam.gserviceaccount.com",
   DM_TENANT_TRY_REGISTRY: "us-east1-docker.pkg.dev/example-tenants/tries",
-  DM_TENANT_TRY_ADAPTER_TARBALL: TARBALL, DM_TENANT_TRY_ADAPTER_SHA256: SHA,
+  DM_TENANT_TRY_ADAPTER_TARBALL: TARBALL, DM_TENANT_TRY_ADAPTER_DIGEST: SHA,
 };
 
 test("a try is built on the shared pool as the try builder, into the tries repository", () => {
@@ -347,7 +349,7 @@ test("a try is built on the shared pool as the try builder, into the tries repos
   assert.equal(plain.builder, "tenant-builder@example-tenants.iam.gserviceaccount.com");
   assert.ok(plain.worker_pool);
   // Half set is refused in words.
-  assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TENANT_TRY_ADAPTER_SHA256: "" }) }), /DM_TENANT_TRY_ADAPTER_SHA256/);
+  assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TENANT_TRY_ADAPTER_DIGEST: "" }) }), /DM_TENANT_TRY_ADAPTER_DIGEST/);
   assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TENANT_TRY_ADAPTER_TARBALL: "https://evil.example/a.tgz" }) }), /public release bucket/);
 });
 
@@ -367,4 +369,17 @@ test("a try's layer takes node and the adapter from public sources, checked by s
   const all = JSON.stringify(cfg.steps);
   assert.ok(!all.includes("$"), "no dollar sign in any step");
   assert.equal(cfg.images[0], resourcesFor(ins).image);
+});
+
+test("every try setting reaches the deployment manager through the host's tenant file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dm-tenant-"));
+  try {
+    const f = join(dir, "deploymgr-tenant.json");
+    writeFileSync(f, JSON.stringify(TRY_ENV));
+    const placed = tryPlacement(tenantSettings(tenantFile(f)));
+    assert.deepEqual(placed?.try_adapter, { node: "node:22-bookworm-slim", url: TARBALL, sha256: SHA });
+    assert.equal(placed?.builder, TRY_ENV.DM_TENANT_TRY_BUILDER);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -141,7 +141,7 @@ export function platformSettings(e) {
 /** The host's tenant settings file: the same exact names as the
  *  environment, which wins where both say something. A file keeps a change
  *  from needing the executor's environment rebuilt. */
-function tenantFile(f) {
+export function tenantFile(f) {
   try {
     const doc = JSON.parse(readFileSync(f, "utf8"));
     // DM_TENANT_EGRESS is the one setting written as an object in the file,
@@ -188,7 +188,7 @@ export function tenantSettings(e) {
     try_builder: e.DM_TENANT_TRY_BUILDER || "",
     try_registry: e.DM_TENANT_TRY_REGISTRY || "",
     try_adapter_url: e.DM_TENANT_TRY_ADAPTER_TARBALL || "",
-    try_adapter_sha256: String(e.DM_TENANT_TRY_ADAPTER_SHA256 || "").toLowerCase(),
+    try_adapter_sha256: String(e.DM_TENANT_TRY_ADAPTER_DIGEST || "").toLowerCase(),
     try_node_image: e.DM_TENANT_TRY_NODE_IMAGE || "node:22-bookworm-slim",
     // What the tenant network lets a tenant agent reach, as the deployment
     // record's `egress` states it (Common Agent 8.3). See tenantEgress.
@@ -742,7 +742,7 @@ export function tryPlacement(t) {
   if (!SA_EMAIL_RE.test(t.try_builder)) stop("validate", "DM_TENANT_TRY_BUILDER must be a service account's address");
   if (!REGISTRY_RE.test(String(t.try_registry ?? ""))) stop("validate", "DM_TENANT_TRY_REGISTRY must say where a try's image is kept");
   if (!TRY_TARBALL_RE.test(String(t.try_adapter_url ?? ""))) stop("validate", "DM_TENANT_TRY_ADAPTER_TARBALL must be a mesh adapter release tarball in the public release bucket");
-  if (!/^[0-9a-f]{64}$/.test(String(t.try_adapter_sha256 ?? ""))) stop("validate", "DM_TENANT_TRY_ADAPTER_SHA256 must be the tarball's sha256");
+  if (!/^[0-9a-f]{64}$/.test(String(t.try_adapter_sha256 ?? ""))) stop("validate", "DM_TENANT_TRY_ADAPTER_DIGEST must be the tarball's sha256");
   return {
     builder: t.try_builder, registry: t.try_registry, worker_pool: null,
     try_adapter: { node: t.try_node_image || WAKE_NODE_IMAGE, url: t.try_adapter_url, sha256: t.try_adapter_sha256 },
