@@ -96,6 +96,7 @@ function imageDir() {
     "check-lockfile.mjs": join(REPO_FLEET, "image", "check-lockfile.mjs"),
     "tenant-host.mjs": join(REPO_FLEET, "image", "tenant-host.mjs"),
     "supervisor.mjs": SUPERVISOR,
+    "http-agent.mjs": join(REPO_FLEET, "image", "http-agent.mjs"),
     "bases/tenant-catalogue.json": join(REPO_FLEET, "image", "bases", "tenant-catalogue.json"),
   };
   assert.deepEqual(Object.keys(from).sort(), [...TENANT_IMAGE_FILES].sort(), "the files the host keeps are the files the install reads");

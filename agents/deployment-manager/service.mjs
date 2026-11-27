@@ -20,6 +20,9 @@
 //      mounted from the secret: the folder's image with the wake host on top
 //      (image/wake-host.mjs), min 0, max 1, CPU billed only while the
 //      platform's waker holds a wake open, and callable by that waker alone.
+//      A person's agent tried with `answers` (docs/try-mode-plan.md) gets the
+//      adapter layer instead: the tenant host on the folder's image, with
+//      image/http-agent.mjs as its work and the key as one variable;
 //      An agent the owner keeps always on (always_on) runs as before: min 1,
 //      CPU always allocated, internal ingress;
 //   6. have the platform bind its verified name (the registry refuses an
@@ -362,6 +365,128 @@ class Stop extends Error {
 }
 const stop = (step, error, state) => { throw new Stop(step, error, state); };
 
+// ── `answers`: how the adapter hands an outside agent its work ───────────
+//
+// docs/try-mode-plan.md, "`answers`". A container request for a person's
+// agent tried on the mesh carries it: the agent answers over HTTP, and the
+// adapter layer (adapterDockerfile) puts the tenant host on its image with
+// http-agent.mjs as the work. Written by the House Stack's model and checked
+// by rule twice: by the platform at filing, and here, the same rules.
+
+const ANSWER_KEYS = ["over", "port", "health", "start", "env", "token", "ask", "reply", "files", "working", "attach", "job_seconds"];
+const ANSWER_FIELD_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const ANSWER_PATH_RE = /^\/[A-Za-z0-9._~!&'()*+,;=:@%/?{}-]{0,299}$/;
+const HEADER_RE = /^[A-Za-z0-9-]{1,64}$/;
+const FORM_FIELD_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+/** The ports the tenant host (8080) and the model door (8790) hold. */
+export const HELD_PORTS = [8080, 8790];
+/** What an agent's settings never name: the adapter's, the tenant host's,
+ *  Cloud Run's, and the model's, which the adapter sets. */
+export function heldSetting(name) {
+  return /^(AGENTMESH_|TENANT_|K_)/.test(name) || ["PORT", "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"].includes(name);
+}
+
+/** The `answers` block, checked by rule and refused in words. Returns it
+ *  with only what it may say, the optional members filled with null. */
+export function readAnswers(raw) {
+  const no = (why) => stop("validate", `answers: ${why}`);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) no("it is the object that says how the adapter hands this agent its work");
+  for (const k of Object.keys(raw)) if (!ANSWER_KEYS.includes(k)) no(`${k} is not something answers says; it says ${ANSWER_KEYS.join(", ")}`);
+  const obj = (what, v, keys) => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) no(`${what} is an object`);
+    for (const k of Object.keys(v)) if (!keys.includes(k)) no(`${what}.${k} is not something ${what} says; it says ${keys.join(", ")}`);
+    return v;
+  };
+  const field = (what, v) => { if (typeof v !== "string" || !ANSWER_FIELD_RE.test(v)) no(`${what} is a field name: a letter or underscore, then letters, digits or underscores`); return v; };
+  const path = (what, v) => {
+    if (typeof v !== "string" || !ANSWER_PATH_RE.test(v) || v.startsWith("//") || v.split(/[/?&=]/).includes("..")) no(`${what} is a path that starts with /`);
+    const held = [...v.matchAll(/\{([^}]*)\}/g)].map((m) => m[1]).filter((p) => !["thread", "name", "after"].includes(p));
+    if (held.length) no(`${what} holds {${held[0]}}; a path holds only the placeholders {thread}, {name} and {after}`);
+    if (/[{}]/.test(v.replace(/\{(?:thread|name|after)\}/g, ""))) no(`${what} holds a brace that is not one of its placeholders`);
+    return v;
+  };
+  const text = (what, v, max) => { if (typeof v !== "string" || v.length > max || v.includes("\0")) no(`${what} is text of at most ${max} characters`); return v; };
+  if (raw.over !== "http") no('over is "http", the only way an agent is spoken to today');
+  if (!Number.isInteger(raw.port) || raw.port < 1024 || raw.port > 65535 || HELD_PORTS.includes(raw.port)) no("port is 1024 to 65535, and never 8080 (the tenant host's) or 8790 (the model door's)");
+  const health = path("health", raw.health);
+  let start = null;
+  if (raw.start !== undefined && raw.start !== null) {
+    if (!Array.isArray(raw.start) || !raw.start.length || raw.start.length > 64) no("start is null for the image's own command, or its argv, a list of at most 64");
+    start = raw.start.map((x, i) => text(`start[${i}]`, x, 1000));
+    if (!start[0]) no("start names a command first");
+  }
+  const env = {};
+  const rawEnv = raw.env === undefined || raw.env === null ? {} : obj("env", raw.env, Object.keys(raw.env ?? {}));
+  if (Object.keys(rawEnv).length > 60) no("env holds at most 60 settings");
+  for (const [k, v] of Object.entries(rawEnv)) {
+    if (!ENV_RE.test(k)) no(`env: ${k} is not a variable name`);
+    if (heldSetting(k)) no(`env: ${k} is not the agent's to set (AGENTMESH_, TENANT_, K_, PORT and the model's are the adapter's)`);
+    text(`env.${k}`, v, 2000);
+    if (VALUE_SHAPED.test(v)) no(`env: ${k} looks like a credential, and a try is given none`);
+    if (/\{(?:text|thread|name|after)\}/.test(v)) no(`env: ${k} holds a placeholder a setting never has filled; only {token}`);
+    env[k] = v;
+  }
+  let token = null;
+  if (raw.token !== undefined && raw.token !== null) {
+    const t = obj("token", raw.token, ["env", "value", "header", "prefix"]);
+    if (!ENV_RE.test(String(t.env ?? "")) || heldSetting(t.env)) no("token.env is the variable the agent reads its own token from, one it may set");
+    if (t.env in env) no(`token.env names ${t.env}, which env sets too`);
+    const value = t.value === undefined ? "{token}" : text("token.value", t.value, 2000);
+    if (!value.includes("{token}")) no("token.value is the template the token is put in, so it holds {token}");
+    if (/\{(?:text|thread|name|after)\}/.test(value)) no("token.value holds only the placeholder {token}");
+    if (typeof t.header !== "string" || !HEADER_RE.test(t.header)) no("token.header is the header the token is sent in");
+    const prefix = t.prefix === undefined ? "" : text("token.prefix", t.prefix, 40);
+    if (/[\r\n]/.test(prefix)) no("token.prefix is one line");
+    token = { env: t.env, value, header: t.header, prefix };
+  }
+  const a = obj("ask", raw.ask, ["method", "path", "body"]);
+  const method = String(a.method ?? "POST").toUpperCase();
+  if (!["POST", "PUT", "PATCH"].includes(method)) no("ask.method is POST, PUT or PATCH");
+  const bodyStrings = (v, depth) => {
+    if (depth > 6) no("ask.body is at most six levels deep");
+    if (typeof v === "string") { if (/\{(?!text\})[^}]*\}/.test(v)) no("ask.body's strings hold only the placeholder {text}"); return; }
+    if (Array.isArray(v)) { for (const x of v) bodyStrings(x, depth + 1); return; }
+    if (v && typeof v === "object") { for (const x of Object.values(v)) bodyStrings(x, depth + 1); return; }
+    if (!(v === null || typeof v === "number" || typeof v === "boolean")) no("ask.body is JSON");
+  };
+  const body = a.body === undefined ? { text: "{text}" } : a.body;
+  bodyStrings(body, 0);
+  if (JSON.stringify(body).length > 4096) no("ask.body is at most 4096 characters as JSON");
+  const ask = { method, path: path("ask.path", a.path), body };
+  const reply = field("reply", raw.reply);
+  let files = null;
+  if (raw.files !== undefined && raw.files !== null) {
+    const f = obj("files", raw.files, ["list", "get"]);
+    files = { list: field("files.list", f.list), get: path("files.get", f.get) };
+  }
+  let working = null;
+  if (raw.working !== undefined && raw.working !== null) {
+    const w = obj("working", raw.working, ["field", "poll", "items", "next"]);
+    working = { field: field("working.field", w.field), poll: path("working.poll", w.poll), items: field("working.items", w.items), next: field("working.next", w.next) };
+  }
+  let attach = null;
+  if (raw.attach !== undefined && raw.attach !== null) {
+    const t = obj("attach", raw.attach, ["path", "field"]);
+    if (typeof t.field !== "string" || !FORM_FIELD_RE.test(t.field)) no("attach.field is the form field the files go in");
+    attach = { path: path("attach.path", t.path), field: t.field };
+  }
+  if (!Number.isInteger(raw.job_seconds) || raw.job_seconds < 60 || raw.job_seconds > 3000) no("job_seconds is a whole number of seconds from 60 to 3000");
+  return { over: "http", port: raw.port, health, start, env, token, ask, reply, files, working, attach, job_seconds: raw.job_seconds };
+}
+
+/** The most an agent's draft descriptor may weigh, as JSON. */
+export const DESCRIPTOR_MAX = 64 * 1024;
+
+/** The agent's draft descriptor (agent-descriptor-v1), which the tenant host
+ *  binds to the agent's key and signs at start. Refused in words. */
+export function readDescriptorDraft(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) stop("validate", "descriptor is the agent's draft descriptor, an object");
+  if (raw.format !== "agent-descriptor-v1") stop("validate", `descriptor is an agent-descriptor-v1 draft, and this one says ${JSON.stringify(raw.format ?? null)}`);
+  const text = JSON.stringify(raw);
+  if (Buffer.byteLength(text, "utf8") > DESCRIPTOR_MAX) stop("validate", `descriptor is at most ${DESCRIPTOR_MAX} bytes as JSON, and this one is ${Buffer.byteLength(text, "utf8")}`);
+  return JSON.parse(text);
+}
+
 /** The instruction, read and refused in words. Returns the normalized
  *  instruction; never touches anything. */
 export function readInstruction(args, s = SETTINGS) {
@@ -460,9 +585,24 @@ export function readInstruction(args, s = SETTINGS) {
     wakeIdle = Number(a.wake_idle_seconds);
     if (!Number.isInteger(wakeIdle) || wakeIdle < 30 || wakeIdle > 900) stop("validate", "wake_idle_seconds is a whole number of seconds from 30 to 900");
   }
+  // An outside agent tried on the mesh (docs/try-mode-plan.md): `answers`
+  // puts the tenant host on its image instead of the wake host, and the
+  // draft descriptor goes in with it. Only for a person's agent in the tenant
+  // project, which wakes on message.
+  const answers = a.answers === undefined || a.answers === null ? null : readAnswers(a.answers);
+  const descriptor = a.descriptor === undefined || a.descriptor === null ? null : readDescriptorDraft(a.descriptor);
+  if ((answers || descriptor) && (tenant === null || alwaysOn)) {
+    stop("validate", "answers and a descriptor are for a person's agent tried in the tenant project with the adapter on top, which wakes on message, and this install is not one");
+  }
+  if (descriptor && !answers) stop("validate", "a descriptor goes in with the adapter layer, which answers sets up, and this install has no answers");
+  if (answers && Object.keys(settings).length) stop("validate", "an agent tried with the adapter on top takes its settings in answers.env; settings would reach the tenant host, not the agent");
+  const admit = Array.isArray(a.admit) ? a.admit.map((h) => String(h).toLowerCase()) : [];
+  if (admit.some((h) => !HANDLE_RE.test(h)) || admit.length > 12) stop("validate", "admit must be a list of at most twelve handles");
+  if (admit.length && !answers) stop("validate", "admit is for the tenant host's door, which only an install with answers has");
   return {
     tenant,
     always_on: alwaysOn,
+    ...(answers ? { answers, descriptor, admit } : {}),
     ...(alwaysOn ? {} : { waker, wake_idle_seconds: wakeIdle ?? (tenant !== null ? t.wake_idle_seconds ?? 120 : 120), wake_max_seconds: tenant !== null ? t.wake_max_seconds ?? 3300 : 3300 }),
     ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null, worker_pool: t.worker_pool || null }
       : platformBuilder(s, project) ? { builder: platformBuilder(s, project) } : {}),
@@ -484,8 +624,9 @@ export function resourcesFor(ins) {
     service_account_id: sa,
     secret: `mesh-agent-${ins.name}`,
     // An agent that wakes on message runs the folder's image with the wake
-    // host on top, tagged apart from the image the folder alone makes.
-    image: `${ins.registry}/${ins.name}:${ins.source.commit.slice(0, 12)}${ins.always_on === false ? "-wake" : ""}`,
+    // host on top, tagged apart from the image the folder alone makes; one
+    // tried with answers, with the adapter layer on top.
+    image: `${ins.registry}/${ins.name}:${ins.source.commit.slice(0, 12)}${ins.answers ? "-adapter" : ins.always_on === false ? "-wake" : ""}`,
   };
 }
 
@@ -515,6 +656,156 @@ export function wakeDockerfile(base) {
   ].join("\n");
 }
 
+// ── the adapter layer (docs/try-mode-plan.md, "The adapter on it") ───────
+//
+// An outside agent tried on the mesh runs on the tenant host, as a person's
+// own package does: the adapter holding the agent's key as its own user, the
+// fleet supervisor with a roster of one, the model door, wake on message. The
+// layer puts that on the folder's own image, with http-agent.mjs as the work.
+// Node, its two C++ libraries and the adapter come from the tenant base into
+// /opt/mesh, a place of their own, so nothing the agent uses changes: its own
+// PATH and LD_LIBRARY_PATH are untouched, and its own command, environment,
+// folder and user are written down beside it (command.json).
+
+/** Where the adapter layer puts node, its libraries and the adapter. */
+export const LAYER_DIR = "/opt/mesh";
+export const LAYER_ADAPTER_BIN = `${LAYER_DIR}/bin/agentmesh`;
+export const LAYER_ADAPTER_MODULES = `${LAYER_DIR}/lib/node_modules/mesh-adapter/node_modules/`;
+export const LAYER_ENTRYPOINT = ["/usr/bin/env", `LD_LIBRARY_PATH=${LAYER_DIR}/lib`, `${LAYER_DIR}/node`, "/opt/tenant/tenant-host.mjs"];
+/** The files of the tenant image the adapter layer carries, by where they go. */
+export const LAYER_FILES = { "tenant/tenant-host.mjs": "tenant-host.mjs", "tenant/supervisor.mjs": "supervisor.mjs", "agent/entrypoint.mjs": "http-agent.mjs" };
+
+/** The `agentmesh` the tenant host starts: the adapter on the layer's node. */
+export function layerAdapterWrapper() {
+  return [
+    "#!/bin/sh",
+    "# The mesh adapter on the adapter layer's own node, for the tenant host to",
+    "# start. The agent's own PATH and LD_LIBRARY_PATH are not touched.",
+    `LD_LIBRARY_PATH=${LAYER_DIR}/lib exec ${LAYER_DIR}/node ${LAYER_DIR}/lib/node_modules/mesh-adapter/mesh-adapter.mjs "$@"`,
+    "",
+  ].join("\n");
+}
+
+/** What the tenant host needs to know about the agent, written at build. The
+ *  work's user (agent_user) is added by the layer's settle step, which reads
+ *  the image's own user. */
+export function layerTenantFacts(ins) {
+  return {
+    descriptor: "agent-descriptor.json", answer_piece: null, verify: null, wants_replies: false,
+    job_seconds: ins.answers.job_seconds, directories: ["work"], kind: "program",
+    adapter: { bin: LAYER_ADAPTER_BIN, modules: LAYER_ADAPTER_MODULES },
+  };
+}
+
+/** The Dockerfile of the adapter layer, over the image the folder built. */
+export function adapterDockerfile(base, tenantBase) {
+  return [
+    "# The adapter layer (docs/try-mode-plan.md, \"The adapter on it\"): the tenant",
+    "# host on an outside agent's own image, with http-agent.mjs as its work.",
+    `FROM ${tenantBase} AS mesh`,
+    `FROM ${base}`,
+    "USER root",
+    `COPY --from=mesh /usr/local/bin/node ${LAYER_DIR}/node`,
+    `COPY --from=mesh /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 ${LAYER_DIR}/lib/`,
+    `COPY --from=mesh /usr/local/lib/node_modules/mesh-adapter ${LAYER_DIR}/lib/node_modules/mesh-adapter`,
+    `COPY mesh/agentmesh ${LAYER_ADAPTER_BIN}`,
+    "COPY tenant/ /opt/tenant/",
+    "COPY agent/ /opt/agent/",
+    // The users mesh and (when the image runs as root) agent, the folders,
+    // and the work's user into tenant.json; the build stops here if the
+    // layer's node, adapter or entrypoint does not run on this image.
+    `RUN ${JSON.stringify([...LAYER_ENTRYPOINT, "--settle"])}`,
+    "ENV AGENT_DIR=/opt/agent AGENT_HOME=/opt/agent",
+    `ENTRYPOINT ${JSON.stringify(LAYER_ENTRYPOINT)}`,
+    "CMD []",
+    "",
+  ].join("\n");
+}
+
+const IMAGE_REF_RE = /^[a-z0-9.-]+(?::\d+)?(?:\/[a-z0-9._-]+)+(?::[A-Za-z0-9._-]{1,128}|@sha256:[0-9a-f]{64})$/;
+
+/** The tenant base the layer takes node and the adapter from: the first base
+ *  in the tenant catalogue that provides the adapter, its registry filled
+ *  from this host's tenant registry. */
+export function tenantBaseImage(catalogueText, registry) {
+  let doc;
+  try { doc = JSON.parse(String(catalogueText ?? "")); } catch { stop("build", "the tenant catalogue (bases/tenant-catalogue.json) is not JSON"); }
+  const base = (Array.isArray(doc?.bases) ? doc.bases : []).find((b) => (b?.provides?.binaries ?? []).includes("agentmesh"));
+  if (!base) stop("build", "the tenant catalogue names no base that provides the mesh adapter, and the adapter layer takes it from one");
+  const image = String(base.image ?? "").replaceAll("{tenants.registry}", String(registry ?? ""));
+  if (!IMAGE_REF_RE.test(image)) stop("build", `the tenant catalogue's base ${JSON.stringify(base.image)} is not an image this host can name (the tenant registry is ${JSON.stringify(registry ?? "")})`);
+  return image;
+}
+
+const DOCKER = "gcr.io/cloud-builders/docker";
+const INSPECT = '{"entrypoint":{{json .Config.Entrypoint}},"cmd":{{json .Config.Cmd}},"workdir":{{json .Config.WorkingDir}},"env":{{json .Config.Env}},"user":{{json .Config.User}}}';
+
+/** The steps that carry files into a build, gzipped and base64'd in pieces,
+ *  several to a step, because Cloud Build takes at most 10,000 characters in
+ *  one argument. Each file arrives as <dir>/<name>.b64, decoded by `decode`. */
+export function carrySteps(files, dir) {
+  const b64 = (rel) => `${rel.replace(/\//g, "__")}.b64`;
+  const lines = [];
+  for (const [rel, text] of Object.entries(files)) {
+    const packed = gzipSync(Buffer.from(text, "utf8"), { level: 9 }).toString("base64");
+    for (const p of packed.match(/.{1,8000}/g) ?? []) lines.push(`echo ${p} >> ${dir}/${b64(rel)}`);
+  }
+  const steps = [];
+  let cur = [];
+  const head = ["set -eu", `mkdir -p ${dir}`];
+  const flush = () => { if (cur.length) steps.push({ name: DOCKER, entrypoint: "bash", args: ["-c", [...head, ...cur].join("\n")] }); cur = []; };
+  for (const l of lines) {
+    if ([...head, ...cur, l].join("\n").length > 9000) flush();
+    cur.push(l);
+  }
+  flush();
+  const decode = Object.keys(files).map((rel) => `base64 -d ${dir}/${b64(rel)} | gunzip > ${dir}/${rel}`);
+  return { steps, decode };
+}
+
+/** The Cloud Build config of an agent tried with answers: the folder's own
+ *  Dockerfile at the commit, then the adapter layer on top of it. Only the
+ *  layered image is pushed. `layer` is { base, files } (buildInCloud). */
+export function adapterBuildConfig(ins, image, layer, labels) {
+  if (!layer || typeof layer.base !== "string" || !layer.files) throw new Error("the adapter layer's files and the tenant base are needed to build an agent tried with answers");
+  for (const rel of Object.keys(LAYER_FILES)) if (typeof layer.files[rel] !== "string" || !layer.files[rel]) throw new Error(`the adapter layer needs ${rel}`);
+  const base = `agentmesh-local/${ins.name}:folder`;
+  const dir = "/workspace/.agentmesh-adapter";
+  const files = {
+    ...Object.fromEntries(Object.keys(LAYER_FILES).map((rel) => [rel, layer.files[rel]])),
+    "mesh/agentmesh": layerAdapterWrapper(),
+    "tenant/tenant.json": `${JSON.stringify(layerTenantFacts(ins), null, 2)}\n`,
+    "agent/answers.json": `${JSON.stringify(ins.answers, null, 2)}\n`,
+    ...(ins.descriptor ? { "agent/agent-descriptor.json": `${JSON.stringify(ins.descriptor, null, 2)}\n` } : {}),
+    Dockerfile: adapterDockerfile(base, layer.base),
+  };
+  const carry = carrySteps(files, dir);
+  const script = [
+    "set -eu",
+    `mkdir -p ${dir}/mesh ${dir}/tenant ${dir}/agent`,
+    ...carry.decode,
+    `rm -f ${dir}/*.b64`,
+    `chmod 0755 ${dir}/mesh/agentmesh`,
+    `docker inspect --format '${INSPECT}' ${base} > ${dir}/agent/command.json`,
+    `cat ${dir}/agent/command.json`,
+  ].join("\n");
+  for (const s of [script, ...carry.steps.map((c) => c.args[1])]) {
+    if (s.includes("$")) throw new Error("the adapter layer's build step holds a dollar sign, which Cloud Build reads as a substitution");
+    if (s.length > 9500) throw new Error("an adapter layer build step is longer than Cloud Build takes");
+  }
+  return {
+    steps: [
+      { name: DOCKER, args: ["build", ...labels, "-t", base, "-f", ins.source.dockerfile, "."] },
+      ...carry.steps,
+      { name: DOCKER, entrypoint: "bash", args: ["-c", script] },
+      { name: DOCKER, args: ["build", ...labels, "--label", "net.agentmesh.wake=platform", "--label", "net.agentmesh.adapter=tenant-host", "-t", image, dir] },
+    ],
+    images: [image],
+    options: { requestedVerifyOption: "VERIFIED", logging: "CLOUD_LOGGING_ONLY" },
+    tags: ["deploymgr", `agent-${ins.name}`, "adapter", ...(ins.tenant ? [ins.tenant] : [])],
+  };
+}
+
 /** The Cloud Build config: the folder's own Dockerfile, nothing added, with
  *  Cloud Build's provenance requested. The source is the repository at the
  *  commit, fetched by Cloud Build itself (`gcloud builds submit <repo>
@@ -525,13 +816,17 @@ export function wakeDockerfile(base) {
  *  on) gets two more steps: the folder's image is read for its own command,
  *  and the wake layer (wakeDockerfile, the wake host as `wakeHost`) is built
  *  on top of it. Only that image is pushed. The shell step holds no dollar
- *  sign, which Cloud Build would read as a substitution. */
-export function buildConfig(ins, image, wakeHost = null) {
+ *  sign, which Cloud Build would read as a substitution.
+ *
+ *  An agent tried with answers gets the adapter layer instead of the wake
+ *  layer (adapterBuildConfig, its files as `layer`). */
+export function buildConfig(ins, image, wakeHost = null, layer = null) {
   const labels = [
     "--label", `org.opencontainers.image.source=${ins.source.repository}`,
     "--label", `org.opencontainers.image.revision=${ins.source.commit}`,
     "--label", `net.agentmesh.handle=${ins.handle}`,
   ];
+  if (ins.answers) return adapterBuildConfig(ins, image, layer, labels);
   if (ins.always_on !== false) {
     return {
       steps: [{ name: "gcr.io/cloud-builders/docker", args: ["build", ...labels, "-t", image, "-f", ins.source.dockerfile, "."] }],
@@ -655,7 +950,13 @@ export function wakeEnvFor(ins) {
   };
 }
 
+/** A service's settings. An agent tried with answers runs on the tenant
+ *  host, whose own settings these are (as a person's package's are); its key
+ *  arrives as AGENTMESH_CREDENTIALS_JSON (packageServiceDeployArgv), never as
+ *  a mounted file, because a mounted secret can be read by every user in the
+ *  container and the agent's own code runs in it as one of them. */
 export function envFor(ins) {
+  if (ins.answers) return packageEnvFor({ ...ins, admit: ins.admit ?? [] });
   return { ...ins.settings, [CREDENTIALS_ENV]: MOUNT, ...(ins.always_on === false ? wakeEnvFor(ins) : {}) };
 }
 
@@ -722,7 +1023,9 @@ export function buildRecord(ins, build, now) {
     image: build.image, image_digest: build.digest,
     provenance: build.provenance,
     draft: true,
-    checks: [{ kind: "unrun", what: "nothing in this image was run by the build. It was built from the folder's own Dockerfile at the commit named, by Cloud Build, and nothing was added to it." }],
+    checks: [{ kind: "unrun", what: ins.answers
+      ? "nothing of the agent's own code was run by the build. It was built from the folder's own Dockerfile at the commit named, by Cloud Build, with the adapter layer on top: node, its two C++ libraries and the mesh adapter from the tenant base, the tenant host, the fleet supervisor and http-agent.mjs, whose one setup step made the adapter's user, the folders and the work's user."
+      : "nothing in this image was run by the build. It was built from the folder's own Dockerfile at the commit named, by Cloud Build, and nothing was added to it." }],
     produced_at: now, signatures: [],
   };
 }
@@ -855,6 +1158,24 @@ export async function fetchSourceFolder(ins, dir, deps) {
 /** The most a repository archive may weigh for a tenant build (100 MB). */
 export const SOURCE_ARCHIVE_MAX = 100 * 1024 * 1024;
 
+/** The adapter layer's files, from where this host keeps the tenant image's
+ *  (TENANT_IMAGE_FILES), and the tenant base, from the tenant catalogue. */
+export function readLayer(ins, deps) {
+  const dir = deps.settings?.tenantImageDir ?? SETTINGS.tenantImageDir;
+  const read = (rel) => {
+    try {
+      const text = deps.readFile(join(dir, rel));
+      if (typeof text !== "string" || !text) throw new Error("it is empty");
+      return text;
+    } catch (e) {
+      return stop("build", `the adapter layer's ${rel} is not on this host (${dir}): ${e.message}`);
+    }
+  };
+  const files = Object.fromEntries(Object.entries(LAYER_FILES).map(([to, from]) => [to, read(from)]));
+  const registry = (deps.settings?.tenant ?? SETTINGS.tenant)?.registry ?? ins.registry;
+  return { base: tenantBaseImage(read(join("bases", "tenant-catalogue.json")), registry), files };
+}
+
 /** Build the image in Cloud Build and follow it to the end. */
 export async function buildInCloud(ins, deps) {
   const res = resourcesFor(ins);
@@ -863,10 +1184,13 @@ export async function buildInCloud(ins, deps) {
   try {
     const cfg = join(dir, "cloudbuild.json");
     let wakeHost = null;
-    if (ins.always_on === false) {
+    let layer = null;
+    if (ins.answers) {
+      layer = readLayer(ins, deps);
+    } else if (ins.always_on === false) {
       try { wakeHost = deps.readFile(deps.settings.wakeHostFile ?? SETTINGS.wakeHostFile); } catch (e) { stop("build", `the wake host is not on this host (${deps.settings.wakeHostFile ?? SETTINGS.wakeHostFile}): ${e.message}`); }
     }
-    deps.writeFile(cfg, JSON.stringify(buildConfig(ins, res.image, wakeHost)));
+    deps.writeFile(cfg, JSON.stringify(buildConfig(ins, res.image, wakeHost, layer)));
     const pooled = Boolean(ins.tenant && ins.worker_pool);
     const uploaded = pooled ? await fetchSourceFolder(ins, dir, deps) : null;
     submitted = parse(must(deps, buildSubmitArgv(ins, cfg, uploaded), "build", { timeout: 300_000 }));
@@ -1061,8 +1385,9 @@ export async function install(args, deps) {
       ? { ...before, state: "updating", updating_to: ins.source.commit }
       : { name: ins.name, handle: ins.handle, kind: ins.kind, request_id: ins.request_id, project: ins.project, region: ins.region,
           service: res.service, service_account: res.service_account, secret: res.secret, source: ins.source, images: [],
-          claims: ins.claims, ready_line: ins.ready_line, state: "installing", installed_at: now,
-          ...(ins.tenant ? { tenant: ins.tenant } : {}), cpu: ins.cpu, memory: ins.memory };
+          claims: ins.claims, ready_line: ins.answers ? TENANT_READY_LINE : ins.ready_line, state: "installing", installed_at: now,
+          ...(ins.tenant ? { tenant: ins.tenant } : {}), cpu: ins.cpu, memory: ins.memory,
+          ...(ins.answers ? { adapter: "tenant-host" } : {}) };
     save(row);
 
     // 1. The image, built in the cloud.
@@ -1091,7 +1416,9 @@ export async function install(args, deps) {
       custody = {
         minted: "generated",
         held_by: [key, `secret:${res.secret}`, `service-account:${res.service_account}`],
-        note: ins.tenant
+        note: ins.answers
+          ? "The seed was generated in the deployment manager's memory on this host and went into the secret on stdin; it was never written to this host's disk. The secret is in the tenant project, where only the agent's own service account may read it; inside the container only the tenant host and the adapter hold it, as their own users, never the agent's own code. The deployment manager can place it but not read it back. The project's owners can."
+          : ins.tenant
           ? "The seed was generated in the deployment manager's memory on this host and went into the secret on stdin; it was never written to this host's disk. The secret is in the tenant project, where only the agent's own service account may read it; the deployment manager can place it but not read it back, and no platform account holds Secret Manager access there. The project's owners can."
           : "The seed was generated in the deployment manager's memory on this host and went into the secret on stdin; it was never written to this host's disk. At the secret, only the agent's own service account may read it; an account holding Secret Manager access across the whole project can read it too.",
       };
@@ -1121,7 +1448,10 @@ export async function install(args, deps) {
     try {
       const envFile = join(dir, "env.json");
       deps.writeFile(envFile, JSON.stringify(envFor(ins)));
-      deployed = parse(must(deps, serviceDeployArgv(ins, res, build.pinned, envFile), "service", { timeout: 900_000 }));
+      // An agent tried with answers takes the tenant wake shape a person's
+      // package takes, its key as one variable the tenant host reads once.
+      const argv = ins.answers ? packageServiceDeployArgv(ins, res, build.pinned, envFile) : serviceDeployArgv(ins, res, build.pinned, envFile);
+      deployed = parse(must(deps, argv, "service", { timeout: 900_000 }));
     } finally {
       deps.rmdir(dir);
     }
@@ -1144,8 +1474,10 @@ export async function install(args, deps) {
 
     // 7. Ready: the agent's own ready line when it is always on; the wake
     // host's asleep line when it wakes on message (the agent itself starts at
-    // its first wake, which the platform makes once it is told the address).
-    const ready = await waitReady(ins.always_on === false ? { ...ins, ready_line: WAKE_ASLEEP_LINE } : ins, res, deps);
+    // its first wake, which the platform makes once it is told the address);
+    // the tenant host's when it runs with the adapter layer.
+    const asleep = ins.answers ? TENANT_READY_LINE : WAKE_ASLEEP_LINE;
+    const ready = await waitReady(ins.always_on === false ? { ...ins, ready_line: asleep } : ins, res, deps);
     const handle = updating ? before.handle : row.handle;
     const replaced = !updating && ins.replaces
       ? { key: ins.replaces, note: "the name now answers to this install's key; the old key is retired separately, as a planned retirement" }
@@ -1305,7 +1637,10 @@ export async function restart(name, reason, deps) {
   if (!row || row.state !== "running") return out({ ok: false, act: "restart", step: "validate", error: `${name} is not a running install in the container service inventory` });
   try {
     deps = depsForRow(deps, row);
-    const ins = { name, project: row.project, region: row.region, ready_line: row.wake ? WAKE_ASLEEP_LINE : row.ready_line ?? null };
+    // A row on the tenant host (a person's package, or an agent tried with
+    // answers) says the tenant host's line when it is asleep.
+    const asleep = row.ready_line === TENANT_READY_LINE ? TENANT_READY_LINE : WAKE_ASLEEP_LINE;
+    const ins = { name, project: row.project, region: row.region, ready_line: row.wake ? asleep : row.ready_line ?? null };
     const res = { service: row.service };
     must(deps, ["run", "services", "update", row.service, "--region", row.region, "--project", row.project,
       "--update-labels", `restarted-at=${String(deps.now()).replace(/[^0-9]/g, "").slice(0, 14)}`, "--quiet", "--format", "none"], "restart", { timeout: 900_000 });
@@ -1547,7 +1882,7 @@ export const WAKE_LABEL = "wake=platform";
 export const WAKE_REQUEST_SECONDS = 3600;
 /** Where the tenant image's files are kept on this host: the emitter and its
  *  companions, the tenant host, the supervisor, and the tenant catalogue. */
-export const TENANT_IMAGE_FILES = ["emit-image.mjs", "one-message.mjs", "check-lockfile.mjs", "tenant-host.mjs", "supervisor.mjs", "bases/tenant-catalogue.json"];
+export const TENANT_IMAGE_FILES = ["emit-image.mjs", "one-message.mjs", "check-lockfile.mjs", "tenant-host.mjs", "supervisor.mjs", "http-agent.mjs", "bases/tenant-catalogue.json"];
 const SHA_RE = /^[0-9a-f]{64}$/;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]{1,40})?$/;
 const PACKAGE_NAME_RE = /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/;
