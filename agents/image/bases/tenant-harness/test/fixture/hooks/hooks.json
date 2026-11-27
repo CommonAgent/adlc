@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "touch /tmp/harness-check-hook-ran" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "touch /tmp/harness-check-hook-ran" }] }],
+    "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "touch /tmp/harness-check-hook-ran" }] }]
+  }
+}

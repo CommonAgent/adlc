@@ -17,6 +17,7 @@ import { gunzipSync } from "node:zlib";
 import {
   LAYER_ADAPTER_BIN, LAYER_ADAPTER_MODULES, TENANT_READY_LINE, adapterDockerfile, buildConfig, envFor, install, platformSettings, readAnswers, readInstruction,
   readLayer, resourcesFor, restart, retire, tenantBaseImage, tenantFile, tenantSettings, tryPlacement,
+  HARNESS_DOCKERFILE, harnessDockerfile, harnessImage,
 } from "../service.mjs";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -394,4 +395,57 @@ test("a try's adapter is told this environment's addresses, which the tenant hos
   assert.equal(env.PAN_REGISTRAR, "https://naming.dev.example");
   assert.equal(env.MESH_GUEST_URL, "https://api.dev.example/v1/guest");
   assert.equal(readInstruction(args({ answers: undefined, descriptor: undefined }), T).adapter_env, undefined);
+});
+
+// A plugin tried under a named harness (docs/harness-contract.md in the
+// AgentMesh repository): the folder has no Dockerfile of its own, so this host
+// writes one on the harness's image from the catalogue, with the plugin's
+// files and the two the platform wrote, and never the plugin's hooks.
+const HARNESS = {
+  name: "claude-agent-sdk", label: "Vercel",
+  copy: [{ from: "skills/ai-sdk", to: "skills/ai-sdk" }, { from: "commands", to: "commands" }, { from: ".claude-plugin/plugin.json", to: ".claude-plugin/plugin.json" }],
+  files: { "plugin.json": JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "vercel" }), "mcp.json": JSON.stringify({ mcpServers: { vercel: { type: "streamable-http", url: "https://mcp.vercel.com" } } }) },
+};
+
+test("a harness try is built on the harness's image from the catalogue, with the plugin's files and the platform's, and no Dockerfile from the repository", () => {
+  const T = { ...S, tenant: tenantSettings(TRY_ENV) };
+  const ins = readInstruction(args({ harness: HARNESS, source: { repository: "https://github.com/vercel/vercel-plugin", path: "", commit: COMMIT } }), T);
+  assert.equal(ins.source.dockerfile, HARNESS_DOCKERFILE);
+  assert.equal(ins.harness.name, "claude-agent-sdk");
+  const catalogue = readFileSync(join(IMAGE, "bases", "tenant-harnesses.json"), "utf8");
+  const layer = readLayer(ins, { settings: T, readFile: (p) => (p.endsWith("tenant-harnesses.json") ? catalogue : layerFiles()[Object.keys(layerFiles()).find((k) => p.endsWith(k.split("/").pop())) ?? ""] ?? "x") });
+  assert.equal(layer.harness, "us-east1-docker.pkg.dev/example-tenants/tries/harness-claude-agent-sdk:0.3.323-1");
+  const cfg = buildConfig(ins, resourcesFor(ins).image, null, layer);
+  assert.ok(!JSON.stringify(cfg.steps).includes("$"), "no dollar sign in any step");
+  // The harness's files are carried in before the first build, which reads the written Dockerfile.
+  const parts = {};
+  for (const s of cfg.steps) {
+    if (s.entrypoint !== "bash") continue;
+    for (const m of s.args[1].matchAll(/^echo (\S+) >> \/workspace\/\.agentmesh-harness\/(\S+)\.b64$/gm)) (parts[m[2]] ??= []).push(m[1]);
+  }
+  const got = Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, gunzipSync(Buffer.from(v.join(""), "base64")).toString("utf8")]));
+  assert.deepEqual(Object.keys(got).sort(), ["Dockerfile", "mcp.json", "plugin.json"]);
+  assert.match(got.Dockerfile, /^FROM us-east1-docker\.pkg\.dev\/example-tenants\/tries\/harness-claude-agent-sdk:0\.3\.323-1$/m);
+  assert.match(got.Dockerfile, /^COPY \["skills\/ai-sdk", "\/opt\/agent\/plugin\/skills\/ai-sdk"\]$/m);
+  assert.match(got.Dockerfile, /^COPY \["\.agentmesh-harness\/mcp\.json", "\/opt\/agent\/plugin\/mcp\.json"\]$/m);
+  assert.ok(!/hooks/.test(got.Dockerfile), "no hooks are copied");
+  const first = cfg.steps.findIndex((s) => s.args?.[0] === "build");
+  assert.deepEqual(cfg.steps[first].args.slice(-3), ["-f", HARNESS_DOCKERFILE, "."]);
+  assert.ok(cfg.steps[first].args.includes("net.agentmesh.harness=claude-agent-sdk"));
+  assert.ok(cfg.steps.slice(0, first).every((s) => s.entrypoint === "bash"), "the harness files are carried before the first build");
+  assert.equal(harnessDockerfile("img", { ...HARNESS, label: "" }).includes('ENV HARNESS_LABEL="this plugin"'), true);
+});
+
+test("a harness try's harness is read by rule and refused in words", () => {
+  const T = { ...S, tenant: tenantSettings(TRY_ENV) };
+  const bad = (h, re) => assert.throws(() => readInstruction(args({ harness: { ...HARNESS, ...h } }), T), re);
+  bad({ name: "Not A Name" }, /harness\.name/);
+  bad({ copy: [] }, /harness\.copy/);
+  bad({ copy: [{ from: "../etc/passwd", to: "x" }] }, /not a path inside the folder/);
+  bad({ copy: [{ from: "skills/a", to: "mcp.json" }] }, /which the platform writes/);
+  bad({ files: { "plugin.json": "{}", "hooks.json": "{}" } }, /holds only plugin\.json and mcp\.json/);
+  bad({ files: { "mcp.json": "{}" } }, /carries plugin\.json/);
+  bad({ files: { "plugin.json": "not json" } }, /is not JSON/);
+  assert.throws(() => readInstruction(args({ harness: HARNESS, answers: undefined, descriptor: undefined }), T), /goes in with a try/);
+  assert.throws(() => harnessImage(readFileSync(join(IMAGE, "bases", "tenant-harnesses.json"), "utf8"), "my-own-harness", "us-east1-docker.pkg.dev/example-tenants/tries"), /not a harness in the catalogue \(opencode, claude-agent-sdk\)/);
 });

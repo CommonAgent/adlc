@@ -28,6 +28,8 @@
 // read the rule without a container.
 //
 //   node opencode-config.mjs      prints the configuration as JSON
+import { readFileSync } from "node:fs";
+
 export const SCHEMA = "https://opencode.ai/config.json";
 
 const trimmed = (p) => String(p).replace(/\/+$/, "");
@@ -55,6 +57,14 @@ export function boundDirectories(env = process.env) {
       const m = /^(.*\/state\/)([^/]+)\/[^/]+$/.exec(dir);
       if (m && m[2] === name) out.push(`${m[1]}${name}`);
     }
+  }
+  // A try in the tenant sandbox (HARNESS_READS_MCP_JSON): the plugin it runs,
+  // outside its home and read only in the image, and the plugin's own data
+  // folder (Agent Plugins 1.0.0, Section 9). The contract check caught the
+  // first: opencode refused to read the plugin's own skill.
+  if (env.HARNESS_READS_MCP_JSON === "1") {
+    if (env.AGENT_PACKAGE) out.push(env.AGENT_PACKAGE);
+    if (env.PLUGIN_DATA) out.push(env.PLUGIN_DATA);
   }
   return [...new Set(out.map(trimmed).filter(Boolean))].sort();
 }
@@ -107,7 +117,45 @@ export function configFor(env = process.env) {
     external[`${dir}/**`] = "allow";
   }
   const provider = gatewayProvider(env);
-  return { $schema: SCHEMA, ...(provider ? { provider } : {}), permission: { external_directory: external } };
+  const mcp = mcpFromPackage(env);
+  // A try in the tenant sandbox (HARNESS_READS_MCP_JSON): no update checks and
+  // no sharing, which would reach the network around the egress door.
+  const sandbox = env.HARNESS_READS_MCP_JSON === "1" ? { autoupdate: false, share: "disabled" } : {};
+  return { $schema: SCHEMA, ...sandbox, ...(provider ? { provider } : {}), ...(mcp ? { mcp } : {}), permission: { external_directory: external } };
+}
+
+// THE PACKAGE'S MCP SERVERS, for a try in the tenant sandbox
+// (docs/harness-contract.md in the AgentMesh repository). Only when the image
+// says so (HARNESS_READS_MCP_JSON=1): the fleet's hosts write the servers into
+// the harness's configuration at install, and this leaves them alone. The
+// package's mcp.json (Agent Plugins 1.0.0, Section 7.2), which the platform
+// wrote for the try, becomes opencode's: a remote server over HTTPS, with the
+// person's token as its Authorization header when they connected one
+// (MCP_<NAME>_TOKEN), and a program inside the package, its paths spelled from
+// ${PLUGIN_ROOT} and ${PLUGIN_DATA}. Anything else is left out.
+export const mcpTokenVar = (server) => `MCP_${String(server).toUpperCase().replace(/[^A-Z0-9]/g, "_")}_TOKEN`;
+
+export function mcpFromPackage(env = process.env, read = (f) => readFileSync(f, "utf8")) {
+  if (env.HARNESS_READS_MCP_JSON !== "1" || !env.AGENT_PACKAGE) return null;
+  const pkg = trimmed(env.AGENT_PACKAGE);
+  let doc;
+  try { doc = JSON.parse(read(`${pkg}/mcp.json`)); } catch { return null; }
+  const expand = (v) => String(v).replaceAll("${PLUGIN_ROOT}", pkg).replaceAll("${PLUGIN_DATA}", env.PLUGIN_DATA ?? "");
+  const out = {};
+  for (const [name, s] of Object.entries(doc?.mcpServers ?? {})) {
+    if (!s || typeof s !== "object") continue;
+    if (typeof s.url === "string") {
+      let u;
+      try { u = new URL(s.url); } catch { continue; }
+      if (u.protocol !== "https:") continue;
+      const token = env[mcpTokenVar(name)];
+      out[name] = { type: "remote", url: s.url, enabled: true, ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}) };
+    } else if (typeof s.command === "string" && s.command && !/s/.test(s.command)) {
+      const args = (Array.isArray(s.args) ? s.args : []).map(expand);
+      out[name] = { type: "local", command: [s.command, ...args], enabled: true, environment: { ...Object.fromEntries(Object.entries(s.env ?? {}).map(([k, v]) => [k, expand(v)])), PLUGIN_ROOT: pkg, PLUGIN_DATA: env.PLUGIN_DATA ?? "" } };
+    }
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 // THE HOST'S MODEL GATEWAY (technical debt 619). Where the owner's instruction
@@ -128,6 +176,15 @@ export const GATEWAY_CLIENTS = {
 /** The provider block naming the host's gateway, or null when the model is
  *  not one or the job was not told where the gateway is. Each variable is
  *  read by its exact name. */
+/** The model's context and answer limits, when the deployment says them
+ *  (MODEL_CONTEXT_TOKENS, MODEL_OUTPUT_TOKENS): opencode compacts a session
+ *  before the context limit, which keeps a call under the model door's cap. */
+export function limitOf(env = process.env) {
+  const context = Number(env.MODEL_CONTEXT_TOKENS);
+  const output = Number(env.MODEL_OUTPUT_TOKENS);
+  return Number.isInteger(context) && context > 0 && Number.isInteger(output) && output > 0 ? { limit: { context, output } } : {};
+}
+
 export function gatewayProvider(env = process.env) {
   const model = String(env.AGENT_MODEL ?? "");
   if (!model.startsWith(`${GATEWAY_PROVIDER}/`)) return null;
@@ -141,7 +198,7 @@ export function gatewayProvider(env = process.env) {
       name: "The host's model gateway",
       // The gateway takes no key; the client insists on one, so it is given a word that is not a key.
       options: { baseURL: endpoint + client[1], apiKey: "no-key-needed" },
-      models: { [name]: { name } },
+      models: { [name]: { name, ...limitOf(env) } },
     },
   };
 }
