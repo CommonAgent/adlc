@@ -177,6 +177,17 @@ export function tenantSettings(e) {
     // mirror. Empty keeps Cloud Build's shared pool.
     worker_pool: e.DM_TENANT_WORKER_POOL || "",
     npm_registry: e.DM_TENANT_NPM_REGISTRY || "",
+    // Try mode (docs/try-mode-plan.md): an outside agent being tried is built
+    // on the shared pool, which has the internet its Dockerfile needs, as
+    // tenant-try-builder, which may write only to the tries repository; the
+    // adapter layer takes node from Node's own image and the mesh adapter
+    // from the public release bucket, checked by its sha256, and reads
+    // nothing from the tenant registry. Empty leaves tries on the pool.
+    try_builder: e.DM_TENANT_TRY_BUILDER || "",
+    try_registry: e.DM_TENANT_TRY_REGISTRY || "",
+    try_adapter_url: e.DM_TRY_ADAPTER_TARBALL || "",
+    try_adapter_sha256: String(e.DM_TRY_ADAPTER_SHA256 || "").toLowerCase(),
+    try_node_image: e.DM_TRY_NODE_IMAGE || "node:22-bookworm-slim",
     // What the tenant network lets a tenant agent reach, as the deployment
     // record's `egress` states it (Common Agent 8.3). See tenantEgress.
     egress: tenantEgress(e.DM_TENANT_EGRESS),
@@ -599,6 +610,7 @@ export function readInstruction(args, s = SETTINGS) {
   const admit = Array.isArray(a.admit) ? a.admit.map((h) => String(h).toLowerCase()) : [];
   if (admit.some((h) => !HANDLE_RE.test(h)) || admit.length > 12) stop("validate", "admit must be a list of at most twelve handles");
   if (admit.length && !answers) stop("validate", "admit is for the tenant host's door, which only an install with answers has");
+  const tried = answers && tenant !== null ? tryPlacement(t) : null;
   return {
     tenant,
     always_on: alwaysOn,
@@ -610,6 +622,7 @@ export function readInstruction(args, s = SETTINGS) {
     source: { repository, path, commit, dockerfile },
     kind: String(a.kind ?? "third-party-framework"),
     settings, secrets, boot_token: boot, project, region, registry, cpu, memory, claims, replaces,
+    ...(tried ?? {}),
     ready_line: readyLine, instructed_by: String(a.instructed_by ?? "the owner").slice(0, 200),
   };
 }
@@ -697,12 +710,49 @@ export function layerTenantFacts(ins) {
   };
 }
 
+/** Where the adapter layer takes node and the mesh adapter from: the tenant
+ *  base (a build on the tenant pool), or, for a try built on the shared pool,
+ *  Node's own image with the adapter's release tarball installed in it, the
+ *  tarball checked against its sha256 before anything runs it. */
+export function meshStage(from) {
+  if (typeof from === "string") return [`FROM ${from} AS mesh`];
+  const { node, url, sha256 } = from ?? {};
+  if (!IMAGE_REF_RE.test(String(node ?? "")) && !/^[a-z0-9._-]+:[A-Za-z0-9._-]+(@sha256:[0-9a-f]{64})?$/.test(String(node ?? ""))) throw new Error("the try's node image is not an image name");
+  if (!TRY_TARBALL_RE.test(String(url ?? ""))) throw new Error("the try's mesh adapter must be a release tarball in the public release bucket");
+  if (!/^[0-9a-f]{64}$/.test(String(sha256 ?? ""))) throw new Error("the try's mesh adapter needs its sha256");
+  const fetchJs = `fetch(${JSON.stringify(url)}).then(async (r) => { if (!r.ok) throw new Error("the adapter tarball answered " + r.status); require("fs").writeFileSync("/tmp/adapter.tgz", Buffer.from(await r.arrayBuffer())); })`;
+  return [
+    `FROM ${node} AS mesh`,
+    `RUN ${JSON.stringify(["node", "-e", fetchJs])}`,
+    `RUN echo "${sha256}  /tmp/adapter.tgz" | sha256sum -c - && npm install -g /tmp/adapter.tgz --no-audit --no-fund --loglevel=error && rm -f /tmp/adapter.tgz && command -v agentmesh >/dev/null`,
+  ];
+}
+
+/** The release tarballs a try may take the mesh adapter from. */
+export const TRY_TARBALL_RE = /^https:\/\/storage\.googleapis\.com\/agentmesh-releases\/mesh-adapter-\d+\.\d+\.\d+\.tgz$/;
+
+/** Where a try is built and kept, when this host names a try builder: the
+ *  shared pool (no worker pool), as tenant-try-builder, into the tries
+ *  repository, with the adapter from its release tarball. Null leaves it
+ *  where every tenant build goes. Refused in words when half set. */
+export function tryPlacement(t) {
+  if (!t?.try_builder) return null;
+  if (!SA_EMAIL_RE.test(t.try_builder)) stop("validate", "DM_TENANT_TRY_BUILDER must be a service account's address");
+  if (!REGISTRY_RE.test(String(t.try_registry ?? ""))) stop("validate", "DM_TENANT_TRY_REGISTRY must say where a try's image is kept");
+  if (!TRY_TARBALL_RE.test(String(t.try_adapter_url ?? ""))) stop("validate", "DM_TRY_ADAPTER_TARBALL must be a mesh adapter release tarball in the public release bucket");
+  if (!/^[0-9a-f]{64}$/.test(String(t.try_adapter_sha256 ?? ""))) stop("validate", "DM_TRY_ADAPTER_SHA256 must be the tarball's sha256");
+  return {
+    builder: t.try_builder, registry: t.try_registry, worker_pool: null,
+    try_adapter: { node: t.try_node_image || WAKE_NODE_IMAGE, url: t.try_adapter_url, sha256: t.try_adapter_sha256 },
+  };
+}
+
 /** The Dockerfile of the adapter layer, over the image the folder built. */
 export function adapterDockerfile(base, tenantBase) {
   return [
     "# The adapter layer (docs/try-mode-plan.md, \"The adapter on it\"): the tenant",
     "# host on an outside agent's own image, with http-agent.mjs as its work.",
-    `FROM ${tenantBase} AS mesh`,
+    ...meshStage(tenantBase),
     `FROM ${base}`,
     "USER root",
     `COPY --from=mesh /usr/local/bin/node ${LAYER_DIR}/node`,
@@ -767,7 +817,7 @@ export function carrySteps(files, dir) {
  *  Dockerfile at the commit, then the adapter layer on top of it. Only the
  *  layered image is pushed. `layer` is { base, files } (buildInCloud). */
 export function adapterBuildConfig(ins, image, layer, labels) {
-  if (!layer || typeof layer.base !== "string" || !layer.files) throw new Error("the adapter layer's files and the tenant base are needed to build an agent tried with answers");
+  if (!layer || (typeof layer.base !== "string" && !layer.base?.url) || !layer.files) throw new Error("the adapter layer's files, and the tenant base or the try's adapter tarball, are needed to build an agent tried with answers");
   for (const rel of Object.keys(LAYER_FILES)) if (typeof layer.files[rel] !== "string" || !layer.files[rel]) throw new Error(`the adapter layer needs ${rel}`);
   const base = `agentmesh-local/${ins.name}:folder`;
   const dir = "/workspace/.agentmesh-adapter";
@@ -1172,6 +1222,7 @@ export function readLayer(ins, deps) {
     }
   };
   const files = Object.fromEntries(Object.entries(LAYER_FILES).map(([to, from]) => [to, read(from)]));
+  if (ins.try_adapter) return { base: ins.try_adapter, files };
   const registry = (deps.settings?.tenant ?? SETTINGS.tenant)?.registry ?? ins.registry;
   return { base: tenantBaseImage(read(join("bases", "tenant-catalogue.json")), registry), files };
 }

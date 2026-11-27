@@ -203,7 +203,7 @@ test("the tenant base is the catalogue's adapter base, its registry this host's"
 test("the adapter layer is the tenant host on the folder's own image, node and the adapter in a place of their own, with no dollar sign in any step", () => {
   const ins = readInstruction(args(), S);
   const image = resourcesFor(ins).image;
-  assert.throws(() => buildConfig(ins, image), /adapter layer's files and the tenant base are needed/);
+  assert.throws(() => buildConfig(ins, image), /adapter layer's files, and the tenant base or the try's adapter tarball, are needed/);
   const f = fakes();
   const cfg = buildConfig(ins, image, null, readLayer(ins, f.deps));
   // The folder's own Dockerfile first, at the commit, then the layer; only the layer is pushed.
@@ -315,4 +315,56 @@ test("a restart of a row on the tenant host waits for the tenant host's own line
   const r = await quietly(() => restart("design-agent-k3p9", "test", f.deps));
   assert.equal(r.ok, true, r.error);
   assert.ok(f.filters.length && f.filters.every((x) => x.includes(`textPayload:"${TENANT_READY_LINE}"`)));
+});
+
+// Try mode's build account (docs/try-mode-plan.md; debt 634): an outside
+// agent's Dockerfile needs the internet, so a try is built on the shared pool
+// as tenant-try-builder into the tries repository, and the adapter layer
+// takes node from Node's own image and the adapter from its release tarball,
+// checked by sha256, reading nothing from the tenant registry.
+const TARBALL = "https://storage.googleapis.com/agentmesh-releases/mesh-adapter-0.99.7.tgz";
+const SHA = "a".repeat(64);
+const TRY_ENV = {
+  DM_TENANT_PROJECT: "example-tenants", DM_TENANT_REGISTRY: REGISTRY, DM_TENANT_DEPLOYER: DEPLOYER,
+  DM_TENANT_BUILDER: "tenant-builder@example-tenants.iam.gserviceaccount.com", DM_TENANT_WAKER: WAKER,
+  DM_TENANT_WORKER_POOL: "projects/example-tenants/locations/us-east1/workerPools/tenant-builds",
+  DM_TENANT_NPM_REGISTRY: "https://us-east1-npm.pkg.dev/example-tenants/npm-mirror/",
+  DM_TENANT_TRY_BUILDER: "tenant-try-builder@example-tenants.iam.gserviceaccount.com",
+  DM_TENANT_TRY_REGISTRY: "us-east1-docker.pkg.dev/example-tenants/tries",
+  DM_TRY_ADAPTER_TARBALL: TARBALL, DM_TRY_ADAPTER_SHA256: SHA,
+};
+
+test("a try is built on the shared pool as the try builder, into the tries repository", () => {
+  const T = { ...S, tenant: tenantSettings(TRY_ENV) };
+  const ins = readInstruction(args({ registry: "us-east1-docker.pkg.dev/example-tenants/agents" }), T);
+  assert.equal(ins.builder, "tenant-try-builder@example-tenants.iam.gserviceaccount.com");
+  assert.equal(ins.worker_pool, null);
+  assert.equal(ins.registry, "us-east1-docker.pkg.dev/example-tenants/tries");
+  assert.deepEqual(ins.try_adapter, { node: "node:22-bookworm-slim", url: TARBALL, sha256: SHA });
+  assert.equal(resourcesFor(ins).image, `us-east1-docker.pkg.dev/example-tenants/tries/design-agent-k3p9:${COMMIT.slice(0, 12)}-adapter`);
+  // An install with no answers stays on the pool, as the tenant builder.
+  const plain = readInstruction(args({ answers: undefined, descriptor: undefined }), T);
+  assert.equal(plain.builder, "tenant-builder@example-tenants.iam.gserviceaccount.com");
+  assert.ok(plain.worker_pool);
+  // Half set is refused in words.
+  assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TRY_ADAPTER_SHA256: "" }) }), /DM_TRY_ADAPTER_SHA256/);
+  assert.throws(() => readInstruction(args(), { ...S, tenant: tenantSettings({ ...TRY_ENV, DM_TRY_ADAPTER_TARBALL: "https://evil.example/a.tgz" }) }), /public release bucket/);
+});
+
+test("a try's layer takes node and the adapter from public sources, checked by sha256, and reads no tenant image", () => {
+  const T = { ...S, tenant: tenantSettings(TRY_ENV) };
+  const ins = readInstruction(args(), T);
+  const reads = [];
+  const layer = readLayer(ins, { settings: T, readFile: (p) => { reads.push(p); return layerFiles()[Object.keys(layerFiles()).find((k) => p.endsWith(k.split("/").pop())) ?? ""] ?? "x"; } });
+  assert.deepEqual(layer.base, ins.try_adapter);
+  assert.ok(!reads.some((p) => p.includes("tenant-catalogue")), "the tenant catalogue is not read for a try");
+  const docker = adapterDockerfile("agentmesh-local/x:folder", layer.base);
+  assert.match(docker, /^FROM node:22-bookworm-slim AS mesh$/m);
+  assert.ok(docker.includes(`${SHA}  /tmp/adapter.tgz" | sha256sum -c -`));
+  assert.ok(docker.includes(TARBALL));
+  assert.ok(!docker.includes(REGISTRY), "nothing from the tenant registry");
+  const cfg = buildConfig(ins, resourcesFor(ins).image, null, layer);
+  const all = JSON.stringify(cfg.steps);
+  assert.ok(!all.includes("$"), "no dollar sign in any step");
+  assert.equal(cfg.images[0], resourcesFor(ins).image);
 });
