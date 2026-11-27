@@ -319,6 +319,8 @@ def run_container(r):
     c = r.get("container") or {}
     if c.get("retire") is True:
         return run_container_retire(r)
+    if c.get("connect") is True:
+        return run_container_connect(r)
     token = r.get("boot_token") or ""
     token_name = r.get("boot_token_name") or f"dr-{rid[3:15].lower()}"
     if not (args.get("name") and c.get("source") and c.get("handle")):
@@ -377,6 +379,42 @@ def run_container(r):
 
 # The name a container install is kept under: the deployment manager's NAME_RE.
 CONTAINER_NAME_RE = re.compile(r"[a-z][a-z0-9-]{1,22}[a-z0-9]")
+
+
+def run_container_connect(r):
+    """What a person connects to a try (docs/try-mode-plan.md, "What a try
+    needs from outside"): the request carries, for this run only, the egress
+    door's address with the try's credential and the settings its keys go in
+    (connect_secret, which the platform deletes once the result is in). It is
+    written to a file in the token store that only this host's root reads,
+    the deployment manager adds it to the try's own secret as a new version,
+    and the file is removed whatever happens. Nothing of it is printed."""
+    rid = r["id"]
+    name = str((r.get("args") or {}).get("name") or "")
+    if not CONTAINER_NAME_RE.fullmatch(name):
+        return {"ok": False, "error": "a connect names the try it writes to in args.name"}
+    secret = r.get("connect_secret")
+    if not isinstance(secret, str) or not secret:
+        return {"ok": False, "error": "a connect carries what to write"}
+    os.makedirs(DM_TOKENS, exist_ok=True)
+    path = f"{DM_TOKENS}/connect-{rid[3:15].lower()}.json"
+    print(f"[deploy-executor] {rid}: connect for {name}", flush=True)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(secret)
+        p = subprocess.run(["node", SERVICE, "connect", name, path],
+                           capture_output=True, text=True, timeout=300)
+        lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip()]
+        result = json.loads(lines[-1]) if lines else {"ok": False, "error": "the deployment manager said nothing"}
+    except Exception as e:  # noqa: BLE001
+        result = {"ok": False, "error": str(e)[:300]}
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return {"ok": bool(result.get("ok")), "result": result}
 
 
 def run_container_retire(r):

@@ -667,6 +667,10 @@ export function resourcesFor(ins) {
     service_account: `${sa}@${ins.project}.iam.gserviceaccount.com`,
     service_account_id: sa,
     secret: `mesh-agent-${ins.name}`,
+    // A try's own secret for what the person connects to it (a key and the
+    // egress door's credential, docs/try-mode-plan.md): "{}" until then,
+    // readable by this agent's account alone, and TRY_CONNECT in its service.
+    ...(ins.answers ? { connect_secret: `mesh-agent-${ins.name}-connect` } : {}),
     // An agent that wakes on message runs the folder's image with the wake
     // host on top, tagged apart from the image the folder alone makes; one
     // tried with answers, with the adapter layer on top.
@@ -1535,6 +1539,18 @@ export async function install(args, deps) {
       row.state = "named";
       save(row);
     }
+    // A try's connect secret, made the first time with nothing in it, and
+    // readable by this account alone.
+    if (res.connect_secret && !updating) {
+      if (deps.gcloud(["secrets", "describe", res.connect_secret, "--project", ins.project, "--format", "json"]).code !== 0) {
+        must(deps, ["secrets", "create", res.connect_secret, "--project", ins.project, "--replication-policy", "automatic",
+          "--labels", labelsFor(ins), "--quiet"], "secret");
+      }
+      must(deps, ["secrets", "versions", "add", res.connect_secret, "--project", ins.project, "--data-file=-", "--quiet"], "secret", { input: "{}" });
+      await bindReader(deps, res.connect_secret, ins.project, res.service_account);
+      row.connect_secret = res.connect_secret;
+      save(row);
+    }
     // Secrets the program reads besides its own credential: each readable by
     // this account, at the secret.
     for (const cred of Object.values(ins.secrets)) {
@@ -1689,6 +1705,7 @@ async function removeRow(row, reason, deps) {
   quiet(["run", "services", "delete", row.service, "--region", row.region, ...where, "--quiet"], `the Cloud Run service ${row.service}`);
   for (const img of row.images ?? []) quiet(["artifacts", "docker", "images", "delete", artifactRef(img), "--delete-tags", ...where, "--quiet"], `the image ${img}`);
   quiet(["secrets", "delete", row.secret, ...where, "--quiet"], `the secret ${row.secret}`);
+  if (row.connect_secret) quiet(["secrets", "delete", row.connect_secret, ...where, "--quiet"], `the secret ${row.connect_secret}`);
   quiet(["iam", "service-accounts", "delete", row.service_account, ...where, "--quiet"], `the service account ${row.service_account}`);
   let key = null;
   if (row.agent_key) {
@@ -2161,7 +2178,7 @@ export function packageServiceDeployArgv(ins, res, pinned, envFile) {
     "--cpu", ins.cpu, "--memory", ins.memory, "--concurrency", "10", "--timeout", String(WAKE_REQUEST_SECONDS),
     "--ingress", "all", "--no-allow-unauthenticated",
     ...tenantNetworkArgv(ins, { address: true }),
-    "--set-secrets", `AGENTMESH_CREDENTIALS_JSON=${res.secret}:latest`,
+    "--set-secrets", `AGENTMESH_CREDENTIALS_JSON=${res.secret}:latest${res.connect_secret ? `,TRY_CONNECT=${res.connect_secret}:latest` : ""}`,
     "--env-vars-file", envFile,
     "--labels", `${labelsFor(ins)},${WAKE_LABEL}`,
     "--format", "json", "--quiet"];
@@ -2493,6 +2510,57 @@ export async function installPackage(args, deps) {
   }
 }
 
+// ── what the person connects to a try (docs/try-mode-plan.md) ──────────────
+
+const CONNECT_ENV_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
+const CONNECT_RESERVED_RE = /^(AGENTMESH_|TENANT_|K_|MESH_|HTTPS?_PROXY$|NO_PROXY$)|^(PORT|ANTHROPIC_BASE_URL|ANTHROPIC_API_KEY|HOME|PATH|LD_LIBRARY_PATH|NODE_OPTIONS|PYTHONPATH)$/i;
+const PROXY_RE = /^http:\/\/try:[A-Za-z0-9_-]{16,64}@[a-z0-9.-]{3,253}:[0-9]{2,5}$/;
+
+/** What a connect may write: the egress door's address with the try's own
+ *  credential, and the settings its keys go in. Refused in words. */
+export function readConnect(text) {
+  let c;
+  try { c = JSON.parse(String(text ?? "")); } catch { stop("validate", "the connect file is not JSON"); }
+  if (!c || typeof c !== "object" || Array.isArray(c)) stop("validate", "the connect file is not an object");
+  if (!PROXY_RE.test(String(c.proxy ?? ""))) stop("validate", "proxy must be the egress door's address with the try's credential");
+  const env = c.env && typeof c.env === "object" && !Array.isArray(c.env) ? c.env : {};
+  const names = Object.keys(env);
+  if (!names.length || names.length > 24) stop("validate", "env must name between one and twenty-four settings");
+  for (const n of names) {
+    if (!CONNECT_ENV_RE.test(n) || CONNECT_RESERVED_RE.test(n)) stop("validate", `${n} is not a setting a connect may write`);
+    if (typeof env[n] !== "string" || env[n].length > 4096 || /[\r\n\0]/.test(env[n])) stop("validate", `${n} must be one line of at most 4096 characters`);
+  }
+  return { proxy: c.proxy, env };
+}
+
+/** Write what the person connected into the try's own secret, as a new
+ *  version: its next wake reads it. The file is read once and removed. */
+export async function connectTry(name, file, deps) {
+  const take = () => { try { deps.remove(file); } catch { /* already gone */ } };
+  try {
+    if (!NAME_RE.test(String(name))) return out({ ok: false, act: "connect", step: "validate", error: `bad name ${JSON.stringify(name)}` });
+    if (!String(file).replace(/\\/g, "/").startsWith(`${deps.paths.tokens}/`)) return out({ ok: false, act: "connect", step: "validate", error: "the connect file is outside the token store" });
+    const row = deps.inventory.load().find((x) => x.name === name);
+    if (!row || row.try !== true || !row.connect_secret) return out({ ok: false, act: "connect", step: "validate", error: `${name} is not a try with a connect secret` });
+    let c;
+    try { c = readConnect(deps.readFile(file)); } catch (e) { return out({ ok: false, act: "connect", step: e.step ?? "validate", error: e.message }); }
+    const t = (deps.settings ?? SETTINGS).tenant;
+    const d = t?.deployer ? tenantDeps(deps, t.deployer) : deps;
+    const r = d.gcloud(["secrets", "versions", "add", row.connect_secret, "--project", row.project, "--data-file=-", "--quiet"], { input: JSON.stringify(c) });
+    if (r.code !== 0) return out({ ok: false, act: "connect", step: "secret", error: `the connect secret was not written: ${(r.stderr || "").trim().slice(-300)}` });
+    // A new revision, so the next wake starts with the new version: a warm
+    // instance holds the secret it started with. TENANT_ names never reach
+    // the work (tenant-host.mjs workEnv).
+    const u = d.gcloud(["run", "services", "update", row.service, "--region", row.region, "--project", row.project,
+      "--update-env-vars", `TENANT_CONNECTED_AT=${deps.now()}`, "--quiet", "--format", "none"], { timeout: 600_000 });
+    if (u.code !== 0) return out({ ok: false, act: "connect", step: "service", error: `the secret was written, and the service was not restarted to read it: ${(u.stderr || "").trim().slice(-300)}` });
+    deps.inventory.save([...deps.inventory.load().filter((x) => x.name !== name), { ...row, connected_at: deps.now() }]);
+    return out({ ok: true, act: "connect", name, settings: Object.keys(c.env).length });
+  } finally {
+    take();
+  }
+}
+
 async function main(argv) {
   const deps = realDeps();
   const [cmd, arg, ...rest] = argv;
@@ -2504,6 +2572,7 @@ async function main(argv) {
     return install(args, deps);
   }
   if (cmd === "retire" && arg) return retire(arg, rest.join(" "), deps);
+  if (cmd === "connect" && arg) return connectTry(arg, rest[0] ?? "", deps);
   if (cmd === "retire-key" && arg) return retireKey(arg, rest.join(" "), deps);
   if (cmd === "restart" && arg) return restart(arg, rest.join(" "), deps);
   if (cmd === "install-package" && arg) {

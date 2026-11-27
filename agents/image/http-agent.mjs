@@ -218,7 +218,7 @@ export function homeOf(uid, passwd) {
 /** The environment the agent's server is started with: the image's own, the
  *  try's settings with the token filled in, the token's own variable, and the
  *  model door. Nothing else from this process. */
-export function serverEnv({ command, answers, token, model = {}, home = null }) {
+export function serverEnv({ command, answers, token, model = {}, home = null, connect = null }) {
   const env = {};
   for (const kv of command.env ?? []) {
     const i = kv.indexOf("=");
@@ -228,8 +228,26 @@ export function serverEnv({ command, answers, token, model = {}, home = null }) 
   if (!env.HOME) env.HOME = home || "/";
   for (const [k, v] of Object.entries(answers.env ?? {})) env[k] = fill(v, { token });
   if (answers.token?.env) env[answers.token.env] = fill(answers.token.value ?? "{token}", { token });
+  // What the person connected (docs/try-mode-plan.md, "What a try needs from
+  // outside"): its keys' settings over the try's own, and the egress door as
+  // the proxy for everything but this container's loopback (the model door).
+  if (connect?.proxy) {
+    for (const [k, v] of Object.entries(connect.env ?? {})) env[k] = v;
+    for (const k of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]) env[k] = connect.proxy;
+    env.NO_PROXY = env.no_proxy = "127.0.0.1,localhost,::1";
+    env.NODE_USE_ENV_PROXY = "1";
+  }
   for (const k of MODEL_VARS) if (typeof model[k] === "string" && model[k]) env[k] = model[k];
   return env;
+}
+
+/** What the tenant host handed this run of what the person connected
+ *  (AGENT_TRY_CONNECT), or null. */
+export function connectOf(env) {
+  try {
+    const c = JSON.parse(String(env?.AGENT_TRY_CONNECT ?? ""));
+    return c && typeof c.proxy === "string" && c.env && typeof c.env === "object" ? { proxy: c.proxy, env: c.env } : null;
+  } catch { return null; }
 }
 
 /** The token for this container, made once: 32 random bytes, hex, 0600. */
@@ -331,14 +349,14 @@ export function logTail(file, secrets) {
  * that stops, or does not answer in START_WAIT_MS, ends the job with the tail
  * of its log in words.
  */
-export async function ensureServer({ answers, command, token, stateDir, model, home, deadline, note = () => {}, spawnImpl = spawn, startWaitMs = START_WAIT_MS }) {
+export async function ensureServer({ answers, command, token, stateDir, model, home, deadline, note = () => {}, spawnImpl = spawn, startWaitMs = START_WAIT_MS, connect = null }) {
   const headers = authHeaders(answers, token);
   const probe = { port: answers.port, health: answers.health, headers };
   if (await healthy(probe)) return { started: false };
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   const lockFile = join(stateDir, "server.lock");
   const logFile = join(stateDir, "server.log");
-  const env = serverEnv({ command, answers, token, model, home });
+  const env = serverEnv({ command, answers, token, model, home, connect });
   const secrets = { token, env };
   const began = Date.now();
   const until = Math.min(deadline, began + startWaitMs);
@@ -483,7 +501,9 @@ export async function answerOne(env = process.env, { pollMs = POLL_MS, startWait
   const notes = [];
   try {
     token = ensureToken(where.stateDir);
-    secrets = { token, env: { ...env, ...(answers.env ?? {}) } };
+    const connect = connectOf(env);
+    // Every value it was given is kept out of what it writes down, the connected keys too.
+    secrets = { token, env: { ...env, ...(answers.env ?? {}), ...(connect?.env ?? {}), ...(connect ? { TRY_PROXY: connect.proxy } : {}) } };
     const note = (w) => progress(where.jobDir, w, secrets);
     const model = Object.fromEntries(MODEL_VARS.map((k) => [k, env[k]]));
     let home = null;
@@ -498,7 +518,7 @@ export async function answerOne(env = process.env, { pollMs = POLL_MS, startWait
     }
     if (!text && !got.length) throw new NoAnswer("The message has no words and no files, so there was nothing to ask the agent.");
 
-    await ensureServer({ answers, command, token, stateDir: where.stateDir, model, home, deadline, note, spawnImpl, startWaitMs });
+    await ensureServer({ answers, command, token, stateDir: where.stateDir, model, home, deadline, note, spawnImpl, startWaitMs, connect: connectOf(env) });
 
     if (got.length) {
       const size = got.reduce((n, f) => n + statSync(f.path).size, 0);

@@ -527,3 +527,14 @@ test("the model door says in one line why a call failed, never the call's words"
   assert.equal(modelDoorWhy(JSON.stringify({ type: "error", error: { type: "relay_refused", message: "The model door is not set up on this mesh." } })), "relay_refused: The model door is not set up on this mesh.");
   assert.equal(modelDoorWhy("not json at all"), "not json at all");
 });
+
+test("what a person connected to a try is read from TRY_CONNECT, and nothing that is not it", async () => {
+  const { readTryConnect, workEnv } = await import("../tenant-host.mjs");
+  const proxy = "http://try:" + "a".repeat(32) + "@egress.dev.agentmesh.ai:3129";
+  assert.equal(readTryConnect("{}"), null);
+  assert.equal(readTryConnect("not json"), null);
+  assert.equal(readTryConnect(JSON.stringify({ proxy: "http://elsewhere:80", env: { K: "v" } })), null);
+  assert.deepEqual(readTryConnect(JSON.stringify({ proxy, env: { LANGSMITH_API_KEY: "k", HTTPS_PROXY: "x", AGENTMESH_X: "y", lower: "z" } })), { proxy, env: { LANGSMITH_API_KEY: "k" } });
+  // TENANT_ names never reach the work, the restart stamp among them.
+  assert.equal(workEnv({ TENANT_CONNECTED_AT: "1", AGENT_TRY_CONNECT: "{}" }, {}, {}).TENANT_CONNECTED_AT, undefined);
+});

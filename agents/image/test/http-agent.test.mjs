@@ -257,3 +257,18 @@ test("the pieces it is made of", () => {
   assert.equal(redact("Bearer abcdefghijklmnop and tok123456789", { token: "tok123456789" }), "Bearer [redacted] and [redacted]");
   assert.throws(() => readAnswers(JSON.stringify({ over: "grpc" })), /answers over http/);
 });
+
+test("what was connected reaches the agent's server: its keys' settings, and the egress door as the proxy for all but loopback", async () => {
+  const { serverEnv, connectOf } = await import("../http-agent.mjs");
+  const proxy = "http://try:" + "b".repeat(32) + "@egress.dev.agentmesh.ai:3129";
+  const connect = connectOf({ AGENT_TRY_CONNECT: JSON.stringify({ proxy, env: { LANGSMITH_API_KEY: "k", DESIGN_AGENT_SANDBOX: "langsmith" } }) });
+  const env = serverEnv({ command: { env: [] }, answers: { env: { DESIGN_AGENT_SANDBOX: "host" } }, token: "t", connect });
+  assert.equal(env.DESIGN_AGENT_SANDBOX, "langsmith", "a connected way of working replaces the try's own");
+  assert.equal(env.LANGSMITH_API_KEY, "k");
+  assert.equal(env.HTTPS_PROXY, proxy);
+  assert.equal(env.https_proxy, proxy);
+  assert.equal(env.NO_PROXY, "127.0.0.1,localhost,::1");
+  const none = serverEnv({ command: { env: [] }, answers: { env: { DESIGN_AGENT_SANDBOX: "host" } }, token: "t", connect: connectOf({}) });
+  assert.equal(none.HTTPS_PROXY, undefined);
+  assert.equal(none.DESIGN_AGENT_SANDBOX, "host");
+});

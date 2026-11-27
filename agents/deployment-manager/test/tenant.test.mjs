@@ -265,3 +265,40 @@ test("tries have their own allowance: a kept agent never stands in the way of th
   const t = tenantSettings({ DM_TENANT_TRY_MAX_SERVICES: "5", DM_TENANT_TRY_MAX_MEMORY_MIB: "10240" });
   assert.deepEqual(t.limits.tries, { services: 5, cpu: 3, memory_mib: 10240 });
 });
+
+test("a try's connect: its own secret made at install and read as TRY_CONNECT, written by connect, removed with it", async () => {
+  const { readConnect, connectTry, packageServiceDeployArgv, resourcesFor } = await import("../service.mjs");
+  const ins = readInstruction(args({ answers: { over: "http", port: 8000, health: "/health", env: {}, ask: { method: "POST", path: "/threads/{thread}/messages", body: { text: "{text}" } }, reply: "reply", job_seconds: 600 } }), S);
+  const res = resourcesFor(ins);
+  assert.equal(res.connect_secret, `mesh-agent-${ins.name}-connect`);
+  const argv = packageServiceDeployArgv(ins, res, "image@sha256:" + "a".repeat(64), "/tmp/env.json");
+  assert.ok(argv[argv.indexOf("--set-secrets") + 1].endsWith(`,TRY_CONNECT=${res.connect_secret}:latest`));
+  // What a connect may write, refused in words otherwise.
+  const good = { proxy: "http://try:" + "x".repeat(32) + "@egress.dev.agentmesh.ai:3129", env: { LANGSMITH_API_KEY: "lsv2_dummy", DESIGN_AGENT_SANDBOX: "langsmith" } };
+  assert.deepEqual(readConnect(JSON.stringify(good)), good);
+  assert.throws(() => readConnect(JSON.stringify({ ...good, proxy: "http://evil.example.com:80" })), /egress door/);
+  assert.throws(() => readConnect(JSON.stringify({ ...good, env: { HTTPS_PROXY: "x" } })), /not a setting a connect may write/);
+  assert.throws(() => readConnect(JSON.stringify({ ...good, env: { A_KEY: "two\nlines" } })), /one line/);
+  // The act: the file is read once and removed; the secret gets a version and the service a fresh revision.
+  const calls = [];
+  const removed = [];
+  const row = { name: "design-agent-abcd", tenant: "t-0a1b2c3d4e5f", state: "running", try: true, connect_secret: "mesh-agent-design-agent-abcd-connect", service: "agent-design-agent-abcd", region: "us-east1", project: "agentmesh-tenants-dev" };
+  let rows = [row];
+  const deps = {
+    paths: { tokens: "/home/dm/secrets/boot-tokens" }, settings: S, now: () => 1700000000000,
+    inventory: { load: () => rows, save: (r) => { rows = r; } },
+    readFile: () => JSON.stringify(good), remove: (f) => removed.push(f),
+    gcloud: (argv, opts) => { calls.push([argv, opts?.input ? "<input>" : null]); return { code: 0, stdout: "", stderr: "" }; },
+  };
+  const r = await quietly(() => connectTry("design-agent-abcd", "/home/dm/secrets/boot-tokens/connect-x.json", deps));
+  assert.equal(r.ok, true);
+  assert.deepEqual(removed, ["/home/dm/secrets/boot-tokens/connect-x.json"]);
+  assert.ok(calls.some(([a, i]) => a.includes("versions") && a.includes("add") && a.includes(row.connect_secret) && i === "<input>"));
+  assert.ok(calls.some(([a]) => a[0] === "run" && a.includes("update") && a.some((x) => String(x).startsWith("TENANT_CONNECTED_AT="))));
+  assert.ok(!JSON.stringify(r).includes("lsv2_dummy"), "the key is never in the result");
+  // A file outside the token store: refused, and the file still removed.
+  removed.length = 0;
+  const no = await quietly(() => connectTry("design-agent-abcd", "/tmp/elsewhere.json", deps));
+  assert.match(no.error, /outside the token store/);
+  assert.deepEqual(removed, ["/tmp/elsewhere.json"]);
+});

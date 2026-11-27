@@ -263,7 +263,7 @@ test("an install with answers runs in the tenant wake shape a person's package t
   assert.ok(cfg.tags.includes("adapter"), "the adapter layer was built");
   const deploy = f.calls.find((a) => a[0] === "run" && a[1] === "deploy");
   const flag = (x) => deploy[deploy.indexOf(x) + 1];
-  assert.equal(flag("--set-secrets"), "AGENTMESH_CREDENTIALS_JSON=mesh-agent-design-agent-k3p9:latest", "the key is one variable, never a mounted file");
+  assert.equal(flag("--set-secrets"), "AGENTMESH_CREDENTIALS_JSON=mesh-agent-design-agent-k3p9:latest,TRY_CONNECT=mesh-agent-design-agent-k3p9-connect:latest", "the key is one variable, never a mounted file, and the try's own connect secret is another");
   assert.equal(flag("--min-instances"), "0");
   assert.equal(flag("--max-instances"), "1");
   assert.ok(deploy.includes("--cpu-throttling") && deploy.includes("--no-allow-unauthenticated"));

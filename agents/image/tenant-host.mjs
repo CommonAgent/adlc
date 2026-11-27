@@ -371,6 +371,24 @@ export function adapterAddresses(env) {
 /** The environment the work is given: the image's own settings with nothing
  *  secret in them, the model door, the directories, and what the supervisor
  *  set for this one message. Never the credential bundle. */
+const TRY_PROXY_RE = /^http:\/\/try:[A-Za-z0-9_-]{16,64}@[a-z0-9.-]{3,253}:[0-9]{2,5}$/;
+const TRY_ENV_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
+const TRY_RESERVED_RE = /^(AGENTMESH_|TENANT_|K_|MESH_|HTTPS?_PROXY$|NO_PROXY$)|^(PORT|ANTHROPIC_BASE_URL|ANTHROPIC_API_KEY|HOME|PATH|LD_LIBRARY_PATH|NODE_OPTIONS|PYTHONPATH)$/i;
+
+/** What the person connected to a try, from its own secret's text: the
+ *  egress door's address with the try's credential, and the settings its keys
+ *  go in. Null when nothing is connected ("{}") or the text is not that. */
+export function readTryConnect(text) {
+  let c;
+  try { c = JSON.parse(String(text ?? "")); } catch { return null; }
+  if (!c || typeof c !== "object" || !TRY_PROXY_RE.test(String(c.proxy ?? ""))) return null;
+  const env = {};
+  for (const [k, v] of Object.entries(c.env && typeof c.env === "object" ? c.env : {})) {
+    if (TRY_ENV_RE.test(k) && !TRY_RESERVED_RE.test(k) && typeof v === "string" && v.length <= 4096) env[k] = v;
+  }
+  return { proxy: c.proxy, env };
+}
+
 export function workEnv(base, spec, tenant) {
   const env = {};
   for (const [k, v] of Object.entries(base ?? {})) {
@@ -819,6 +837,13 @@ async function main() {
     delete process.env[CREDENTIALS_JSON_ENV];
     delete process.env[CREDENTIALS_FILE_ENV];
   }
+  // What the person connected to a try (the try's own secret, TRY_CONNECT):
+  // taken out of this process's environment, and handed to the work alone as
+  // AGENT_TRY_CONNECT, which http-agent gives the agent's server. The adapter
+  // is started with an environment of its own and never sees it.
+  const connected = readTryConnect(process.env.TRY_CONNECT);
+  delete process.env.TRY_CONNECT;
+  if (connected) process.env.AGENT_TRY_CONNECT = JSON.stringify(connected);
   const raw = got.text;
   if (got.from !== CREDENTIALS_JSON_ENV) {
     // A secret mounted as a file is readable by whoever its mode lets; the
