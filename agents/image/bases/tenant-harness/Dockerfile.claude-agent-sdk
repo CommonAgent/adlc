@@ -18,7 +18,8 @@ RUN npm init -y >/dev/null \
 
 COPY tenant-harness/claude-agent-sdk-run.mjs /opt/harness/bin/claude-agent-sdk-run.mjs
 COPY tenant-harness/harness-serve.mjs /opt/harness/bin/harness-serve.mjs
-COPY tenant-harness/check /opt/harness/check
+# The contract check and its fixture plugin (a test, so the address check leaves it out).
+COPY tenant-harness/test /opt/harness/check
 RUN mkdir -p /opt/agent/plugin
 WORKDIR /
 
