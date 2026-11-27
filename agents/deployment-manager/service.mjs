@@ -640,6 +640,11 @@ export function readInstruction(args, s = SETTINGS) {
   const keptTries = Array.isArray(a.kept_tries) ? a.kept_tries.map(String) : [];
   if (keptTries.some((n) => !NAME_RE.test(n)) || keptTries.length > 50) stop("validate", "kept_tries must be a list of at most fifty agent names");
   if (keptTries.length && !answers) stop("validate", "kept_tries goes in with a try, an install with answers");
+  // A plugin tried under a named harness (docs/harness-contract.md in the
+  // AgentMesh repository): the folder has no Dockerfile of its own; this host
+  // writes one, on that harness's image, with the plugin's files.
+  const harness = a.harness === undefined || a.harness === null ? null : readHarness(a.harness);
+  if (harness && !answers) stop("validate", "a harness goes in with a try, an install with answers");
   const tried = answers && tenant !== null ? tryPlacement(t) : null;
   const adapterEnv = answers ? adapterEnvOf(s) : null;
   return {
@@ -650,7 +655,8 @@ export function readInstruction(args, s = SETTINGS) {
     ...(tenant !== null ? { network: t.network, subnet: t.subnet, deployer: t.deployer, builder: t.builder, egress: t.egress ?? null, worker_pool: t.worker_pool || null }
       : platformBuilder(s, project) ? { builder: platformBuilder(s, project) } : {}),
     name, handle, request_id: a.request_id ? String(a.request_id) : null,
-    source: { repository, path, commit, dockerfile },
+    source: { repository, path, commit, dockerfile: harness ? HARNESS_DOCKERFILE : dockerfile },
+    ...(harness ? { harness } : {}),
     kind: String(a.kind ?? "third-party-framework"),
     settings, secrets, boot_token: boot, project, region, registry, cpu, memory, claims, replaces,
     ...(tried ?? {}),
@@ -783,6 +789,70 @@ export function adapterEnvOf(s) {
  *  shared pool (no worker pool), as tenant-try-builder, into the tries
  *  repository, with the adapter from its release tarball. Null leaves it
  *  where every tenant build goes. Refused in words when half set. */
+// ── a plugin tried under a named harness ─────────────────────────────────
+
+/** Where the Dockerfile this host writes for a harness try sits in the folder. */
+export const HARNESS_DOCKERFILE = ".agentmesh-harness/Dockerfile";
+const HARNESS_NAME_RE = /^[a-z][a-z0-9-]{1,39}$/;
+const PLUGIN_PATH_RE = /^[A-Za-z0-9_@.][A-Za-z0-9_.@ +-]*(\/[A-Za-z0-9_.@ +-]+)*$/;
+const HARNESS_FILES = ["plugin.json", "mcp.json"];
+
+/** The `harness` of a try's install, checked: {name, label, copy: [{from,
+ *  to}], files: {"plugin.json", "mcp.json"}}. `copy` names the plugin's own
+ *  files at the commit, inside the folder, and where each goes under the
+ *  plugin root in the image; `files` are what the platform wrote for the try
+ *  (an Agent Plugins manifest, and the MCP servers the try may use). */
+export function readHarness(h) {
+  if (!h || typeof h !== "object" || Array.isArray(h)) stop("validate", "harness is {name, label, copy, files}");
+  const name = String(h.name ?? "");
+  if (!HARNESS_NAME_RE.test(name)) stop("validate", "harness.name is a harness in the catalogue, such as opencode");
+  const label = String(h.label ?? "").replace(/[\r\n"\\$`]/g, " ").trim().slice(0, 80);
+  const copy = Array.isArray(h.copy) ? h.copy : [];
+  if (!copy.length || copy.length > 200) stop("validate", "harness.copy names from 1 to 200 of the plugin's files or folders");
+  const pathOk = (p) => typeof p === "string" && p.length <= 200 && PLUGIN_PATH_RE.test(p) && !p.split("/").some((x) => x === ".." || x === ".");
+  const out = copy.map((c) => ({ from: String(c?.from ?? ""), to: String(c?.to ?? "") }));
+  for (const c of out) {
+    if (!pathOk(c.from) || !pathOk(c.to)) stop("validate", `harness.copy: ${JSON.stringify(c.from)} to ${JSON.stringify(c.to)} is not a path inside the folder and the plugin`);
+    if (/^\.agentmesh-harness(\/|$)/.test(c.from) || HARNESS_FILES.includes(c.to)) stop("validate", `harness.copy may not write ${c.to}, which the platform writes`);
+  }
+  const files = {};
+  for (const [k, v] of Object.entries(h.files ?? {})) {
+    if (!HARNESS_FILES.includes(k)) stop("validate", `harness.files holds only ${HARNESS_FILES.join(" and ")}`);
+    if (typeof v !== "string" || v.length > 65536) stop("validate", `harness.files.${k} is the file's text, at most 64 KiB`);
+    try { JSON.parse(v); } catch { stop("validate", `harness.files.${k} is not JSON`); }
+    files[k] = v;
+  }
+  if (!files["plugin.json"]) stop("validate", "harness.files carries plugin.json, the Agent Plugins manifest the platform wrote");
+  return { name, label, copy: out, files };
+}
+
+/** The image a harness try is built on: the harness's entry in the catalogue
+ *  (bases/tenant-harnesses.json), in this host's tries registry. */
+export function harnessImage(catalogueText, name, registry) {
+  let doc;
+  try { doc = JSON.parse(catalogueText); } catch { return stop("build", "the harness catalogue is not JSON"); }
+  const e = (doc?.harnesses ?? []).find((x) => x?.name === name);
+  if (!e || typeof e.image !== "string") stop("validate", `${name} is not a harness in the catalogue (${(doc?.harnesses ?? []).map((x) => x.name).join(", ")})`);
+  if (!REGISTRY_RE.test(String(registry ?? ""))) stop("build", "a harness try needs the tries registry (DM_TENANT_TRY_REGISTRY)");
+  return e.image.replace("{try.registry}", registry);
+}
+
+/** The Dockerfile of a harness try: the harness's image, the plugin's own
+ *  files under /opt/agent/plugin, and the two files the platform wrote. A
+ *  plugin's hooks are never copied (and every harness runs with them off). */
+export function harnessDockerfile(image, h) {
+  const q = (p) => JSON.stringify(p);
+  return [
+    "# A plugin tried under a named harness (docs/harness-contract.md in the AgentMesh",
+    "# repository). Written by the deployment manager, not taken from the repository.",
+    `FROM ${image}`,
+    ...h.copy.map((c) => `COPY [${q(c.from)}, ${q(`/opt/agent/plugin/${c.to}`)}]`),
+    ...Object.keys(h.files).map((k) => `COPY [${q(`.agentmesh-harness/${k}`)}, ${q(`/opt/agent/plugin/${k}`)}]`),
+    `ENV HARNESS_LABEL=${q(h.label || "this plugin")}`,
+    "",
+  ].join("\n");
+}
+
 export function tryPlacement(t) {
   if (!t?.try_builder) return null;
   if (!SA_EMAIL_RE.test(t.try_builder)) stop("validate", "DM_TENANT_TRY_BUILDER must be a service account's address");
@@ -878,6 +948,12 @@ export function adapterBuildConfig(ins, image, layer, labels) {
     Dockerfile: adapterDockerfile(base, layer.base),
   };
   const carry = carrySteps(files, dir);
+  // A harness try: its Dockerfile and the platform's files go into the folder
+  // first, where the first build reads them.
+  if (ins.harness && typeof layer.harness !== "string") throw new Error("a harness try needs its harness's image");
+  const hdir = "/workspace/.agentmesh-harness";
+  const hcarry = ins.harness ? carrySteps({ Dockerfile: harnessDockerfile(layer.harness, ins.harness), ...ins.harness.files }, hdir) : null;
+  const hsteps = hcarry ? [...hcarry.steps, { name: DOCKER, entrypoint: "bash", args: ["-c", ["set -eu", ...hcarry.decode, `rm -f ${hdir}/*.b64`].join("\n")] }] : [];
   const script = [
     "set -eu",
     `mkdir -p ${dir}/mesh ${dir}/tenant ${dir}/agent`,
@@ -887,13 +963,14 @@ export function adapterBuildConfig(ins, image, layer, labels) {
     `docker inspect --format '${INSPECT}' ${base} > ${dir}/agent/command.json`,
     `cat ${dir}/agent/command.json`,
   ].join("\n");
-  for (const s of [script, ...carry.steps.map((c) => c.args[1])]) {
+  for (const s of [script, ...carry.steps.map((c) => c.args[1]), ...hsteps.map((c) => c.args[1])]) {
     if (s.includes("$")) throw new Error("the adapter layer's build step holds a dollar sign, which Cloud Build reads as a substitution");
     if (s.length > 9500) throw new Error("an adapter layer build step is longer than Cloud Build takes");
   }
   return {
     steps: [
-      { name: DOCKER, args: ["build", ...labels, "-t", base, "-f", ins.source.dockerfile, "."] },
+      ...hsteps,
+      { name: DOCKER, args: ["build", ...labels, ...(ins.harness ? ["--label", `net.agentmesh.harness=${ins.harness.name}`] : []), "-t", base, "-f", ins.source.dockerfile, "."] },
       ...carry.steps,
       { name: DOCKER, entrypoint: "bash", args: ["-c", script] },
       { name: DOCKER, args: ["build", ...labels, "--label", "net.agentmesh.wake=platform", "--label", "net.agentmesh.adapter=tenant-host", "-t", image, dir] },
@@ -1270,7 +1347,8 @@ export function readLayer(ins, deps) {
     }
   };
   const files = Object.fromEntries(Object.entries(LAYER_FILES).map(([to, from]) => [to, read(from)]));
-  if (ins.try_adapter) return { base: ins.try_adapter, files };
+  const harness = ins.harness ? harnessImage(read(join("bases", "tenant-harnesses.json")), ins.harness.name, ins.registry) : null;
+  if (ins.try_adapter) return { base: ins.try_adapter, files, ...(harness ? { harness } : {}) };
   const registry = (deps.settings?.tenant ?? SETTINGS.tenant)?.registry ?? ins.registry;
   return { base: tenantBaseImage(read(join("bases", "tenant-catalogue.json")), registry), files };
 }
