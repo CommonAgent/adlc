@@ -1,0 +1,5 @@
+{
+  "name": "harness-check",
+  "version": "1.0.0",
+  "description": "The fixture the harness contract check runs a harness on: one skill, one hook that must never run."
+}
