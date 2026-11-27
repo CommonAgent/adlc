@@ -344,6 +344,13 @@ export function modelDoor({ send, to, timeoutMs = 200_000 }) {
   });
 }
 
+/** The adapter's address settings this host passes on: the control base
+ *  (through the guest address), the naming service and the app. */
+export const ADAPTER_ADDRESS_VARS = ["MESH_GUEST_URL", "PAN_REGISTRAR", "MESH_CONSOLE"];
+export function adapterAddresses(env) {
+  return Object.fromEntries(ADAPTER_ADDRESS_VARS.filter((k) => /^https:\/\//.test(String(env?.[k] ?? ""))).map((k) => [k, String(env[k])]));
+}
+
 // ── the work, here ────────────────────────────────────────────────────────
 
 /** The environment the work is given: the image's own settings with nothing
@@ -830,6 +837,9 @@ async function main() {
   const meshEnv = {
     PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin", HOME: MESH_USER.home,
     MESH_ADAPTER_STATE: STATE_DIR, MESH_URL: meshUrlOf(bundle.servers),
+    // The environment's own addresses, when the deployment manager names them
+    // (a try carries the public adapter, whose built-in ones are prod's).
+    ...adapterAddresses(process.env),
   };
   const contacts = [["contacts", "default", "a2a", "block"],
     ...String(process.env.TENANT_ADMIT ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean).map((h) => ["contacts", "admit", h])];
