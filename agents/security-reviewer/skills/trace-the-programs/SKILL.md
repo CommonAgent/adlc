@@ -1,6 +1,6 @@
 ---
 name: trace-the-programs
-description: second, once the declaration is read: to see what the programs reach that the declaration may not name
+description: "second, once the declaration is read: to see what the programs reach that the declaration may not name"
 ---
 
 # Trace the programs

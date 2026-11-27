@@ -1,6 +1,6 @@
 ---
 name: run-the-baseline
-description: When `may_run` is yes and there is a test command: the test script package.json names, or node --test over the node:test files when package.json names none or is not there.
+description: "When `may_run` is yes and there is a test command: the test script package.json names, or node --test over the node:test files when package.json names none or is not there."
 ---
 
 # Run the baseline

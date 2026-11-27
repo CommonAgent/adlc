@@ -17,7 +17,9 @@
 // references, assets, and skill (the SKILL.md text, which holds what a
 // spec called a job's when, good, empty and instructions); and `systems`,
 // each system's descriptor entry with its runtime binding laid over it,
-// `refuses` (one line each), `escalates`, `records` and `description`. It is the same
+// `refuses` (one line each), `escalates`, `records`, `description` (the
+// descriptor's does, what the agent does) and `mcp` (the folder's mcp.json,
+// when it has one). It is the same
 // projection adlc's build.py makes of the folder (read_folder), so a test
 // that checks a job checks what the package is built from. The names before
 // Common Agent 0.30.0-draft (descriptor.json, install.json) are read where
@@ -45,6 +47,7 @@ const EXT = "net.agentdoc.package";
 export const DESCRIPTOR_FILE = "agent-descriptor.json";
 export const RUNTIME_FILE = "agent-runtime-requirements.json";
 export const MANIFEST_FILE = "plugin.json";
+export const MCP_FILE = "mcp.json";
 const DESCRIPTOR_FORMAT = "agent-descriptor-v1";
 const RUNTIME_FORMATS = ["agent-runtime-requirements-v1", "agent-install-v1"];
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
@@ -90,9 +93,14 @@ export function readAgentFolder(dir) {
   // how it is bound in the runtime requirements.
   const bound = new Map((runtime.systems ?? []).map((s) => [s.name ?? s.role, s]));
   const systems = (descriptor.systems ?? []).map((d) => ({ ...d, ...(bound.get(d.name ?? d.role) ?? {}) }));
+  // The servers fixed in the package, in Agent Plugins' own form, when there are any.
+  const mcp = existsSync(join(dir, MCP_FILE)) ? readJson(join(dir, MCP_FILE)) : undefined;
   return {
-    dir, manifest, descriptor, runtime, build, jobs, systems,
-    name: manifest.name, version: manifest.version, description: manifest.description,
+    dir, manifest, descriptor, runtime, build, jobs, systems, ...(mcp ? { mcp } : {}),
+    // What the agent does is the descriptor's `does`, as build.py reads it;
+    // plugin.json's description is the short line made from its summary.
+    name: manifest.name, version: manifest.version,
+    description: typeof descriptor.does === "string" ? descriptor.does : manifest.description,
     refuses: (descriptor.refusals ?? "").split(/\n/).filter((l) => l.trim()),
     escalates: descriptor.escalates ?? [], records: descriptor.records ?? [],
   };
@@ -149,7 +157,7 @@ export function specOfFolder(dir) {
   const spec = {};
   if (typeof manifest.name === "string" && manifest.name) spec.name = manifest.name;
   spec.version = version;
-  if (manifest.description !== undefined) spec.description = manifest.description;
+  if (a.description !== undefined) spec.description = a.description;
   for (const k of ["license", "homepage", "repository", "author"]) if (k in manifest) spec[k] = manifest[k];
   if ("from" in own) spec.from = own.from;
   for (const k of ["kind", "container", "claims"]) if (k in b) spec[k] = b[k];
@@ -194,6 +202,7 @@ export function specOfFolder(dir) {
   }
   const v = /^skills\/([^/]+)\/(.+)$/.exec(String(inst.verify ?? ""));
   if (v) spec.verify = { job: v[1], script: v[2] };
+  if (a.mcp) spec.mcp = a.mcp;
   return spec;
 }
 
@@ -217,7 +226,7 @@ export function skillSlugOf(text) {
 }
 
 /** What one file is, by its content: "descriptor", "runtime", "manifest",
- *  "skill" (with its slug), or null. */
+ *  "mcp" (an Agent Plugins mcp.json), "skill" (with its slug), or null. */
 export function agentFileKind(text) {
   const t = String(text ?? "");
   if (/^---\r?\n/.test(t)) {
@@ -229,6 +238,7 @@ export function agentFileKind(text) {
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
   if (doc.format === DESCRIPTOR_FORMAT) return { kind: "descriptor", doc };
   if (RUNTIME_FORMATS.includes(doc.format)) return { kind: "runtime", doc };
+  if (isObj(doc.mcpServers) && String(doc.$schema ?? "").endsWith("/mcp.schema.json")) return { kind: "mcp", doc };
   const ext = doc.extensions;
   if (ext && typeof ext === "object" && (EXT in ext || /agent-plugins\.org/.test(String(doc.$schema ?? "")))) return { kind: "manifest", doc };
   return null;
@@ -248,7 +258,7 @@ export function agentFileKind(text) {
  *  the descriptor's offerings and steps), the later of two for one skill.
  *  Everything else is left where it was, an ordinary attachment. */
 export function agentFilesAmongTexts(entries) {
-  const of = { manifest: [], descriptor: [], runtime: [] };
+  const of = { manifest: [], descriptor: [], runtime: [], mcp: [] };
   const skills = [];
   for (const { key, text } of entries ?? []) {
     const k = agentFileKind(text);
@@ -279,9 +289,12 @@ export function agentFilesAmongTexts(entries) {
     : (descriptor.doc.offerings ?? []).flatMap((o) => [o?.id, ...(o?.steps ?? []).map((s) => s?.id)]).filter(Boolean));
   const chosen = {};
   for (const s of skills) if (wanted.has(s.slug)) chosen[s.slug] = s.key;
+  // The package's mcp.json, the last one sent, when the agent has servers fixed in it.
+  const mcp = lastOf(of.mcp);
   return {
     manifest: manifest.key, descriptor: descriptor.key, runtime: runtime.key, skills: chosen,
-    used: [descriptor.key, runtime.key, manifest.key, ...Object.values(chosen)],
+    ...(mcp ? { mcp: mcp.key } : {}),
+    used: [descriptor.key, runtime.key, manifest.key, ...(mcp ? [mcp.key] : []), ...Object.values(chosen)],
   };
 }
 
@@ -310,6 +323,7 @@ export function layOutAgentFiles(found, dir, readBytes = (p) => readFileSync(p))
   put(DESCRIPTOR_FILE, found.descriptor);
   put(RUNTIME_FILE, found.runtime);
   put(MANIFEST_FILE, found.manifest);
+  if (found.mcp) put(MCP_FILE, found.mcp);
   for (const [slug, p] of Object.entries(found.skills ?? {})) put(join("skills", slug, "SKILL.md"), p);
   return dir;
 }

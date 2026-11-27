@@ -1,6 +1,6 @@
 ---
 name: read-the-package
-description: first, on every review: before anything is traced or judged
+description: "first, on every review: before anything is traced or judged"
 ---
 
 # Read the package

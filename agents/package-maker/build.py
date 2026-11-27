@@ -38,9 +38,11 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
 {
   "name": "invoice-reader",              # lowercase, digits, hyphens
   "version": "1.0.0",
-  "description": "One sentence: what it does.",
+  "description": "One sentence: what it does.",  # the Descriptor's `does`; plugin.json's description
+                                         #   too when there is no summary (at most 300 characters)
   "display_name": "Invoice reader",      # ? the Descriptor's `name`: what a person calls it (6.13.1)
-  "summary": "Reads an invoice and hands back its fields.",  # ? one sentence for a person, at most 200 characters
+  "summary": "Reads an invoice and hands back its fields.",  # ? one sentence for a person, at most 200
+                                         #   characters; plugin.json's description when given
   "will_not": ["It will not pay an invoice."],  # ? what it will not do, in words a person acts on (6.13.3)
   "views": [                             # ? its own views (6.13.6): one self-contained HTML file each,
     { "id": "fields", "for": { "offering": "read-the-invoice", "output": "fields" },   # copied in from the
@@ -101,6 +103,10 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
       "env": "LEDGER_TOKEN",             # ? the variable the scripts read it from
       "spends": { "unit": "calls" } }    # ? present when the service costs money
   ],
+  "mcp": { "$schema": "<the mcp.json schema>",   # ? the package's mcp.json, as Agent Plugins 1.0.0
+           "mcpServers": { "the-ledger": {...} } },  #   writes it: only a server whose address is fixed
+                                         #   in the package, each named for a system of kind mcp;
+                                         #   a server the organization binds at install is left out
   "refuses": ["one line per thing it will not do"],              # REQUIRED, non-empty
   "escalates": ["one line per thing that goes to a person"],     # ?
   "records": [ "one line per record" | { "name": "...", "when": "per_task", "file": "records/*/x.json" } ],  # REQUIRED
@@ -141,6 +147,7 @@ Spec shape (the judgment parts are REQUIRED; everything marked ? is optional):
 }
 """
 import hashlib
+import ipaddress
 import json
 import os
 import posixpath
@@ -148,6 +155,7 @@ import re
 import shutil
 import subprocess
 import sys
+from urllib.parse import urlsplit
 
 EXT = "net.agentdoc.package"
 # The names of the two authored files, the manifest pointer at the second and
@@ -188,7 +196,35 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # moved or unavailable address cannot make a valid package unverifiable.
 SCHEMA_FILE = next((p for p in (os.path.join(HERE, "agentbuilder-plugin.schema.json"),
                                 os.path.join(HERE, "plugin-1.0.0.schema.json")) if os.path.exists(p)), None)
-NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,62}[a-z0-9]$")
+# THE MANIFEST'S WORDS. plugin.json's description is what a harness shows a
+# person choosing a plugin, so it is one or two plain sentences on what the
+# agent does for them: the Descriptor's summary where the agent has one, else
+# its `does`, and never longer than this. The full account of what the agent
+# does stays in the Descriptor's `does`, its records and its AgentDoc.
+DESCRIPTION_MAX = 300
+# Keywords are search tags for what the agent does. These say how a package
+# was made or which of our own groups it belongs to, which tells a person
+# searching nothing, so a manifest carrying one is refused.
+INTERNAL_KEYWORDS = ("built-agent", "draft", "system-agent", "demo-agent")
+# THE MCP CONFIGURATION (Agent Plugins 1.0.0, section 7.2). Its schema is
+# published beside the manifest's, under the same version (section 10.1), and
+# mcp.json MUST name the version plugin.json names, so its identifier is
+# derived from the manifest's rather than written out a second time. The
+# rules of section 7.2.1 are applied by hand in mcp_declaration, as the
+# manifest's are in check_manifest.
+MCP_FILE = "mcp.json"
+MCP_SCHEMA_URL = SCHEMA_URL.rsplit("/", 1)[0] + "/mcp.schema.json"
+MCP_VARIANTS = {"stdio": ("type", "command", "args", "env", "cwd"),
+                "streamable-http": ("type", "url", "headers"),
+                "sse": ("type", "url", "headers")}
+MCP_RESERVED_ENV = ("PLUGIN_ROOT", "PLUGIN_DATA")
+MCP_CWD_RE = re.compile(r"^(?:\./|\$\{PLUGIN_ROOT\}(?:/|$)|\$\{PLUGIN_DATA\}(?:/|$))")
+HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+# A name that says it carries a credential. mcp.json is visible package data
+# and not a secret store (7.2.1, 9.2), so an env entry or a header named like
+# this is refused; an MCP server's authorization is the client's to manage.
+SECRET_NAME_RE = re.compile(r"auth|token|secret|passw|apikey|api[-_]key|cookie|session|credential|bearer|private[-_]?key", re.I)
+NAME_RE =re.compile(r"^[a-z][a-z0-9-]{1,62}[a-z0-9]$")
 SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
 CREDENTIAL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
@@ -2189,6 +2225,158 @@ def container_spec(spec, name, version, jobs):
     }
 
 
+def listed_description(spec, description):
+    """plugin.json's description: the line a harness shows a person choosing
+    a plugin. It is the Descriptor's summary where the agent has one and what
+    the agent does where it has none, and either way one line of at most
+    DESCRIPTION_MAX characters; a longer account belongs in `does`."""
+    s = spec.get("summary")
+    text = (s if isinstance(s, str) and s.strip() else description).strip()
+    if "\n" in text or len(text) > DESCRIPTION_MAX:
+        shape = "more than one line" if "\n" in text else f"{len(text)} characters"
+        fail(f"plugin.json's description is what a harness shows a person choosing a plugin: one or two "
+             f"sentences on one line, at most {DESCRIPTION_MAX} characters, and this one is {shape}. It is "
+             f"the Descriptor's summary where the agent has one: give the agent a summary (one sentence for "
+             f"a person, at most 200 characters) and keep the full account in does")
+    return text
+
+
+def keyword_problem(keywords):
+    """Why a manifest's keywords are refused, or None. They are search tags
+    for what the agent does; a word about how the package was made is not."""
+    if not (isinstance(keywords, list) and all(isinstance(x, str) for x in keywords)):
+        return "plugin.json keywords must be strings"
+    inner = [k for k in keywords if k.strip().lower() in INTERNAL_KEYWORDS]
+    if inner:
+        return (f"plugin.json keywords carry {', '.join(inner)}, which say how the package was made and not "
+                f"what the agent does; keywords are search tags for the work")
+    return None
+
+
+def mcp_declaration(spec, systems):
+    """The package's mcp.json (Agent Plugins 1.0.0, section 7.2), checked, or
+    None. It carries only the servers whose address is fixed in the package:
+    a public endpoint over HTTPS, or a program the package ships, started
+    over stdio. A system of kind mcp whose server the organization binds at
+    install has no entry here; its address is not known when the package is
+    made, and the runtime requirements carry it as they always have.
+
+    Every server is named for a declared system of kind mcp (Common Agent
+    12.6 rule 2). mcp.json is visible package data and never a secret store
+    (7.2.1, 9.2): an env entry or a header that carries a credential is
+    refused, and the client connecting to the server manages its
+    authorization, so the system names no credential and, with nobody in the
+    path to hold a ceiling, does not spend."""
+    doc = spec.get("mcp")
+    if doc is None:
+        return None
+    if not (isinstance(doc, dict) and set(doc) == {"$schema", "mcpServers"}):
+        fail(f"{MCP_FILE} is an object with $schema and mcpServers and nothing else (Agent Plugins 1.0.0, 7.2.1)")
+    if doc["$schema"] != MCP_SCHEMA_URL:
+        fail(f"{MCP_FILE} must declare {MCP_SCHEMA_URL}, the version of Agent Plugins plugin.json declares (7.2.2)")
+    servers = doc["mcpServers"]
+    if not isinstance(servers, dict):
+        fail(f"{MCP_FILE} mcpServers maps each server's name to its configuration")
+    by_name = {s["name"]: s for s in systems}
+    out_servers = {}
+    for sname, cfg in servers.items():
+        at = f"{MCP_FILE} server {sname}"
+        s = by_name.get(sname)
+        if not s or s.get("kind") != "mcp":
+            fail(f"{at}: every server is a system this agent declares, of kind mcp, under the same name (Common Agent 12.6 rule 2)")
+        if s.get("credential") is not None or s.get("env") is not None:
+            fail(f"{at}: the client that connects to a server mcp.json names manages its authorization (Agent Plugins 1.0.0, 7.2.1), so its system names no credential")
+        if s.get("spends") is not None:
+            fail(f"{at}: the harness reaches a server mcp.json names directly, so nothing in the path can hold a ceiling on what it spends; a spending MCP system is bound at install")
+        if not (isinstance(cfg, dict) and cfg.get("type") in MCP_VARIANTS):
+            fail(f"{at}: type is one of {', '.join(MCP_VARIANTS)}")
+        extra = sorted(k for k in cfg if k not in MCP_VARIANTS[cfg["type"]])
+        if extra:
+            fail(f"{at}: {', '.join(extra)} is not a member of a {cfg['type']} server (Agent Plugins 1.0.0, 7.2.1)")
+        if cfg["type"] == "stdio":
+            mcp_stdio(at, cfg)
+        else:
+            mcp_remote(at, cfg)
+        out_servers[sname] = cfg
+    return {"$schema": MCP_SCHEMA_URL, "mcpServers": out_servers}
+
+
+def _outside_path(v):
+    """Whether a value is a path that does not go through a plugin variable:
+    absolute, home-relative, parent-relative, or relative to the working
+    folder, any of which differs from one install to the next."""
+    return bool(re.match(r"^(?:/|~|\./|\.\.(?:/|\\|$)|[A-Za-z]:[\\/]|\\\\)", v)) or "/../" in v or "\\..\\" in v
+
+
+def mcp_stdio(at, cfg):
+    """A server the package ships, started over stdio (Agent Plugins 1.0.0,
+    7.2.1 and 9): one executable token, bare or ./ inside the package, and
+    every path in args, env and cwd spelled from ${PLUGIN_ROOT} (what ships)
+    or ${PLUGIN_DATA} (what it writes)."""
+    cmd = cfg.get("command")
+    if not (isinstance(cmd, str) and cmd and not re.search(r"\s", cmd) and "$" not in cmd):
+        fail(f"{at}: command is one executable token with no placeholder, not a shell command")
+    if ("/" in cmd or "\\" in cmd) and not (cmd.startswith("./") and "\\" not in cmd and ".." not in cmd.split("/")):
+        fail(f"{at}: command is a bare program name or a path inside the package that starts with ./")
+    args = cfg.get("args", [])
+    if not (isinstance(args, list) and all(isinstance(a, str) for a in args)):
+        fail(f"{at}: args is a list of strings")
+    env = cfg.get("env", {})
+    if not (isinstance(env, dict) and all(isinstance(v, str) for v in env.values())):
+        fail(f"{at}: env maps each variable to a string")
+    for k in env:
+        if k.upper() in MCP_RESERVED_ENV:
+            fail(f"{at}: env names {k}, which the client sets itself (Agent Plugins 1.0.0, 9.2)")
+        if SECRET_NAME_RE.search(k):
+            fail(f"{at}: env {k} is named for a credential; mcp.json is visible package data and carries none (Agent Plugins 1.0.0, 9.2)")
+    for v in [*args, *env.values()]:
+        if _outside_path(v):
+            fail(f"{at}: {json.dumps(v)} is a path that is not spelled from ${{PLUGIN_ROOT}} or ${{PLUGIN_DATA}}; a path into the package or its data folder goes through one of them")
+    cwd = cfg.get("cwd")
+    if cwd is not None and not (isinstance(cwd, str) and MCP_CWD_RE.match(cwd) and ".." not in re.split(r"[/\\]", cwd)):
+        fail(f"{at}: cwd starts with ./, ${{PLUGIN_ROOT}} or ${{PLUGIN_DATA}} and stays inside it (Agent Plugins 1.0.0, 7.2.1)")
+
+
+def mcp_remote(at, cfg):
+    """A public server reached over Streamable HTTP or the legacy HTTP+SSE
+    transport (Agent Plugins 1.0.0, 7.2.1): an absolute address with no user
+    information and no fragment, over HTTPS unless the host is loopback, and
+    fixed headers that carry no credential."""
+    url = cfg.get("url")
+    if not (isinstance(url, str) and url and "$" not in url and not re.search(r"\s", url)):
+        fail(f"{at}: url is the server's absolute address, with no placeholder")
+    try:
+        u = urlsplit(url)
+        host = u.hostname or ""
+    except ValueError:
+        fail(f"{at}: url is not an address")
+    if u.scheme not in ("https", "http") or not host:
+        fail(f"{at}: url is an absolute https address")
+    if "@" in u.netloc:
+        fail(f"{at}: url carries user information, which is a credential in the address (Agent Plugins 1.0.0, 7.2.1)")
+    if "#" in url:
+        fail(f"{at}: url carries a fragment (Agent Plugins 1.0.0, 7.2.1)")
+    if u.scheme == "http":
+        try:
+            loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            loopback = False
+        if not loopback:
+            fail(f"{at}: a server that is not on this machine is reached over https (Agent Plugins 1.0.0, 7.2.1)")
+    headers = cfg.get("headers", {})
+    if not (isinstance(headers, dict) and all(isinstance(v, str) for v in headers.values())):
+        fail(f"{at}: headers maps each header to a string")
+    seen = set()
+    for k, v in headers.items():
+        if not HEADER_NAME_RE.match(k) or re.search(r"[\r\n\0]", v):
+            fail(f"{at}: header {json.dumps(k)} is not a valid HTTP header")
+        if k.lower() in seen:
+            fail(f"{at}: header {k} is given twice (Agent Plugins 1.0.0, 7.2.1)")
+        seen.add(k.lower())
+        if SECRET_NAME_RE.search(k) or re.match(r"^(?:bearer|basic)\s", v, re.I):
+            fail(f"{at}: header {k} carries a credential; headers are visible package data, and the client manages a server's authorization (Agent Plugins 1.0.0, 7.2.1)")
+
+
 def where_it_is_read(spec):
     """The three manifest members that name where a READER goes: the license
     this package is under, the page about it, and the repository its source is
@@ -2464,10 +2652,32 @@ def install_file(spec, jobs, systems, lockfiles):
 
 # ── the generated views ───────────────────────────────────────────────────
 
+#: What a YAML plain scalar may not start with (YAML 1.2, 7.3.3): an
+#: indicator character, or a word YAML reads as something other than a string.
+_YAML_INDICATORS = tuple("-?:,[]{}#&*!|>'\"%@`")
+_YAML_NOT_A_STRING = re.compile(r"^(?:true|false|yes|no|on|off|null|~|[-+]?(?:\.?[0-9][0-9_.:eE+-]*|\.inf|\.nan))$", re.I)
+
+
+def yaml_plain_ok(text):
+    """Whether a one-line value reads back from YAML as itself, unquoted. A
+    description such as `on every message: a reply` does not: `: ` starts a
+    mapping, and a strict reader of the Agent Skills format refuses the file."""
+    return bool(text) and text == text.strip() and "\n" not in text and not (
+        text.startswith(_YAML_INDICATORS) or ": " in text or " #" in text or "\t" in text
+        or text.endswith(":") or _YAML_NOT_A_STRING.match(text))
+
+
+def yaml_scalar(text):
+    """A one-line value as SKILL.md frontmatter writes it: plain where YAML
+    reads that back as the same string, else double-quoted, which is JSON's
+    string form and so the same bytes from every writer."""
+    return text if yaml_plain_ok(text) else json.dumps(text, ensure_ascii=False)
+
+
 def skill_md(job, agent_name, copied):
     when = job.get("when", "When the request matches this job.").strip()
     desc = when[:1024]
-    lines = ["---", f"name: {job['slug']}", f"description: {desc}", "---", "",
+    lines = ["---", f"name: {job['slug']}", f"description: {yaml_scalar(desc)}", "---", "",
              f"# {job['title']}", "", f"Part of {agent_name}. {when}", "",
              "## When to use this", "", when, ""]
     if job.get("inputs"):
@@ -2580,8 +2790,11 @@ def check_manifest(manifest):
     for k in ("version", "description", "homepage", "repository", "license"):
         if k in manifest and not isinstance(manifest[k], str):
             fail(f"plugin.json {k} must be a string")
-    if "keywords" in manifest and not (isinstance(manifest["keywords"], list) and all(isinstance(x, str) for x in manifest["keywords"])):
-        fail("plugin.json keywords must be strings")
+    if "keywords" in manifest and keyword_problem(manifest["keywords"]):
+        fail(keyword_problem(manifest["keywords"]))
+    d = manifest.get("description")
+    if isinstance(d, str) and ("\n" in d or len(d) > DESCRIPTION_MAX):
+        fail(f"plugin.json description is one or two sentences on one line, at most {DESCRIPTION_MAX} characters")
     if "author" in manifest:
         a = manifest["author"]
         allowed = set(props.get("author", {}).get("properties", {}).keys()) or {"name", "email", "url"}
@@ -2928,6 +3141,25 @@ def has_skill_frontmatter(text, slug):
     return names == [slug] and any(ln.startswith("description:") and ln.split(":", 1)[1].strip() for ln in fm)
 
 
+def skill_description_problem(text):
+    """Why a SKILL.md's description would not read back from its YAML as the
+    words written, or None. A quoted value, or a block scalar (`>` or `|`),
+    is the writer's own YAML and left to it; a plain one is held to
+    yaml_plain_ok, since `description: on a reply: say so` is a mapping
+    error to every strict reader of the Agent Skills format."""
+    end = text.find("\n---", 4)
+    for ln in text[4:end].split("\n"):
+        if not ln.startswith("description:"):
+            continue
+        v = ln.split(":", 1)[1].strip()
+        if v[:1] in ("\"", "'", ">", "|"):
+            return None
+        if not yaml_plain_ok(v):
+            return "its description is not one YAML string as written (a `: ` or ` #` inside it, or a leading indicator); put it in double quotes"
+        return None
+    return None
+
+
 def read_folder(folder):
     """An agent kept the way Common Agent 13.2 says a package is authored:
     agent-descriptor.json, agent-runtime-requirements.json and plugin.json,
@@ -3035,6 +3267,9 @@ def read_folder(folder):
             text = f.read()
         if not has_skill_frontmatter(text, slug):
             fail(f"skills/{slug}/SKILL.md needs frontmatter with name {slug} and a description (the Agent Skills format)")
+        why = skill_description_problem(text)
+        if why:
+            fail(f"skills/{slug}/SKILL.md: {why} (the Agent Skills format)")
         authored_skills[slug] = os.path.join(sdir, slug)
 
     offered_ids = [o["id"] for o in offerings]
@@ -3085,7 +3320,11 @@ def read_folder(folder):
         fail(f"{MANIFEST_FILE} version must be a string")
     if desc.get("agent_version") is not None and str(desc["agent_version"]) != version:
         fail(f"{MANIFEST_FILE} says version {version} and {dname} says agent_version {desc['agent_version']}; they are one version")
-    spec = {"name": manifest.get("name", ""), "version": version, "description": manifest.get("description")}
+    # What the agent does is the Descriptor's `does`. plugin.json's
+    # description is the short line a harness shows, made from the summary
+    # (or `does` where there is none), and the build holds the folder's to it.
+    spec = {"name": manifest.get("name", ""), "version": version,
+            "description": desc["does"] if isinstance(desc.get("does"), str) else manifest.get("description")}
     for k in ("license", "homepage", "repository", "author"):
         if k in manifest:
             spec[k] = manifest[k]
@@ -3163,6 +3402,11 @@ def read_folder(folder):
         if not m:
             fail(f"{rname} verify is the path of one skill's script inside the package, skills/<slug>/scripts/<file>")
         spec["verify"] = {"job": m.group(1), "script": m.group(2)}
+    # The MCP servers whose address is fixed in the package, in the published
+    # form (Agent Plugins 1.0.0, 7.2): the folder's own mcp.json, read as it
+    # is and checked as a spec's `mcp` is.
+    if os.path.exists(os.path.join(folder, MCP_FILE)):
+        spec["mcp"] = read_json_file(os.path.join(folder, MCP_FILE), MCP_FILE)
 
     authored = {"folder": folder, "descriptor_name": dname, "runtime_name": rname,
                 "descriptor": desc, "runtime": inst, "manifest": manifest, "skills": authored_skills}
@@ -3227,11 +3471,20 @@ def build(spec, src_base, out_dir, authored):
         fail(f"{'plugin.json name' if authored else 'spec.name'} {name!r} must be lowercase letters, digits and hyphens")
     version = str(spec.get("version", "1.0.0"))
     if authored:
-        if not (isinstance(spec.get("description"), str) and spec["description"].strip()):
+        said = authored["manifest"].get("description")
+        if not (isinstance(said, str) and said.strip()):
             fail(f"{MANIFEST_FILE} needs a description, one sentence on what the agent does")
         description = spec["description"]
+        if not (isinstance(description, str) and description.strip()):
+            fail(f"{authored['descriptor_name']} needs does, what the agent does")
     else:
         description = need(spec, "description", str)
+    listed = listed_description(spec, description)
+    if authored and said.strip() != listed:
+        source = "summary" if listed != description.strip() else "does"
+        fail(f"{MANIFEST_FILE} description is the line a harness shows a person, and the build writes the "
+             f"Descriptor's {source} there: {json.dumps(listed[:80])}{'...' if len(listed) > 80 else ''}. "
+             f"Correct the file; what the agent does in full stays in the Descriptor's does")
     jobs = need(spec, "jobs")
     systems = spec.get("systems", [])
     refuses = need(spec, "refuses")       # the judgment parts: required, never invented
@@ -3326,6 +3579,13 @@ def build(spec, src_base, out_dir, authored):
     for c in spec.get("ceilings") or []:
         if isinstance(c, dict) and "enforced_by" in c:
             fail(f"system {c.get('system')}: a ceiling's enforcing side is derived from how the package reaches the system, never written into the spec")
+    # The MCP servers fixed in the package, and the folder's keywords, both
+    # refused here, before any file is written, like every other shape check.
+    mcp_doc = mcp_declaration(spec, systems)
+    if authored and "keywords" in authored["manifest"]:
+        why = keyword_problem(authored["manifest"]["keywords"])
+        if why:
+            fail(why)
     for s in systems:
         if s.get("spends") is not None:
             ceiling_side(s, name)
@@ -3511,7 +3771,7 @@ def build(spec, src_base, out_dir, authored):
             "$schema": SCHEMA_URL,
             "name": name,
             "version": version,
-            "description": description.strip(),
+            "description": listed,
             **({"license": spec["license"].strip()} if spec.get("license") else {}),
             **({"homepage": spec["homepage"]} if spec.get("homepage") else {}),
             **({"repository": spec["repository"]} if spec.get("repository") else {}),
@@ -3528,7 +3788,7 @@ def build(spec, src_base, out_dir, authored):
             "$schema": SCHEMA_URL,
             "name": name,
             "version": version,
-            "description": description.strip(),
+            "description": listed,
             **({"license": spec["license"].strip()} if spec.get("license") else {}),
             **({"homepage": spec["homepage"]} if spec.get("homepage") else {}),
             **({"repository": spec["repository"]} if spec.get("repository") else {}),
@@ -3537,11 +3797,26 @@ def build(spec, src_base, out_dir, authored):
             # rule 3), and an author page is not one of them. Who built this is in
             # the build record, by key.
             "author": spec.get("author") or {"name": "Agent Builder"},
-            "keywords": ["built-agent", "draft"] + [j["slug"] for j in jobs],
+            # Search tags for the work: the jobs, by slug. How the package
+            # was made is in the build record and the namespace's `built`.
+            "keywords": [j["slug"] for j in jobs],
             "extensions": {EXT: pointers},
         }
     check_manifest(manifest)
     open(os.path.join(pkg, MANIFEST_FILE), "w", encoding="utf-8", newline="\n").write(dumps(manifest))
+    if mcp_doc is not None:
+        # A server the package ships is started from inside it, so the
+        # program a stdio entry names is one of the files the skills carry.
+        for sname, cfg in mcp_doc["mcpServers"].items():
+            cmd = cfg.get("command", "")
+            if cfg["type"] == "stdio" and cmd.startswith("./") and not os.path.isfile(os.path.join(pkg, *cmd[2:].split("/"))):
+                fail(f"{MCP_FILE} server {sname}: command {cmd} is not a file in the package; ship it under a skill's scripts")
+            root = "${PLUGIN_ROOT}/"
+            for v in [*cfg.get("args", []), *cfg.get("env", {}).values()]:
+                inside = v[len(root):].split("/") if v.startswith(root) else None
+                if inside and inside[0] and not os.path.exists(os.path.join(pkg, *inside)):
+                    fail(f"{MCP_FILE} server {sname}: {v} is not in the package; ship it under a skill's scripts or references")
+        open(os.path.join(pkg, MCP_FILE), "w", encoding="utf-8", newline="\n").write(dumps(mcp_doc))
 
     for fn, text in generated_views(desc, inst).items():
         open(os.path.join(pkg, EXT, fn), "w", encoding="utf-8", newline="\n").write(text)
@@ -3567,6 +3842,9 @@ def build(spec, src_base, out_dir, authored):
          # Whether those names are ones an account can bind on its stack. The
          # package maker copies this straight into the signed build record.
          "systems_note": systems_note(systems),
+         # The servers mcp.json carries, the ones fixed in the package; every
+         # other MCP system is bound at install from the runtime requirements.
+         "mcp_servers": sorted(mcp_doc["mcpServers"]) if mcp_doc else [],
          "lockfiles": lockfiles,
          "refuses_count": len(refuses), "records_count": len(records),
          "format_rules": formats,

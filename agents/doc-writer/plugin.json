@@ -2,13 +2,12 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "doc-writer",
   "version": "0.1.3",
-  "description": "Writes the documentation a person reads to use an agent: what it does, where to send it work, what each job takes and hands back, what it will not do, reaches, costs and leaves behind, with examples from its records. It writes only from the agent's descriptor, its AgentDoc, its records and the verdicts about it, marks every line with the place it came from, and lists everything those sources are silent on.",
+  "description": "Writes the documentation a person reads to use an agent, from the agent's own declaration and records, with every line traced to its source.",
   "license": "Apache-2.0",
   "author": {
     "name": "Agent Builder"
   },
   "keywords": [
-    "built-agent",
     "document-a-package",
     "read-what-was-given",
     "write-the-documentation",

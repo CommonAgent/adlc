@@ -174,7 +174,8 @@ test("the package: one version, its own example, every script listed, and each s
   const d = JSON.parse(read("agent-descriptor.json"));
   const plugin = JSON.parse(read("plugin.json"));
   assert.equal(d.agent_version, plugin.version);
-  assert.equal(d.does, plugin.description);
+  // plugin.json's description is the line a harness shows: the Descriptor's summary (Agent Plugins 1.0.0).
+  assert.equal(plugin.description, d.summary);
   assert.ok(existsSync(join(PKG, "records", `build-${d.agent_version}.md`)), "a build record for this version");
   const o = d.offerings[0];
   assert.deepEqual(exampleProblems(o, o.example), []);

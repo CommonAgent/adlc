@@ -1,6 +1,6 @@
 ---
 name: write-the-review
-description: last, on every review: to apply the role's rules and write the statement or the refusal
+description: "last, on every review: to apply the role's rules and write the statement or the refusal"
 ---
 
 # Write the review
