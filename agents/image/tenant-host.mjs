@@ -322,7 +322,7 @@ export function gatewayKey(resolve, gateway = DEFAULT_GATEWAY, { ttlMs = 600_000
   };
 }
 
-export function modelDoor({ send, to, timeoutMs = 200_000 }) {
+export function modelDoor({ send, to, timeoutMs = 200_000, log: say = log }) {
   return createServer((req, res) => {
     let body = "";
     req.setEncoding("utf8");
@@ -338,10 +338,25 @@ export function modelDoor({ send, to, timeoutMs = 200_000 }) {
       } catch (err) {
         out = doorError(502, `The model door could not reach AgentMesh's model gateway: ${String(err?.message ?? err).slice(0, 200)}.`);
       }
+      // A call the door could not carry, or the gateway refused, is said in
+      // the log in one line (status and reason, never the call's words), so
+      // an agent that reports its model "unavailable" can be read from here.
+      if (out.status >= 400) say(`tenant host: model door: ${out.status} ${modelDoorWhy(out.body)}`);
       res.writeHead(out.status, { "content-type": out.content_type });
       res.end(out.body);
     });
   });
+}
+
+/** The reason in a door error's body, or in the gateway's own error body,
+ *  in a line: its type and message, cut to 300 characters. */
+export function modelDoorWhy(body) {
+  try {
+    const e = JSON.parse(String(body ?? ""))?.error ?? {};
+    return `${e.type ?? "error"}: ${String(e.message ?? "").replace(/\s+/g, " ").slice(0, 300)}`; // cut-ok: a log line's reason; the agent gets the whole body
+  } catch {
+    return String(body ?? "").replace(/\s+/g, " ").slice(0, 300); // cut-ok: a log line's reason; the agent gets the whole body
+  }
 }
 
 /** The adapter's address settings this host passes on: the control base
