@@ -13,7 +13,9 @@ import {
   MODEL_URL, PLACEHOLDER_KEY, actsForRecord, bindDescriptor, bindingRecord, gatewayKey, canonical, directoryVar, doorAnswer, handBackToAdapter, localExecution, meshUrlOf,
   modelDoor, readBundle, readTenantFile, relayRequestOf, rosterRow, workEnv,
   activityOf, busyOf, runSession, sessionEnd, wakeCaller, wakeServer, wakeWindows,
+  ADAPTER_BIN, ADAPTER_MODULES, adapterPlaces, credentialText, relayUpdates, resolveWorkUser, settleImage, usersToAdd, workUserOf,
 } from "../tenant-host.mjs";
+import { appendFileSync } from "node:fs";
 // The fleet supervisor is the host's own program, not one of these tools: on
 // AgentMesh it is fleet-manager/runtime/fleet/supervisor.mjs. Name it with
 // ADLC_FLEET_SUPERVISOR to run the one test that drives a message through it;
@@ -331,4 +333,147 @@ test("the wake door refuses a stranger, answers its state, and gives two callers
     assert.equal(lines2.at(-1).jobs.length, 1);
     assert.ok(lines1[0].taken);
   } finally { server.close(); }
+});
+
+// ── an outside agent tried on the mesh (docs/try-mode-plan.md) ─────────────
+
+test("the key is read from AGENTMESH_CREDENTIALS_JSON, or else from the file AGENTMESH_CREDENTIALS_FILE names", () => {
+  const bundle = JSON.stringify({ agent_seed: SEED, mesh_creds: CREDS });
+  assert.deepEqual(credentialText({ AGENTMESH_CREDENTIALS_JSON: bundle, AGENTMESH_CREDENTIALS_FILE: "/never" }, () => { throw new Error("not read"); }), { text: bundle, from: "AGENTMESH_CREDENTIALS_JSON" });
+  const read = [];
+  const got = credentialText({ AGENTMESH_CREDENTIALS_FILE: "/secrets/agentmesh/credentials.json" }, (f) => { read.push(f); return bundle; });
+  assert.deepEqual(read, ["/secrets/agentmesh/credentials.json"]);
+  assert.equal(readBundle(got.text).seed, SEED);
+  assert.throws(() => credentialText({}), /neither AGENTMESH_CREDENTIALS_JSON nor AGENTMESH_CREDENTIALS_FILE is set/);
+  assert.throws(() => credentialText({ AGENTMESH_CREDENTIALS_FILE: "/gone" }, () => { const e = new Error("x"); e.code = "ENOENT"; throw e; }), /could not be read: ENOENT/);
+});
+
+test("the adapter is found where tenant.json says, overridable, and on the path by default", () => {
+  assert.deepEqual(adapterPlaces(readTenantFile("{}"), {}), { bin: ADAPTER_BIN, modules: ADAPTER_MODULES });
+  const t = readTenantFile(JSON.stringify({ adapter: { bin: "/opt/mesh/bin/agentmesh", modules: "/opt/mesh/lib/node_modules/mesh-adapter/node_modules" } }));
+  assert.deepEqual(adapterPlaces(t, {}), { bin: "/opt/mesh/bin/agentmesh", modules: "/opt/mesh/lib/node_modules/mesh-adapter/node_modules/" });
+  assert.deepEqual(adapterPlaces(t, { TENANT_ADAPTER_BIN: "/x/agentmesh", TENANT_ADAPTER_MODULES: "/x/node_modules/" }), { bin: "/x/agentmesh", modules: "/x/node_modules/" });
+  assert.equal(adapterPlaces(readTenantFile(JSON.stringify({ adapter: { bin: "../agentmesh", modules: "relative/" } })), {}).bin, ADAPTER_BIN, "a path that is not absolute is not taken");
+});
+
+test("tenant.json may name the work's user, which is never root, and the work and its folders run as it", () => {
+  assert.deepEqual(readTenantFile("{}").agent_user, { name: "agent", uid: 10001, gid: 10001 });
+  assert.deepEqual(workUserOf({ name: "app", uid: 1000, gid: 1000 }), { name: "app", uid: 1000, gid: 1000 });
+  for (const bad of [{ uid: 0, gid: 0 }, { uid: 1000, gid: 0 }, { uid: 0, gid: 1000 }, { uid: "1000", gid: 1000 }, null]) {
+    assert.deepEqual(workUserOf(bad), { name: "agent", uid: 10001, gid: 10001 }, JSON.stringify(bad));
+  }
+  const tenant = readTenantFile(JSON.stringify({ agent_user: { name: "app", uid: 1000, gid: 1001 }, directories: ["work"], job_seconds: 1500 }));
+  const row = rosterRow({ name: "design-agent", handle: "design-agent.person@example.com", key: "UKEY", tenant });
+  assert.equal(row.uid, 1000);
+  assert.equal(row.gid, 1001);
+  assert.equal(row.job_seconds, 1500);
+  const owned = [];
+  const exec = localExecution({ entrypoint: "/opt/agent/entrypoint.mjs", baseEnv: {}, tenant, user: tenant.agent_user, chown: (p, uid, gid) => owned.push([uid, gid]),
+    spawnImpl: () => { throw new Error("not started here"); } });
+  exec({ hostDir: tmp("tenant-host-own-"), env: {} });
+  assert.deepEqual(owned[0], [1000, 1001], "the job folder is handed to the work's own user");
+});
+
+test("the work's user is the image's own unless that is root, and the agent user is made when it is needed", () => {
+  const passwd = "root:x:0:0:root:/root:/bin/bash\nagent:x:10001:10001::/home/agent:/bin/sh\napp:x:1000:1000::/home/app:/bin/sh\n";
+  const group = "root:x:0:\nagent:x:10001:\napp:x:1000:\nstaff:x:50:\n";
+  // design-agent's image runs as `agent`, uid 10001, made by its own Dockerfile.
+  assert.deepEqual(resolveWorkUser("agent", passwd, group), { name: "agent", uid: 10001, gid: 10001, make: false });
+  assert.deepEqual(resolveWorkUser("app:staff", passwd, group), { name: "app", uid: 1000, gid: 50, make: false });
+  assert.deepEqual(resolveWorkUser("1000", passwd, group), { name: "app", uid: 1000, gid: 1000, make: false });
+  assert.deepEqual(resolveWorkUser("4242:4343", passwd, group), { name: "uid-4242", uid: 4242, gid: 4343, make: false });
+  assert.equal(resolveWorkUser("1000:0", passwd, group).gid, 10001, "never the root group");
+  for (const root of ["", "root", "0", "0:0", "root:root"]) {
+    assert.deepEqual(resolveWorkUser(root, passwd, group), { name: "agent", uid: 10001, gid: 10001, make: false }, root);
+  }
+  const bare = "root:x:0:0:root:/root:/bin/bash\n";
+  assert.deepEqual(resolveWorkUser("", bare, "root:x:0:\n"), { name: "agent", uid: 10001, gid: 10001, make: true });
+  assert.throws(() => resolveWorkUser("nobody-here", passwd, group), /has no user nobody-here/);
+  assert.throws(() => resolveWorkUser("app:nogroup", passwd, group), /has no group nogroup/);
+  // The adapter's user is added; the agent user only when it is made.
+  assert.deepEqual(usersToAdd(passwd, group, { make: false }), { passwd: ["mesh:x:10002:10002:AgentMesh adapter:/home/mesh:/usr/sbin/nologin"], group: ["mesh:x:10002:"] });
+  const made = usersToAdd(bare, "root:x:0:\n", { make: true });
+  assert.equal(made.work_name, "agent");
+  assert.ok(made.passwd.includes("agent:x:10001:10001:the agent's work:/home/agent:/usr/sbin/nologin"));
+  assert.throws(() => usersToAdd(`${bare}other:x:10002:10002::/:/bin/sh\n`, "", { make: false }), /uid 10002 is other in this image/);
+  assert.throws(() => usersToAdd(`${bare}mesh:x:999:999::/:/bin/sh\n`, "", { make: false }), /already has a user mesh with uid 999/);
+});
+
+/** An image's files as the adapter layer leaves them before it settles. */
+function imageRoot({ adapter = true } = {}) {
+  const root = tmp("tenant-host-settle-");
+  const put = (rel, text) => { mkdirSync(dirname(join(root, rel)), { recursive: true }); writeFileSync(join(root, rel), text); };
+  put("etc/passwd", "root:x:0:0:root:/root:/bin/bash\nagent:x:10001:10001::/home/agent:/bin/sh\n");
+  put("etc/group", "root:x:0:\nagent:x:10001:\n");
+  put("opt/agent/command.json", JSON.stringify({ entrypoint: null, cmd: ["design-agent", "serve"], workdir: "/app", env: [], user: "agent" }));
+  put("opt/agent/entrypoint.mjs", "export const ok = true;\n");
+  put("opt/tenant/tenant.json", JSON.stringify({ descriptor: "agent-descriptor.json", directories: ["work"], job_seconds: 1500,
+    adapter: { bin: "/opt/mesh/bin/agentmesh", modules: "/opt/mesh/lib/node_modules/mesh-adapter/node_modules/" } }));
+  put("opt/mesh/bin/agentmesh", "#!/bin/sh\n");
+  if (adapter) {
+    put("opt/mesh/lib/node_modules/mesh-adapter/node_modules/nkeys.js/package.json", JSON.stringify({ name: "nkeys.js", main: "index.js" }));
+    put("opt/mesh/lib/node_modules/mesh-adapter/node_modules/nkeys.js/index.js", "module.exports = {};\n");
+  }
+  return root;
+}
+
+test("the settle step writes the users, the folders and the work's user into tenant.json", () => {
+  const root = imageRoot();
+  const lines = [];
+  const r = settleImage({ root, log: (l) => lines.push(l) });
+  assert.deepEqual(r.work, { name: "agent", uid: 10001, gid: 10001 });
+  const t = JSON.parse(readFileSync(join(root, "opt/tenant/tenant.json"), "utf8"));
+  assert.deepEqual(t.agent_user, { name: "agent", uid: 10001, gid: 10001 });
+  assert.equal(t.descriptor, "agent-descriptor.json", "the rest of tenant.json is kept");
+  assert.match(readFileSync(join(root, "etc/passwd"), "utf8"), /\nmesh:x:10002:10002:AgentMesh adapter:\/home\/mesh:\/usr\/sbin\/nologin\n$/);
+  assert.match(readFileSync(join(root, "etc/group"), "utf8"), /\nmesh:x:10002:\n$/);
+  for (const d of ["home/mesh", "var/agent-state", "tmp/mesh"]) assert.ok(existsSync(join(root, d)), d);
+  assert.match(lines[0], /the work runs as agent \(10001:10001\), the adapter as mesh \(10002\)/);
+  // An image with no adapter where tenant.json says is refused, and the build stops.
+  assert.throws(() => settleImage({ root: imageRoot({ adapter: false }), log: () => {} }), /nkeys\.js is not under/);
+});
+
+test("the work's status lines reach the adapter's job folder while it runs, as written, whole lines only", async () => {
+  const root = tmp("tenant-host-relay-");
+  const work = join(root, "work");
+  const adapter = join(root, "adapter");
+  mkdirSync(work, { recursive: true });
+  mkdirSync(adapter, { recursive: true });
+  const from = join(work, "updates.jsonl");
+  const to = join(adapter, "updates.jsonl");
+  const relay = relayUpdates(from, to, { everyMs: 60_000 });
+  relay.tick();
+  assert.equal(existsSync(to), false, "nothing yet");
+  appendFileSync(from, `${JSON.stringify({ progress: "Starting the agent's own server" })}\n{"progress":"half`);
+  relay.tick();
+  assert.equal(readFileSync(to, "utf8"), `${JSON.stringify({ progress: "Starting the agent's own server" })}\n`, "the half-written line waits");
+  appendFileSync(from, ` done"}\n`);
+  relay.tick();
+  assert.equal(readFileSync(to, "utf8"), readFileSync(from, "utf8"), "the same bytes, in order");
+  // The supervisor's copy at the end writes the whole file again; from then
+  // the relay writes nothing more, so the adapter sends nothing twice.
+  appendFileSync(from, `{"progress":"three"}\n`);
+  writeFileSync(to, readFileSync(from));
+  appendFileSync(from, `{"progress":"after the copy"}\n`);
+  relay.tick();
+  assert.ok(!readFileSync(to, "utf8").includes("after the copy"));
+  relay.stop();
+
+  // Wired into the worker: on while the job runs, off when it finishes.
+  const jobDir = join(root, "adapter-job");
+  const workDir = join(root, "mesh", "jobs", "helper", "m1");
+  mkdirSync(jobDir, { recursive: true });
+  mkdirSync(workDir, { recursive: true });
+  let finish;
+  const start = handBackToAdapter(() => ({ kind: "local", pid: 1, kill() {}, finished: new Promise((r) => { finish = r; }) }),
+    { chown: () => {}, workDirOf: () => workDir, everyMs: 20 });
+  const h = start({ name: "helper" }, { id: "m1", job: { dir: jobDir } });
+  appendFileSync(join(workDir, "updates.jsonl"), `{"progress":"live"}\n`);
+  for (let i = 0; i < 100 && !existsSync(join(jobDir, "updates.jsonl")); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(readFileSync(join(jobDir, "updates.jsonl"), "utf8"), `{"progress":"live"}\n`, "streamed before the job ended");
+  finish({ code: 0 });
+  await h.finished;
+  // The same folder on both sides needs no relay.
+  const same = handBackToAdapter(() => ({ finished: Promise.resolve({ code: 0 }), kill() {} }), { chown: () => {}, workDirOf: () => jobDir });
+  await same({ name: "helper" }, { id: "m2", job: { dir: jobDir } }).finished;
 });
