@@ -43,6 +43,7 @@ import calendar
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import stat
@@ -309,10 +310,15 @@ def run_container(r):
     pinned commit, makes the agent's key into its own secret, runs it as a
     Cloud Run service that sleeps until the platform wakes it (always on only
     when the owner said so) and binds its name. It signs
-    its own build and deployment records, which come back in its answer."""
+    its own build and deployment records, which come back in its answer.
+
+    A container block that says `"retire": true` takes the agent down instead
+    (run_container_retire)."""
     rid = r["id"]
     args = r.get("args") or {}
     c = r.get("container") or {}
+    if c.get("retire") is True:
+        return run_container_retire(r)
     token = r.get("boot_token") or ""
     token_name = r.get("boot_token_name") or f"dr-{rid[3:15].lower()}"
     if not (args.get("name") and c.get("source") and c.get("handle")):
@@ -338,8 +344,11 @@ def run_container(r):
     # ignores the placement below (docs/tenant-isolation-plan.md).
     # always_on: the owner's exception to wake on message; wake_idle_seconds:
     # how long a woken agent stays up (docs/container-agents-plan.md, "Wake on
-    # message").
-    for k in ("cpu", "memory", "replaces", "ready_line", "port", "tenant", "always_on", "wake_idle_seconds"):
+    # message"). answers, descriptor and admit: a person's agent tried on the
+    # mesh with the adapter on top (docs/try-mode-plan.md, "`answers`"); the
+    # deployment manager checks them by rule.
+    for k in ("cpu", "memory", "replaces", "ready_line", "port", "tenant", "always_on", "wake_idle_seconds",
+              "answers", "descriptor", "admit"):
         if c.get(k) is not None:
             arg[k] = c[k]
     if token:
@@ -362,6 +371,34 @@ def run_container(r):
                 os.remove(token_path)
             except OSError:
                 pass
+    record = result.pop("record", None)
+    return {"ok": bool(result.get("ok")), "result": result, **({"record": record} if record else {})}
+
+
+# The name a container install is kept under: the deployment manager's NAME_RE.
+CONTAINER_NAME_RE = re.compile(r"[a-z][a-z0-9-]{1,22}[a-z0-9]")
+
+
+def run_container_retire(r):
+    """A container agent taken down whole (docs/try-mode-plan.md, "Remove
+    it"): the deployment manager's retire removes its service, every image
+    built for it, its secret and its service account, then retires its key on
+    the platform, and signs the removal. The reason is the request's
+    container.retire_reason, one line of at most 200 characters."""
+    rid = r["id"]
+    name = str((r.get("args") or {}).get("name") or "")
+    if not CONTAINER_NAME_RE.fullmatch(name):
+        return {"ok": False, "error": "a container retire names the agent it takes down in args.name"}
+    said = str((r.get("container") or {}).get("retire_reason") or "")
+    reason = " ".join("".join(ch if ch.isprintable() else " " for ch in said).split())[:200]
+    print(f"[deploy-executor] {rid}: container retire of {name}", flush=True)
+    try:
+        p = subprocess.run(["node", SERVICE, "retire", name, *([reason] if reason else [])],
+                           capture_output=True, text=True, timeout=DEPLOY_TIMEOUT)
+        lines = [ln for ln in (p.stdout or "").strip().splitlines() if ln.strip()]
+        result = json.loads(lines[-1]) if lines else {"ok": False, "error": (p.stderr or "no output")[-400:]}
+    except Exception as e:  # noqa: BLE001
+        result = {"ok": False, "error": str(e)[:400]}
     record = result.pop("record", None)
     return {"ok": bool(result.get("ok")), "result": result, **({"record": record} if record else {})}
 

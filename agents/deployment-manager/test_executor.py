@@ -255,6 +255,88 @@ class AContainerRequestGoesToTheServicePath(unittest.TestCase):
         self.assertTrue(any("accepts=container" in p for p in asked))
 
 
+TRY_ANSWERS = {"over": "http", "port": 8081, "health": "/health", "start": None,
+               "env": {"DESIGN_AGENT_API_PORT": "8081"}, "ask": {"method": "POST", "path": "/threads/{thread}/messages", "body": {"text": "{text}"}},
+               "reply": "reply", "job_seconds": 1500}
+TRY_DESCRIPTOR = {"format": "agent-descriptor-v1", "does": "Designs pages from a brief.", "offerings": [{"id": "design"}]}
+
+
+class ATriedAgentCarriesItsAnswersAndIsRetiredWhole(unittest.TestCase):
+    """A person's agent tried on the mesh (docs/try-mode-plan.md): the
+    container block's answers and descriptor reach the deployment manager in
+    the argfile as they were filed, and a container block that says retire
+    runs the deployment manager's retire for that name instead of an install,
+    its answer and record coming back the same way."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="dm-executor-try-")
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        for p in (mock.patch.object(ex, "DM_HOME", self.dir),
+                  mock.patch.object(ex, "DM_TOKENS", os.path.join(self.dir, "secrets", "boot-tokens")),
+                  mock.patch.object(ex, "placement_settings", return_value={"project": "langbench-1528148150979", "region": "us-east1", "registry": "gcr.io/x/y"})):
+            p.start()
+            self.addCleanup(p.stop)
+        self.seen = []
+
+    def fake_run(self, argv, **kw):
+        self.seen.append(list(argv))
+        if argv[2] == "install":
+            self.args = json.load(open(argv[-1]))
+            out = {"ok": True, "act": "deploy", "handle": "design-agent-k3p9.someone@example.com", "record": {"act": "deploy", "signatures": []}}
+        else:
+            out = {"ok": True, "act": "remove", "name": argv[3], "removed": ["the Cloud Run service agent-design-agent-k3p9"], "remaining": [],
+                   "record": {"act": "remove", "signatures": []}}
+        return mock.Mock(stdout=json.dumps(out) + "\n", stderr="", returncode=0)
+
+    def test_answers_and_the_descriptor_go_into_the_argfile_as_filed(self):
+        req = json.loads(json.dumps(CONTAINER_REQ))
+        req["container"].update({"tenant": "t-0a1b2c3d4e5f", "answers": TRY_ANSWERS, "descriptor": TRY_DESCRIPTOR, "settings": {}})
+        req["container"].pop("replaces")
+        with mock.patch.object(ex.subprocess, "run", side_effect=self.fake_run), mock.patch("builtins.print"):
+            outcome = ex.run_one(req)
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(self.seen[0][:3], ["node", ex.SERVICE, "install"])
+        self.assertEqual(self.args["answers"], TRY_ANSWERS)
+        self.assertEqual(self.args["descriptor"], TRY_DESCRIPTOR)
+        self.assertEqual(self.args["tenant"], "t-0a1b2c3d4e5f")
+        self.assertNotIn("admit", self.args, "nothing is added that the request did not carry")
+
+    def test_a_container_retire_runs_retire_for_the_name_with_the_reason(self):
+        req = {"id": "dr_Rtry1234abcdef", "args": {"name": "design-agent-k3p9"},
+               "container": {"retire": True, "retire_reason": "Removed after a try\nby its person " + "x" * 300}}
+        with mock.patch.object(ex.subprocess, "run", side_effect=self.fake_run), mock.patch("builtins.print"):
+            outcome = ex.run_one(req)
+        self.assertEqual(len(self.seen), 1)
+        argv = self.seen[0]
+        self.assertEqual(argv[:4], ["node", ex.SERVICE, "retire", "design-agent-k3p9"])
+        self.assertEqual(len(argv), 5)
+        self.assertTrue(argv[4].startswith("Removed after a try by its person x"), "one line")
+        self.assertEqual(len(argv[4]), 200)
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(outcome["result"]["act"], "remove")
+        self.assertEqual(outcome["record"]["act"], "remove")
+        self.assertNotIn("record", outcome["result"])
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "secrets", "boot-tokens")), "a retire places no key")
+
+    def test_a_retire_with_no_reason_or_no_good_name(self):
+        with mock.patch.object(ex.subprocess, "run", side_effect=self.fake_run), mock.patch("builtins.print"):
+            ex.run_one({"id": "dr_Rtry1234abcdef", "args": {"name": "design-agent-k3p9"}, "container": {"retire": True}})
+            self.assertEqual(self.seen[-1], ["node", ex.SERVICE, "retire", "design-agent-k3p9"])
+            refused = ex.run_one({"id": "dr_Rtry1234abcdef", "args": {"name": "../etc"}, "container": {"retire": True}})
+        self.assertFalse(refused["ok"])
+        self.assertIn("args.name", refused["error"])
+        self.assertEqual(len(self.seen), 1, "nothing ran for a name that is not one")
+
+    def test_a_failed_retire_says_what_remains(self):
+        def failing(argv, **kw):
+            out = {"ok": False, "act": "remove", "remaining": ["the secret mesh-agent-x not removed: denied"], "record": {"act": "remove"}}
+            return mock.Mock(stdout=json.dumps(out) + "\n", stderr="", returncode=1)
+        with mock.patch.object(ex.subprocess, "run", side_effect=failing), mock.patch("builtins.print"):
+            outcome = ex.run_one({"id": "dr_Rtry1234abcdef", "args": {"name": "design-agent-k3p9"}, "container": {"retire": True}})
+        self.assertFalse(outcome["ok"])
+        self.assertEqual(outcome["result"]["remaining"], ["the secret mesh-agent-x not removed: denied"])
+
+
 TENANT_PKG_REQ = {"id": "dr_Ttest1234abcd", "args": {"name": "helper", "harness": "opencode", "interaction": "service", "admit": []},
                   "boot_token": "am_the_single_use_value", "boot_token_name": "dr-ttest1234abc",
                   "package_url": "https://api.agentmesh.ai/v1/deploy-requests/dr_Ttest1234abcd/package.tar.gz",
